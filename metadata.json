@@ -1,0 +1,6 @@
+{
+  "name": "Aluminero Pro",
+  "description": "Calculadora técnica y cotizador de taller para maestros alumineros: plano SVG animado, despiece Líneas 2, 3, Europea, Cancel de Baño, Mosquiteros y Puertas, hoja de cotización y PDF limpio.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
