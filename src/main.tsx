@@ -3,14 +3,3 @@ import App from './App.tsx';
 import './index.css';
 
 createRoot(document.getElementById('root')!).render(<App />);
-
-if (
-  typeof window !== 'undefined' &&
-  'serviceWorker' in navigator &&
-  /^https?:$/i.test(window.location.protocol)
-) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
-  });
-}
-

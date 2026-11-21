@@ -1,21 +1,27 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import {
+  buildColleaguePromoWhatsappUrl,
   calcularCotizacion,
   calcularDespiece,
   CategoriaTrabajo,
   CloudDeviceRecord,
   computeUsageStats30d,
-  FREE_TRIAL_MS,
+  descontarInventarioPorPerfilColor,
   getDefaultRellenoFromVidrio,
   getRellenoLabel,
   getRellenoPrecioM2,
   getRellenoPriceKey,
+  isEligibleForCloudBackup,
   isFeatureProRequired,
   isProActive,
+  isUnassignedAutoTrialDevice,
   LINEAS_CONFIG,
   LineaId,
+  normalizeDeviceIdInput,
   normalizeLineaId,
   parseNotaACotizacion,
+  parseReferralFromSearch,
   PartidaObra,
   PerfilCatalogoId,
   round2,
@@ -23,29 +29,43 @@ import {
   UsageStats30d,
 } from './utils/alumineroLogic';
 import {
+  activateKeyInCloud,
+  checkCloudAccountSession,
   CloudSyncSnapshot,
+  deleteAdminKeyInCloud,
   detectDeviceLabel,
   fetchCloudDevicesState,
+  loginCloudAccount,
+  logoutCloudAccount,
+  registerCloudAccount,
   subscribeCloudDevices,
   syncDeviceToCloud,
   updateDeviceLicenseInCloud,
+  uploadCloudAccountBackup,
+  verifyDeviceStatusInCloud,
 } from './utils/cloudSync';
 import {
   AdminKeyRecord,
   AlumineroBackupPayload,
+  buildAdminKeySignature,
   clearLegacyAdminKeys,
+  clearTrialStart,
+  CloudAccountBackupPayload,
+  CloudAccountSession,
   compressImageToDataUrl,
   ContratoClienteInfo,
   FormulaPersonalizada,
   getOrCreateDeviceId,
-  getOrInitTrialStart,
   getPerfilFotoUrl,
   HistorialItem,
   HojaState,
   HojaVidrioItem,
   LicenciaState,
   loadAdminKeys,
+  loadAccessBlocked,
+  loadCloudAccountSession,
   loadContratoCliente,
+  loadDeletedAdminKeySigs,
   loadFormulas,
   loadHistorial,
   loadHoja,
@@ -56,14 +76,24 @@ import {
   loadNotas,
   loadObrasAprobadas,
   loadPerfilFotos,
+  loadRevokedDevicesMap,
+  loadSavedColleagueReferral,
   loadSobrantes,
   loadSugerenciasWhatsapp,
   loadTaller,
   loadTrabajosAntesDespues,
+  loadTrialRevoked,
   NotaObra,
   ObraAprobadaApartado,
+  openExternalLinkSafe,
   PerfilFotosMap,
+  sanitizeWhatsappNumber,
   saveAdminKeys,
+  saveAccessBlocked,
+  saveCloudAccountSession,
+  saveColleagueReferral,
+  saveDeletedAdminKeySigs,
+  SavedColleagueReferral,
   AppTheme,
   saveContratoCliente,
   saveFormulas,
@@ -76,11 +106,13 @@ import {
   saveNotas,
   saveObrasAprobadas,
   savePerfilFotos,
+  saveRevokedDevicesMap,
   saveSobrantes,
   saveSugerenciasWhatsapp,
   saveTaller,
   saveTheme,
   saveTrabajosAntesDespues,
+  saveTrialRevoked,
   loadTheme,
   SobranteItem,
   TallerConfig,
@@ -98,8 +130,11 @@ import { CatalogoView, NotasView } from './components/NotasAndCatalogoViews';
 import {
   AdminAuthModal,
   AdminModal,
+  CloudBackupModal,
+  ColleagueReferralWelcomeModal,
   FormulaModal,
   PerfilModal,
+  PRO_PAYMENT_CONFIG,
   ProModal,
   PwaInstallGuideModal,
   RecomendarModal,
@@ -107,11 +142,17 @@ import {
   TutorialModal,
 } from './components/Modals';
 import { FloatingAssistant } from './components/FloatingAssistant';
+import { FloatingInstallButton } from './components/FloatingInstallButton';
 import { CalculadoraModal } from './components/CalculadoraModal';
 import { AntesDespuesModal } from './components/AntesDespuesModal';
 import { ModulacionCortesView } from './components/ModulacionCortesView';
 import { VidrioOptimizerView } from './components/VidrioOptimizerView';
-import { LegalDocType, LegalModal } from './components/LegalModal';
+import { AvisoPrivacidadView, TerminosCondicionesView } from './components/LegalViews';
+import { LevantamientoRapido } from './components/LevantamientoRapido';
+import {
+  AlumBridgePayload,
+  overwriteHojaProyectoInStorage,
+} from './utils/levantamientoLogic';
 
 function createInitialParams(linea: LineaId = '3'): TrabajoParams {
   const cfg = LINEAS_CONFIG[linea];
@@ -136,32 +177,37 @@ function createInitialParams(linea: LineaId = '3'): TrabajoParams {
 
 export default function App() {
   const [deviceId] = useState<string>(() => getOrCreateDeviceId());
-  const [trialStartAt] = useState<number>(() => getOrInitTrialStart());
-  const [licencia, setLicencia] = useState<LicenciaState | null>(() => loadLicencia());
+  const [trialRevoked, setTrialRevoked] = useState<boolean>(() => loadTrialRevoked());
+  const [accessBlocked, setAccessBlocked] = useState<boolean>(() => loadAccessBlocked());
+  const [revokedDevicesMap, setRevokedDevicesMap] = useState<Record<string, number>>(() =>
+    loadRevokedDevicesMap()
+  );
+  const [licencia, setLicencia] = useState<LicenciaState | null>(() => {
+    clearTrialStart();
+    const loaded = loadLicencia();
+    if (!loaded || !loaded.active) return null;
+    const hasAuthorization = Boolean(loaded.activatedKey?.trim() || loaded.adminAssigned);
+    if (!hasAuthorization || !isProActive(loaded)) {
+      saveLicencia(null);
+      return null;
+    }
+    return loaded;
+  });
   const [nowTs, setNowTs] = useState<number>(() => Date.now());
 
   const hasPaidOrManualPro = useMemo(() => isProActive(licencia, nowTs), [licencia, nowTs]);
-  const trialExpiresAt = useMemo<number | null>(() => {
-    if (hasPaidOrManualPro) {
-      return licencia?.planCode === 'G' ? licencia.expiresAt : null;
-    }
-    return trialStartAt + FREE_TRIAL_MS;
-  }, [hasPaidOrManualPro, licencia, trialStartAt]);
+  const trialExpiresAt = useMemo<number | null>(
+    () => (hasPaidOrManualPro && licencia?.planCode === 'G' ? licencia.expiresAt : null),
+    [hasPaidOrManualPro, licencia]
+  );
   const isTrialActive = useMemo(
-    () =>
-      (hasPaidOrManualPro && licencia?.planCode === 'G') ||
-      (!hasPaidOrManualPro && trialExpiresAt !== null && trialExpiresAt > nowTs),
-    [hasPaidOrManualPro, licencia, trialExpiresAt, nowTs]
+    () => Boolean(hasPaidOrManualPro && licencia?.planCode === 'G'),
+    [hasPaidOrManualPro, licencia]
   );
-  const proActive = useMemo(
-    () => hasPaidOrManualPro || (trialExpiresAt !== null && trialExpiresAt > nowTs),
-    [hasPaidOrManualPro, trialExpiresAt, nowTs]
-  );
+  const proActive = hasPaidOrManualPro;
 
   useEffect(() => {
-    const nextExpiry = hasPaidOrManualPro
-      ? (licencia?.expiresAt ?? null)
-      : trialExpiresAt;
+    const nextExpiry = hasPaidOrManualPro ? (licencia?.expiresAt ?? null) : null;
     if (nextExpiry === null) return;
     const delay = nextExpiry - Date.now();
     if (delay <= 0) {
@@ -174,15 +220,76 @@ export default function App() {
       setNowTs(Date.now());
     }, boundedDelay);
     return () => window.clearTimeout(timer);
-  }, [hasPaidOrManualPro, licencia, trialExpiresAt, nowTs]);
+  }, [hasPaidOrManualPro, licencia, nowTs]);
 
-  const [currentView, setCurrentView] = useState<ScreenId>(() => {
-    if (typeof window !== 'undefined' && window.location.search.includes('autostart=1')) {
-      return 'trabajo';
-    }
-    return 'menu';
-  });
-  const [historyStack, setHistoryStack] = useState<ScreenId[]>([]);
+  type GlobalModalId =
+    | 'drawer'
+    | 'pro'
+    | 'cloudBackup'
+    | 'recomendar'
+    | 'sugerencias'
+    | 'tutorial'
+    | 'calculadora'
+    | 'antesDespues'
+    | 'adminAuth'
+    | 'adminModal'
+    | 'installGuide'
+    | 'formula'
+    | 'perfil'
+    | 'referralWelcome';
+
+  type SubModalId = 'contrato' | 'zoomPerfil' | null;
+
+  interface NavFrame {
+    depth: number;
+    view: ScreenId;
+    workTab: 'descuentos' | 'cotizacion';
+    invTab: 'perfiles' | 'vidrios' | 'herrajes';
+    catalogoTab: 'perfiles' | 'herrajes';
+    modStep: 1 | 2 | 3 | 4 | 5;
+    modPaso5Tab: 'cortes' | 'tramos';
+    modMosqOpen: boolean;
+    globalModals: GlobalModalId[];
+    perfilModalId: PerfilCatalogoId | null;
+    subModal: SubModalId;
+  }
+
+  const BASE_FRAME: NavFrame = {
+    depth: 0,
+    view: 'menu',
+    workTab: 'descuentos',
+    invTab: 'perfiles',
+    catalogoTab: 'perfiles',
+    modStep: 1,
+    modPaso5Tab: 'cortes',
+    modMosqOpen: false,
+    globalModals: [],
+    perfilModalId: null,
+    subModal: null,
+  };
+
+  const [currentView, setCurrentView] = useState<ScreenId>('menu');
+  const [workTab, setWorkTab] = useState<'descuentos' | 'cotizacion'>('descuentos');
+  const [invTab, setInvTab] = useState<'perfiles' | 'vidrios' | 'herrajes'>('perfiles');
+  const [catalogoTab, setCatalogoTab] = useState<'perfiles' | 'herrajes'>('perfiles');
+  const [modStep, setModStep] = useState<1 | 2 | 3 | 4 | 5>(1);
+  const [modPaso5Tab, setModPaso5Tab] = useState<'cortes' | 'tramos'>('cortes');
+  const [modMosqOpen, setModMosqOpen] = useState<boolean>(false);
+  const [globalModals, setGlobalModals] = useState<GlobalModalId[]>([]);
+  const [perfilModalId, setPerfilModalId] = useState<PerfilCatalogoId | null>(null);
+  const [navTransitionDir, setNavTransitionDir] = useState<'none' | 'back' | 'forward'>('none');
+
+  const navFramesRef = useRef<NavFrame[]>([BASE_FRAME]);
+  const pendingInternalBackSyncRef = useRef<number>(0);
+  const closeSubModalRef = useRef<(() => void) | null>(null);
+  const historyInitializedRef = useRef<boolean>(false);
+
+  const currentViewRef = useRef<ScreenId>(currentView);
+  currentViewRef.current = currentView;
+
+  const registerCloseSubModal = useCallback((fn: (() => void) | null) => {
+    closeSubModalRef.current = fn;
+  }, []);
 
   const [categoria, setCategoria] = useState<CategoriaTrabajo>('ventanas');
   const [params, setParams] = useState<TrabajoParams>(() => createInitialParams('3'));
@@ -222,29 +329,68 @@ export default function App() {
   const [referencia, setReferencia] = useState('');
   const [editingPartidaId, setEditingPartidaId] = useState<string | null>(null);
 
-  // Modals & UI
+  // Modals & UI (controlados desde la pila unificada NavFrame + popstate)
   const [theme, setTheme] = useState<AppTheme>(() => loadTheme());
   const pwa = usePWAInstall();
   const isOnline = useOnlineStatus();
-  const [installGuideOpen, setInstallGuideOpen] = useState(false);
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [proModalOpen, setProModalOpen] = useState(false);
-  const [adminAuthOpen, setAdminAuthOpen] = useState(false);
-  const [adminModalOpen, setAdminModalOpen] = useState(false);
-  const [recomendarOpen, setRecomendarOpen] = useState(false);
-  const [sugerenciasOpen, setSugerenciasOpen] = useState(false);
-  const [calculadoraOpen, setCalculadoraOpen] = useState(false);
-  const [antesDespuesOpen, setAntesDespuesOpen] = useState(false);
+  const [installFabDismissed, setInstallFabDismissed] = useState(false);
   const [trabajosAntesDespues, setTrabajosAntesDespues] = useState<TrabajoAntesDespuesItem[]>(() =>
     loadTrabajosAntesDespues()
   );
   const [sugerenciasWhatsapp, setSugerenciasWhatsapp] = useState<string>(() =>
     loadSugerenciasWhatsapp()
   );
-  const [tutorialOpen, setTutorialOpen] = useState(false);
-  const [legalDoc, setLegalDoc] = useState<LegalDocType>(null);
-  const [formulaModalOpen, setFormulaModalOpen] = useState(false);
-  const [perfilModalId, setPerfilModalId] = useState<PerfilCatalogoId | null>(null);
+  const [cloudAccountSession, setCloudAccountSession] = useState<CloudAccountSession | null>(() =>
+    loadCloudAccountSession()
+  );
+  const [cloudAccountSyncing, setCloudAccountSyncing] = useState(false);
+
+  const drawerOpen = globalModals.includes('drawer');
+  const proModalOpen = globalModals.includes('pro');
+  const cloudBackupOpen = globalModals.includes('cloudBackup');
+  const recomendarOpen = globalModals.includes('recomendar');
+  const sugerenciasOpen = globalModals.includes('sugerencias');
+  const tutorialOpen = globalModals.includes('tutorial');
+  const calculadoraOpen = globalModals.includes('calculadora');
+  const antesDespuesOpen = globalModals.includes('antesDespues');
+  const adminAuthOpen = globalModals.includes('adminAuth');
+  const adminModalOpen = globalModals.includes('adminModal');
+  const installGuideOpen = globalModals.includes('installGuide');
+  const formulaModalOpen = globalModals.includes('formula');
+  const referralWelcomeOpen = globalModals.includes('referralWelcome');
+
+  // Invitación estilo Spotify (?ref=[Nombre]&promo=[NumeroPromo])
+  const [savedColleagueReferral] = useState<SavedColleagueReferral | null>(() => {
+    const parsedFromUrl =
+      typeof window !== 'undefined' ? parseReferralFromSearch(window.location.search) : null;
+    if (parsedFromUrl) {
+      const nextRef: SavedColleagueReferral = {
+        refName: parsedFromUrl.refName,
+        promoNumber: parsedFromUrl.promoNumber,
+        savedAt: Date.now(),
+      };
+      saveColleagueReferral(nextRef);
+      return nextRef;
+    }
+    return loadSavedColleagueReferral();
+  });
+  const [initialReferralActive] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return Boolean(parseReferralFromSearch(window.location.search));
+  });
+
+  const handleClaimColleaguePromo = () => {
+    if (!savedColleagueReferral) return;
+    const waDigits = sanitizeWhatsappNumber(PRO_PAYMENT_CONFIG.whatsapp10Digits || sugerenciasWhatsapp);
+    const url = buildColleaguePromoWhatsappUrl(
+      waDigits,
+      savedColleagueReferral.refName,
+      deviceId,
+      savedColleagueReferral.promoNumber
+    );
+    openExternalLinkSafe(url);
+    showToast('Abriendo WhatsApp para solicitar tu código de 3 días gratis...', true);
+  };
 
   const [toast, setToast] = useState<{ msg: string; topSuccess: boolean } | null>(null);
   const toastTimerRef = useRef<number | null>(null);
@@ -252,22 +398,98 @@ export default function App() {
   const logoTapTimerRef = useRef<number | null>(null);
   const licenciaRef = useRef<LicenciaState | null>(licencia);
   licenciaRef.current = licencia;
+  const trialRevokedRef = useRef<boolean>(trialRevoked);
+  trialRevokedRef.current = trialRevoked;
+  const accessBlockedRef = useRef<boolean>(accessBlocked);
+  accessBlockedRef.current = accessBlocked;
+  const setAccessBlockedSync = (blocked: boolean) => {
+    accessBlockedRef.current = blocked;
+    saveAccessBlocked(blocked);
+    setAccessBlocked(blocked);
+  };
+  const isTrialActiveRef = useRef<boolean>(isTrialActive);
+  isTrialActiveRef.current = isTrialActive;
+  const trialExpiresAtRef = useRef<number | null>(trialExpiresAt);
+  trialExpiresAtRef.current = trialExpiresAt;
+  const cloudAccountSessionRef = useRef<CloudAccountSession | null>(cloudAccountSession);
+  cloudAccountSessionRef.current = cloudAccountSession;
+  const skipNextAutoBackupRef = useRef<boolean>(false);
+  const deletedAdminKeySigsRef = useRef<Set<string>>(new Set(loadDeletedAdminKeySigs()));
+  const revokedKeysRef = useRef<Set<string>>(new Set());
+
+  const isCloudBackupEligible = useMemo(
+    () => isEligibleForCloudBackup(licencia, isTrialActive, nowTs),
+    [licencia, isTrialActive, nowTs]
+  );
 
   const [cloudDevices, setCloudDevices] = useState<CloudDeviceRecord[]>([]);
+  const [revokedKeys, setRevokedKeys] = useState<string[]>([]);
   const [cloudStats, setCloudStats] = useState<UsageStats30d>(() => computeUsageStats30d([]));
   const [cloudConnected, setCloudConnected] = useState(false);
   const [cloudRefreshing, setCloudRefreshing] = useState(false);
   const [cloudLastSyncAt, setCloudLastSyncAt] = useState<number | null>(null);
 
-  const requestOpenAdmin = () => {
-    setAdminModalOpen(false);
-    setAdminAuthOpen(true);
-  };
-
-  const showToast = (msg: string, topSuccess = false) => {
+  const showToast = useCallback((msg: string, topSuccess = false) => {
     setToast({ msg, topSuccess });
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
     toastTimerRef.current = window.setTimeout(() => setToast(null), 2800);
+  }, []);
+
+  const showToastRef = useRef(showToast);
+  showToastRef.current = showToast;
+
+  const handleRemoteSessionClosed = () => {
+    const hadSession = Boolean(cloudAccountSessionRef.current);
+    if (cloudAccountSessionRef.current) {
+      saveCloudAccountSession(null);
+      setCloudAccountSession(null);
+    }
+    if (licenciaRef.current?.active) {
+      saveLicencia(null);
+      setLicencia(null);
+    }
+    if (hadSession) {
+      showToast('Sesión cerrada automáticamente porque abriste tu cuenta en otro celular.');
+    }
+  };
+
+  const buildCurrentCloudBackup = (): CloudAccountBackupPayload => ({
+    licencia: licenciaRef.current,
+    hoja,
+    historial,
+    contratoCliente,
+    inventario,
+    inventarioHerrajes,
+    sobrantes,
+    hojasVidrio,
+    obrasAprobadas,
+    notas,
+    formulas,
+    updatedAt: Date.now(),
+  });
+
+  const revokeLocalProAccess = (opts?: { showMessage?: boolean; markTrialRevoked?: boolean; customMsg?: string }) => {
+    clearTrialStart();
+    const hadProOrTrial = Boolean(licenciaRef.current?.active);
+    if (licenciaRef.current) {
+      licenciaRef.current = null;
+      saveLicencia(null);
+      setLicencia(null);
+    }
+    if (cloudAccountSessionRef.current) {
+      cloudAccountSessionRef.current = null;
+      saveCloudAccountSession(null);
+      setCloudAccountSession(null);
+    }
+    if (opts?.markTrialRevoked !== false && !trialRevokedRef.current) {
+      trialRevokedRef.current = true;
+      isTrialActiveRef.current = false;
+      saveTrialRevoked(true);
+      setTrialRevoked(true);
+    }
+    if (opts?.showMessage && hadProOrTrial) {
+      showToast(opts.customMsg || 'Tu promoción o licencia fue revocada. Regresaste a la Versión Gratuita.');
+    }
   };
 
   const applyCloudSnapshot = (snap: CloudSyncSnapshot | null) => {
@@ -276,52 +498,182 @@ export default function App() {
     setCloudStats(snap.stats || computeUsageStats30d(snap.devices || []));
     setCloudLastSyncAt(snap.serverTime || Date.now());
 
-    if (Array.isArray(snap.adminKeys) && snap.adminKeys.length > 0) {
+    if (Array.isArray(snap.revokedKeys)) {
+      const normalizedKeys = snap.revokedKeys.map((k) => k.trim().toUpperCase()).filter(Boolean);
+      revokedKeysRef.current = new Set(normalizedKeys);
+      setRevokedKeys(normalizedKeys);
+    }
+
+    if (Array.isArray(snap.adminKeys)) {
+      const deletedSigs = deletedAdminKeySigsRef.current;
+      const nowMs = Date.now();
       setAdminKeys((prev) => {
+        const prevBySig = new Map(prev.map((p) => [buildAdminKeySignature(p), p]));
         const bySig = new Map<string, AdminKeyRecord>();
         for (const k of snap.adminKeys) {
-          bySig.set(`${k.deviceId}::${k.key}`, k);
+          const sig = buildAdminKeySignature(k);
+          if (!deletedSigs.has(sig)) {
+            const localRec = prevBySig.get(sig);
+            const mergedRevoked = Boolean(
+              k.revoked ||
+              revokedKeysRef.current.has(k.key.trim().toUpperCase()) ||
+              (localRec?.revoked && (localRec.revokedAt ?? 0) >= k.createdAt)
+            );
+            bySig.set(sig, {
+              ...k,
+              revoked: mergedRevoked,
+              revokedAt: k.revokedAt ?? localRec?.revokedAt ?? null,
+            });
+          }
         }
         for (const k of prev) {
-          const sig = `${k.deviceId}::${k.key}`;
-          if (!bySig.has(sig)) bySig.set(sig, k);
+          const sig = buildAdminKeySignature(k);
+          if (!deletedSigs.has(sig) && !bySig.has(sig) && nowMs - k.createdAt < 10_000) {
+            bySig.set(sig, k);
+          }
         }
-        return Array.from(bySig.values())
+        const next = Array.from(bySig.values())
           .sort((a, b) => b.createdAt - a.createdAt)
           .slice(0, 80);
+        saveAdminKeys(next);
+        return next;
       });
     }
 
-    const myCloudRec = (snap.devices || []).find((d) => d.deviceId === deviceId);
+    const localLicBefore = licenciaRef.current;
+    const localKeyUpper = (localLicBefore?.activatedKey || '').trim().toUpperCase();
+    if (localKeyUpper && revokedKeysRef.current.has(localKeyUpper)) {
+      revokeLocalProAccess({ showMessage: true, markTrialRevoked: true });
+      return;
+    }
+
+    const normSelfId = deviceId.trim().toUpperCase();
+    const myCloudRec = (snap.devices || []).find((d) => d.deviceId.trim().toUpperCase() === normSelfId);
     if (myCloudRec) {
       const localLic = licenciaRef.current;
-      const localUpdated = localLic?.activatedAt ?? 0;
       const now = Date.now();
+      const isSessionMoved = myCloudRec.planCode === 'SESSION_MOVED';
+      const isCloudBlocked = Boolean(myCloudRec.blocked || myCloudRec.planCode === 'BLOCKED');
+      const isCloudRevoked = Boolean(myCloudRec.revoked || myCloudRec.planCode === 'REVOKED');
+      const isPlainLocalTrial = isUnassignedAutoTrialDevice(myCloudRec);
+      const hasCloudAssignment = Boolean(
+        myCloudRec.adminAssigned || String(myCloudRec.lastKey || '').trim()
+      );
       const cloudProValid =
-        myCloudRec.proActive && (myCloudRec.expiresAt === null || myCloudRec.expiresAt > now);
+        !isCloudBlocked &&
+        !isSessionMoved &&
+        !isCloudRevoked &&
+        !isPlainLocalTrial &&
+        hasCloudAssignment &&
+        myCloudRec.planCode !== 'FREE' &&
+        myCloudRec.proActive &&
+        (myCloudRec.expiresAt === null || myCloudRec.expiresAt > now);
 
-      if (myCloudRec.updatedAt > localUpdated + 800) {
-        if (cloudProValid && (!localLic?.active || localLic.planCode !== myCloudRec.planCode || localLic.expiresAt !== myCloudRec.expiresAt)) {
-          const syncedLic: LicenciaState = {
-            active: true,
-            planCode: myCloudRec.planCode,
-            planLabel: myCloudRec.planLabel,
-            expiresAt: myCloudRec.expiresAt,
-            activatedAt: myCloudRec.updatedAt,
-          };
-          saveLicencia(syncedLic);
-          setLicencia(syncedLic);
+      if (isCloudBlocked) {
+        setAccessBlockedSync(true);
+        revokeLocalProAccess({ showMessage: false, markTrialRevoked: true });
+      } else {
+        if (accessBlockedRef.current) setAccessBlockedSync(false);
+        if (isSessionMoved) {
+          if (cloudAccountSessionRef.current || localLic?.active) {
+            handleRemoteSessionClosed();
+          }
+        } else if (isCloudRevoked) {
+          revokeLocalProAccess({ showMessage: true, markTrialRevoked: true });
+        } else if (cloudProValid) {
+          const needsSync =
+            !localLic?.active ||
+            localLic.planCode !== myCloudRec.planCode ||
+            localLic.expiresAt !== myCloudRec.expiresAt ||
+            (Boolean(myCloudRec.lastKey) && localLic.activatedKey !== myCloudRec.lastKey);
+          if (needsSync) {
+            const syncedLic: LicenciaState = {
+              active: true,
+              planCode: myCloudRec.planCode,
+              planLabel: myCloudRec.planLabel,
+              expiresAt: myCloudRec.expiresAt,
+              activatedAt: myCloudRec.updatedAt || now,
+              ...(myCloudRec.lastKey ? { activatedKey: myCloudRec.lastKey } : {}),
+              ...(myCloudRec.adminAssigned ? { adminAssigned: true } : {}),
+            };
+            trialRevokedRef.current = false;
+            licenciaRef.current = syncedLic;
+            saveTrialRevoked(false);
+            setTrialRevoked(false);
+            saveLicencia(syncedLic);
+            setLicencia(syncedLic);
+          }
         } else if (!cloudProValid && localLic?.active) {
-          saveLicencia(null);
-          setLicencia(null);
+          revokeLocalProAccess({
+            showMessage: true,
+            markTrialRevoked: false,
+            customMsg: 'Tu licencia PRO no está activa en la nube. Regresaste a la Versión Gratuita.',
+          });
         }
       }
+    }
+  };
+
+  const verifyAndSyncClientStatus = async () => {
+    const res = await verifyDeviceStatusInCloud({
+      deviceId,
+      activatedKey: licenciaRef.current?.activatedKey,
+    });
+    if (!res.ok || res.offline) return;
+    clearTrialStart();
+
+    if (Array.isArray(res.revokedKeys)) {
+      const normalizedKeys = res.revokedKeys.map((k) => k.trim().toUpperCase()).filter(Boolean);
+      revokedKeysRef.current = new Set(normalizedKeys);
+      setRevokedKeys(normalizedKeys);
+    }
+
+    if (res.blocked) {
+      setAccessBlockedSync(true);
+      revokeLocalProAccess({ showMessage: false, markTrialRevoked: true });
+    } else {
+      if (accessBlockedRef.current) setAccessBlockedSync(false);
+      if (res.sessionMoved) {
+        handleRemoteSessionClosed();
+      } else if (res.revoked || res.keyRevoked) {
+        revokeLocalProAccess({ showMessage: true, markTrialRevoked: true });
+      } else if (res.existsInCloud === false || res.hasValidAssignment === false) {
+        if (licenciaRef.current?.active) {
+          revokeLocalProAccess({
+            showMessage: true,
+            markTrialRevoked: false,
+            customMsg: 'Tu licencia no está registrada en la nube. Regresaste a la Versión Gratuita.',
+          });
+        }
+      } else if (!res.proActive) {
+        if (licenciaRef.current?.active) {
+          revokeLocalProAccess({
+            showMessage: true,
+            markTrialRevoked: false,
+            customMsg: res.expired
+              ? 'Tu licencia o promoción expiró. Regresaste a la Versión Gratuita.'
+              : 'Tu licencia PRO no está activa en la nube. Regresaste a la Versión Gratuita.',
+          });
+        }
+      }
+    }
+
+    if (res.devices && res.stats) {
+      applyCloudSnapshot({
+        devices: res.devices,
+        adminKeys: res.adminKeys || [],
+        revokedKeys: res.revokedKeys,
+        stats: res.stats,
+        serverTime: res.serverTime || Date.now(),
+        device: res.device,
+      });
     }
   };
 
   const refreshCloudNow = async () => {
     setCloudRefreshing(true);
     try {
+      await verifyAndSyncClientStatus();
       const snap = await fetchCloudDevicesState();
       applyCloudSnapshot(snap);
     } finally {
@@ -332,17 +684,27 @@ export default function App() {
   useEffect(() => {
     let active = true;
     clearLegacyAdminKeys();
+    clearTrialStart();
     const label = detectDeviceLabel();
-    void syncDeviceToCloud({
-      deviceId,
-      cliente: taller.clienteDefault,
-      deviceLabel: label,
-      eventType: 'open',
-      minutesDelta: 1,
-      licencia: licenciaRef.current,
-    }).then((snap) => {
+
+    void (async () => {
+      await verifyAndSyncClientStatus();
+      if (!active) return;
+      const snap = await syncDeviceToCloud({
+        deviceId,
+        cliente: taller.clienteDefault,
+        deviceLabel: label,
+        eventType: 'open',
+        minutesDelta: 1,
+        trialActive: Boolean(licenciaRef.current?.active && licenciaRef.current.planCode === 'G'),
+        trialExpiresAt:
+          licenciaRef.current?.active && licenciaRef.current.planCode === 'G'
+            ? licenciaRef.current.expiresAt
+            : null,
+        licencia: licenciaRef.current,
+      });
       if (active) applyCloudSnapshot(snap);
-    });
+    })();
 
     const unsub = subscribeCloudDevices(
       (snap) => {
@@ -355,30 +717,39 @@ export default function App() {
 
     const heartbeatId = window.setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      void verifyAndSyncClientStatus();
       void syncDeviceToCloud({
         deviceId,
         cliente: taller.clienteDefault,
         deviceLabel: label,
         eventType: 'heartbeat',
         minutesDelta: 1,
+        trialActive: Boolean(licenciaRef.current?.active && licenciaRef.current.planCode === 'G'),
+        trialExpiresAt:
+          licenciaRef.current?.active && licenciaRef.current.planCode === 'G'
+            ? licenciaRef.current.expiresAt
+            : null,
         licencia: licenciaRef.current,
       }).then((snap) => {
         if (active) applyCloudSnapshot(snap);
       });
     }, 60_000);
 
-    const onVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        void refreshCloudNow();
-      }
+    const handleResumeCheck = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      void verifyAndSyncClientStatus();
     };
-    document.addEventListener('visibilitychange', onVisibility);
+    document.addEventListener('visibilitychange', handleResumeCheck);
+    window.addEventListener('focus', handleResumeCheck);
+    window.addEventListener('pageshow', handleResumeCheck);
 
     return () => {
       active = false;
       unsub();
       window.clearInterval(heartbeatId);
-      document.removeEventListener('visibilitychange', onVisibility);
+      document.removeEventListener('visibilitychange', handleResumeCheck);
+      window.removeEventListener('focus', handleResumeCheck);
+      window.removeEventListener('pageshow', handleResumeCheck);
     };
   }, [deviceId]);
 
@@ -444,6 +815,99 @@ export default function App() {
     saveTrabajosAntesDespues(trabajosAntesDespues);
   }, [trabajosAntesDespues]);
 
+  useEffect(() => {
+    saveCloudAccountSession(cloudAccountSession);
+  }, [cloudAccountSession]);
+
+  // Verificación periódica de candado de 1 dispositivo cuando existe cuenta vinculada
+  useEffect(() => {
+    if (!cloudAccountSession) return;
+    let active = true;
+
+    const verifySession = async () => {
+      const cur = cloudAccountSessionRef.current;
+      if (!cur) return;
+      const res = await checkCloudAccountSession({
+        email: cur.email,
+        sessionToken: cur.sessionToken,
+        deviceId,
+      });
+      if (!active) return;
+      if (res.sessionExpired) {
+        handleRemoteSessionClosed();
+      }
+    };
+
+    void verifySession();
+    const intervalId = window.setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      void verifySession();
+    }, 45_000);
+
+    const onVis = () => {
+      if (document.visibilityState === 'visible') {
+        void verifySession();
+      }
+    };
+    document.addEventListener('visibilitychange', onVis);
+
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, [cloudAccountSession?.sessionToken, deviceId]);
+
+  // Respaldo automático en la nube (exclusivo 90 días y 1 año) al modificar cotizaciones o inventario
+  useEffect(() => {
+    if (!cloudAccountSession || !isCloudBackupEligible) return;
+    if (skipNextAutoBackupRef.current) {
+      skipNextAutoBackupRef.current = false;
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      const curSession = cloudAccountSessionRef.current;
+      if (!curSession) return;
+      void uploadCloudAccountBackup({
+        email: curSession.email,
+        sessionToken: curSession.sessionToken,
+        deviceId,
+        licencia: licenciaRef.current,
+        backup: buildCurrentCloudBackup(),
+      }).then((res) => {
+        if (res.sessionExpired) {
+          handleRemoteSessionClosed();
+          return;
+        }
+        if (res.ok && res.updatedAt) {
+          setCloudAccountSession((prev) =>
+            prev && prev.sessionToken === curSession.sessionToken
+              ? { ...prev, lastBackedUpAt: res.updatedAt ?? Date.now() }
+              : prev
+          );
+        }
+      });
+    }, 2500);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    cloudAccountSession?.sessionToken,
+    isCloudBackupEligible,
+    deviceId,
+    licencia,
+    hoja,
+    historial,
+    contratoCliente,
+    inventario,
+    inventarioHerrajes,
+    sobrantes,
+    hojasVidrio,
+    obrasAprobadas,
+    notas,
+    formulas,
+  ]);
+
   const despiece = useMemo(() => calcularDespiece(params), [params]);
   const cot = useMemo(
     () =>
@@ -483,31 +947,412 @@ export default function App() {
     ]
   );
 
-  const navigateTo = (view: ScreenId) => {
-    if (view !== currentView) {
-      setHistoryStack((prev) => [...prev, currentView]);
-      setCurrentView(view);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+  const applyFrameState = useCallback(
+    (
+      next: NavFrame,
+      prev?: NavFrame | null,
+      dir: 'none' | 'back' | 'forward' = 'none',
+      skipScroll = false
+    ) => {
+      currentViewRef.current = next.view;
+      if (prev && prev.view !== next.view) {
+        setNavTransitionDir(dir);
+      }
+      setCurrentView(next.view);
+      setWorkTab(next.workTab);
+      setInvTab(next.invTab);
+      setCatalogoTab(next.catalogoTab);
+      setModStep(next.modStep);
+      setModPaso5Tab(next.modPaso5Tab);
+      setModMosqOpen(next.modMosqOpen);
+      setGlobalModals(next.globalModals);
+      setPerfilModalId(next.perfilModalId);
+
+      if (next.subModal === null && (!prev || prev.subModal !== null)) {
+        closeSubModalRef.current?.();
+      }
+
+      if (!skipScroll && (!prev || prev.view !== next.view || prev.modStep !== next.modStep)) {
+        if (typeof window !== 'undefined') {
+          window.scrollTo({ top: 0, behavior: 'instant' });
+        }
+      }
+    },
+    []
+  );
+
+  const getHistoryViewName = (frame: NavFrame): string => {
+    if (
+      frame.depth <= 0 &&
+      frame.view === 'menu' &&
+      frame.globalModals.length === 0 &&
+      !frame.subModal
+    ) {
+      return 'root';
     }
+    if (frame.subModal) return `${frame.view}:${frame.subModal}`;
+    if (frame.globalModals.length > 0) {
+      return `${frame.view}:modal:${frame.globalModals[frame.globalModals.length - 1]}`;
+    }
+    return frame.view;
   };
 
-  const goBack = () => {
-    setHistoryStack((prev) => {
-      if (prev.length === 0) {
-        setCurrentView('menu');
-        return [];
+  const pushNavFrame = useCallback(
+    (patch: Partial<NavFrame>) => {
+      const cur = navFramesRef.current[navFramesRef.current.length - 1] || BASE_FRAME;
+      const next: NavFrame = {
+        ...cur,
+        ...patch,
+        depth: cur.depth + 1,
+      };
+      navFramesRef.current = [...navFramesRef.current, next];
+      applyFrameState(next, cur, 'forward');
+      if (typeof window !== 'undefined' && window.history?.pushState) {
+        try {
+          window.history.pushState(
+            {
+              internalStep: true,
+              view: getHistoryViewName(next),
+              app: 'aluminero-pro',
+              depth: next.depth,
+              subModal: next.subModal,
+              modal: next.globalModals[next.globalModals.length - 1] || null,
+            },
+            ''
+          );
+        } catch {
+          // Ignorar si history.pushState está restringido en el navegador
+        }
       }
-      const next = [...prev];
-      const last = next.pop() || 'menu';
-      setCurrentView(last);
-      return next;
-    });
-  };
+    },
+    [applyFrameState]
+  );
+
+  const replaceNavFrame = useCallback(
+    (patch: Partial<NavFrame>) => {
+      const frames = navFramesRef.current;
+      const cur = frames[frames.length - 1] || BASE_FRAME;
+      const next: NavFrame = {
+        ...cur,
+        ...patch,
+        depth: cur.depth,
+      };
+      const updated = [...frames];
+      updated[updated.length - 1] = next;
+      navFramesRef.current = updated;
+      applyFrameState(next, cur);
+      if (typeof window !== 'undefined' && window.history?.replaceState) {
+        try {
+          window.history.replaceState(
+            {
+              internalStep: next.depth > 0,
+              view: getHistoryViewName(next),
+              app: 'aluminero-pro',
+              depth: next.depth,
+              subModal: next.subModal,
+              modal: next.globalModals[next.globalModals.length - 1] || null,
+            },
+            ''
+          );
+        } catch {
+          // Ignorar
+        }
+      }
+    },
+    [applyFrameState]
+  );
+
+  const requestBack = useCallback(() => {
+    if (navFramesRef.current.length <= 1) {
+      return;
+    }
+    const prev = navFramesRef.current[navFramesRef.current.length - 1];
+    const nextFrames = navFramesRef.current.slice(0, -1);
+    const next = nextFrames[nextFrames.length - 1] || BASE_FRAME;
+    navFramesRef.current = nextFrames;
+    applyFrameState(next, prev, 'back');
+
+    if (
+      typeof window !== 'undefined' &&
+      window.history?.back &&
+      window.history.state?.internalStep === true
+    ) {
+      try {
+        pendingInternalBackSyncRef.current += 1;
+        window.history.back();
+      } catch {
+        pendingInternalBackSyncRef.current = Math.max(0, pendingInternalBackSyncRef.current - 1);
+      }
+    }
+  }, [applyFrameState]);
+
+  const navigateTo = useCallback(
+    (view: ScreenId, extraPatch?: Partial<NavFrame>) => {
+      const cur = navFramesRef.current[navFramesRef.current.length - 1] || BASE_FRAME;
+      if (cur.view === view && cur.globalModals.length === 0 && cur.subModal === null && !extraPatch) {
+        return;
+      }
+      if (view === 'menu' && !extraPatch) {
+        if (
+          cur.depth === 0 &&
+          cur.view === 'menu' &&
+          cur.globalModals.length === 0 &&
+          cur.subModal === null
+        ) {
+          return;
+        }
+        navFramesRef.current = [BASE_FRAME];
+        applyFrameState(BASE_FRAME, cur, 'back');
+        if (typeof window !== 'undefined' && window.history?.replaceState) {
+          try {
+            window.history.replaceState(
+              {
+                internalStep: false,
+                view: 'root',
+                app: 'aluminero-pro',
+                depth: 0,
+              },
+              ''
+            );
+          } catch {
+            // Ignorar
+          }
+        }
+        return;
+      }
+      pushNavFrame({
+        view,
+        workTab: extraPatch?.workTab ?? (view === 'trabajo' ? 'descuentos' : cur.workTab),
+        invTab: extraPatch?.invTab ?? (view === 'inventario' ? 'perfiles' : cur.invTab),
+        catalogoTab: extraPatch?.catalogoTab ?? (view === 'catalogo' ? 'perfiles' : cur.catalogoTab),
+        modStep: extraPatch?.modStep ?? (view === 'modulacion' ? 1 : cur.modStep),
+        modPaso5Tab: extraPatch?.modPaso5Tab ?? (view === 'modulacion' ? 'cortes' : cur.modPaso5Tab),
+        modMosqOpen: extraPatch?.modMosqOpen ?? false,
+        globalModals: [],
+        perfilModalId: null,
+        subModal: null,
+        ...extraPatch,
+      });
+    },
+    [applyFrameState, pushNavFrame]
+  );
+
+  const goHome = useCallback(() => {
+    const cur = navFramesRef.current[navFramesRef.current.length - 1] || BASE_FRAME;
+    navFramesRef.current = [BASE_FRAME];
+    applyFrameState(BASE_FRAME, cur, 'back');
+    if (typeof window !== 'undefined' && window.history?.replaceState) {
+      try {
+        window.history.replaceState(
+          {
+            internalStep: false,
+            view: 'root',
+            app: 'aluminero-pro',
+            depth: 0,
+          },
+          ''
+        );
+      } catch {
+        // Ignorar
+      }
+    }
+  }, [applyFrameState]);
+
+  const openGlobalModal = useCallback(
+    (modalId: GlobalModalId) => {
+      const cur = navFramesRef.current[navFramesRef.current.length - 1] || BASE_FRAME;
+      if (cur.globalModals[cur.globalModals.length - 1] === modalId) return;
+      const nextModals = [...cur.globalModals.filter((m) => m !== modalId), modalId];
+      pushNavFrame({ globalModals: nextModals });
+    },
+    [pushNavFrame]
+  );
+
+  const openModalFromDrawer = useCallback(
+    (modalId: GlobalModalId) => {
+      const cur = navFramesRef.current[navFramesRef.current.length - 1] || BASE_FRAME;
+      const withoutDrawer = cur.globalModals.filter((m) => m !== 'drawer' && m !== modalId);
+      const nextModals = [...withoutDrawer, modalId];
+      if (cur.globalModals.includes('drawer') && cur.depth > 0) {
+        replaceNavFrame({ globalModals: nextModals });
+      } else {
+        pushNavFrame({ globalModals: nextModals });
+      }
+    },
+    [pushNavFrame, replaceNavFrame]
+  );
+
+  const openScreenFromDrawer = useCallback(
+    (view: ScreenId) => {
+      const cur = navFramesRef.current[navFramesRef.current.length - 1] || BASE_FRAME;
+      if (cur.globalModals.includes('drawer') && cur.depth > 0) {
+        replaceNavFrame({
+          view,
+          globalModals: [],
+          perfilModalId: null,
+          subModal: null,
+        });
+      } else {
+        navigateTo(view);
+      }
+    },
+    [navigateTo, replaceNavFrame]
+  );
+
+  const replaceGlobalModal = useCallback(
+    (fromModal: GlobalModalId, toModal: GlobalModalId) => {
+      const cur = navFramesRef.current[navFramesRef.current.length - 1] || BASE_FRAME;
+      const nextModals = [...cur.globalModals.filter((m) => m !== fromModal && m !== toModal), toModal];
+      if (cur.globalModals.includes(fromModal) && cur.depth > 0) {
+        replaceNavFrame({ globalModals: nextModals });
+      } else {
+        pushNavFrame({ globalModals: nextModals });
+      }
+    },
+    [pushNavFrame, replaceNavFrame]
+  );
+
+  const openPerfilModal = useCallback(
+    (id: PerfilCatalogoId) => {
+      const cur = navFramesRef.current[navFramesRef.current.length - 1] || BASE_FRAME;
+      const nextModals = [...cur.globalModals.filter((m) => m !== 'perfil'), 'perfil'] as GlobalModalId[];
+      pushNavFrame({ globalModals: nextModals, perfilModalId: id });
+    },
+    [pushNavFrame]
+  );
+
+  const replaceSubModalWithPerfil = useCallback(
+    (id: PerfilCatalogoId) => {
+      const cur = navFramesRef.current[navFramesRef.current.length - 1] || BASE_FRAME;
+      const nextModals = [...cur.globalModals.filter((m) => m !== 'perfil'), 'perfil'] as GlobalModalId[];
+      if (cur.subModal !== null && cur.depth > 0) {
+        replaceNavFrame({ subModal: null, globalModals: nextModals, perfilModalId: id });
+      } else {
+        pushNavFrame({ subModal: null, globalModals: nextModals, perfilModalId: id });
+      }
+    },
+    [pushNavFrame, replaceNavFrame]
+  );
+
+  const requestOpenAdmin = useCallback(() => {
+    const cur = navFramesRef.current[navFramesRef.current.length - 1] || BASE_FRAME;
+    if (cur.globalModals.includes('adminModal')) {
+      replaceGlobalModal('adminModal', 'adminAuth');
+    } else {
+      openGlobalModal('adminAuth');
+    }
+  }, [openGlobalModal, replaceGlobalModal]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.history?.pushState) return;
+    if (!historyInitializedRef.current) {
+      historyInitializedRef.current = true;
+      try {
+        window.history.replaceState(
+          {
+            internalStep: false,
+            view: 'root',
+            app: 'aluminero-pro',
+            depth: 0,
+          },
+          ''
+        );
+        if (initialReferralActive) {
+          const refFrame: NavFrame = {
+            ...BASE_FRAME,
+            depth: 1,
+            globalModals: ['referralWelcome'],
+          };
+          navFramesRef.current = [BASE_FRAME, refFrame];
+          applyFrameState(refFrame, BASE_FRAME);
+        }
+      } catch {
+        // Ignorar si history API está restringida
+      }
+    }
+
+    const commitBackFrameSync = (targetFrame: NavFrame, prevFrame: NavFrame) => {
+      flushSync(() => {
+        applyFrameState(targetFrame, prevFrame, 'back', true);
+      });
+      if (
+        prevFrame.view !== targetFrame.view ||
+        prevFrame.modStep !== targetFrame.modStep
+      ) {
+        window.scrollTo({ top: 0, behavior: 'instant' });
+      }
+    };
+
+    const handlePopState = (event: PopStateEvent) => {
+      if (pendingInternalBackSyncRef.current > 0) {
+        pendingInternalBackSyncRef.current -= 1;
+        if (
+          navFramesRef.current.length <= 1 &&
+          (!event.state || event.state.view === 'root' || event.state.internalStep === false)
+        ) {
+          try {
+            window.history.pushState(
+              { internalStep: false, view: 'root', app: 'aluminero-pro', depth: 0 },
+              ''
+            );
+          } catch {
+            // Ignorar
+          }
+        }
+        return;
+      }
+
+      const prevFrame = navFramesRef.current[navFramesRef.current.length - 1] || BASE_FRAME;
+
+      if (navFramesRef.current.length > 1) {
+        const targetDepth =
+          event.state &&
+          typeof event.state.depth === 'number' &&
+          event.state.depth < navFramesRef.current.length - 1
+            ? Math.max(0, event.state.depth)
+            : navFramesRef.current.length - 2;
+        const targetFrame = navFramesRef.current[targetDepth] || BASE_FRAME;
+        navFramesRef.current = navFramesRef.current.slice(0, targetDepth + 1);
+        commitBackFrameSync(targetFrame, prevFrame);
+
+        if (navFramesRef.current.length === 1) {
+          try {
+            window.history.pushState(
+              { internalStep: false, view: 'root', app: 'aluminero-pro', depth: 0 },
+              ''
+            );
+          } catch {
+            // Ignorar
+          }
+        }
+        return;
+      }
+
+      navFramesRef.current = [BASE_FRAME];
+      commitBackFrameSync(BASE_FRAME, prevFrame);
+      try {
+        window.history.pushState(
+          { internalStep: false, view: 'root', app: 'aluminero-pro', depth: 0 },
+          ''
+        );
+      } catch {
+        // Ignorar
+      }
+      if (!accessBlockedRef.current) {
+        showToastRef.current('Ya estás en el inicio · Presiona de nuevo para salir');
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [applyFrameState, initialReferralActive]);
 
   const handleSelectLinea = (lineaId: LineaId) => {
     const cfg = LINEAS_CONFIG[lineaId];
     if (cfg.pro && !proActive) {
-      setProModalOpen(true);
+      openGlobalModal('pro');
       return;
     }
     setCategoria(cfg.categoria);
@@ -543,7 +1388,7 @@ export default function App() {
 
   const handleEntrarTrabajo = (cat: CategoriaTrabajo) => {
     if (cat === 'puertas' && !proActive) {
-      setProModalOpen(true);
+      openGlobalModal('pro');
       return;
     }
     setCategoria(cat);
@@ -558,18 +1403,18 @@ export default function App() {
 
   const handleEntrarHoja = () => {
     if (!proActive) {
-      setProModalOpen(true);
+      openGlobalModal('pro');
       return;
     }
     navigateTo('hoja');
   };
 
-  const handleEntrarInventario = () => {
+  const handleEntrarInventario = (tab?: 'perfiles' | 'vidrios' | 'herrajes') => {
     if (!proActive) {
-      setProModalOpen(true);
+      openGlobalModal('pro');
       return;
     }
-    navigateTo('inventario');
+    navigateTo('inventario', tab ? { invTab: tab } : undefined);
   };
 
   const handleLogoClick = () => {
@@ -598,13 +1443,15 @@ export default function App() {
     }, 2000);
 
     if (currentView !== 'menu') {
-      navigateTo('menu');
+      goHome();
     }
   };
 
   const handleAgregarObra = () => {
     const nuevaPartida: PartidaObra = {
-      id: editingPartidaId || `p-${Date.now()}`,
+      id:
+        editingPartidaId ||
+        `p-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       categoria,
       linea: params.linea,
       area: areaText.trim() || 'General',
@@ -684,7 +1531,7 @@ export default function App() {
     const parsed = parseNotaACotizacion(nota);
     if (isFeatureProRequired(parsed.linea, parsed.apertura, 1) && !proActive) {
       showToast('Esta línea o tipo de apertura detectado requiere Licencia PRO');
-      setProModalOpen(true);
+      openGlobalModal('pro');
       return;
     }
     const cfg = LINEAS_CONFIG[parsed.linea];
@@ -735,17 +1582,25 @@ export default function App() {
     showToast('Foto real removida');
   };
 
-  const handleInstallApp = async () => {
+  const handleInstallApp = async (fromDrawer = false) => {
     if (pwa.isInstalled) return;
     if (pwa.canPromptNative) {
       const outcome = await pwa.install();
       if (outcome === 'accepted') {
+        if (fromDrawer) requestBack();
         showToast('Aluminero Pro instalada en tu dispositivo', true);
         return;
       }
-      if (outcome === 'dismissed') return;
+      if (outcome === 'dismissed') {
+        if (fromDrawer) requestBack();
+        return;
+      }
     }
-    setInstallGuideOpen(true);
+    if (fromDrawer) {
+      openModalFromDrawer('installGuide');
+    } else {
+      openGlobalModal('installGuide');
+    }
   };
 
   const handleImportBackup = (payload: AlumineroBackupPayload) => {
@@ -847,6 +1702,83 @@ export default function App() {
     );
   };
 
+  const handleSetHojaProyectoFromLev = useCallback((cliente: string) => {
+    const clean = String(cliente || '').trim();
+    if (!clean) return;
+    overwriteHojaProyectoInStorage(clean);
+    setHoja((prev) => {
+      const next = { ...prev, proyecto: clean };
+      saveHoja(next);
+      return next;
+    });
+  }, []);
+
+  const alumBridgeHandlerRef = useRef<{
+    apply: (p: AlumBridgePayload) => void;
+    setProyecto: (cliente: string) => void;
+  }>({
+    apply: () => {},
+    setProyecto: () => {},
+  });
+
+  alumBridgeHandlerRef.current = {
+    setProyecto: (cliente: string) => {
+      handleSetHojaProyectoFromLev(cliente);
+    },
+    apply: (p: AlumBridgePayload) => {
+      if (typeof p.cliente === 'string' && p.cliente.trim()) {
+        handleSetHojaProyectoFromLev(p.cliente);
+      }
+
+      // 2) Salir siempre del modo 'Editando partida existente de la Hoja' y actualizar área/etiqueta de la pieza
+      setEditingPartidaId(null);
+      setAreaText(typeof p.area === 'string' ? p.area.trim() : '');
+      setEtiquetaPieza(typeof p.etiqueta === 'string' ? p.etiqueta.trim() : '');
+
+      if (p.destino === 'modulacion') {
+        window.__alumModPending = p;
+        window.dispatchEvent(new CustomEvent('alum-mod-apply'));
+        if (currentViewRef.current === 'modulacion') {
+          replaceNavFrame({ modStep: 5, modPaso5Tab: 'cortes' });
+        } else {
+          navigateTo('modulacion', { modStep: 5, modPaso5Tab: 'cortes' });
+        }
+        return;
+      }
+
+      const cfg = LINEAS_CONFIG[p.linea];
+      if (!cfg) return;
+      if (cfg.pro && !proActive) {
+        openGlobalModal('pro');
+        return;
+      }
+      handleSelectLinea(p.linea);
+      setParams((prev) => ({
+        ...prev,
+        anchoCm: p.ancho,
+        altoCm: p.alto,
+        cantidad: p.cant,
+        ...(p.apertura ? { apertura: p.apertura } : {}),
+      }));
+      const targetWorkTab = p.destino === 'cotizacion' ? 'cotizacion' : 'descuentos';
+      if (currentViewRef.current === 'trabajo') {
+        replaceNavFrame({ workTab: targetWorkTab });
+      } else {
+        navigateTo('trabajo', { workTab: targetWorkTab });
+      }
+    },
+  };
+
+  useEffect(() => {
+    window.__alumBridge = {
+      apply: (p: AlumBridgePayload) => alumBridgeHandlerRef.current.apply(p),
+      setProyecto: (cliente: string) => alumBridgeHandlerRef.current.setProyecto(cliente),
+    };
+    return () => {
+      delete window.__alumBridge;
+    };
+  }, []);
+
   const hojaPiezasCount = hoja.partidas.reduce((acc, p) => acc + p.cantidad, 0);
   const hojaTotalAprox = useMemo(() => {
     const sub = hoja.partidas.reduce((a, p) => a + p.totalLinea, 0);
@@ -873,11 +1805,13 @@ export default function App() {
     vidrio: 'Optimizador de Vidrio 2D',
     inventario: 'Mi Inventario de Taller',
     catalogo: 'Catálogo de Perfiles',
+    terminos: 'Términos y Condiciones',
+    privacidad: 'Aviso de Privacidad',
   };
 
   return (
     <div
-      className={`min-h-screen transition-colors ${
+      className={`min-h-screen w-full max-w-[100vw] overflow-x-hidden box-border transition-colors ${
         theme === 'dark' ? 'bg-[#060E1B] text-slate-100' : 'bg-[#EEF3F9] text-slate-900'
       }`}
     >
@@ -888,14 +1822,15 @@ export default function App() {
         licencia={licencia}
         trialExpiresAt={trialExpiresAt}
         theme={theme}
-        onBack={goBack}
+        onBack={requestBack}
+        onGoHome={goHome}
         onLogoClick={handleLogoClick}
-        onOpenPro={() => setProModalOpen(true)}
-        onOpenDrawer={() => setDrawerOpen(true)}
-        onToggleTheme={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
+        onOpenPro={() => openGlobalModal('pro')}
+        onOpenDrawer={() => openGlobalModal('drawer')}
+        onOpenCalculadora={() => openGlobalModal('calculadora')}
       />
 
-      <main className="max-w-[1120px] mx-auto px-4 pt-5 pb-24">
+      <main className="w-full max-w-[1120px] mx-auto px-3 sm:px-4 pt-5 pb-24 box-border overflow-x-hidden">
         {!isOnline && (
           <div
             id="offline-banner"
@@ -906,6 +1841,16 @@ export default function App() {
           </div>
         )}
 
+        <div
+          key={currentView}
+          className={
+            navTransitionDir === 'back'
+              ? 'ap-view-back'
+              : navTransitionDir === 'forward'
+                ? 'ap-view-forward'
+                : ''
+          }
+        >
         {currentView === 'menu' && (
           <MainMenuView
             proActive={proActive}
@@ -914,11 +1859,14 @@ export default function App() {
             inventarioTramosTotal={inventarioTramosTotal}
             hojasVidrioCount={hojasVidrioTotalCount}
             notasCount={notas.length}
+            savedReferral={savedColleagueReferral}
+            onClaimColleaguePromo={handleClaimColleaguePromo}
             onEntrarTrabajo={handleEntrarTrabajo}
             onEntrarHoja={handleEntrarHoja}
-            onEntrarInventario={handleEntrarInventario}
-            onGoToView={navigateTo}
-            onOpenAntesDespues={() => setAntesDespuesOpen(true)}
+            onEntrarInventario={() => handleEntrarInventario()}
+            onGoToView={(view) => navigateTo(view)}
+            onOpenAntesDespues={() => openGlobalModal('antesDespues')}
+            onOpenLevantamiento={() => window.__alumLev?.open()}
           />
         )}
 
@@ -943,6 +1891,10 @@ export default function App() {
             formulas={formulas}
             selectedFormulaId={selectedFormulaId}
             perfilFotos={perfilFotos}
+            workTab={workTab}
+            onChangeWorkTab={(tab) => {
+              if (tab !== workTab) pushNavFrame({ workTab: tab });
+            }}
             onChangeParams={(patch) => setParams((prev) => ({ ...prev, ...patch }))}
             onSelectLinea={handleSelectLinea}
             onChangeModoPrecio={setModoPrecio}
@@ -976,9 +1928,9 @@ export default function App() {
               showToast('Cotización guardada en historial', true);
             }}
             onGoHoja={handleEntrarHoja}
-            onOpenPro={() => setProModalOpen(true)}
-            onOpenPerfilModal={(id) => setPerfilModalId(id)}
-            onOpenFormulaModal={() => setFormulaModalOpen(true)}
+            onOpenPro={() => openGlobalModal('pro')}
+            onOpenPerfilModal={openPerfilModal}
+            onOpenFormulaModal={() => openGlobalModal('formula')}
             onSelectFormulaId={setSelectedFormulaId}
             onUpdateRellenoPrecioM2={(materialId, espesorMm, price) => {
               const key = getRellenoPriceKey(materialId, espesorMm);
@@ -1031,9 +1983,15 @@ export default function App() {
             }}
             onDescontarInventarioObra={(rows) => {
               setInventario((prev) => {
-                const next = { ...prev };
+                let next = { ...prev };
                 for (const r of rows) {
-                  next[r.key] = Math.max(0, round2((next[r.key] || 0) - r.tramosRequeridos));
+                  next = descontarInventarioPorPerfilColor(
+                    next,
+                    r.linea,
+                    r.perfilId,
+                    r.color,
+                    r.tramosRequeridos
+                  );
                 }
                 return next;
               });
@@ -1068,6 +2026,9 @@ export default function App() {
               }
               navigateTo('vidrio');
             }}
+            onPushSubModal={(sub) => pushNavFrame({ subModal: sub })}
+            onRequestBack={requestBack}
+            onRegisterCloseSubModal={registerCloseSubModal}
             onShowToast={showToast}
           />
         )}
@@ -1083,9 +2044,9 @@ export default function App() {
               setTaller((prev) => ({ ...prev, tarifasBase: {} }));
               showToast('Tarifas restablecidas');
             }}
-            onOpenPro={() => setProModalOpen(true)}
-            onEntrarInventario={handleEntrarInventario}
-            onOpenFormulaModal={() => setFormulaModalOpen(true)}
+            onOpenPro={() => openGlobalModal('pro')}
+            onEntrarInventario={() => handleEntrarInventario()}
+            onOpenFormulaModal={() => openGlobalModal('formula')}
             onEliminarFormula={(id) => setFormulas((prev) => prev.filter((f) => f.id !== id))}
             onEliminarHistorial={(id) => setHistorial((prev) => prev.filter((h) => h.id !== id))}
             onLimpiarHistorial={() => setHistorial([])}
@@ -1102,7 +2063,22 @@ export default function App() {
             obrasAprobadas={obrasAprobadas}
             hojaCount={hojaPiezasCount}
             perfilFotos={perfilFotos}
-            onSetInventario={(key, tramos) => setInventario((prev) => ({ ...prev, [key]: tramos }))}
+            invTab={invTab}
+            onChangeInvTab={(tab) => {
+              if (tab !== invTab) pushNavFrame({ invTab: tab });
+            }}
+            onSetInventario={(key, tramos) =>
+              setInventario((prev) => {
+                const next = { ...prev };
+                const clean = Math.max(0, Math.round((Number(tramos) || 0) * 10000) / 10000);
+                if (clean <= 0) {
+                  delete next[key];
+                } else {
+                  next[key] = clean;
+                }
+                return next;
+              })
+            }
             onSetInventarioHerraje={(id, qty) =>
               setInventarioHerrajes((prev) => ({ ...prev, [id]: qty }))
             }
@@ -1161,7 +2137,11 @@ export default function App() {
             onGoCatalogo={() => navigateTo('catalogo')}
             onGoHoja={handleEntrarHoja}
             onGoVidrioOptimizer={() => navigateTo('vidrio')}
-            onOpenPerfilModal={(id) => setPerfilModalId(id)}
+            onOpenPerfilModal={openPerfilModal}
+            onPushSubModal={(sub) => pushNavFrame({ subModal: sub })}
+            onRequestBack={requestBack}
+            onRegisterCloseSubModal={registerCloseSubModal}
+            onReplaceSubModalWithPerfil={replaceSubModalWithPerfil}
             onShowToast={showToast}
           />
         )}
@@ -1186,6 +2166,21 @@ export default function App() {
             tarifasBase={taller.tarifasBase}
             proActive={proActive}
             sobrantes={sobrantes}
+            step={modStep}
+            paso5Tab={modPaso5Tab}
+            mosquiteroModalOpen={modMosqOpen}
+            onNavigateModState={(patch) =>
+              pushNavFrame({
+                ...(patch.step !== undefined ? { modStep: patch.step } : {}),
+                ...(patch.paso5Tab !== undefined ? { modPaso5Tab: patch.paso5Tab } : {}),
+                ...(patch.mosquiteroModalOpen !== undefined
+                  ? { modMosqOpen: patch.mosquiteroModalOpen }
+                  : {}),
+              })
+            }
+            onPushSubModal={(sub) => pushNavFrame({ subModal: sub })}
+            onRequestBack={requestBack}
+            onRegisterCloseSubModal={registerCloseSubModal}
             onAddSobrante={(item) => {
               setSobrantes((prev) => [
                 {
@@ -1237,7 +2232,7 @@ export default function App() {
             hojasVidrio={hojasVidrio}
             hojaPartidas={hoja.partidas}
             piezasIniciales={vidrioPiezasDraft}
-            onGoInventarioVidrios={() => navigateTo('inventario')}
+            onGoInventarioVidrios={() => navigateTo('inventario', { invTab: 'vidrios' })}
             onShowToast={showToast}
           />
         )}
@@ -1245,12 +2240,21 @@ export default function App() {
         {currentView === 'catalogo' && (
           <CatalogoView
             perfilFotos={perfilFotos}
-            onOpenPerfilModal={(id) => setPerfilModalId(id)}
+            catalogoTab={catalogoTab}
+            onChangeCatalogoTab={(tab) => {
+              if (tab !== catalogoTab) pushNavFrame({ catalogoTab: tab });
+            }}
+            onOpenPerfilModal={openPerfilModal}
             onUploadPerfilFoto={handleUploadPerfilFoto}
             onRemovePerfilFoto={handleRemovePerfilFoto}
-            onOpenSugerencias={() => setSugerenciasOpen(true)}
+            onOpenSugerencias={() => openGlobalModal('sugerencias')}
           />
         )}
+
+        {currentView === 'terminos' && <TerminosCondicionesView onBack={requestBack} />}
+
+        {currentView === 'privacidad' && <AvisoPrivacidadView onBack={requestBack} />}
+        </div>
       </main>
 
       <SideDrawer
@@ -1259,16 +2263,18 @@ export default function App() {
         isTrialActive={isTrialActive}
         deviceId={deviceId}
         theme={theme}
+        cloudAccountEmail={cloudAccountSession?.email || null}
+        isCloudBackupEligible={isCloudBackupEligible}
         onToggleTheme={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
-        onClose={() => setDrawerOpen(false)}
-        onOpenPro={() => setProModalOpen(true)}
-        onOpenRecomendar={() => setRecomendarOpen(true)}
-        onOpenSugerencias={() => setSugerenciasOpen(true)}
-        onOpenCalculadora={() => setCalculadoraOpen(true)}
-        onOpenTutorial={() => setTutorialOpen(true)}
-        onOpenLegal={(doc) => setLegalDoc(doc)}
+        onClose={requestBack}
+        onOpenPro={() => openModalFromDrawer('pro')}
+        onOpenCloudBackup={() => openModalFromDrawer('cloudBackup')}
+        onOpenRecomendar={() => openModalFromDrawer('recomendar')}
+        onOpenSugerencias={() => openModalFromDrawer('sugerencias')}
+        onOpenTutorial={() => openModalFromDrawer('tutorial')}
+        onOpenLegal={(doc) => openScreenFromDrawer(doc)}
         showInstallApp={!pwa.isInstalled}
-        onInstallApp={() => void handleInstallApp()}
+        onInstallApp={() => void handleInstallApp(true)}
       />
 
       <ProModal
@@ -1277,17 +2283,72 @@ export default function App() {
         licencia={licencia}
         proActive={proActive}
         trialExpiresAt={trialExpiresAt}
-        onClose={() => setProModalOpen(false)}
-        onActivateLic={(lic) => {
-          saveLicencia(lic);
-          setLicencia(lic);
-          void syncDeviceToCloud({
+        whatsappNumber={sugerenciasWhatsapp}
+        defaultEmail={cloudAccountSession?.email || licencia?.linkedEmail || ''}
+        onClose={requestBack}
+        onActivateLic={async (lic) => {
+          const normKey = (lic.activatedKey || '').trim().toUpperCase();
+          if (normKey && revokedKeysRef.current.has(normKey)) {
+            return {
+              ok: false,
+              error: 'Este código de activación fue revocado por el administrador y ya no puede utilizarse.',
+            };
+          }
+
+          const cloudRes = await activateKeyInCloud({
             deviceId,
+            key: normKey,
+            planCode: lic.planCode,
+            planLabel: lic.planLabel,
+            expiresAt: lic.expiresAt,
             cliente: taller.clienteDefault,
             deviceLabel: detectDeviceLabel(),
-            eventType: 'license_sync',
-            licencia: lic,
-          }).then(applyCloudSnapshot);
+            linkedEmail: lic.linkedEmail,
+          });
+
+          if (!cloudRes.ok && !cloudRes.offline) {
+            if (cloudRes.revoked && normKey) {
+              revokedKeysRef.current.add(normKey);
+              setRevokedKeys((prev) => (prev.includes(normKey) ? prev : [...prev, normKey]));
+            }
+            return {
+              ok: false,
+              error: cloudRes.error || 'Este código fue revocado y ya no puede activarse.',
+            };
+          }
+
+          saveTrialRevoked(false);
+          setTrialRevoked(false);
+          setRevokedDevicesMap((prev) => {
+            const norm = deviceId.trim().toUpperCase();
+            if (!(norm in prev)) return prev;
+            const next = { ...prev };
+            delete next[norm];
+            saveRevokedDevicesMap(next);
+            return next;
+          });
+          saveLicencia(lic);
+          setLicencia(lic);
+
+          if (cloudRes.ok && cloudRes.devices && cloudRes.stats) {
+            applyCloudSnapshot({
+              devices: cloudRes.devices,
+              adminKeys: cloudRes.adminKeys || [],
+              revokedKeys: cloudRes.revokedKeys,
+              stats: cloudRes.stats,
+              serverTime: cloudRes.serverTime || Date.now(),
+              device: cloudRes.device,
+            });
+          } else {
+            void syncDeviceToCloud({
+              deviceId,
+              cliente: taller.clienteDefault,
+              deviceLabel: detectDeviceLabel(),
+              eventType: 'license_sync',
+              licencia: lic,
+            }).then(applyCloudSnapshot);
+          }
+          return { ok: true };
         }}
         onDeactivateLic={() => {
           saveLicencia(null);
@@ -1306,17 +2367,21 @@ export default function App() {
 
       <AdminAuthModal
         open={adminAuthOpen}
-        onClose={() => setAdminAuthOpen(false)}
+        onClose={requestBack}
         onSuccess={() => {
-          setAdminAuthOpen(false);
-          setAdminModalOpen(true);
+          replaceGlobalModal('adminAuth', 'adminModal');
         }}
       />
 
       <AdminModal
         open={adminModalOpen}
         deviceId={deviceId}
+        licencia={licencia}
+        isTrialActive={isTrialActive}
+        trialExpiresAt={trialExpiresAt}
         adminKeys={adminKeys}
+        revokedDevicesMap={revokedDevicesMap}
+        revokedKeys={revokedKeys}
         formulas={formulas}
         backupData={{
           app: 'Aluminero Pro',
@@ -1342,15 +2407,279 @@ export default function App() {
         cloudLastSyncAt={cloudLastSyncAt}
         onRefreshCloud={refreshCloudNow}
         onCloudActivateDevice={async (payload) => {
-          const snap = await updateDeviceLicenseInCloud(payload);
+          const normTarget = normalizeDeviceIdInput(payload.deviceId, deviceId);
+          if (!payload.revoke && !payload.block && !payload.recordKeyOnly) {
+            if (normTarget === deviceId.trim().toUpperCase()) {
+              setAccessBlockedSync(false);
+            }
+            setRevokedDevicesMap((prev) => {
+              if (!(normTarget in prev)) return prev;
+              const next = { ...prev };
+              delete next[normTarget];
+              saveRevokedDevicesMap(next);
+              return next;
+            });
+            if (payload.key) {
+              const nk = payload.key.trim().toUpperCase();
+              revokedKeysRef.current.delete(nk);
+              setRevokedKeys((prev) => prev.filter((k) => k.trim().toUpperCase() !== nk));
+            }
+          }
+          const snap = await updateDeviceLicenseInCloud({ ...payload, deviceId: normTarget });
           applyCloudSnapshot(snap);
+          return Boolean(snap);
         }}
-        onClose={() => setAdminModalOpen(false)}
+        onClose={requestBack}
         onActivateLic={(lic) => {
-          saveLicencia(lic);
-          setLicencia(lic);
+          setAccessBlockedSync(false);
+          saveTrialRevoked(false);
+          setTrialRevoked(false);
+          setRevokedDevicesMap((prev) => {
+            const norm = deviceId.trim().toUpperCase();
+            if (!(norm in prev)) return prev;
+            const next = { ...prev };
+            delete next[norm];
+            saveRevokedDevicesMap(next);
+            return next;
+          });
+          if (lic.activatedKey) {
+            const nk = lic.activatedKey.trim().toUpperCase();
+            revokedKeysRef.current.delete(nk);
+            setRevokedKeys((prev) => prev.filter((k) => k.trim().toUpperCase() !== nk));
+          }
+          const assignedLic: LicenciaState = { ...lic, adminAssigned: true };
+          saveLicencia(assignedLic);
+          setLicencia(assignedLic);
         }}
-        onRecordAdminKey={(rec) => setAdminKeys((prev) => [rec, ...prev])}
+        onRecordAdminKey={(rec) => {
+          const sig = buildAdminKeySignature(rec);
+          if (deletedAdminKeySigsRef.current.has(sig)) {
+            deletedAdminKeySigsRef.current.delete(sig);
+            saveDeletedAdminKeySigs(Array.from(deletedAdminKeySigsRef.current));
+          }
+          const normDev = rec.deviceId.trim().toUpperCase();
+          const normKey = rec.key.trim().toUpperCase();
+          revokedKeysRef.current.delete(normKey);
+          setRevokedKeys((prev) => prev.filter((k) => k.trim().toUpperCase() !== normKey));
+          setRevokedDevicesMap((prev) => {
+            if (!(normDev in prev)) return prev;
+            const next = { ...prev };
+            delete next[normDev];
+            saveRevokedDevicesMap(next);
+            return next;
+          });
+          setAdminKeys((prev) => {
+            const next = [
+              { ...rec, revoked: false, revokedAt: null },
+              ...prev.filter((item) => buildAdminKeySignature(item) !== sig),
+            ];
+            saveAdminKeys(next);
+            return next;
+          });
+        }}
+        onDeleteAdminKey={async (rec) => {
+          const normDev = normalizeDeviceIdInput(rec.deviceId);
+          if (rec.key) {
+            const sig = buildAdminKeySignature(rec);
+            deletedAdminKeySigsRef.current.add(sig);
+            saveDeletedAdminKeySigs(Array.from(deletedAdminKeySigsRef.current));
+            setAdminKeys((prev) => {
+              const next = prev.filter(
+                (item) =>
+                  item.id !== rec.id &&
+                  buildAdminKeySignature(item) !== sig &&
+                  normalizeDeviceIdInput(item.deviceId) !== normDev
+              );
+              saveAdminKeys(next);
+              return next;
+            });
+          } else {
+            setAdminKeys((prev) => {
+              const next = prev.filter((item) => normalizeDeviceIdInput(item.deviceId) !== normDev);
+              saveAdminKeys(next);
+              return next;
+            });
+          }
+          setCloudDevices((prev) =>
+            prev.filter((d) => normalizeDeviceIdInput(d.deviceId) !== normDev)
+          );
+          if (normDev === deviceId.trim().toUpperCase()) {
+            setAccessBlockedSync(false);
+          }
+          try {
+            const snap = await deleteAdminKeyInCloud({
+              id: rec.id,
+              deviceId: normDev,
+              key: rec.key || '',
+              deleteDevice: true,
+            });
+            if (snap) {
+              applyCloudSnapshot(snap);
+            }
+          } catch (err) {
+            console.error('Error al borrar en nube:', err);
+          }
+          showToast('Usuario eliminado de la lista de historial');
+        }}
+        onRevokeDevicePromo={async (targetDeviceId, keyRecordId, keyCode) => {
+          const normTarget = normalizeDeviceIdInput(targetDeviceId, deviceId);
+          const now = Date.now();
+          const matchedHistoryKey = adminKeys.find(
+            (item) =>
+              (keyRecordId ? item.id === keyRecordId : normalizeDeviceIdInput(item.deviceId) === normTarget) &&
+              !item.revoked
+          )?.key;
+          const matchedDeviceKey = cloudDevices.find(
+            (d) => normalizeDeviceIdInput(d.deviceId) === normTarget
+          )?.lastKey;
+          const resolvedKey = (keyCode || matchedHistoryKey || matchedDeviceKey || '').trim().toUpperCase();
+
+          if (resolvedKey) {
+            revokedKeysRef.current.add(resolvedKey);
+            setRevokedKeys((prev) => (prev.includes(resolvedKey) ? prev : [...prev, resolvedKey]));
+          }
+
+          setAdminKeys((prev) => {
+            const next = prev.map((item) => {
+              const matchesTarget =
+                normalizeDeviceIdInput(item.deviceId) === normTarget ||
+                (keyRecordId ? item.id === keyRecordId : false) ||
+                (resolvedKey ? item.key.trim().toUpperCase() === resolvedKey : false);
+              if (!matchesTarget) return item;
+              return { ...item, revoked: true, revokedAt: now };
+            });
+            saveAdminKeys(next);
+            return next;
+          });
+
+          setRevokedDevicesMap((prev) => {
+            const next = { ...prev, [normTarget]: now };
+            saveRevokedDevicesMap(next);
+            return next;
+          });
+
+          const selfKeyUpper = (licenciaRef.current?.activatedKey || '').trim().toUpperCase();
+          if (
+            normTarget === deviceId.trim().toUpperCase() ||
+            (resolvedKey && selfKeyUpper === resolvedKey)
+          ) {
+            setAccessBlockedSync(false);
+            revokeLocalProAccess({ showMessage: false, markTrialRevoked: true });
+          }
+
+          setCloudDevices((prev) =>
+            prev.map((d) =>
+              normalizeDeviceIdInput(d.deviceId) === normTarget
+                ? {
+                    ...d,
+                    proActive: false,
+                    revoked: true,
+                    revokedAt: now,
+                    blocked: false,
+                    blockedAt: null,
+                    planCode: 'FREE',
+                    planLabel: 'Versión Gratuita',
+                    status: 'free',
+                    expiresAt: null,
+                    trialActive: false,
+                    adminAssigned: false,
+                    updatedAt: now,
+                  }
+                : d
+            )
+          );
+
+          let snap: CloudSyncSnapshot | null = null;
+          try {
+            snap = await updateDeviceLicenseInCloud({
+              deviceId: normTarget,
+              key: resolvedKey || undefined,
+              revoke: true,
+            });
+          } catch (err) {
+            console.error('Error al revocar promoción en la nube:', err);
+            snap = null;
+          }
+          applyCloudSnapshot(snap);
+          if (snap) {
+            showToast('Promoción revocada en la nube. El usuario regresó a Versión Gratuita.');
+          } else {
+            showToast('Error al conectar con la nube para revocar la promoción.');
+          }
+          return Boolean(snap);
+        }}
+        onRevokeFreeAccess={async (targetDeviceId, keyCode) => {
+          const normTarget = normalizeDeviceIdInput(targetDeviceId, deviceId);
+          const now = Date.now();
+          const matchedDeviceKey = cloudDevices.find(
+            (d) => normalizeDeviceIdInput(d.deviceId) === normTarget
+          )?.lastKey;
+          const resolvedKey = (keyCode || matchedDeviceKey || '').trim().toUpperCase();
+
+          if (resolvedKey) {
+            revokedKeysRef.current.add(resolvedKey);
+            setRevokedKeys((prev) => (prev.includes(resolvedKey) ? prev : [...prev, resolvedKey]));
+          }
+
+          setAdminKeys((prev) => {
+            const next = prev.map((item) =>
+              normalizeDeviceIdInput(item.deviceId) === normTarget
+                ? { ...item, revoked: true, revokedAt: now }
+                : item
+            );
+            saveAdminKeys(next);
+            return next;
+          });
+
+          setRevokedDevicesMap((prev) => {
+            const next = { ...prev, [normTarget]: now };
+            saveRevokedDevicesMap(next);
+            return next;
+          });
+
+          setCloudDevices((prev) =>
+            prev.map((d) =>
+              normalizeDeviceIdInput(d.deviceId) === normTarget
+                ? {
+                    ...d,
+                    proActive: false,
+                    revoked: true,
+                    revokedAt: now,
+                    blocked: true,
+                    blockedAt: now,
+                    planCode: 'BLOCKED',
+                    planLabel: 'Bloqueado',
+                    status: 'blocked',
+                    expiresAt: null,
+                  }
+                : d
+            )
+          );
+
+          if (normTarget === deviceId.trim().toUpperCase()) {
+            setAccessBlockedSync(true);
+            revokeLocalProAccess({ showMessage: false, markTrialRevoked: true });
+          }
+
+          let snap: CloudSyncSnapshot | null = null;
+          try {
+            snap = await updateDeviceLicenseInCloud({
+              deviceId: normTarget,
+              key: resolvedKey || undefined,
+              block: true,
+            });
+          } catch (err) {
+            console.error('Error al revocar acceso en la nube:', err);
+            snap = null;
+          }
+          applyCloudSnapshot(snap);
+          if (snap) {
+            showToast('Acceso gratuito revocado. El usuario verá un aviso de acceso suspendido.');
+          } else {
+            showToast('Error al conectar con la nube para revocar el acceso.');
+          }
+          return Boolean(snap);
+        }}
         onImportFormulas={(imported) => {
           setFormulas((prev) => {
             const byId = new Map(prev.map((f) => [f.id, f]));
@@ -1389,7 +2718,33 @@ export default function App() {
 
       <RecomendarModal
         open={recomendarOpen}
-        onClose={() => setRecomendarOpen(false)}
+        defaultSenderName={taller.nombre}
+        onClose={requestBack}
+        onShowToast={showToast}
+      />
+
+      <ColleagueReferralWelcomeModal
+        open={referralWelcomeOpen && !proActive && Boolean(savedColleagueReferral)}
+        referral={savedColleagueReferral}
+        deviceId={deviceId}
+        whatsappNumber={sugerenciasWhatsapp}
+        onExploreFree={() => {
+          requestBack();
+          if (typeof window !== 'undefined' && window.location.search.includes('ref=')) {
+            window.setTimeout(() => {
+              try {
+                const cleanUrl = `${window.location.pathname}${window.location.hash || ''}`;
+                window.history.replaceState(
+                  window.history.state || { app: 'aluminero-pro', depth: 0, view: 'menu' },
+                  document.title,
+                  cleanUrl
+                );
+              } catch {
+                // ignorar si history.replaceState no está permitido
+              }
+            }, 80);
+          }
+        }}
         onShowToast={showToast}
       />
 
@@ -1397,13 +2752,13 @@ export default function App() {
         open={sugerenciasOpen}
         whatsappNumber={sugerenciasWhatsapp}
         deviceId={deviceId}
-        onClose={() => setSugerenciasOpen(false)}
+        onClose={requestBack}
         onShowToast={showToast}
       />
 
       <CalculadoraModal
         open={calculadoraOpen}
-        onClose={() => setCalculadoraOpen(false)}
+        onClose={requestBack}
         onShowToast={showToast}
       />
 
@@ -1429,22 +2784,167 @@ export default function App() {
           setTrabajosAntesDespues((prev) => prev.filter((t) => t.id !== id));
           showToast('Trabajo eliminado de tu galería');
         }}
-        onClose={() => setAntesDespuesOpen(false)}
+        onClose={requestBack}
         onShowToast={showToast}
       />
 
-      <TutorialModal open={tutorialOpen} onClose={() => setTutorialOpen(false)} />
+      <TutorialModal open={tutorialOpen} onClose={requestBack} />
 
-      <LegalModal
-        docType={legalDoc}
-        onClose={() => setLegalDoc(null)}
-        onSwitchDoc={(next) => setLegalDoc(next)}
+      <CloudBackupModal
+        open={cloudBackupOpen}
+        deviceId={deviceId}
+        licencia={licencia}
+        session={cloudAccountSession}
+        isEligible={isCloudBackupEligible}
+        syncing={cloudAccountSyncing}
+        onClose={requestBack}
+        onOpenProPlans={() => openGlobalModal('pro')}
+        onRegisterAccount={async (email, password) => {
+          const res = await registerCloudAccount({
+            email,
+            password,
+            deviceId,
+            licencia: licenciaRef.current,
+            backup: buildCurrentCloudBackup(),
+          });
+          if (!res.ok || !res.sessionToken) {
+            return { ok: false, error: res.error || 'No se pudo vincular la cuenta.' };
+          }
+          const nextSession: CloudAccountSession = {
+            email: res.email || email,
+            sessionToken: res.sessionToken,
+            linkedDeviceId: deviceId,
+            lastBackedUpAt: res.lastBackedUpAt ?? Date.now(),
+          };
+          saveCloudAccountSession(nextSession);
+          setCloudAccountSession(nextSession);
+          if (res.snapshot) applyCloudSnapshot(res.snapshot);
+          showToast(`Correo ${nextSession.email} vinculado y respaldo guardado en la nube`, true);
+          return { ok: true };
+        }}
+        onLoginAccount={async (email, password) => {
+          const res = await loginCloudAccount({
+            email,
+            password,
+            deviceId,
+            licencia: licenciaRef.current,
+          });
+          if (!res.ok || !res.sessionToken) {
+            return { ok: false, error: res.error || 'No se pudo iniciar sesión.' };
+          }
+
+          skipNextAutoBackupRef.current = true;
+          saveTrialRevoked(false);
+          setTrialRevoked(false);
+          setRevokedDevicesMap((prev) => {
+            const norm = deviceId.trim().toUpperCase();
+            if (!(norm in prev)) return prev;
+            const next = { ...prev };
+            delete next[norm];
+            saveRevokedDevicesMap(next);
+            return next;
+          });
+
+          if (res.licencia) {
+            const restoredLic: LicenciaState = { ...res.licencia, adminAssigned: true };
+            saveLicencia(restoredLic);
+            setLicencia(restoredLic);
+          }
+
+          if (res.backup) {
+            if (res.backup.hoja && typeof res.backup.hoja === 'object') {
+              setHoja(res.backup.hoja);
+            }
+            if (Array.isArray(res.backup.historial)) {
+              setHistorial(res.backup.historial);
+            }
+            if (res.backup.contratoCliente && typeof res.backup.contratoCliente === 'object') {
+              setContratoCliente(res.backup.contratoCliente);
+            }
+            if (res.backup.inventario && typeof res.backup.inventario === 'object') {
+              setInventario(res.backup.inventario);
+            }
+            if (res.backup.inventarioHerrajes && typeof res.backup.inventarioHerrajes === 'object') {
+              setInventarioHerrajes(res.backup.inventarioHerrajes);
+            }
+            if (Array.isArray(res.backup.sobrantes)) {
+              setSobrantes(res.backup.sobrantes);
+            }
+            if (Array.isArray(res.backup.hojasVidrio)) {
+              setHojasVidrio(res.backup.hojasVidrio);
+            }
+            if (Array.isArray(res.backup.obrasAprobadas)) {
+              setObrasAprobadas(res.backup.obrasAprobadas);
+            }
+            if (Array.isArray(res.backup.notas)) {
+              setNotas(res.backup.notas);
+            }
+            if (Array.isArray(res.backup.formulas)) {
+              setFormulas(res.backup.formulas);
+            }
+          }
+
+          const nextSession: CloudAccountSession = {
+            email: res.email || email,
+            sessionToken: res.sessionToken,
+            linkedDeviceId: deviceId,
+            lastBackedUpAt: res.lastBackedUpAt ?? Date.now(),
+          };
+          saveCloudAccountSession(nextSession);
+          setCloudAccountSession(nextSession);
+          if (res.snapshot) applyCloudSnapshot(res.snapshot);
+          showToast(
+            res.replacedPreviousDevice
+              ? 'Cuenta restaurada en este equipo. Se cerró la sesión en el celular anterior.'
+              : 'Cuenta iniciada y respaldo restaurado en la nube',
+            true
+          );
+          return { ok: true };
+        }}
+        onSyncNow={async () => {
+          if (!cloudAccountSession) return;
+          setCloudAccountSyncing(true);
+          try {
+            const res = await uploadCloudAccountBackup({
+              email: cloudAccountSession.email,
+              sessionToken: cloudAccountSession.sessionToken,
+              deviceId,
+              licencia: licenciaRef.current,
+              backup: buildCurrentCloudBackup(),
+            });
+            if (res.sessionExpired) {
+              handleRemoteSessionClosed();
+              return;
+            }
+            if (res.ok) {
+              const ts = res.updatedAt || Date.now();
+              setCloudAccountSession((prev) => (prev ? { ...prev, lastBackedUpAt: ts } : prev));
+              showToast('Respaldo de cotizaciones e inventario guardado en la nube', true);
+            } else {
+              showToast(res.error || 'No se pudo respaldar en la nube');
+            }
+          } finally {
+            setCloudAccountSyncing(false);
+          }
+        }}
+        onLogout={async () => {
+          if (cloudAccountSession) {
+            await logoutCloudAccount({
+              email: cloudAccountSession.email,
+              sessionToken: cloudAccountSession.sessionToken,
+              deviceId,
+            });
+          }
+          saveCloudAccountSession(null);
+          setCloudAccountSession(null);
+          showToast('Sesión de respaldo en la nube cerrada en este equipo');
+        }}
       />
 
       <PwaInstallGuideModal
-        open={installGuideOpen}
+        open={installGuideOpen && !pwa.isInstalled}
         isIOS={pwa.isIOS}
-        onClose={() => setInstallGuideOpen(false)}
+        onClose={requestBack}
       />
 
       <FormulaModal
@@ -1452,7 +2952,7 @@ export default function App() {
         linea={params.linea}
         tolerancias={params.tolerancias}
         formulas={formulas}
-        onClose={() => setFormulaModalOpen(false)}
+        onClose={requestBack}
         onSaveFormula={(nombre, linea, tolerancias) => {
           const newId = `f-${Date.now()}`;
           setFormulas((prev) => [...prev, { id: newId, nombre, linea, tolerancias }]);
@@ -1479,11 +2979,17 @@ export default function App() {
       />
 
       <PerfilModal
-        perfilId={perfilModalId}
+        perfilId={globalModals.includes('perfil') ? perfilModalId : null}
         fotoRealUrl={perfilModalId ? getPerfilFotoUrl(perfilFotos, perfilModalId, params.linea) : undefined}
-        onClose={() => setPerfilModalId(null)}
+        onClose={requestBack}
         onUploadFoto={handleUploadPerfilFoto}
         onRemoveFoto={handleRemovePerfilFoto}
+      />
+
+      <FloatingInstallButton
+        visible={currentView === 'menu' && !pwa.isInstalled && !installFabDismissed && !accessBlocked}
+        onInstall={() => void handleInstallApp(false)}
+        onDismiss={() => setInstallFabDismissed(true)}
       />
 
       <FloatingAssistant
@@ -1492,10 +2998,58 @@ export default function App() {
         onShowToast={showToast}
       />
 
+      <LevantamientoRapido
+        onSetHojaProyecto={handleSetHojaProyectoFromLev}
+        onShowToast={showToast}
+      />
+
+      {accessBlocked && !adminModalOpen && !adminAuthOpen && (
+        <div
+          id="modal-access-suspended"
+          role="alertdialog"
+          aria-modal="true"
+          className="fixed inset-0 z-[9990] bg-slate-950/95 backdrop-blur-sm flex items-center justify-center p-5"
+        >
+          <div className="w-full max-w-[400px] rounded-2xl bg-white text-slate-900 p-6 shadow-2xl border border-red-200 text-center">
+            <div className="w-14 h-14 mx-auto mb-3 rounded-2xl bg-red-50 border border-red-200 text-red-600 flex items-center justify-center text-[28px]">
+              ⛔
+            </div>
+            <h2 className="m-0 text-[19px] font-extrabold text-slate-900">Acceso suspendido</h2>
+            <p className="m-0 mt-2 text-[13.5px] text-slate-600 leading-relaxed">
+              El acceso a Aluminero Pro para este equipo (
+              <span className="mono font-bold text-slate-800">{deviceId}</span>) fue suspendido por el administrador.
+            </p>
+            <div className="mt-5 flex flex-col gap-2.5">
+              <button
+                type="button"
+                onClick={async () => {
+                  await verifyAndSyncClientStatus();
+                  if (accessBlockedRef.current) {
+                    showToast('El acceso de este equipo sigue suspendido.');
+                  } else {
+                    showToast('Acceso restablecido', true);
+                  }
+                }}
+                className="w-full min-h-[44px] rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-[13.5px] cursor-pointer"
+              >
+                Verificar estado
+              </button>
+              <button
+                type="button"
+                onClick={() => openGlobalModal('adminAuth')}
+                className="text-[11.5px] font-semibold text-slate-500 hover:text-slate-800 bg-transparent border-0 py-1 cursor-pointer"
+              >
+                Acceso Administrador
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {toast && (
         <div
           role="status"
-          className={`pointer-events-none fixed left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl text-[13.5px] font-bold shadow-2xl max-w-[90vw] text-center ${
+          className={`pointer-events-none fixed left-1/2 -translate-x-1/2 z-[10000] px-4 py-2.5 rounded-xl text-[13.5px] font-bold shadow-2xl max-w-[90vw] text-center ${
             toast.topSuccess
               ? 'top-[70px] bg-gradient-to-br from-green-600 to-green-700 text-white border border-green-300 toast-slide-down'
               : 'bottom-5 bg-slate-900 text-white border border-slate-600'
