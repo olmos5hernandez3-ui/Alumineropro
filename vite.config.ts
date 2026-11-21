@@ -17,6 +17,7 @@ function createSingleFilePlugin(): Plugin {
         build: {
           assetsInlineLimit: 100_000_000,
           cssCodeSplit: false,
+          modulePreload: false,
           rollupOptions: {
             output: {
               codeSplitting: false,
@@ -50,7 +51,9 @@ function createSingleFilePlugin(): Plugin {
 
       for (const [fileName, item] of Object.entries(bundle)) {
         if (item.type === 'chunk' && item.isEntry) {
-          const js = item.code.replace(/<\/script/gi, '<\\/script');
+          const js = item.code
+            .replace(/\b__VITE_PRELOAD__\b/g, 'void 0')
+            .replace(/<\/script/gi, '<\\/script');
           const scriptRe = new RegExp(`<script[^>]+src=["'][^"']*${fileName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["'][^>]*><\\/script>`, 'i');
           // Elimina la referencia externa del <head> e inserta el módulo al final de <body>
           // para garantizar que #root ya exista en el DOM en cualquier navegador o hosting (Cloudflare Pages).

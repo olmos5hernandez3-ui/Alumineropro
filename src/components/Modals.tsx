@@ -150,9 +150,12 @@ export const ProModal: React.FC<ProModalProps> = ({
 
   if (!open) return null;
 
+  const safeDeviceId = String(deviceId || '').trim() || 'EQUIPO';
+  const validTrialExpiresAt =
+    typeof trialExpiresAt === 'number' && Number.isFinite(trialExpiresAt) ? trialExpiresAt : null;
   const trialInfo =
-    trialExpiresAt !== null && (!licencia || !licencia.active || licencia.planCode === 'G')
-      ? getTrialCountdown(trialExpiresAt, Date.now())
+    validTrialExpiresAt !== null && (!licencia || !licencia.active || licencia.planCode === 'G')
+      ? getTrialCountdown(validTrialExpiresAt, Date.now())
       : null;
 
   const emailCheck = validateCloudBackupEmailPair(cloudEmail, cloudEmailConfirm);
@@ -278,13 +281,13 @@ export const ProModal: React.FC<ProModalProps> = ({
         <div className="mt-3 p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-2">
           <div>
             <span className="block text-[11px] font-bold text-slate-500">ID DE TU EQUIPO</span>
-            <strong className="mono text-[15px] text-blue-700">{deviceId}</strong>
+            <strong className="mono text-[15px] text-blue-700">{safeDeviceId}</strong>
           </div>
           <button
             type="button"
             onClick={async () => {
-              await navigator.clipboard.writeText(deviceId).catch(() => {});
-              onShowToast('ID de equipo copiado');
+              await navigator.clipboard?.writeText(safeDeviceId).catch(() => {});
+              onShowToast?.('ID de equipo copiado');
             }}
             className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-[12px] font-bold cursor-pointer"
           >
@@ -294,13 +297,15 @@ export const ProModal: React.FC<ProModalProps> = ({
 
         {proActive && licencia ? (
           <div className="mt-3 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-[12.5px]">
-            <strong className="block">✓ Licencia Activa: {licencia.planLabel}</strong>
+            <strong className="block">✓ Licencia Activa: {licencia?.planLabel || 'PRO'}</strong>
             <span>
-              {licencia.expiresAt === null
+              {licencia?.expiresAt === null || licencia?.expiresAt === undefined
                 ? 'Vigencia vitalicia'
-                : `Vence: ${new Date(licencia.expiresAt).toLocaleString('es-MX')}`}
+                : Number.isFinite(licencia.expiresAt)
+                  ? `Vence: ${new Date(licencia.expiresAt).toLocaleString('es-MX')}`
+                  : 'Licencia activa'}
             </span>
-            {licencia.planCode === 'G' && trialInfo?.active && (
+            {licencia?.planCode === 'G' && trialInfo?.active && (
               <span className="block mt-0.5 font-bold text-emerald-800">
                 ⏳ {trialInfo.label}
               </span>
@@ -1099,7 +1104,7 @@ const FALLBACK_MANIFEST_JSON = JSON.stringify(
   2
 );
 
-const FALLBACK_SW_JS = `const CACHE_NAME = 'aluminero-pro-v37-20261121';
+const FALLBACK_SW_JS = `const CACHE_NAME = 'aluminero-pro-v38-20261121';
 const APP_SHELL_ASSETS = [
   './',
   './index.html',

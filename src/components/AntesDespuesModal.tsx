@@ -125,9 +125,10 @@ export const AntesDespuesModal: React.FC<AntesDespuesModalProps> = ({
 
   if (!open) return null;
 
-  const approvedList = trabajos.filter((t) => t.aprobado);
-  const cleanWa = sanitizeWhatsappNumber(whatsappNumber);
-  const waUrlDigits = formatWhatsappUrlDigits(whatsappNumber);
+  const safeTrabajos = Array.isArray(trabajos) ? trabajos : [];
+  const approvedList = safeTrabajos.filter((t) => Boolean(t?.aprobado));
+  const cleanWa = sanitizeWhatsappNumber(whatsappNumber || '');
+  const waUrlDigits = formatWhatsappUrlDigits(whatsappNumber || '');
 
   const handlePickPhoto = async (slot: 'antes' | 'despues', file: File) => {
     setErrorMsg('');

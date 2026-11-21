@@ -46,12 +46,16 @@ const PIECE_COLORS = [
 ];
 
 export const VidrioOptimizerView: React.FC<VidrioOptimizerViewProps> = ({
-  hojasVidrio,
-  hojaPartidas,
-  piezasIniciales,
+  hojasVidrio: rawHojasVidrio = [],
+  hojaPartidas: rawHojaPartidas = [],
+  piezasIniciales: rawPiezasIniciales = [],
   onGoInventarioVidrios,
   onShowToast,
 }) => {
+  const hojasVidrio = Array.isArray(rawHojasVidrio) ? rawHojasVidrio : [];
+  const hojaPartidas = Array.isArray(rawHojaPartidas) ? rawHojaPartidas : [];
+  const piezasIniciales = Array.isArray(rawPiezasIniciales) ? rawPiezasIniciales : [];
+
   const [piezas, setPiezas] = useState<PiezaVidrioInput[]>(() =>
     piezasIniciales.length > 0
       ? piezasIniciales

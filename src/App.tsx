@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import {
   calcularCotizacion,
@@ -179,35 +179,14 @@ import {
   resolveVidrioFromLevantamiento,
 } from './utils/levantamientoLogic';
 
-const InventarioView = lazy(() =>
-  import('./components/InventarioView').then((m) => ({ default: m.InventarioView }))
-);
-const ModulacionCortesView = lazy(() =>
-  import('./components/ModulacionCortesView').then((m) => ({ default: m.ModulacionCortesView }))
-);
-const VidrioOptimizerView = lazy(() =>
-  import('./components/VidrioOptimizerView').then((m) => ({ default: m.VidrioOptimizerView }))
-);
-const AntesDespuesModal = lazy(() =>
-  import('./components/AntesDespuesModal').then((m) => ({ default: m.AntesDespuesModal }))
-);
-const NotasView = lazy(() =>
-  import('./components/NotasAndCatalogoViews').then((m) => ({ default: m.NotasView }))
-);
-const CatalogoView = lazy(() =>
-  import('./components/NotasAndCatalogoViews').then((m) => ({ default: m.CatalogoView }))
-);
-const TerminosCondicionesView = lazy(() =>
-  import('./components/LegalViews').then((m) => ({ default: m.TerminosCondicionesView }))
-);
-const AvisoPrivacidadView = lazy(() =>
-  import('./components/LegalViews').then((m) => ({ default: m.AvisoPrivacidadView }))
-);
-const HistorialCotizacionesView = lazy(() =>
-  import('./components/HistorialCotizacionesView').then((m) => ({
-    default: m.HistorialCotizacionesView,
-  }))
-);
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { InventarioView } from './components/InventarioView';
+import { ModulacionCortesView } from './components/ModulacionCortesView';
+import { VidrioOptimizerView } from './components/VidrioOptimizerView';
+import { AntesDespuesModal } from './components/AntesDespuesModal';
+import { CatalogoView, NotasView } from './components/NotasAndCatalogoViews';
+import { AvisoPrivacidadView, TerminosCondicionesView } from './components/LegalViews';
+import { HistorialCotizacionesView } from './components/HistorialCotizacionesView';
 
 function createInitialParams(linea: LineaId = '3'): TrabajoParams {
   const cfg = LINEAS_CONFIG[linea];
@@ -2377,6 +2356,7 @@ export default function App() {
           </div>
         )}
 
+        <ErrorBoundary resetKey={currentView} onGoHome={goHome}>
         <div
           key={currentView}
           className={
@@ -2610,26 +2590,11 @@ export default function App() {
         )}
 
         {currentView === 'cotizaciones' && (
-          <Suspense
-            fallback={
-              <div className="py-12 text-center text-slate-300 font-bold text-sm">
-                Cargando historial de cotizaciones...
-              </div>
-            }
-          >
-            <HistorialCotizacionesView onGoHoja={handleEntrarHoja} onShowToast={showToast} />
-          </Suspense>
+          <HistorialCotizacionesView onGoHoja={handleEntrarHoja} onShowToast={showToast} />
         )}
 
         {currentView === 'inventario' && (
-          <Suspense
-            fallback={
-              <div className="py-12 text-center text-slate-300 font-bold text-sm">
-                Cargando inventario...
-              </div>
-            }
-          >
-            <InventarioView
+          <InventarioView
               inventario={inventario}
               inventarioHerrajes={inventarioHerrajes}
               sobrantes={sobrantes}
@@ -2718,41 +2683,25 @@ export default function App() {
               onReplaceSubModalWithPerfil={replaceSubModalWithPerfil}
               onShowToast={showToast}
             />
-          </Suspense>
         )}
 
         {currentView === 'notas' && (
-          <Suspense
-            fallback={
-              <div className="py-12 text-center text-slate-300 font-bold text-sm">
-                Cargando notas...
-              </div>
+          <NotasView
+            notas={notas}
+            onAddNota={(n) =>
+              setNotas((prev) => [
+                { ...n, id: `nota-${Date.now()}`, fecha: new Date().toLocaleString('es-MX') },
+                ...prev,
+              ])
             }
-          >
-            <NotasView
-              notas={notas}
-              onAddNota={(n) =>
-                setNotas((prev) => [
-                  { ...n, id: `nota-${Date.now()}`, fecha: new Date().toLocaleString('es-MX') },
-                  ...prev,
-                ])
-              }
-              onDeleteNota={(id) => setNotas((prev) => prev.filter((n) => n.id !== id))}
-              onConvertirNota={handleConvertirNota}
-              onShowToast={showToast}
-            />
-          </Suspense>
+            onDeleteNota={(id) => setNotas((prev) => prev.filter((n) => n.id !== id))}
+            onConvertirNota={handleConvertirNota}
+            onShowToast={showToast}
+          />
         )}
 
         {currentView === 'modulacion' && (
-          <Suspense
-            fallback={
-              <div className="py-12 text-center text-slate-300 font-bold text-sm">
-                Cargando modulación...
-              </div>
-            }
-          >
-            <ModulacionCortesView
+          <ModulacionCortesView
               tarifasBase={taller.tarifasBase}
               proActive={proActive}
               sobrantes={sobrantes}
@@ -2824,61 +2773,41 @@ export default function App() {
               }}
               onShowToast={showToast}
             />
-          </Suspense>
         )}
 
         {currentView === 'vidrio' && (
-          <Suspense
-            fallback={
-              <div className="py-12 text-center text-slate-300 font-bold text-sm">
-                Cargando optimizador 2D...
-              </div>
-            }
-          >
-            <VidrioOptimizerView
-              hojasVidrio={hojasVidrio}
-              hojaPartidas={hoja.partidas}
-              piezasIniciales={vidrioPiezasDraft}
-              onGoInventarioVidrios={() => navigateTo('inventario', { invTab: 'vidrios' })}
-              onShowToast={showToast}
-            />
-          </Suspense>
+          <VidrioOptimizerView
+            hojasVidrio={hojasVidrio}
+            hojaPartidas={hoja.partidas}
+            piezasIniciales={vidrioPiezasDraft}
+            onGoInventarioVidrios={() => handleEntrarInventario('vidrios')}
+            onShowToast={showToast}
+          />
         )}
 
         {currentView === 'catalogo' && (
-          <Suspense
-            fallback={
-              <div className="py-12 text-center text-slate-300 font-bold text-sm">
-                Cargando catálogo...
-              </div>
-            }
-          >
-            <CatalogoView
-              perfilFotos={perfilFotos}
-              catalogoTab={catalogoTab}
-              onChangeCatalogoTab={(tab) => {
-                if (tab !== catalogoTab) pushNavFrame({ catalogoTab: tab });
-              }}
-              onOpenPerfilModal={openPerfilModal}
-              onUploadPerfilFoto={handleUploadPerfilFoto}
-              onRemovePerfilFoto={handleRemovePerfilFoto}
-              onOpenSugerencias={() => openGlobalModal('sugerencias')}
-            />
-          </Suspense>
+          <CatalogoView
+            perfilFotos={perfilFotos}
+            catalogoTab={catalogoTab}
+            onChangeCatalogoTab={(tab) => {
+              if (tab !== catalogoTab) pushNavFrame({ catalogoTab: tab });
+            }}
+            onOpenPerfilModal={openPerfilModal}
+            onUploadPerfilFoto={handleUploadPerfilFoto}
+            onRemovePerfilFoto={handleRemovePerfilFoto}
+            onOpenSugerencias={() => openGlobalModal('sugerencias')}
+          />
         )}
 
         {currentView === 'terminos' && (
-          <Suspense fallback={null}>
-            <TerminosCondicionesView onBack={requestBack} />
-          </Suspense>
+          <TerminosCondicionesView onBack={requestBack} />
         )}
 
         {currentView === 'privacidad' && (
-          <Suspense fallback={null}>
-            <AvisoPrivacidadView onBack={requestBack} />
-          </Suspense>
+          <AvisoPrivacidadView onBack={requestBack} />
         )}
         </div>
+        </ErrorBoundary>
       </main>
 
       <SideDrawer
@@ -2905,6 +2834,12 @@ export default function App() {
         onOpenCotizaciones={() => openScreenFromDrawer('cotizaciones')}
       />
 
+      <ErrorBoundary
+        isModal
+        resetKey={proModalOpen}
+        title="No se pudo abrir la ventana de Licencia PRO"
+        onGoHome={goHome}
+      >
       <ProModal
         open={proModalOpen}
         deviceId={deviceId}
@@ -2992,6 +2927,7 @@ export default function App() {
         }}
         onShowToast={showToast}
       />
+      </ErrorBoundary>
 
       <AdminAuthModal
         open={adminAuthOpen}
@@ -3397,7 +3333,12 @@ export default function App() {
       />
 
       {antesDespuesOpen && (
-        <Suspense fallback={null}>
+        <ErrorBoundary
+          isModal
+          resetKey={antesDespuesOpen}
+          title="No se pudo abrir la Galería Antes y Después"
+          onGoHome={goHome}
+        >
           <AntesDespuesModal
             open={antesDespuesOpen}
             trabajos={trabajosAntesDespues}
@@ -3423,7 +3364,7 @@ export default function App() {
             onClose={requestBack}
             onShowToast={showToast}
           />
-        </Suspense>
+        </ErrorBoundary>
       )}
 
       <TutorialModal open={tutorialOpen} onClose={requestBack} />

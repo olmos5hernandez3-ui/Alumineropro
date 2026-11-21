@@ -51,10 +51,10 @@ export const HistorialCotizacionesView: React.FC<Props> = ({ onGoHoja, onShowToa
     if (!q) return filteredByStatus;
     return filteredByStatus.filter(
       (c) =>
-        c.folio.toLowerCase().includes(q) ||
-        c.cliente.toLowerCase().includes(q) ||
-        (c.telefono || '').toLowerCase().includes(q) ||
-        (c.direccion || '').toLowerCase().includes(q)
+        (c?.folio || '').toLowerCase().includes(q) ||
+        (c?.cliente || '').toLowerCase().includes(q) ||
+        (c?.telefono || '').toLowerCase().includes(q) ||
+        (c?.direccion || '').toLowerCase().includes(q)
     );
   }, [filteredByStatus, busqueda]);
 
