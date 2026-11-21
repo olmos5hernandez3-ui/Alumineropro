@@ -1,14 +1,20 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  calcularMetrosObraAprobada,
   CATALOGO_PERFILES,
   COLORES_CONFIG,
   ColorId,
   HERRAJES_INVENTARIO_CATALOGO,
   HerrajeCategoria,
+  INVENTARIO_DEFAULT_MARCA,
   LINEAS_CONFIG,
   LineaId,
+  makeInventarioKey,
+  parseInventarioKey,
   PerfilCatalogoId,
+  resumirObrasAprobadas,
   round2,
+  TRAMO_COMPROMETIDO_M,
   TRAMO_STD_M,
 } from '../utils/alumineroLogic';
 import {
@@ -20,6 +26,7 @@ import {
   SobranteItem,
 } from '../utils/storageHelpers';
 import { PerfilSectionSvg } from './PerfilSectionSvg';
+import { PerfilZoomData, PerfilZoomModal } from './PerfilZoomModal';
 
 interface Props {
   inventario: Record<string, number>;
@@ -44,6 +51,12 @@ interface Props {
   onGoHoja: () => void;
   onGoVidrioOptimizer: () => void;
   onOpenPerfilModal: (perfilId: PerfilCatalogoId) => void;
+  invTab?: 'perfiles' | 'vidrios' | 'herrajes';
+  onChangeInvTab?: (tab: 'perfiles' | 'vidrios' | 'herrajes') => void;
+  onPushSubModal?: (sub: 'zoomPerfil') => void;
+  onRequestBack?: () => void;
+  onRegisterCloseSubModal?: (fn: (() => void) | null) => void;
+  onReplaceSubModalWithPerfil?: (perfilId: PerfilCatalogoId) => void;
   onShowToast: (msg: string, topSuccess?: boolean) => void;
 }
 
@@ -162,17 +175,35 @@ export const InventarioView: React.FC<Props> = ({
   onGoHoja,
   onGoVidrioOptimizer,
   onOpenPerfilModal,
+  invTab: controlledInvTab,
+  onChangeInvTab,
+  onPushSubModal,
+  onRequestBack,
+  onRegisterCloseSubModal,
+  onReplaceSubModalWithPerfil,
   onShowToast,
 }) => {
-  const [invTab, setInvTab] = useState<'perfiles' | 'vidrios' | 'herrajes'>('perfiles');
+  const [localInvTab, setLocalInvTab] = useState<'perfiles' | 'vidrios' | 'herrajes'>('perfiles');
+  const invTab = controlledInvTab ?? localInvTab;
+  const setInvTab = (next: 'perfiles' | 'vidrios' | 'herrajes') => {
+    if (next === invTab) return;
+    if (onChangeInvTab) onChangeInvTab(next);
+    else setLocalInvTab(next);
+  };
+  const [invMarca, setInvMarca] = useState(INVENTARIO_DEFAULT_MARCA);
+  const [invMarcaOtra, setInvMarcaOtra] = useState('');
   const [invLinea, setInvLinea] = useState<LineaId>('3');
   const [invColor, setInvColor] = useState<ColorId>('natural');
   const [aprProyecto, setAprProyecto] = useState('');
   const [aprPerfil, setAprPerfil] = useState<PerfilCatalogoId>('cabezal');
   const [aprTramos, setAprTramos] = useState(1);
 
-  // Sobrantes (< 6.00 m) vinculados a Marca + Línea + Perfil + Color
-  const [sobMarca, setSobMarca] = useState('Alumer');
+  // Modo de captura para tramos completos de perfiles (Tramos 6.10 m | m | cm)
+  const [perfilInputUnit, setPerfilInputUnit] = useState<'tramos' | 'm' | 'cm'>('tramos');
+  const [perfilDraftMap, setPerfilDraftMap] = useState<Record<string, string>>({});
+
+  // Sobrantes (< 6.00 m) vinculados a Marca + Línea + Perfil + Color (sincronizados con Tramos completos)
+  const [sobMarca, setSobMarca] = useState(INVENTARIO_DEFAULT_MARCA);
   const [sobMarcaOtra, setSobMarcaOtra] = useState('');
   const [sobLinea, setSobLinea] = useState<LineaId>('3');
   const [sobColor, setSobColor] = useState<ColorId>('natural');
@@ -182,10 +213,34 @@ export const InventarioView: React.FC<Props> = ({
   const [sobCantidad, setSobCantidad] = useState(1);
   const [sobNota, setSobNota] = useState('');
 
-  // Hojas de Vidrio, Espejo y Plástico
+  const handleSelectLinea = (nextLinea: LineaId) => {
+    setInvLinea(nextLinea);
+    setSobLinea(nextLinea);
+  };
+
+  const handleSelectColor = (nextColor: ColorId) => {
+    setInvColor(nextColor);
+    setSobColor(nextColor);
+  };
+
+  const handleSelectMarca = (nextMarca: string) => {
+    setInvMarca(nextMarca);
+    setSobMarca(nextMarca);
+  };
+
+  const handleSelectMarcaOtra = (nextVal: string) => {
+    setInvMarcaOtra(nextVal);
+    setSobMarcaOtra(nextVal);
+  };
+
+  const activeMarcaFinal =
+    (invMarca === 'Otra' ? invMarcaOtra.trim() : invMarca.trim()) || INVENTARIO_DEFAULT_MARCA;
+
+  // Hojas de Vidrio, Espejo y Plástico (captura en cm o m, almacenado en base cm)
   const [vidCategoria, setVidCategoria] = useState<HojaCategoriaId>('vidrio');
   const [vidTono, setVidTono] = useState('Claro');
   const [vidEspesor, setVidEspesor] = useState(6);
+  const [vidUnit, setVidUnit] = useState<'cm' | 'm'>('cm');
   const [vidAnchoCm, setVidAnchoCm] = useState('260');
   const [vidAltoCm, setVidAltoCm] = useState('180');
   const [vidCantidad, setVidCantidad] = useState(1);
@@ -194,6 +249,20 @@ export const InventarioView: React.FC<Props> = ({
   // Filtros de Herrajes
   const [herrajeCatFilter, setHerrajeCatFilter] = useState<HerrajeCategoria | 'Todas'>('Todas');
   const [herrajeBusqueda, setHerrajeBusqueda] = useState('');
+  const [zoomPerfil, setZoomPerfil] = useState<PerfilZoomData | null>(null);
+
+  const openZoomPerfil = (data: PerfilZoomData) => {
+    setZoomPerfil(data);
+    onPushSubModal?.('zoomPerfil');
+  };
+
+  useEffect(() => {
+    if (!onRegisterCloseSubModal) return;
+    onRegisterCloseSubModal(() => {
+      setZoomPerfil(null);
+    });
+    return () => onRegisterCloseSubModal(null);
+  }, [onRegisterCloseSubModal]);
 
   const totalTramosGlobal = round2(
     Object.values(inventario).reduce((acc, v) => acc + (Number(v) || 0), 0)
@@ -300,13 +369,36 @@ export const InventarioView: React.FC<Props> = ({
     );
   };
 
+  const handleToggleVidUnit = (nextUnit: 'cm' | 'm') => {
+    if (nextUnit === vidUnit) return;
+    const rawW = Number(vidAnchoCm);
+    const rawH = Number(vidAltoCm);
+    if (Number.isFinite(rawW) && rawW > 0) {
+      setVidAnchoCm(nextUnit === 'm' ? (rawW / 100).toFixed(2) : String(Math.round(rawW * 100)));
+    } else {
+      setVidAnchoCm(nextUnit === 'm' ? '2.60' : '260');
+    }
+    if (Number.isFinite(rawH) && rawH > 0) {
+      setVidAltoCm(nextUnit === 'm' ? (rawH / 100).toFixed(2) : String(Math.round(rawH * 100)));
+    } else {
+      setVidAltoCm(nextUnit === 'm' ? '1.80' : '180');
+    }
+    setVidUnit(nextUnit);
+  };
+
   const handleAgregarHojaVidrio = (e: React.FormEvent) => {
     e.preventDefault();
-    const w = Math.round(Number(vidAnchoCm) || 0);
-    const h = Math.round(Number(vidAltoCm) || 0);
+    const rawW = Number(vidAnchoCm);
+    const rawH = Number(vidAltoCm);
+    const w = vidUnit === 'm' ? Math.round(rawW * 100) : Math.round(rawW);
+    const h = vidUnit === 'm' ? Math.round(rawH * 100) : Math.round(rawH);
     const qty = Math.max(1, Math.round(Number(vidCantidad) || 1));
-    if (w < 20 || h < 20) {
-      onShowToast('Ingresa ancho y alto válidos en cm (mínimo 20 cm)');
+    if (!Number.isFinite(w) || !Number.isFinite(h) || w < 20 || h < 20) {
+      onShowToast(
+        vidUnit === 'm'
+          ? 'Ingresa ancho y alto válidos en metros (mínimo 0.20 m)'
+          : 'Ingresa ancho y alto válidos en cm (mínimo 20 cm)'
+      );
       return;
     }
     const cleanTono = vidTono.trim() || 'Claro';
@@ -429,8 +521,8 @@ export const InventarioView: React.FC<Props> = ({
                             setVidEspesor(first.espesor);
                           }
                           if (cat.id === 'plastico') {
-                            setVidAnchoCm('183');
-                            setVidAltoCm('122');
+                            setVidAnchoCm(vidUnit === 'm' ? '1.83' : '183');
+                            setVidAltoCm(vidUnit === 'm' ? '1.22' : '122');
                           }
                         }}
                         className={`min-h-[38px] px-2 py-1.5 rounded-lg text-[11.5px] font-extrabold border cursor-pointer ${
@@ -505,54 +597,95 @@ export const InventarioView: React.FC<Props> = ({
               </div>
 
               <div>
-                <div className="text-[11px] font-bold text-slate-600 mb-1.5">Medidas estándar de fábrica</div>
-                <div className="flex flex-wrap gap-1.5">
-                  {VIDRIO_MEDIDAS_PRESETS.map((m) => (
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+                  <div className="text-[11px] font-bold text-slate-600">
+                    Medidas estándar de fábrica ({vidUnit})
+                  </div>
+                  <div className="inline-flex rounded-lg border border-slate-300 bg-white p-0.5">
                     <button
-                      key={m.label}
                       type="button"
-                      onClick={() => {
-                        setVidAnchoCm(String(m.w));
-                        setVidAltoCm(String(m.h));
-                      }}
-                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold mono border cursor-pointer ${
-                        Number(vidAnchoCm) === m.w && Number(vidAltoCm) === m.h
-                          ? 'bg-cyan-600 text-white border-cyan-700'
-                          : 'bg-white text-slate-700 border-slate-300'
+                      id="btn-vidrio-unit-cm"
+                      onClick={() => handleToggleVidUnit('cm')}
+                      className={`px-2.5 py-0.5 rounded text-[11px] font-extrabold cursor-pointer ${
+                        vidUnit === 'cm' ? 'bg-[#0B2545] text-white' : 'text-slate-600'
                       }`}
                     >
-                      {m.label}
+                      cm
                     </button>
-                  ))}
+                    <button
+                      type="button"
+                      id="btn-vidrio-unit-m"
+                      onClick={() => handleToggleVidUnit('m')}
+                      className={`px-2.5 py-0.5 rounded text-[11px] font-extrabold cursor-pointer ${
+                        vidUnit === 'm' ? 'bg-[#0B2545] text-white' : 'text-slate-600'
+                      }`}
+                    >
+                      m
+                    </button>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {VIDRIO_MEDIDAS_PRESETS.map((m) => {
+                    const labelPreset =
+                      vidUnit === 'm'
+                        ? `${(m.w / 100).toFixed(2)} × ${(m.h / 100).toFixed(2)} m${m.label.includes('Acrílico') ? ' (Acrílico)' : ''}`
+                        : m.label;
+                    const wCurCm =
+                      vidUnit === 'm' ? Math.round((Number(vidAnchoCm) || 0) * 100) : Math.round(Number(vidAnchoCm) || 0);
+                    const hCurCm =
+                      vidUnit === 'm' ? Math.round((Number(vidAltoCm) || 0) * 100) : Math.round(Number(vidAltoCm) || 0);
+                    const isPresetActive = wCurCm === m.w && hCurCm === m.h;
+                    return (
+                      <button
+                        key={m.label}
+                        type="button"
+                        onClick={() => {
+                          setVidAnchoCm(vidUnit === 'm' ? (m.w / 100).toFixed(2) : String(m.w));
+                          setVidAltoCm(vidUnit === 'm' ? (m.h / 100).toFixed(2) : String(m.h));
+                        }}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold mono border cursor-pointer ${
+                          isPresetActive
+                            ? 'bg-cyan-600 text-white border-cyan-700'
+                            : 'bg-white text-slate-700 border-slate-300'
+                        }`}
+                      >
+                        {labelPreset}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
               <div className="grid grid-cols-3 gap-2">
                 <div>
                   <label htmlFor="inp-vidrio-ancho" className="block text-[11px] font-bold text-slate-600 mb-1">
-                    Ancho (cm)
+                    Ancho ({vidUnit})
                   </label>
                   <input
                     id="inp-vidrio-ancho"
                     type="number"
-                    min={20}
-                    max={600}
+                    min={vidUnit === 'm' ? 0.2 : 20}
+                    max={vidUnit === 'm' ? 6 : 600}
+                    step={vidUnit === 'm' ? 0.01 : 1}
                     value={vidAnchoCm}
                     onChange={(e) => setVidAnchoCm(e.target.value)}
+                    placeholder={vidUnit === 'm' ? 'Ej. 2.60' : 'Ej. 260'}
                     className="w-full min-h-[40px] rounded-xl border border-slate-300 px-2.5 mono text-[13px] font-bold bg-white"
                   />
                 </div>
                 <div>
                   <label htmlFor="inp-vidrio-alto" className="block text-[11px] font-bold text-slate-600 mb-1">
-                    Alto (cm)
+                    Alto ({vidUnit})
                   </label>
                   <input
                     id="inp-vidrio-alto"
                     type="number"
-                    min={20}
-                    max={600}
+                    min={vidUnit === 'm' ? 0.2 : 20}
+                    max={vidUnit === 'm' ? 6 : 600}
+                    step={vidUnit === 'm' ? 0.01 : 1}
                     value={vidAltoCm}
                     onChange={(e) => setVidAltoCm(e.target.value)}
+                    placeholder={vidUnit === 'm' ? 'Ej. 1.80' : 'Ej. 180'}
                     className="w-full min-h-[40px] rounded-xl border border-slate-300 px-2.5 mono text-[13px] font-bold bg-white"
                   />
                 </div>
@@ -571,6 +704,28 @@ export const InventarioView: React.FC<Props> = ({
                   />
                 </div>
               </div>
+
+              {(() => {
+                const rw = Number(vidAnchoCm);
+                const rh = Number(vidAltoCm);
+                if (!Number.isFinite(rw) || !Number.isFinite(rh) || rw <= 0 || rh <= 0) return null;
+                const wCmEq = vidUnit === 'm' ? Math.round(rw * 100) : Math.round(rw);
+                const hCmEq = vidUnit === 'm' ? Math.round(rh * 100) : Math.round(rh);
+                const wMEq = (wCmEq / 100).toFixed(2);
+                const hMEq = (hCmEq / 100).toFixed(2);
+                const areaM2Eq = round2((wCmEq * hCmEq) / 10000);
+                return (
+                  <div
+                    id="vidrio-unit-preview"
+                    className="px-3 py-1.5 rounded-lg bg-cyan-50 border border-cyan-200 text-[11.5px] font-bold text-cyan-900 mono flex flex-wrap items-center justify-between gap-2"
+                  >
+                    <span>
+                      Equivalencia: {vidUnit === 'm' ? `= ${wCmEq} × ${hCmEq} cm` : `= ${wMEq} × ${hMEq} m`}
+                    </span>
+                    <span className="text-cyan-800">Área: {areaM2Eq.toFixed(2)} m²</span>
+                  </div>
+                );
+              })()}
 
               <div className="flex flex-wrap gap-2">
                 <input
@@ -641,8 +796,9 @@ export const InventarioView: React.FC<Props> = ({
                           </span>
                           <strong className="text-[13.5px] text-[#1E293B]">{hv.tipoNombre}</strong>
                         </div>
-                        <div className="mono text-[12.5px] font-bold text-slate-700 mt-0.5">
-                          {hv.anchoCm} × {hv.altoCm} cm · <span className="text-cyan-800">{hv.cantidad} hoja(s)</span> ({areaTotal.toFixed(2)} m²)
+                        <div className="mono text-[12px] font-bold text-slate-700 mt-0.5">
+                          {hv.anchoCm} × {hv.altoCm} cm ({(hv.anchoCm / 100).toFixed(2)} × {(hv.altoCm / 100).toFixed(2)} m) ·{' '}
+                          <span className="text-cyan-800">{hv.cantidad} hoja(s)</span> ({areaTotal.toFixed(2)} m²)
                         </div>
                         {hv.nota && <div className="text-[11px] text-slate-600">{hv.nota}</div>}
                       </div>
@@ -805,7 +961,7 @@ export const InventarioView: React.FC<Props> = ({
             <div className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] p-4 sm:p-5 shadow-xl">
               <div className="flex items-center justify-between gap-2 mb-3">
                 <div>
-                  <h2 className="m-0 text-[17px] font-extrabold">1. Selecciona Línea y Acabado</h2>
+                  <h2 className="m-0 text-[17px] font-extrabold">1. Selecciona Marca, Línea y Acabado</h2>
                   <p className="m-0 text-[12px] text-slate-600">
                     Actualiza tus tramos de 6.10 m y registra sobrantes menores a 6 m
                   </p>
@@ -816,7 +972,37 @@ export const InventarioView: React.FC<Props> = ({
                 </span>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-3">
+              <div className="mb-3">
+                <label htmlFor="sel-inv-marca" className="block text-[11px] font-bold text-slate-600 mb-1">
+                  Marca de aluminio (para tramos completos 6.10 m)
+                </label>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <select
+                    id="sel-inv-marca"
+                    value={invMarca}
+                    onChange={(e) => handleSelectMarca(e.target.value)}
+                    className="w-full min-h-[40px] rounded-xl border border-slate-300 px-2.5 text-[12.5px] font-semibold bg-white"
+                  >
+                    {MARCAS_ALUMINIO.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                  {invMarca === 'Otra' && (
+                    <input
+                      id="inp-inv-marca-otra"
+                      type="text"
+                      value={invMarcaOtra}
+                      onChange={(e) => handleSelectMarcaOtra(e.target.value)}
+                      placeholder="Escribe la marca..."
+                      className="w-full min-h-[40px] rounded-xl border border-slate-300 px-3 text-[12.5px] font-semibold bg-white"
+                    />
+                  )}
+                </div>
+              </div>
+
+              <div id="inv-lineas-grid" className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-3">
                 {INV_LINEAS.map((lid) => {
                   const l = LINEAS_CONFIG[lid];
                   const active = invLinea === lid;
@@ -824,15 +1010,24 @@ export const InventarioView: React.FC<Props> = ({
                     <button
                       key={lid}
                       type="button"
-                      onClick={() => setInvLinea(lid)}
-                      className={`min-h-[50px] p-2.5 rounded-xl border text-left cursor-pointer ${
+                      data-line-active={active ? 'true' : 'false'}
+                      aria-pressed={active}
+                      onClick={() => handleSelectLinea(lid)}
+                      className={`min-h-[54px] p-2.5 rounded-xl text-left cursor-pointer transition-all ${
                         active
-                          ? 'bg-[#0B2545] border-[#0B2545] text-white'
-                          : 'bg-slate-100 border-slate-300 text-[#1E293B]'
+                          ? 'border-2 border-emerald-400 bg-emerald-950/75 text-white shadow-md'
+                          : 'border border-slate-300 bg-slate-100 text-[#1E293B] hover:border-blue-400'
                       }`}
                     >
-                      <span className="block text-[12px] font-extrabold leading-tight">{l.nombre}</span>
-                      <span className={`block text-[10.5px] ${active ? 'text-blue-200' : 'text-slate-600'}`}>
+                      <div className="flex items-start justify-between gap-1">
+                        <span className="block text-[12px] font-extrabold leading-tight">{l.nombre}</span>
+                        {active && (
+                          <span className="line-active-badge text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-emerald-400/20 border border-emerald-300/60 text-emerald-200 shrink-0">
+                            ✓
+                          </span>
+                        )}
+                      </div>
+                      <span className={`block text-[10.5px] mt-0.5 ${active ? 'text-emerald-100' : 'text-slate-600'}`}>
                         Tramo 6.10 m
                       </span>
                     </button>
@@ -840,25 +1035,34 @@ export const InventarioView: React.FC<Props> = ({
                 })}
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div id="inv-colores-grid" className="grid grid-cols-2 gap-2">
                 {Object.values(COLORES_CONFIG).map((c) => {
                   const active = invColor === c.id;
                   return (
                     <button
                       key={c.id}
                       type="button"
-                      onClick={() => setInvColor(c.id)}
-                      className={`flex items-center gap-2 min-h-[46px] px-2.5 py-2 rounded-xl border text-left cursor-pointer ${
-                        active ? 'border-blue-600 bg-blue-50 ring-1 ring-blue-600' : 'border-slate-300 bg-white text-[#1E293B]'
+                      data-color-active={active ? 'true' : 'false'}
+                      aria-pressed={active}
+                      onClick={() => handleSelectColor(c.id)}
+                      className={`flex items-center justify-between gap-2 min-h-[46px] px-2.5 py-2 rounded-xl border text-left cursor-pointer transition-all ${
+                        active
+                          ? 'border-2 border-blue-500 bg-blue-50 ring-1 ring-blue-500 shadow-sm'
+                          : 'border-slate-300 bg-white text-[#1E293B] hover:border-blue-400'
                       }`}
                     >
-                      <span
-                        className="w-5 h-5 rounded-md border border-slate-300 shrink-0"
-                        style={{ background: c.swatch }}
-                      />
-                      <div>
-                        <span className="block text-[12.5px] font-bold">{c.corto}</span>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span
+                          className="w-5 h-5 rounded-md border border-slate-300 shrink-0"
+                          style={{ background: c.swatch }}
+                        />
+                        <span className="block text-[12.5px] font-bold truncate">{c.corto}</span>
                       </div>
+                      {active && (
+                        <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-blue-600 text-white shrink-0">
+                          ✓
+                        </span>
+                      )}
                     </button>
                   );
                 })}
@@ -888,7 +1092,7 @@ export const InventarioView: React.FC<Props> = ({
                     <select
                       id="sel-sobrante-marca"
                       value={sobMarca}
-                      onChange={(e) => setSobMarca(e.target.value)}
+                      onChange={(e) => handleSelectMarca(e.target.value)}
                       className="w-full min-h-[40px] rounded-xl border border-slate-200 px-2.5 text-[12.5px] font-semibold bg-white"
                     >
                       {MARCAS_ALUMINIO.map((m) => (
@@ -905,7 +1109,7 @@ export const InventarioView: React.FC<Props> = ({
                     <select
                       id="sel-sobrante-linea"
                       value={sobLinea}
-                      onChange={(e) => setSobLinea(e.target.value as LineaId)}
+                      onChange={(e) => handleSelectLinea(e.target.value as LineaId)}
                       className="w-full min-h-[40px] rounded-xl border border-slate-200 px-2.5 text-[12.5px] font-semibold bg-white"
                     >
                       {INV_LINEAS.map((lid) => (
@@ -922,7 +1126,7 @@ export const InventarioView: React.FC<Props> = ({
                     id="inp-sobrante-marca-otra"
                     type="text"
                     value={sobMarcaOtra}
-                    onChange={(e) => setSobMarcaOtra(e.target.value)}
+                    onChange={(e) => handleSelectMarcaOtra(e.target.value)}
                     placeholder="Escribe el nombre de la marca..."
                     className="w-full min-h-[40px] rounded-xl border border-slate-200 px-3 text-[12.5px] font-semibold bg-white"
                   />
@@ -953,7 +1157,7 @@ export const InventarioView: React.FC<Props> = ({
                     <select
                       id="sel-sobrante-color"
                       value={sobColor}
-                      onChange={(e) => setSobColor(e.target.value as ColorId)}
+                      onChange={(e) => handleSelectColor(e.target.value as ColorId)}
                       className="w-full min-h-[40px] rounded-xl border border-slate-200 px-2.5 text-[12.5px] font-semibold bg-white"
                     >
                       {Object.values(COLORES_CONFIG).map((c) => (
@@ -994,6 +1198,7 @@ export const InventarioView: React.FC<Props> = ({
                   <div className="inline-flex rounded-lg border border-slate-300 bg-white p-0.5">
                     <button
                       type="button"
+                      id="btn-sobrante-unit-cm"
                       onClick={() => handleToggleSobUnit('cm')}
                       className={`px-2 py-0.5 rounded text-[11px] font-extrabold cursor-pointer ${
                         sobUnit === 'cm' ? 'bg-[#0B2545] text-white' : 'text-slate-600'
@@ -1003,6 +1208,7 @@ export const InventarioView: React.FC<Props> = ({
                     </button>
                     <button
                       type="button"
+                      id="btn-sobrante-unit-m"
                       onClick={() => handleToggleSobUnit('m')}
                       className={`px-2 py-0.5 rounded text-[11px] font-extrabold cursor-pointer ${
                         sobUnit === 'm' ? 'bg-[#0B2545] text-white' : 'text-slate-600'
@@ -1023,10 +1229,10 @@ export const InventarioView: React.FC<Props> = ({
                       type="number"
                       min={sobUnit === 'cm' ? 5 : 0.05}
                       max={sobUnit === 'cm' ? 599 : 5.99}
-                      step={sobUnit === 'cm' ? 1 : 0.05}
+                      step={sobUnit === 'cm' ? 0.5 : 0.01}
                       value={sobLargoStr}
                       onChange={(e) => setSobLargoStr(e.target.value)}
-                      placeholder={sobUnit === 'cm' ? 'Ej. 60 o 120' : 'Ej. 0.60 o 1.20'}
+                      placeholder={sobUnit === 'cm' ? 'Ej. 60 o 240' : 'Ej. 0.60 o 2.40'}
                       className="w-full min-h-[40px] rounded-xl border border-slate-200 px-3 mono text-[13px] font-bold bg-white"
                     />
                   </div>
@@ -1046,19 +1252,39 @@ export const InventarioView: React.FC<Props> = ({
                   </div>
                 </div>
 
-                <div className="flex gap-2">
+                {(() => {
+                  const rawSob = Number(sobLargoStr);
+                  if (!Number.isFinite(rawSob) || rawSob <= 0) return null;
+                  const eqCm = sobUnit === 'cm' ? Math.round(rawSob * 10) / 10 : Math.round(rawSob * 100);
+                  const eqM = sobUnit === 'cm' ? round2(rawSob / 100) : round2(rawSob);
+                  return (
+                    <div
+                      id="sobrante-unit-preview"
+                      className="px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-[11.5px] font-bold text-amber-900 mono flex flex-wrap items-center justify-between gap-2"
+                    >
+                      <span>
+                        Equivalencia: {sobUnit === 'cm' ? `= ${eqM.toFixed(2)} m` : `= ${eqCm} cm`}
+                      </span>
+                      <span className="text-amber-700">
+                        {eqCm} cm · {eqM.toFixed(2)} m
+                      </span>
+                    </div>
+                  );
+                })()}
+
+                <div className="flex flex-col min-[480px]:flex-row flex-wrap gap-2 w-full box-border">
                   <input
                     id="inp-sobrante-nota"
                     type="text"
                     value={sobNota}
                     onChange={(e) => setSobNota(e.target.value)}
                     placeholder="Ubicación / rack opcional (ej. Rack B)"
-                    className="flex-1 min-h-[40px] rounded-xl border border-slate-200 px-3 text-[12.5px] bg-white"
+                    className="w-full min-w-0 min-[480px]:flex-1 box-border min-h-[40px] rounded-xl border border-slate-200 px-3 text-[12.5px] bg-white"
                   />
                   <button
                     type="submit"
                     id="btn-add-sobrante"
-                    className="min-h-[40px] px-3.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-[12.5px] font-extrabold cursor-pointer whitespace-nowrap"
+                    className="w-full min-[480px]:w-auto box-border min-h-[40px] px-3.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-[12.5px] font-extrabold cursor-pointer whitespace-nowrap"
                   >
                     + Agregar Sobrante
                   </button>
@@ -1081,16 +1307,28 @@ export const InventarioView: React.FC<Props> = ({
                         className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl bg-amber-50 border-[1.5px] border-amber-300 text-[#1E293B] text-[12px]"
                       >
                         <div className="flex items-center gap-2 min-w-0 flex-1 basis-[170px]">
-                          <div
+                          <button
+                            type="button"
                             data-preserve-light="true"
-                            className="w-8 h-8 rounded-lg bg-white border border-amber-200 flex items-center justify-center shrink-0 p-0.5"
+                            onClick={() =>
+                              openZoomPerfil({
+                                perfilId: s.perfilId,
+                                nombre: pNombre,
+                                codigo: s.marca || 'Alumer',
+                                subtitulo: `${LINEAS_CONFIG[s.linea]?.nombre || ''} · ${COLORES_CONFIG[s.color]?.corto || ''} · ${cmVal} cm (${s.largoM.toFixed(2)} m)`,
+                                fotoRealUrl: getPerfilFotoUrl(perfilFotos, s.perfilId, s.linea),
+                              })
+                            }
+                            title={`Ampliar dibujo técnico de ${pNombre}`}
+                            aria-label={`Ampliar dibujo técnico de ${pNombre}`}
+                            className="w-8 h-8 rounded-lg bg-white border border-amber-200 hover:border-blue-500 hover:ring-2 hover:ring-blue-400/40 flex items-center justify-center shrink-0 p-0.5 cursor-zoom-in transition-all active:scale-95"
                           >
                             <PerfilSectionSvg
                               perfilId={s.perfilId}
                               fotoRealUrl={getPerfilFotoUrl(perfilFotos, s.perfilId, s.linea)}
                               size={26}
                             />
-                          </div>
+                          </button>
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="px-1.5 py-0.5 rounded bg-amber-600 text-white text-[10px] font-extrabold uppercase tracking-wide">
@@ -1100,7 +1338,9 @@ export const InventarioView: React.FC<Props> = ({
                                 {cmVal} cm ({s.largoM.toFixed(2)} m)
                               </strong>
                               <span className="text-slate-700 font-bold">× {s.cantidad}</span>
-                              <span className="mono text-amber-800 font-extrabold">({totalItemM.toFixed(2)} m)</span>
+                              <span className="mono text-amber-800 font-extrabold">
+                                ({totalItemM.toFixed(2)} m · {Math.round(totalItemM * 100)} cm)
+                              </span>
                             </div>
                             <div className="text-slate-700 font-semibold break-words">
                               {pNombre} · {LINEAS_CONFIG[s.linea]?.nombre} · {COLORES_CONFIG[s.color]?.corto}
@@ -1169,27 +1409,55 @@ export const InventarioView: React.FC<Props> = ({
               ) : (
                 <div className="flex flex-col gap-1.5">
                   {bodegaExistencias.map(([k, val]) => {
-                    const [lid, pid, cid] = k.split('__') as [LineaId, PerfilCatalogoId, ColorId];
+                    const { linea: lid, perfilId: pid, color: cid, marca } = parseInventarioKey(k);
                     const pNombre = CATALOGO_PERFILES.find((p) => p.id === pid)?.nombre || pid;
+                    const colorCfg = COLORES_CONFIG[cid] || COLORES_CONFIG.natural;
+                    const lineaNombre = LINEAS_CONFIG[lid]?.nombre || lid;
                     return (
                       <div key={k} className="flex flex-wrap items-center justify-between gap-2 py-1.5 border-b border-slate-100 text-[12.5px] min-w-0">
                         <div className="flex items-center gap-2 min-w-0 flex-1">
-                          <div
+                          <button
+                            type="button"
                             data-preserve-light="true"
-                            className="w-7 h-7 rounded-md bg-white border border-slate-200 flex items-center justify-center shrink-0 p-0.5"
+                            onClick={() => {
+                              const pItem = CATALOGO_PERFILES.find((p) => p.id === pid);
+                              openZoomPerfil({
+                                perfilId: pid,
+                                nombre: pNombre,
+                                codigo: marca || pItem?.codigoRef || undefined,
+                                subtitulo: `${marca ? `${marca} · ` : ''}${lineaNombre} · ${colorCfg.corto} · ${val} ${val === 1 ? 'tramo' : 'tramos'} (${round2(val * TRAMO_STD_M)} m)`,
+                                fotoRealUrl: getPerfilFotoUrl(perfilFotos, pid, lid),
+                              });
+                            }}
+                            title={`Ampliar dibujo técnico de ${pNombre}`}
+                            aria-label={`Ampliar dibujo técnico de ${pNombre}`}
+                            className="w-7 h-7 rounded-md bg-white border border-slate-200 hover:border-blue-500 hover:ring-2 hover:ring-blue-400/40 flex items-center justify-center shrink-0 p-0.5 cursor-zoom-in transition-all active:scale-95"
                           >
                             <PerfilSectionSvg
                               perfilId={pid}
                               fotoRealUrl={getPerfilFotoUrl(perfilFotos, pid, lid)}
                               size={22}
                             />
+                          </button>
+                          <div className="min-w-0 flex flex-wrap items-center gap-1.5 break-words">
+                            {marca && (
+                              <span className="px-1.5 py-0.5 rounded bg-blue-600 text-white text-[10px] font-extrabold uppercase tracking-wide shrink-0">
+                                {marca}
+                              </span>
+                            )}
+                            <strong>{pNombre}</strong>
+                            <span className="text-slate-500">· {lineaNombre} ·</span>
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border border-slate-300 bg-slate-50 text-[11px] font-bold">
+                              <span
+                                className="w-2.5 h-2.5 rounded-full border border-slate-400 shrink-0"
+                                style={{ background: colorCfg.swatch }}
+                              />
+                              {colorCfg.corto}
+                            </span>
                           </div>
-                          <span className="min-w-0 break-words">
-                            <strong>{pNombre}</strong> · {LINEAS_CONFIG[lid]?.nombre} · {COLORES_CONFIG[cid]?.corto}
-                          </span>
                         </div>
                         <span className="mono font-extrabold text-emerald-700 shrink-0">
-                          {val} tramos ({round2(val * TRAMO_STD_M)} m)
+                          {val} {val === 1 ? 'tramo' : 'tramos'} · {round2(val * TRAMO_STD_M).toFixed(2)} m ({Math.round(val * TRAMO_STD_M * 100)} cm)
                         </span>
                       </div>
                     );
@@ -1201,8 +1469,42 @@ export const InventarioView: React.FC<Props> = ({
             <div className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] p-4 sm:p-5 shadow-xl">
               <h2 className="m-0 text-[17px] font-extrabold">Obras Aprobadas (Stock Comprometido)</h2>
               <p className="m-0 text-[12px] text-slate-500 mb-2.5">
-                Tramos apartados en proyectos aprobados para no contarlos dos veces
+                Tramos apartados en proyectos aprobados para no contarlos dos veces (tramo de {TRAMO_COMPROMETIDO_M.toFixed(2)} m)
               </p>
+
+              {(() => {
+                const resumenObras = resumirObrasAprobadas(obrasAprobadas, TRAMO_COMPROMETIDO_M);
+                return (
+                  <div
+                    id="obras-aprobadas-resumen"
+                    className="grid grid-cols-2 gap-2 mb-3"
+                  >
+                    <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200">
+                      <span className="block text-[10.5px] font-extrabold uppercase tracking-wide text-amber-800">
+                        Total comprometido
+                      </span>
+                      <strong className="block mono text-[16px] font-extrabold text-amber-950 mt-0.5">
+                        {resumenObras.totalMetrosComprometidos.toFixed(2)} m
+                      </strong>
+                      <span className="block text-[11px] text-amber-800 font-semibold">
+                        {resumenObras.totalTramos} {resumenObras.totalTramos === 1 ? 'tramo' : 'tramos'} en {resumenObras.totalApartados} {resumenObras.totalApartados === 1 ? 'obra' : 'obras'}
+                      </span>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200">
+                      <span className="block text-[10.5px] font-extrabold uppercase tracking-wide text-emerald-800">
+                        Sobrantes libres
+                      </span>
+                      <strong className="block mono text-[16px] font-extrabold text-emerald-950 mt-0.5">
+                        {resumenObras.totalMetrosLibres.toFixed(2)} m
+                      </strong>
+                      <span className="block text-[11px] text-emerald-800 font-semibold">
+                        Disponibles para reutilizar
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
+
               <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex flex-col gap-2">
                 <div className="text-[11.5px] font-extrabold text-slate-600">
                   Apartar tramo de {LINEAS_CONFIG[invLinea].nombre} · {COLORES_CONFIG[invColor].corto}
@@ -1242,6 +1544,9 @@ export const InventarioView: React.FC<Props> = ({
                     + Apartar
                   </button>
                 </div>
+                <div className="text-[11px] font-semibold text-slate-600 mono">
+                  Vista previa: {calcularMetrosObraAprobada(aprTramos, TRAMO_COMPROMETIDO_M).resumenTexto}
+                </div>
               </div>
 
               <div className="mt-2.5 flex flex-col gap-1.5">
@@ -1250,53 +1555,198 @@ export const InventarioView: React.FC<Props> = ({
                     No hay tramos comprometidos en otras obras aprobadas.
                   </p>
                 ) : (
-                  obrasAprobadas.map((ob) => (
-                    <div key={ob.id} className="flex items-center justify-between p-2 rounded-lg bg-amber-50 border border-amber-200 text-[12px]">
-                      <div>
-                        <strong className="block text-amber-950">{ob.proyecto}</strong>
-                        <span className="text-amber-800">
-                          {CATALOGO_PERFILES.find((p) => p.id === ob.perfilId)?.nombre} · {ob.tramos} tramos
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => onEliminarApartado(ob.id)}
-                        className="px-2 py-1 rounded bg-white border border-amber-300 text-amber-900 font-bold cursor-pointer"
+                  obrasAprobadas.map((ob) => {
+                    const metrosInfo = calcularMetrosObraAprobada(ob.tramos, TRAMO_COMPROMETIDO_M);
+                    return (
+                      <div
+                        key={ob.id}
+                        className="flex items-start justify-between gap-2 p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[12px]"
                       >
-                        Liberar
-                      </button>
-                    </div>
-                  ))
+                        <div className="min-w-0 flex-1">
+                          <strong className="block text-amber-950 break-words">{ob.proyecto}</strong>
+                          <span className="block text-amber-900 font-semibold mt-0.5">
+                            {CATALOGO_PERFILES.find((p) => p.id === ob.perfilId)?.nombre} · {ob.tramos}{' '}
+                            {ob.tramos === 1 ? 'tramo' : 'tramos'}
+                          </span>
+                          <div className="mt-1 flex flex-wrap items-center gap-1.5 mono text-[11px] font-bold">
+                            <span className="px-1.5 py-0.5 rounded bg-amber-100 border border-amber-300 text-amber-900">
+                              {metrosInfo.metrosComprometidos.toFixed(2)} m comprometidos
+                            </span>
+                            <span
+                              className={`px-1.5 py-0.5 rounded border ${
+                                metrosInfo.metrosLibres > 0
+                                  ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                                  : 'bg-slate-100 border-slate-300 text-slate-600'
+                              }`}
+                            >
+                              {metrosInfo.metrosLibres > 0
+                                ? `${metrosInfo.metrosLibres.toFixed(2)} m libres del tramo de 6 m`
+                                : '0.00 m libres'}
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => onEliminarApartado(ob.id)}
+                          className="px-2.5 py-1.5 rounded-lg bg-white border border-amber-300 text-amber-900 font-bold cursor-pointer shrink-0"
+                        >
+                          Liberar
+                        </button>
+                      </div>
+                    );
+                  })
                 )}
               </div>
             </div>
           </div>
 
           <div className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] p-4 sm:p-5 shadow-xl">
-            <h2 className="m-0 text-[17px] font-extrabold">
-              2. Perfiles — {LINEAS_CONFIG[invLinea].nombre} ({COLORES_CONFIG[invColor].corto})
-            </h2>
-            <p className="m-0 text-[12px] text-slate-600 mb-3">
-              Usa + / − por tramo de 6.10 m o escribe tramos disponibles
-            </p>
+            <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
+              <div>
+                <h2 className="m-0 text-[17px] font-extrabold">
+                  2. Perfiles — {LINEAS_CONFIG[invLinea].nombre} ({COLORES_CONFIG[invColor].corto})
+                </h2>
+                <p className="m-0 text-[12px] text-slate-600">
+                  Captura por tramos de 6.10 m, metros (m) o centímetros (cm)
+                </p>
+              </div>
+              <div className="inline-flex items-center gap-1 rounded-xl border border-slate-300 bg-slate-100 p-1 shrink-0">
+                {(['tramos', 'm', 'cm'] as const).map((unitOpt) => (
+                  <button
+                    key={unitOpt}
+                    type="button"
+                    id={`btn-perfil-unit-${unitOpt}`}
+                    onClick={() => {
+                      setPerfilInputUnit(unitOpt);
+                      setPerfilDraftMap({});
+                    }}
+                    className={`px-2.5 py-1 rounded-lg text-[11.5px] font-extrabold cursor-pointer transition-colors ${
+                      perfilInputUnit === unitOpt
+                        ? 'bg-[#0B2545] text-white shadow-sm'
+                        : 'text-slate-700 hover:bg-white/70'
+                    }`}
+                  >
+                    {unitOpt === 'tramos' ? 'Tramos' : unitOpt}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 mb-3 rounded-xl bg-slate-50 border border-slate-200">
+              <div className="flex items-center gap-1.5 flex-wrap text-[11.5px] font-bold">
+                <span className="px-1.5 py-0.5 rounded bg-blue-600 text-white text-[10px] font-extrabold uppercase tracking-wide">
+                  {activeMarcaFinal}
+                </span>
+                <span className="text-slate-600">Registrando en color:</span>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-blue-400 bg-blue-50 text-blue-800 font-extrabold">
+                  <span
+                    className="w-2.5 h-2.5 rounded-full border border-slate-400 shrink-0"
+                    style={{ background: COLORES_CONFIG[invColor].swatch }}
+                  />
+                  {COLORES_CONFIG[invColor].corto}
+                </span>
+              </div>
+              <div className="flex items-center gap-1 flex-wrap">
+                {Object.values(COLORES_CONFIG).map((c) => {
+                  const active = invColor === c.id;
+                  return (
+                    <button
+                      key={`quick-color-${c.id}`}
+                      type="button"
+                      onClick={() => handleSelectColor(c.id)}
+                      className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold border cursor-pointer ${
+                        active
+                          ? 'bg-blue-600 text-white border-blue-700'
+                          : 'bg-white text-slate-700 border-slate-300 hover:border-blue-400'
+                      }`}
+                    >
+                      <span
+                        className="w-2.5 h-2.5 rounded-full border border-slate-300 shrink-0"
+                        style={{ background: c.swatch }}
+                      />
+                      {c.corto}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
             <div className="flex flex-col max-h-[680px] overflow-y-auto pr-1">
               {CATALOGO_PERFILES.map((perfil) => {
-                const key = `${invLinea}__${perfil.id}__${invColor}`;
+                const brandedKey = makeInventarioKey(invLinea, perfil.id, invColor, activeMarcaFinal);
+                const legacyKey = makeInventarioKey(invLinea, perfil.id, invColor);
+                const useLegacy =
+                  activeMarcaFinal === INVENTARIO_DEFAULT_MARCA &&
+                  inventario[brandedKey] === undefined &&
+                  Number(inventario[legacyKey] || 0) > 0;
+                const key = useLegacy ? legacyKey : brandedKey;
                 const tramos = Number(inventario[key] || 0);
                 const metros = round2(tramos * TRAMO_STD_M);
+                const cmTotales = Math.round(tramos * TRAMO_STD_M * 100);
+                const displayedFromStore =
+                  perfilInputUnit === 'tramos'
+                    ? String(tramos)
+                    : perfilInputUnit === 'm'
+                      ? String(metros)
+                      : String(cmTotales);
+                const inputDisplayVal =
+                  perfilDraftMap[key] !== undefined ? perfilDraftMap[key] : displayedFromStore;
+                const parsedDraft = Number(inputDisplayVal);
+                const hasValidDraft = Number.isFinite(parsedDraft) && parsedDraft > 0;
+                const eqFromDraft =
+                  perfilInputUnit === 'm' && hasValidDraft
+                    ? `= ${Math.round(parsedDraft * 100)} cm (${round2(parsedDraft / TRAMO_STD_M).toFixed(2)} tr.)`
+                    : perfilInputUnit === 'cm' && hasValidDraft
+                      ? `= ${(parsedDraft / 100).toFixed(2)} m (${round2(parsedDraft / (TRAMO_STD_M * 100)).toFixed(2)} tr.)`
+                      : null;
+
+                const handleStepDelta = (dir: -1 | 1) => {
+                  setPerfilDraftMap((prev) => {
+                    if (!(key in prev)) return prev;
+                    const next = { ...prev };
+                    delete next[key];
+                    return next;
+                  });
+                  if (perfilInputUnit === 'tramos') {
+                    onSetInventario(key, Math.max(0, round2(tramos + dir)));
+                  } else if (perfilInputUnit === 'm') {
+                    const nextM = Math.max(0, round2(metros + dir * 1));
+                    onSetInventario(key, Math.round((nextM / TRAMO_STD_M) * 10000) / 10000);
+                  } else {
+                    const nextCm = Math.max(0, cmTotales + dir * 50);
+                    onSetInventario(key, Math.round((nextCm / (TRAMO_STD_M * 100)) * 10000) / 10000);
+                  }
+                };
+
                 return (
                   <div
-                    key={perfil.id}
+                    key={key}
                     className="flex flex-wrap items-center justify-between gap-2.5 py-3 border-b border-slate-200 last:border-b-0"
                   >
                     <div className="min-w-0 flex-1 basis-[170px] flex items-center gap-2.5">
                       <button
                         type="button"
                         data-preserve-light="true"
-                        onClick={() => onOpenPerfilModal(perfil.id)}
-                        title="Ver sección transversal / foto real"
-                        className="w-10 h-10 rounded-lg bg-white border border-slate-300 hover:border-blue-500 inline-flex items-center justify-center shrink-0 p-0.5 cursor-pointer overflow-hidden"
+                        onClick={() =>
+                          openZoomPerfil({
+                            perfilId: perfil.id,
+                            nombre: perfil.nombre,
+                            codigo: activeMarcaFinal || perfil.codigoRef || undefined,
+                            subtitulo: `${activeMarcaFinal} · ${LINEAS_CONFIG[invLinea]?.nombre || ''} · ${COLORES_CONFIG[invColor]?.corto || ''} · ${perfil.uso}`,
+                            fotoRealUrl: getPerfilFotoUrl(perfilFotos, perfil.id, invLinea),
+                            onEditFoto: () => {
+                              setZoomPerfil(null);
+                              if (onReplaceSubModalWithPerfil) {
+                                onReplaceSubModalWithPerfil(perfil.id);
+                              } else {
+                                onOpenPerfilModal(perfil.id);
+                              }
+                            },
+                          })
+                        }
+                        title={`Ampliar dibujo técnico de ${perfil.nombre}`}
+                        aria-label={`Ampliar dibujo técnico de ${perfil.nombre}`}
+                        className="w-10 h-10 rounded-lg bg-white border border-slate-300 hover:border-blue-500 hover:ring-2 hover:ring-blue-400/40 inline-flex items-center justify-center shrink-0 p-0.5 cursor-zoom-in overflow-hidden transition-all active:scale-95"
                       >
                         <PerfilSectionSvg
                           perfilId={perfil.id}
@@ -1308,35 +1758,63 @@ export const InventarioView: React.FC<Props> = ({
                         <strong className="block text-[13.5px] text-[#1E293B] break-words">{perfil.nombre}</strong>
                         <span className="block text-[11.5px] text-slate-600 break-words">{perfil.uso}</span>
                         <div className={`mono text-[11.5px] font-bold mt-0.5 ${tramos > 0 ? 'text-emerald-700' : 'text-slate-600'}`}>
-                          {tramos > 0 ? `Disponible: ${metros.toFixed(2)} m` : 'Sin existencia (0.00 m)'}
+                          {tramos > 0
+                            ? `Disponible: ${metros.toFixed(2)} m (${cmTotales} cm) · ${round2(tramos)} tr.`
+                            : 'Sin existencia (0.00 m · 0 cm)'}
                         </div>
+                        {eqFromDraft && (
+                          <div className="mono text-[10.5px] font-bold text-blue-700 mt-0.5">
+                            {eqFromDraft}
+                          </div>
+                        )}
                       </div>
                     </div>
 
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => onSetInventario(key, Math.max(0, round2(tramos - 1)))}
-                        aria-label={`Restar 1 tramo de ${perfil.nombre}`}
+                        onClick={() => handleStepDelta(-1)}
+                        aria-label={`Restar ${perfilInputUnit} de ${perfil.nombre}`}
                         className="w-10 h-10 rounded-[10px] border border-slate-200 bg-slate-50 hover:bg-blue-50 text-[18px] font-extrabold cursor-pointer"
                       >
                         −
                       </button>
-                      <div className="w-[70px]">
-                        <span className="block text-[10px] text-slate-500 font-bold text-center">Tramos</span>
+                      <div className="w-[78px]">
+                        <span className="block text-[10px] text-slate-500 font-bold text-center">
+                          {perfilInputUnit === 'tramos' ? 'Tramos' : perfilInputUnit === 'm' ? 'Metros (m)' : 'Centím. (cm)'}
+                        </span>
                         <input
                           type="number"
                           min={0}
-                          step={0.5}
-                          value={tramos}
-                          onChange={(e) => onSetInventario(key, Math.max(0, Number(e.target.value) || 0))}
+                          step={perfilInputUnit === 'tramos' ? 0.5 : perfilInputUnit === 'm' ? 0.1 : 10}
+                          value={inputDisplayVal}
+                          onChange={(e) => {
+                            const rawStr = e.target.value;
+                            setPerfilDraftMap((prev) => ({ ...prev, [key]: rawStr }));
+                            const numVal = Math.max(0, Number(rawStr) || 0);
+                            if (perfilInputUnit === 'tramos') {
+                              onSetInventario(key, numVal);
+                            } else if (perfilInputUnit === 'm') {
+                              onSetInventario(key, Math.round((numVal / TRAMO_STD_M) * 10000) / 10000);
+                            } else {
+                              onSetInventario(key, Math.round((numVal / (TRAMO_STD_M * 100)) * 10000) / 10000);
+                            }
+                          }}
+                          onBlur={() => {
+                            setPerfilDraftMap((prev) => {
+                              if (!(key in prev)) return prev;
+                              const next = { ...prev };
+                              delete next[key];
+                              return next;
+                            });
+                          }}
                           className="w-full min-h-[38px] rounded-lg border border-slate-200 text-center mono text-[13px] font-bold"
                         />
                       </div>
                       <button
                         type="button"
-                        onClick={() => onSetInventario(key, round2(tramos + 1))}
-                        aria-label={`Sumar 1 tramo de ${perfil.nombre}`}
+                        onClick={() => handleStepDelta(1)}
+                        aria-label={`Sumar ${perfilInputUnit} de ${perfil.nombre}`}
                         className="w-10 h-10 rounded-[10px] border border-slate-200 bg-slate-50 hover:bg-blue-50 text-[18px] font-extrabold cursor-pointer"
                       >
                         +
@@ -1349,6 +1827,11 @@ export const InventarioView: React.FC<Props> = ({
           </div>
         </div>
       )}
+
+      <PerfilZoomModal
+        data={zoomPerfil}
+        onClose={() => (onRequestBack ? onRequestBack() : setZoomPerfil(null))}
+      />
     </section>
   );
 };

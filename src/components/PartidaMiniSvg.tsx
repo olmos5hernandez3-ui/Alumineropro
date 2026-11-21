@@ -125,7 +125,7 @@ export const PartidaMiniSvg: React.FC<PartidaMiniSvgProps> = ({
             fill="#0F172A"
           />
         </g>
-      ) : partida.apertura === 'fija' ? (
+      ) : partida.apertura === 'fija' || partida.linea === 'mosq-fijo' ? (
         <g>
           <line
             x1={innerX + 4}
@@ -149,7 +149,11 @@ export const PartidaMiniSvg: React.FC<PartidaMiniSvgProps> = ({
       ) : partida.apertura === 'abatible' || partida.apertura === 'oscilobatiente' ? (
         <g>
           <polyline
-            points={`${innerX},${innerY} ${innerX + innerW},${innerY + innerH / 2} ${innerX},${innerY + innerH}`}
+            points={
+              partida.invertido
+                ? `${innerX + innerW},${innerY} ${innerX},${innerY + innerH / 2} ${innerX + innerW},${innerY + innerH}`
+                : `${innerX},${innerY} ${innerX + innerW},${innerY + innerH / 2} ${innerX},${innerY + innerH}`
+            }
             fill="none"
             stroke="#1D4ED8"
             strokeWidth="1.2"
@@ -164,6 +168,12 @@ export const PartidaMiniSvg: React.FC<PartidaMiniSvgProps> = ({
               strokeDasharray="2.5 2.5"
             />
           )}
+          <circle
+            cx={partida.invertido ? innerX + 4.5 : innerX + innerW - 4.5}
+            cy={innerY + innerH / 2}
+            r="1.7"
+            fill="#0F172A"
+          />
         </g>
       ) : partida.apertura === 'banderola' ? (
         <polyline
@@ -183,8 +193,18 @@ export const PartidaMiniSvg: React.FC<PartidaMiniSvgProps> = ({
             stroke={frameStroke}
             strokeWidth="1.8"
           />
+          <text
+            x={innerX + innerW / 2}
+            y={innerY + innerH * 0.28}
+            textAnchor="middle"
+            fill="#1E40AF"
+            fontSize="6.5"
+            fontWeight="700"
+          >
+            F
+          </text>
           <path
-            d={`M ${innerX + innerW / 2} ${innerY + innerH * 0.82} V ${innerY + innerH * 0.6}`}
+            d={`M ${innerX + innerW / 2} ${innerY + innerH * 0.85} V ${innerY + innerH * 0.6}`}
             stroke="#1D4ED8"
             strokeWidth="1.5"
           />
@@ -195,8 +215,7 @@ export const PartidaMiniSvg: React.FC<PartidaMiniSvgProps> = ({
             strokeWidth="1.4"
           />
         </g>
-      ) : (
-        /* Corrediza / Cancel / Plegable por número de hojas */
+      ) : partida.apertura === 'plegable' ? (
         <g>
           {Array.from({ length: Math.max(1, hojas - 1) }).map((_, i) => {
             const lx = innerX + (innerW / hojas) * (i + 1);
@@ -212,19 +231,92 @@ export const PartidaMiniSvg: React.FC<PartidaMiniSvgProps> = ({
               />
             );
           })}
-          {/* Flecha corrediza */}
-          <path
-            d={`M ${innerX + innerW * 0.62} ${innerY + innerH / 2} H ${innerX + innerW * 0.85}`}
-            stroke="#1D4ED8"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-          />
-          <polyline
-            points={`${innerX + innerW * 0.67},${innerY + innerH / 2 - 3} ${innerX + innerW * 0.61},${innerY + innerH / 2} ${innerX + innerW * 0.67},${innerY + innerH / 2 + 3}`}
-            fill="none"
-            stroke="#1D4ED8"
-            strokeWidth="1.3"
-          />
+          {Array.from({ length: hojas }).map((_, i) => {
+            const cellW = innerW / hojas;
+            const cx1 = innerX + cellW * i + 2;
+            const cx2 = innerX + cellW * (i + 1) - 2;
+            const mid = (cx1 + cx2) / 2;
+            const apexY = i % 2 === 0 ? innerY + innerH * 0.34 : innerY + innerH * 0.66;
+            return (
+              <polyline
+                key={i}
+                points={`${cx1},${innerY + innerH / 2} ${mid},${apexY} ${cx2},${innerY + innerH / 2}`}
+                fill="none"
+                stroke="#1D4ED8"
+                strokeWidth="1.2"
+                strokeDasharray="2.5 2"
+              />
+            );
+          })}
+        </g>
+      ) : (
+        /* Corrediza / Cancel por número de hojas */
+        <g>
+          {Array.from({ length: Math.max(1, hojas - 1) }).map((_, i) => {
+            const lx = innerX + (innerW / hojas) * (i + 1);
+            return (
+              <line
+                key={i}
+                x1={lx}
+                y1={innerY}
+                x2={lx}
+                y2={innerY + innerH}
+                stroke={frameStroke}
+                strokeWidth="1.8"
+              />
+            );
+          })}
+          {Array.from({ length: hojas }).map((_, i) => {
+            const cellW = innerW / hojas;
+            const cellX = innerX + cellW * i;
+            const cy = innerY + innerH / 2;
+            const padX = Math.max(3, cellW * 0.22);
+
+            let mode: 'fixed' | 'left' | 'right' = 'fixed';
+            if (hojas === 2) {
+              mode = partida.invertido ? (i === 0 ? 'right' : 'fixed') : (i === 0 ? 'fixed' : 'left');
+            } else if (hojas === 3) {
+              if (partida.invertido) {
+                mode = i === 0 ? 'right' : i === 2 ? 'left' : 'fixed';
+              } else {
+                mode = i === 1 ? 'right' : 'fixed';
+              }
+            } else {
+              if (partida.invertido) {
+                mode = i === 0 ? 'right' : i === hojas - 1 ? 'left' : 'fixed';
+              } else {
+                mode = i === 1 ? 'left' : i === 2 ? 'right' : 'fixed';
+              }
+            }
+
+            if (mode === 'fixed') {
+              return (
+                <text
+                  key={i}
+                  x={cellX + cellW / 2}
+                  y={cy + 2.5}
+                  textAnchor="middle"
+                  fill="#1E40AF"
+                  fontSize="7"
+                  fontWeight="700"
+                >
+                  F
+                </text>
+              );
+            }
+            const xLeft = cellX + padX;
+            const xRight = cellX + cellW - padX;
+            return (
+              <g key={i} stroke="#1D4ED8" strokeWidth="1.4" strokeLinecap="round" fill="none">
+                <line x1={xLeft} y1={cy} x2={xRight} y2={cy} />
+                {mode === 'left' ? (
+                  <polyline points={`${xLeft + 3.5},${cy - 2.8} ${xLeft},${cy} ${xLeft + 3.5},${cy + 2.8}`} />
+                ) : (
+                  <polyline points={`${xRight - 3.5},${cy - 2.8} ${xRight},${cy} ${xRight - 3.5},${cy + 2.8}`} />
+                )}
+              </g>
+            );
+          })}
         </g>
       )}
 

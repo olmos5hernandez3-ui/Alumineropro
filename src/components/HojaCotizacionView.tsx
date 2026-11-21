@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   COLORES_CONFIG,
   consolidarMaterialesObra,
@@ -18,7 +18,18 @@ import {
   TallerConfig,
 } from '../utils/storageHelpers';
 import { ContratoModal } from './ContratoModal';
+import { PartidaMiniSvg } from './PartidaMiniSvg';
 import { PerfilSectionSvg } from './PerfilSectionSvg';
+
+const APERTURA_PREVIEW_LABELS: Record<string, string> = {
+  corrediza: 'Corrediza',
+  fija: 'Fija',
+  guillotina: 'Guillotina',
+  abatible: 'Abatible',
+  banderola: 'Banderola',
+  oscilobatiente: 'Oscilobatiente',
+  plegable: 'Plegable',
+};
 
 interface Props {
   hoja: HojaState;
@@ -37,6 +48,9 @@ interface Props {
   onApartarStockObra: (rows: ReturnType<typeof consolidarMaterialesObra>) => void;
   onDescontarInventarioObra: (rows: ReturnType<typeof consolidarMaterialesObra>) => void;
   onOpenGlassOptimizer?: () => void;
+  onPushSubModal?: (sub: 'contrato') => void;
+  onRequestBack?: () => void;
+  onRegisterCloseSubModal?: (fn: (() => void) | null) => void;
   onShowToast: (msg: string, topSuccess?: boolean) => void;
 }
 
@@ -57,10 +71,21 @@ export const HojaCotizacionView: React.FC<Props> = ({
   onApartarStockObra,
   onDescontarInventarioObra,
   onOpenGlassOptimizer,
+  onPushSubModal,
+  onRequestBack,
+  onRegisterCloseSubModal,
   onShowToast,
 }) => {
   const [showDespieceObra, setShowDespieceObra] = useState(false);
   const [contratoOpen, setContratoOpen] = useState(false);
+
+  useEffect(() => {
+    if (!onRegisterCloseSubModal) return;
+    onRegisterCloseSubModal(() => {
+      setContratoOpen(false);
+    });
+    return () => onRegisterCloseSubModal(null);
+  }, [onRegisterCloseSubModal]);
 
   const comprometidosMap: Record<string, number> = {};
   for (const ob of obrasAprobadas) {
@@ -192,6 +217,32 @@ export const HojaCotizacionView: React.FC<Props> = ({
             )}
           </div>
 
+          {(taller.logoDataUrl || taller.nombre || hoja.proyecto) && (
+            <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                {taller.logoDataUrl && (
+                  <img
+                    src={taller.logoDataUrl}
+                    alt="Logo del taller"
+                    className="w-10 h-10 rounded-lg object-contain bg-white border border-slate-200 shrink-0"
+                  />
+                )}
+                <div className="min-w-0">
+                  <strong className="block text-[13px] font-extrabold text-slate-900 truncate">
+                    {taller.nombre || 'Presupuesto de Aluminio y Vidrio'}
+                  </strong>
+                  <span className="block text-[11px] text-slate-500 truncate">
+                    {hoja.proyecto || taller.clienteDefault || 'Cliente General'}
+                    {taller.tel ? ` · Tel: ${taller.tel}` : ''}
+                  </span>
+                </div>
+              </div>
+              <span className="text-[10.5px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-md px-2 py-1 shrink-0">
+                Vista Previa
+              </span>
+            </div>
+          )}
+
           {hoja.partidas.length === 0 ? (
             <p className="text-[12.5px] text-slate-500 p-5 text-center border border-dashed border-slate-200 rounded-xl">
               Aún no hay piezas en la Hoja de Cotización. Ve a Ventanas o Puertas y presiona{' '}
@@ -204,46 +255,70 @@ export const HojaCotizacionView: React.FC<Props> = ({
                   <div className="text-[12px] font-extrabold text-blue-700 mb-2 uppercase tracking-wider">
                     Área: {area}
                   </div>
-                  {items.map((p) => (
-                    <div
-                      key={p.id}
-                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 py-2.5 border-b border-slate-200/70 last:border-b-0"
-                    >
-                      <div>
-                        <strong className="block text-[13.5px] text-slate-900">
-                          {p.etiqueta ? `${p.etiqueta} · ` : ''}
-                          {LINEAS_CONFIG[p.linea].nombre}
-                        </strong>
-                        <span className="text-[12px] text-slate-500">
-                          {p.anchoCm} × {p.altoCm} cm · {COLORES_CONFIG[p.color].corto} ·{' '}
-                          {LINEAS_CONFIG[p.linea].esMosquitero
-                            ? 'Malla'
-                            : getRellenoLabel(p.relleno, p.vidrio)}{' '}
-                          · ×{p.cantidad} pza(s)
-                        </span>
+                  {items.map((p) => {
+                    const lineaCfg = LINEAS_CONFIG[p.linea];
+                    const apLabel =
+                      p.categoria === 'puertas' && !lineaCfg.esCancelBano
+                        ? `Puerta ${p.sentidoPuerta === 'der' ? 'Der.' : 'Izq.'}`
+                        : !lineaCfg.esMosquitero && !lineaCfg.esCancelBano
+                          ? APERTURA_PREVIEW_LABELS[p.apertura] || p.apertura
+                          : lineaCfg.esCancelBano
+                            ? 'Corredizo'
+                            : p.linea === 'mosq-fijo'
+                              ? 'Fijo'
+                              : 'Corredizo';
+                    return (
+                      <div
+                        key={p.id}
+                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 py-2.5 border-b border-slate-200/70 last:border-b-0"
+                      >
+                        <div className="flex items-start gap-3 min-w-0">
+                          <div data-preserve-light="true" className="shrink-0">
+                            <PartidaMiniSvg partida={p} width={96} height={72} />
+                          </div>
+                          <div className="min-w-0">
+                            <strong className="block text-[13.5px] text-slate-900 leading-snug">
+                              {p.etiqueta ? `${p.etiqueta} · ` : ''}
+                              {lineaCfg.nombre}
+                            </strong>
+                            <span className="block text-[11.5px] font-semibold text-blue-700 mt-0.5">
+                              {apLabel}
+                              {p.hojas > 1 && p.apertura !== 'fija' && p.categoria !== 'puertas'
+                                ? ` (${p.hojas} hojas)`
+                                : ''}
+                            </span>
+                            <span className="block text-[12px] text-slate-500 mt-0.5">
+                              {p.anchoCm} × {p.altoCm} cm · {COLORES_CONFIG[p.color].corto} ·{' '}
+                              {lineaCfg.esMosquitero
+                                ? 'Malla'
+                                : getRellenoLabel(p.relleno, p.vidrio)}{' '}
+                              · ×{p.cantidad} pza(s)
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-end gap-2 shrink-0">
+                          <span className="mono font-extrabold text-blue-600 text-[14px]">
+                            {formatMXN(p.totalLinea)}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => onEditarPartida(p)}
+                            className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-[12px] font-bold cursor-pointer"
+                          >
+                            Editar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onEliminarPartida(p.id)}
+                            aria-label={`Eliminar ${p.etiqueta || lineaCfg.nombre}`}
+                            className="px-2.5 py-1.5 rounded-lg border border-red-200 bg-red-50 text-red-700 text-[12px] font-bold cursor-pointer"
+                          >
+                            ✕
+                          </button>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="mono font-extrabold text-blue-600 text-[14px]">
-                          {formatMXN(p.totalLinea)}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => onEditarPartida(p)}
-                          className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-[12px] font-bold cursor-pointer"
-                        >
-                          Editar
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onEliminarPartida(p.id)}
-                          aria-label={`Eliminar ${p.etiqueta || LINEAS_CONFIG[p.linea].nombre}`}
-                          className="px-2.5 py-1.5 rounded-lg border border-red-200 bg-red-50 text-red-700 text-[12px] font-bold cursor-pointer"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ))}
             </div>
@@ -329,6 +404,7 @@ export const HojaCotizacionView: React.FC<Props> = ({
                     return;
                   }
                   setContratoOpen(true);
+                  onPushSubModal?.('contrato');
                 }}
                 className="w-full min-h-[50px] px-4 rounded-xl bg-[#0B2545] hover:bg-[#133866] text-white border border-sky-400/35 font-extrabold text-[14px] cursor-pointer shadow-md"
               >
@@ -477,7 +553,7 @@ export const HojaCotizacionView: React.FC<Props> = ({
         onUpdateCliente={onUpdateContratoCliente}
         onUpdateProyecto={(proyecto) => onUpdateHoja({ proyecto })}
         onToggleIva={(incluirIva) => onUpdateHoja({ incluirIva })}
-        onClose={() => setContratoOpen(false)}
+        onClose={() => (onRequestBack ? onRequestBack() : setContratoOpen(false))}
         onShowToast={onShowToast}
       />
     </section>

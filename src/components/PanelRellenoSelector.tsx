@@ -146,8 +146,8 @@ export const PanelRellenoSelector: React.FC<Props> = ({
         })}
       </div>
 
-      {/* Tarjetas de material con muestra circular + descripción */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+      {/* Cuadrícula compacta de 2 columnas (igual que Acabado de Perfil) */}
+      <div className="grid grid-cols-2 gap-2.5">
         {itemsInCategory.map((item) => {
           const isSelected = activeItem.id === item.id;
           const itemPrecio = getRellenoPrecioM2(
@@ -164,38 +164,28 @@ export const PanelRellenoSelector: React.FC<Props> = ({
               key={item.id}
               type="button"
               onClick={() => handleSelectMaterial(item)}
-              className={`flex items-start gap-2.5 p-2.5 rounded-xl border text-left cursor-pointer transition-all ${
+              className={`flex items-center gap-2 min-h-[48px] px-2.5 py-2 rounded-xl border text-left cursor-pointer transition-all ${
                 isSelected
                   ? 'border-blue-600 bg-blue-50 ring-1 ring-blue-600'
                   : 'border-slate-200 bg-white hover:bg-slate-50'
               }`}
             >
               <span
-                className="w-8 h-8 rounded-full border border-slate-300 shadow-inner shrink-0 mt-0.5"
+                className="w-6 h-6 rounded-full border border-slate-300 shadow-inner shrink-0"
                 style={{ background: item.swatch }}
                 aria-hidden="true"
               />
               <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between gap-1.5">
-                  <span
-                    className={`text-[12.5px] font-extrabold leading-tight ${
-                      isSelected ? 'text-blue-700' : 'text-slate-900'
-                    }`}
-                  >
-                    {item.nombre}
-                  </span>
-                  <span className="mono text-[11px] font-bold text-slate-600 shrink-0">
-                    {formatMXN(itemPrecio)}/m²
-                  </span>
-                </div>
-                <p className="m-0 mt-0.5 text-[11px] text-slate-500 leading-snug">
-                  {item.descripcion}
-                </p>
-                {item.esDireccional && (
-                  <span className="inline-block mt-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 text-[10px] font-extrabold">
-                    Textura direccional (no rotar 90°)
-                  </span>
-                )}
+                <span
+                  className={`block text-[12.5px] font-bold leading-tight truncate ${
+                    isSelected ? 'text-blue-700' : 'text-slate-900'
+                  }`}
+                >
+                  {item.nombre}
+                </span>
+                <span className="block text-[11px] text-slate-500 mono mt-0.5">
+                  {formatMXN(itemPrecio)}/m²
+                </span>
               </div>
             </button>
           );

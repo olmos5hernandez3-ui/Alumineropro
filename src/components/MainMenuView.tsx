@@ -1,6 +1,6 @@
 import React from 'react';
 import { CATALOGO_PERFILES } from '../utils/alumineroLogic';
-import { formatMXN } from '../utils/storageHelpers';
+import { formatMXN, SavedColleagueReferral } from '../utils/storageHelpers';
 import { ScreenId } from './TopBarAndDrawer';
 
 interface Props {
@@ -10,11 +10,14 @@ interface Props {
   inventarioTramosTotal: number;
   hojasVidrioCount: number;
   notasCount: number;
+  savedReferral?: SavedColleagueReferral | null;
+  onClaimColleaguePromo?: () => void;
   onEntrarTrabajo: (cat: 'ventanas' | 'puertas') => void;
   onEntrarHoja: () => void;
   onEntrarInventario: () => void;
   onGoToView: (view: ScreenId) => void;
   onOpenAntesDespues: () => void;
+  onOpenLevantamiento?: () => void;
 }
 
 export const MainMenuView: React.FC<Props> = ({
@@ -24,11 +27,14 @@ export const MainMenuView: React.FC<Props> = ({
   inventarioTramosTotal,
   hojasVidrioCount,
   notasCount,
+  savedReferral = null,
+  onClaimColleaguePromo,
   onEntrarTrabajo,
   onEntrarHoja,
   onEntrarInventario,
   onGoToView,
   onOpenAntesDespues,
+  onOpenLevantamiento,
 }) => {
   return (
     <section
@@ -41,6 +47,47 @@ export const MainMenuView: React.FC<Props> = ({
           ¿Qué vamos a trabajar?
         </h1>
       </div>
+
+      {/* Acceso directo a Levantamiento Rápido */}
+      <button
+        type="button"
+        id="lev-entry"
+        onClick={() => {
+          if (onOpenLevantamiento) {
+            onOpenLevantamiento();
+          } else {
+            window.__alumLev?.open();
+          }
+        }}
+      >
+        <span style={{ fontSize: '26px', lineHeight: 1 }}>📐</span>
+        <span style={{ flex: 1 }}>
+          Levantamiento Rápido
+          <small>Toma medidas en obra y manda directo a cotizar o modular →</small>
+        </span>
+      </button>
+
+      {/* Acceso discreto para canjear los 3 días gratis enviados por un colega */}
+      {!proActive && savedReferral && onClaimColleaguePromo && (
+        <button
+          type="button"
+          id="btn-menu-claim-colleague-promo"
+          onClick={onClaimColleaguePromo}
+          className="mb-3.5 w-full rounded-2xl px-4 py-3 text-left cursor-pointer border border-emerald-400/45 bg-[#060b14] bg-[radial-gradient(circle_at_15%_50%,rgba(16,185,129,0.28)_0%,rgba(6,11,20,0.96)_70%)] hover:border-emerald-300/70 transition-all active:scale-[0.98] flex items-center justify-between gap-3 shadow-lg"
+        >
+          <div className="min-w-0">
+            <span className="block text-[10.5px] font-extrabold uppercase tracking-wider text-emerald-300 truncate">
+              Invitación de {savedReferral.refName} · Promo #{savedReferral.promoNumber}
+            </span>
+            <span className="block text-[13.5px] sm:text-[14px] font-extrabold text-white leading-snug mt-0.5">
+              Canjear mis 3 días gratis de colega
+            </span>
+          </div>
+          <span className="shrink-0 px-3 py-1.5 rounded-xl bg-emerald-400 text-slate-950 font-extrabold text-[11.5px] whitespace-nowrap shadow-sm">
+            Pedir PIN
+          </span>
+        </button>
+      )}
 
       {/* Tarjeta principal destacada: Hoja de Cotización */}
       <button
@@ -107,17 +154,17 @@ export const MainMenuView: React.FC<Props> = ({
           type="button"
           id="btn-menu-ventanas"
           onClick={() => onEntrarTrabajo('ventanas')}
-          className="menu-grid-card flex flex-col justify-between gap-3 w-full min-h-[124px] sm:min-h-[132px] p-3.5 sm:p-4 rounded-[20px] border text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-95"
+          className="menu-grid-card flex flex-col justify-between gap-3 w-full min-h-[126px] sm:min-h-[134px] p-3.5 sm:p-4 rounded-[20px] border text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-95"
         >
-          <div className="flex items-center justify-between gap-2 w-full">
+          <div className="flex items-center justify-between gap-2 w-full min-h-[40px]">
             <div className="menu-icon-box menu-icon-blue w-10 h-10 rounded-2xl flex items-center justify-center shrink-0">
-              <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <rect x="3" y="4" width="18" height="16" rx="2" />
                 <line x1="12" y1="4" x2="12" y2="20" />
                 <path d="M16 12h2m-1-1 2 1-2 1" />
               </svg>
             </div>
-            <span className="menu-badge-free px-2 py-0.5 rounded-lg text-[10px] sm:text-[11px] font-extrabold whitespace-nowrap">
+            <span className="menu-badge-free inline-flex items-center justify-center min-h-[22px] px-2 py-0.5 rounded-lg text-[10px] sm:text-[10.5px] font-extrabold leading-none whitespace-nowrap shrink-0">
               3" Gratis
             </span>
           </div>
@@ -136,21 +183,23 @@ export const MainMenuView: React.FC<Props> = ({
           type="button"
           id="btn-menu-puertas"
           onClick={() => onEntrarTrabajo('puertas')}
-          className="menu-grid-card flex flex-col justify-between gap-3 w-full min-h-[124px] sm:min-h-[132px] p-3.5 sm:p-4 rounded-[20px] border text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-95"
+          className="menu-grid-card flex flex-col justify-between gap-3 w-full min-h-[126px] sm:min-h-[134px] p-3.5 sm:p-4 rounded-[20px] border text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-95"
         >
-          <div className="flex items-center justify-between gap-2 w-full">
+          <div className="flex items-center justify-between gap-2 w-full min-h-[40px]">
             <div className="menu-icon-box menu-icon-indigo w-10 h-10 rounded-2xl flex items-center justify-center shrink-0">
-              <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M6 21V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v17" />
                 <path d="M4 21h16" />
                 <circle cx="15" cy="12" r="1" />
               </svg>
             </div>
-            {!proActive && (
-              <span className="menu-badge-pro text-[10px] sm:text-[11px] font-extrabold whitespace-nowrap">
-                🔒 PRO
-              </span>
-            )}
+            <span
+              className={`${
+                proActive ? 'menu-badge-info' : 'menu-badge-pro-pill'
+              } inline-flex items-center justify-center min-h-[22px] px-2 py-0.5 rounded-lg text-[10px] sm:text-[10.5px] font-extrabold leading-none whitespace-nowrap shrink-0`}
+            >
+              {proActive ? 'PRO Activo' : '🔒 PRO'}
+            </span>
           </div>
           <div>
             <span className="block text-[14.5px] sm:text-[15.5px] font-extrabold leading-tight">
@@ -167,17 +216,17 @@ export const MainMenuView: React.FC<Props> = ({
           type="button"
           id="btn-menu-catalogo"
           onClick={() => onGoToView('catalogo')}
-          className="menu-grid-card flex flex-col justify-between gap-3 w-full min-h-[124px] sm:min-h-[132px] p-3.5 sm:p-4 rounded-[20px] border text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-95"
+          className="menu-grid-card flex flex-col justify-between gap-3 w-full min-h-[126px] sm:min-h-[134px] p-3.5 sm:p-4 rounded-[20px] border text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-95"
         >
-          <div className="flex items-center justify-between gap-2 w-full">
+          <div className="flex items-center justify-between gap-2 w-full min-h-[40px]">
             <div className="menu-icon-box menu-icon-emerald w-10 h-10 rounded-2xl flex items-center justify-center shrink-0">
-              <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M4 4h6v16H4z" />
                 <path d="M10 10h10v10H10z" />
                 <path d="M14 4h6v3h-6z" />
               </svg>
             </div>
-            <span className="menu-badge-free mono px-2 py-0.5 rounded-lg text-[10.5px] font-extrabold whitespace-nowrap">
+            <span className="menu-badge-free mono inline-flex items-center justify-center min-h-[22px] px-2 py-0.5 rounded-lg text-[10px] sm:text-[10.5px] font-extrabold leading-none whitespace-nowrap shrink-0">
               {CATALOGO_PERFILES.length} perf.
             </span>
           </div>
@@ -196,26 +245,20 @@ export const MainMenuView: React.FC<Props> = ({
           type="button"
           id="btn-menu-inventario"
           onClick={onEntrarInventario}
-          className="menu-grid-card flex flex-col justify-between gap-3 w-full min-h-[124px] sm:min-h-[132px] p-3.5 sm:p-4 rounded-[20px] border text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-95"
+          className="menu-grid-card flex flex-col justify-between gap-3 w-full min-h-[126px] sm:min-h-[134px] p-3.5 sm:p-4 rounded-[20px] border text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-95"
         >
-          <div className="flex items-center justify-between gap-1.5 w-full">
+          <div className="flex items-center justify-between gap-2 w-full min-h-[40px]">
             <div className="menu-icon-box menu-icon-amber w-10 h-10 rounded-2xl flex items-center justify-center shrink-0">
-              <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
                 <path d="m3.3 7 8.7 5 8.7-5" />
                 <path d="M12 22V12" />
               </svg>
             </div>
-            <div className="flex items-center gap-1 shrink-0">
-              <span className="menu-badge-info mono px-2 py-0.5 rounded-lg text-[10.5px] font-extrabold whitespace-nowrap">
-                {inventarioTramosTotal} tr.
-              </span>
-              {!proActive && (
-                <span className="menu-badge-pro text-[10px] font-extrabold whitespace-nowrap">
-                  🔒
-                </span>
-              )}
-            </div>
+            <span className="menu-badge-info mono inline-flex items-center justify-center gap-1 min-h-[22px] px-2 py-0.5 rounded-lg text-[10px] sm:text-[10.5px] font-extrabold leading-none whitespace-nowrap shrink-0">
+              {!proActive && <span aria-hidden="true">🔒</span>}
+              <span>{inventarioTramosTotal} tr.</span>
+            </span>
           </div>
           <div>
             <span className="block text-[14.5px] sm:text-[15.5px] font-extrabold leading-tight">
@@ -232,16 +275,16 @@ export const MainMenuView: React.FC<Props> = ({
           type="button"
           id="btn-menu-notas"
           onClick={() => onGoToView('notas')}
-          className="menu-grid-card flex flex-col justify-between gap-3 w-full min-h-[124px] sm:min-h-[132px] p-3.5 sm:p-4 rounded-[20px] border text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-95"
+          className="menu-grid-card flex flex-col justify-between gap-3 w-full min-h-[126px] sm:min-h-[134px] p-3.5 sm:p-4 rounded-[20px] border text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-95"
         >
-          <div className="flex items-center justify-between gap-2 w-full">
+          <div className="flex items-center justify-between gap-2 w-full min-h-[40px]">
             <div className="menu-icon-box menu-icon-teal w-10 h-10 rounded-2xl flex items-center justify-center shrink-0">
-              <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M12 20h9" />
                 <path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4Z" />
               </svg>
             </div>
-            <span className="menu-badge-free mono px-2 py-0.5 rounded-lg text-[10.5px] font-extrabold whitespace-nowrap">
+            <span className="menu-badge-free mono inline-flex items-center justify-center min-h-[22px] px-2 py-0.5 rounded-lg text-[10px] sm:text-[10.5px] font-extrabold leading-none whitespace-nowrap shrink-0">
               {notasCount > 0 ? `${notasCount} notas` : 'Gratis'}
             </span>
           </div>
@@ -260,18 +303,18 @@ export const MainMenuView: React.FC<Props> = ({
           type="button"
           id="btn-menu-modulacion"
           onClick={() => onGoToView('modulacion')}
-          className="menu-grid-card flex flex-col justify-between gap-3 w-full min-h-[124px] sm:min-h-[132px] p-3.5 sm:p-4 rounded-[20px] border text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-95"
+          className="menu-grid-card flex flex-col justify-between gap-3 w-full min-h-[126px] sm:min-h-[134px] p-3.5 sm:p-4 rounded-[20px] border text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-95"
         >
-          <div className="flex items-center justify-between gap-2 w-full">
+          <div className="flex items-center justify-between gap-2 w-full min-h-[40px]">
             <div className="menu-icon-box menu-icon-orange w-10 h-10 rounded-2xl flex items-center justify-center shrink-0">
-              <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M21 6H3" />
                 <path d="M10 12H3" />
                 <path d="M10 18H3" />
                 <path d="m14 15 3 3 5-5" />
               </svg>
             </div>
-            <span className="menu-badge-free px-2 py-0.5 rounded-lg text-[10.5px] font-extrabold whitespace-nowrap">
+            <span className="menu-badge-free inline-flex items-center justify-center min-h-[22px] px-2 py-0.5 rounded-lg text-[10px] sm:text-[10.5px] font-extrabold leading-none whitespace-nowrap shrink-0">
               Gratis
             </span>
           </div>
@@ -290,15 +333,18 @@ export const MainMenuView: React.FC<Props> = ({
           type="button"
           id="btn-menu-taller"
           onClick={() => onGoToView('taller')}
-          className="menu-grid-card flex flex-col justify-between gap-3 w-full min-h-[124px] sm:min-h-[132px] p-3.5 sm:p-4 rounded-[20px] border text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-95"
+          className="menu-grid-card flex flex-col justify-between gap-3 w-full min-h-[126px] sm:min-h-[134px] p-3.5 sm:p-4 rounded-[20px] border text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-95"
         >
-          <div className="flex items-center justify-between gap-2 w-full">
+          <div className="flex items-center justify-between gap-2 w-full min-h-[40px]">
             <div className="menu-icon-box menu-icon-violet w-10 h-10 rounded-2xl flex items-center justify-center shrink-0">
-              <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M3 9l9-6 9 6v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
                 <path d="M9 22V12h6v10" />
               </svg>
             </div>
+            <span className="menu-badge-violet inline-flex items-center justify-center min-h-[22px] px-2 py-0.5 rounded-lg text-[10px] sm:text-[10.5px] font-extrabold leading-none whitespace-nowrap shrink-0">
+              Tarifas
+            </span>
           </div>
           <div>
             <span className="block text-[14.5px] sm:text-[15.5px] font-extrabold leading-tight">
@@ -315,18 +361,18 @@ export const MainMenuView: React.FC<Props> = ({
           type="button"
           id="btn-menu-antes-despues"
           onClick={onOpenAntesDespues}
-          className="menu-grid-card flex flex-col justify-between gap-3 w-full min-h-[124px] sm:min-h-[132px] p-3.5 sm:p-4 rounded-[20px] border text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-95"
+          className="menu-grid-card flex flex-col justify-between gap-3 w-full min-h-[126px] sm:min-h-[134px] p-3.5 sm:p-4 rounded-[20px] border text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-95"
         >
-          <div className="flex items-center justify-between gap-2 w-full">
+          <div className="flex items-center justify-between gap-2 w-full min-h-[40px]">
             <div className="menu-icon-box menu-icon-cyan w-10 h-10 rounded-2xl flex items-center justify-center shrink-0">
-              <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <rect x="3" y="4" width="18" height="16" rx="2" />
                 <line x1="12" y1="4" x2="12" y2="20" />
                 <path d="M6.5 14l2-2 2 2" />
                 <path d="M14.5 12l2-2 2 2" />
               </svg>
             </div>
-            <span className="menu-badge-cyan px-2 py-0.5 rounded-lg text-[10.5px] font-extrabold whitespace-nowrap">
+            <span className="menu-badge-cyan inline-flex items-center justify-center min-h-[22px] px-2 py-0.5 rounded-lg text-[10px] sm:text-[10.5px] font-extrabold leading-none whitespace-nowrap shrink-0">
               Clientes
             </span>
           </div>
@@ -347,9 +393,9 @@ export const MainMenuView: React.FC<Props> = ({
           onClick={() => onGoToView('vidrio')}
           className="menu-grid-card col-span-2 flex items-center justify-between gap-3 w-full min-h-[86px] p-3.5 sm:p-4 rounded-[20px] border text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-95"
         >
-          <div className="flex items-center gap-3.5 min-w-0">
-            <div className="menu-icon-box menu-icon-cyan w-11 h-11 rounded-2xl flex items-center justify-center shrink-0">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="menu-icon-box menu-icon-cyan w-10 h-10 rounded-2xl flex items-center justify-center shrink-0">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <rect x="3" y="3" width="18" height="18" rx="2" />
                 <line x1="11" y1="3" x2="11" y2="21" />
                 <line x1="11" y1="12" x2="21" y2="12" />
@@ -364,7 +410,7 @@ export const MainMenuView: React.FC<Props> = ({
               </span>
             </div>
           </div>
-          <span className="menu-badge-cyan mono px-2.5 py-1 rounded-lg text-[10.5px] font-extrabold whitespace-nowrap shrink-0">
+          <span className="menu-badge-cyan mono inline-flex items-center justify-center min-h-[22px] px-2.5 py-0.5 rounded-lg text-[10px] sm:text-[10.5px] font-extrabold leading-none whitespace-nowrap shrink-0">
             {hojasVidrioCount > 0 ? `${hojasVidrioCount} hojas` : 'Corte 2D'}
           </span>
         </button>

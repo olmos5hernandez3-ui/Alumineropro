@@ -268,6 +268,8 @@ interface CatalogoProps {
   onUploadPerfilFoto: (id: PerfilCatalogoId, file: File) => void;
   onRemovePerfilFoto: (id: PerfilCatalogoId) => void;
   onOpenSugerencias: () => void;
+  catalogoTab?: 'perfiles' | 'herrajes';
+  onChangeCatalogoTab?: (tab: 'perfiles' | 'herrajes') => void;
 }
 
 const FAMILIAS_CATALOGO: { id: PerfilFamilia | 'all'; label: string }[] = [
@@ -285,8 +287,16 @@ export const CatalogoView: React.FC<CatalogoProps> = ({
   onUploadPerfilFoto,
   onRemovePerfilFoto,
   onOpenSugerencias,
+  catalogoTab: controlledCatalogoTab,
+  onChangeCatalogoTab,
 }) => {
-  const [catalogoTab, setCatalogoTab] = useState<'perfiles' | 'herrajes'>('perfiles');
+  const [localCatalogoTab, setLocalCatalogoTab] = useState<'perfiles' | 'herrajes'>('perfiles');
+  const catalogoTab = controlledCatalogoTab ?? localCatalogoTab;
+  const setCatalogoTab = (next: 'perfiles' | 'herrajes') => {
+    if (next === catalogoTab) return;
+    if (onChangeCatalogoTab) onChangeCatalogoTab(next);
+    else setLocalCatalogoTab(next);
+  };
   const [busqueda, setBusqueda] = useState('');
   const [familiaFilter, setFamiliaFilter] = useState<PerfilFamilia | 'all'>('all');
   const [herrajeCat, setHerrajeCat] = useState<HerrajeCategoria | 'all'>('all');

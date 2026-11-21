@@ -64,6 +64,8 @@ interface Props {
   onOpenFormulaModal: () => void;
   onSelectFormulaId: (id: string) => void;
   onUpdateRellenoPrecioM2: (materialId: string, espesorMm: number, price: number) => void;
+  workTab?: 'descuentos' | 'cotizacion';
+  onChangeWorkTab?: (tab: 'descuentos' | 'cotizacion') => void;
   onShowToast: (msg: string, topSuccess?: boolean) => void;
 }
 
@@ -129,9 +131,17 @@ export const TrabajoView: React.FC<Props> = ({
   onOpenFormulaModal,
   onSelectFormulaId,
   onUpdateRellenoPrecioM2,
+  workTab: controlledWorkTab,
+  onChangeWorkTab,
   onShowToast,
 }) => {
-  const [workTab, setWorkTab] = useState<'descuentos' | 'cotizacion'>('descuentos');
+  const [localWorkTab, setLocalWorkTab] = useState<'descuentos' | 'cotizacion'>('descuentos');
+  const workTab = controlledWorkTab ?? localWorkTab;
+  const setWorkTab = (next: 'descuentos' | 'cotizacion') => {
+    if (next === workTab) return;
+    if (onChangeWorkTab) onChangeWorkTab(next);
+    else setLocalWorkTab(next);
+  };
   const [despieceTab, setDespieceTab] = useState<'perfiles' | 'vidrios' | 'herrajes'>('perfiles');
   const [showTolerancias, setShowTolerancias] = useState(false);
   const [simPlaying, setSimPlaying] = useState(false);
@@ -266,7 +276,7 @@ export const TrabajoView: React.FC<Props> = ({
       </div>
 
       {/* Selector de Línea (incluye Mosquiteros en Ventanas) */}
-      <div id="work-lineas-grid" className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-4">
+      <div id="work-lineas-grid" className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 mb-4">
         {lineasDeCategoria.map((l) => {
           const active = params.linea === l.id;
           const locked = l.pro && !proActive;
@@ -274,30 +284,38 @@ export const TrabajoView: React.FC<Props> = ({
             <button
               key={l.id}
               type="button"
+              data-line-active={active ? 'true' : 'false'}
+              aria-pressed={active}
               onClick={() => onSelectLinea(l.id)}
-              className={`flex items-center justify-between gap-2 min-h-[54px] px-3 py-2.5 rounded-[13px] text-left cursor-pointer border transition-colors ${
+              className={`relative flex flex-col justify-between gap-1.5 min-h-[66px] px-3 py-2.5 rounded-[14px] text-left cursor-pointer transition-all active:scale-[0.98] ${
                 active
-                  ? 'bg-white text-slate-900 border-white shadow-md'
+                  ? 'border-2 border-emerald-400 bg-emerald-950/70 text-white shadow-lg ring-1 ring-emerald-400/50'
                   : locked
-                    ? 'border-dashed border-amber-400/45 bg-[#13315C]/70 text-white hover:bg-[#183B6E]'
-                    : 'border-white/15 bg-white/10 text-white hover:bg-white/15'
+                    ? 'border border-dashed border-amber-400/45 bg-[#13315C]/70 text-white hover:bg-[#183B6E]'
+                    : 'border border-white/15 bg-white/10 text-white hover:bg-white/15 hover:border-white/30'
               }`}
             >
-              <div className="min-w-0">
-                <span className="block text-[13px] font-extrabold leading-tight">{l.nombre}</span>
-                <span className={`block text-[11px] mt-0.5 ${active ? 'text-slate-500' : 'text-slate-300'}`}>
-                  {l.desc}
+              <div className="flex items-start justify-between gap-1.5 w-full">
+                <span className="block text-[13px] font-extrabold leading-tight line-card-title">
+                  {l.nombre}
                 </span>
+                {active ? (
+                  <span className="line-active-badge inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-emerald-400/20 border border-emerald-300/60 text-emerald-200 text-[10px] font-extrabold shrink-0 whitespace-nowrap">
+                    ✓ Activa
+                  </span>
+                ) : !l.pro ? (
+                  <span className="text-[10.5px] font-extrabold text-emerald-400 shrink-0">Gratis</span>
+                ) : locked ? (
+                  <span className="text-[10.5px] font-extrabold text-amber-300 shrink-0">🔒 PRO</span>
+                ) : (
+                  <span className="text-[10.5px] font-extrabold text-emerald-300 shrink-0">
+                    PRO
+                  </span>
+                )}
               </div>
-              {!l.pro ? (
-                <span className="text-[11px] font-extrabold text-emerald-600 shrink-0">Gratis</span>
-              ) : locked ? (
-                <span className="text-[11px] font-extrabold text-amber-300 shrink-0">🔒 PRO</span>
-              ) : (
-                <span className={`text-[10.5px] font-extrabold shrink-0 ${active ? 'text-blue-600' : 'text-emerald-300'}`}>
-                  PRO
-                </span>
-              )}
+              <span className={`block text-[11px] leading-snug line-card-desc ${active ? 'text-emerald-100' : 'text-slate-300'}`}>
+                {l.desc}
+              </span>
             </button>
           );
         })}

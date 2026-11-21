@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   COLORES_CONFIG,
   ColorId,
@@ -23,6 +23,7 @@ import {
 } from '../utils/modulacionLogic';
 import { SobranteItem } from '../utils/storageHelpers';
 import { PerfilSectionSvg } from './PerfilSectionSvg';
+import { PerfilZoomData, PerfilZoomModal } from './PerfilZoomModal';
 
 interface ModulacionCortesViewProps {
   tarifasBase: Partial<Record<LineaId, number>>;
@@ -31,6 +32,17 @@ interface ModulacionCortesViewProps {
   onAddSobrante: (item: Omit<SobranteItem, 'id' | 'fecha'>) => void;
   onSendToHoja: (partida: PartidaObra, goToHoja: boolean) => void;
   onSendVidriosToOptimizer?: (vidrios: CorteVidrio[]) => void;
+  step?: 1 | 2 | 3 | 4 | 5;
+  paso5Tab?: 'cortes' | 'tramos';
+  mosquiteroModalOpen?: boolean;
+  onNavigateModState?: (patch: {
+    step?: 1 | 2 | 3 | 4 | 5;
+    paso5Tab?: 'cortes' | 'tramos';
+    mosquiteroModalOpen?: boolean;
+  }) => void;
+  onPushSubModal?: (sub: 'zoomPerfil') => void;
+  onRequestBack?: () => void;
+  onRegisterCloseSubModal?: (fn: (() => void) | null) => void;
   onShowToast: (msg: string, topSuccess?: boolean) => void;
 }
 
@@ -125,12 +137,12 @@ const ModelSvgIllustration: React.FC<{ modeloId: ModulacionModeloId }> = ({ mode
   );
 };
 
-const STEP_LABELS = [
-  '1. Modelo',
-  '2. Mosquitero',
-  '3. Línea / Serie',
-  '4. Perfiles',
-  '5. Cortes y Tramos',
+const STEP_ITEMS: { num: 1 | 2 | 3 | 4 | 5; short: string; full: string }[] = [
+  { num: 1, short: 'Modelo', full: '1. Modelo' },
+  { num: 2, short: 'Mosquitero', full: '2. Mosquitero' },
+  { num: 3, short: 'Línea/Serie', full: '3. Línea / Serie' },
+  { num: 4, short: 'Perfiles', full: '4. Perfiles' },
+  { num: 5, short: 'Cortes', full: '5. Cortes y Tramos' },
 ];
 
 const BAR_SEGMENT_COLORS = [
@@ -149,12 +161,20 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
   onAddSobrante,
   onSendToHoja,
   onSendVidriosToOptimizer,
+  step: controlledStep,
+  paso5Tab: controlledPaso5Tab,
+  mosquiteroModalOpen: controlledMosqOpen,
+  onNavigateModState,
+  onPushSubModal,
+  onRequestBack,
+  onRegisterCloseSubModal,
   onShowToast,
 }) => {
-  const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
+  const [localStep, setLocalStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [categoria, setCategoria] = useState<ModulacionCategoria>('ventanas');
   const [modeloId, setModeloId] = useState<ModulacionModeloId>('win-corrediza');
-  const [mosquiteroModalOpen, setMosquiteroModalOpen] = useState(false);
+  const [localMosqOpen, setLocalMosqOpen] = useState(false);
+
   const [conMosquitero, setConMosquitero] = useState(false);
   const [serieId, setSerieId] = useState<ModulacionSerieId>('linea-3');
   const [sublineaId, setSublineaId] = useState<ModulacionSublineaId>('comercial-hermetica');
@@ -164,12 +184,75 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
   const [altoInput, setAltoInput] = useState<string>('100');
 
   // Sub-pestaña en Paso 5: Lista de Cortes y Checklist vs Optimizador 1D (6.10 m)
-  const [paso5Tab, setPaso5Tab] = useState<'cortes' | 'tramos'>('cortes');
+  const [localPaso5Tab, setLocalPaso5Tab] = useState<'cortes' | 'tramos'>('cortes');
   const [cortadosMap, setCortadosMap] = useState<Record<string, number>>({});
   const [colorParaSobrantes, setColorParaSobrantes] = useState<ColorId>('natural');
   const [marcaParaSobrantes, setMarcaParaSobrantes] = useState<string>('Alumer');
   const [discoKerfMm, setDiscoKerfMm] = useState<number>(3.5);
   const [umbralSobranteCm, setUmbralSobranteCm] = useState<number>(45);
+  const [zoomPerfil, setZoomPerfil] = useState<PerfilZoomData | null>(null);
+
+  const step = controlledStep ?? localStep;
+  const paso5Tab = controlledPaso5Tab ?? localPaso5Tab;
+  const mosquiteroModalOpen = controlledMosqOpen ?? localMosqOpen;
+
+  const setStep = (next: 1 | 2 | 3 | 4 | 5) => {
+    if (next === step) return;
+    if (onNavigateModState) onNavigateModState({ step: next, mosquiteroModalOpen: false });
+    else {
+      setLocalMosqOpen(false);
+      setLocalStep(next);
+    }
+  };
+
+  const setPaso5Tab = (next: 'cortes' | 'tramos') => {
+    if (next === paso5Tab) return;
+    if (onNavigateModState) onNavigateModState({ paso5Tab: next });
+    else setLocalPaso5Tab(next);
+  };
+
+  const openMosquiteroModal = () => {
+    if (mosquiteroModalOpen) return;
+    if (onNavigateModState) onNavigateModState({ mosquiteroModalOpen: true });
+    else setLocalMosqOpen(true);
+  };
+
+  const openZoomPerfil = (data: PerfilZoomData) => {
+    setZoomPerfil(data);
+    onPushSubModal?.('zoomPerfil');
+  };
+
+  useEffect(() => {
+    if (!onRegisterCloseSubModal) return;
+    onRegisterCloseSubModal(() => {
+      setZoomPerfil(null);
+    });
+    return () => onRegisterCloseSubModal(null);
+  }, [onRegisterCloseSubModal]);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }, [step, paso5Tab]);
+
+  useEffect(() => {
+    const applyPending = () => {
+      const p = window.__alumModPending;
+      if (!p) return;
+      window.__alumModPending = null;
+      setUnidad('cm');
+      setAnchoInput(String(p.ancho));
+      setAltoInput(String(p.alto));
+      if (p.cat === 'ventanas' || p.cat === 'puertas') {
+        setCategoria(p.cat);
+      }
+      if (p.modelo) {
+        setModeloId(p.modelo);
+      }
+    };
+    applyPending();
+    window.addEventListener('alum-mod-apply', applyPending);
+    return () => window.removeEventListener('alum-mod-apply', applyPending);
+  }, []);
 
   const modelosVisibles = useMemo(
     () => MODULACION_MODELOS.filter((m) => m.categoria === categoria),
@@ -294,14 +377,18 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
   const handlePickModelo = (id: ModulacionModeloId) => {
     setModeloId(id);
     setCortadosMap({});
-    setMosquiteroModalOpen(true);
+    openMosquiteroModal();
   };
 
   const handleChooseMosquitero = (value: boolean) => {
     setConMosquitero(value);
-    setMosquiteroModalOpen(false);
     setCortadosMap({});
-    setStep(3);
+    if (onNavigateModState) {
+      onNavigateModState({ mosquiteroModalOpen: false, step: 3 });
+    } else {
+      setLocalMosqOpen(false);
+      setLocalStep(3);
+    }
   };
 
   const handleSendToHoja = () => {
@@ -357,24 +444,23 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
       </div>
 
       {/* Stepper interactivo de 5 pasos */}
-      <div className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] p-3 mb-4 shadow-md">
-        <div className="grid grid-cols-5 gap-1.5">
-          {STEP_LABELS.map((label, idx) => {
-            const num = (idx + 1) as 1 | 2 | 3 | 4 | 5;
-            const active = step === num;
-            const completed = step > num;
+      <div className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] p-2 sm:p-3 mb-4 shadow-md">
+        <div className="grid grid-cols-5 gap-1 sm:gap-1.5">
+          {STEP_ITEMS.map((item) => {
+            const active = step === item.num;
+            const completed = step > item.num;
             return (
               <button
-                key={label}
+                key={item.num}
                 type="button"
                 onClick={() => {
-                  if (num === 2) {
-                    setMosquiteroModalOpen(true);
+                  if (item.num === 2) {
+                    openMosquiteroModal();
                   } else {
-                    setStep(num);
+                    setStep(item.num);
                   }
                 }}
-                className={`min-h-[40px] px-1.5 py-1.5 rounded-xl text-[10.5px] sm:text-[12px] font-extrabold border cursor-pointer transition-all text-center leading-tight ${
+                className={`min-w-0 min-h-[42px] px-0.5 sm:px-2 py-1.5 rounded-xl font-extrabold border cursor-pointer transition-all flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1 text-center leading-tight overflow-hidden ${
                   active
                     ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
                     : completed
@@ -382,7 +468,15 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
                       : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
                 }`}
               >
-                {label}
+                <span className="sm:hidden block text-[9.5px] font-black opacity-85 leading-none">
+                  {item.num}.
+                </span>
+                <span className="sm:hidden block w-full text-[9px] min-[390px]:text-[10px] tracking-tight leading-none truncate px-0.5">
+                  {item.short}
+                </span>
+                <span className="hidden sm:inline text-[12px] leading-tight truncate">
+                  {item.full}
+                </span>
               </button>
             );
           })}
@@ -395,7 +489,7 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
           </span>
           <button
             type="button"
-            onClick={() => setMosquiteroModalOpen(true)}
+            onClick={openMosquiteroModal}
             className="px-2.5 py-1 rounded-lg bg-teal-50 border border-teal-200 text-teal-800 font-bold cursor-pointer hover:bg-teal-100"
           >
             {conMosquitero ? '✓ Con mosquitero' : 'Sin mosquitero'}
@@ -506,16 +600,18 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
                     key={s.id}
                     type="button"
                     id={`mod-serie-${s.id}`}
+                    data-serie-active={selected ? 'true' : 'false'}
+                    aria-pressed={selected}
                     onClick={() => setSerieId(s.id)}
-                    className={`p-3 rounded-xl border-[1.5px] text-left cursor-pointer transition-all active:scale-95 ${
+                    className={`p-3 rounded-xl text-left cursor-pointer transition-all active:scale-95 ${
                       selected
-                        ? 'border-blue-600 bg-blue-50 ring-1 ring-blue-600'
-                        : 'border-slate-300 bg-slate-50 hover:border-blue-400'
+                        ? 'border-2 border-blue-600 bg-blue-50 ring-1 ring-blue-500 shadow-md'
+                        : 'border-[1.5px] border-slate-300 bg-slate-50 hover:border-blue-400'
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
                       <strong className="text-[14px] font-extrabold text-slate-900">
-                        {s.nombre}
+                        {selected ? `✓ ${s.nombre}` : s.nombre}
                       </strong>
                       <span className="mono text-[10.5px] font-bold px-2 py-0.5 rounded-md bg-white border border-slate-300 text-blue-700 shrink-0">
                         {s.espesorLabel}
@@ -542,17 +638,19 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
                     key={sl.id}
                     type="button"
                     id={`mod-sublinea-${sl.id}`}
+                    data-serie-active={selected ? 'true' : 'false'}
+                    aria-pressed={selected}
                     onClick={() => setSublineaId(sl.id)}
-                    className={`p-3.5 rounded-xl border-[1.5px] text-left cursor-pointer transition-all active:scale-95 ${
+                    className={`p-3.5 rounded-xl text-left cursor-pointer transition-all active:scale-95 ${
                       selected
-                        ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600'
-                        : 'border-slate-300 bg-slate-50 hover:border-emerald-400'
+                        ? 'border-2 border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500 shadow-md'
+                        : 'border-[1.5px] border-slate-300 bg-slate-50 hover:border-emerald-400'
                     }`}
                   >
-                    <strong className="block text-[13.5px] font-extrabold text-slate-900">
-                      {sl.nombre}
+                    <strong className={`block text-[13.5px] font-extrabold ${selected ? 'text-emerald-950 dark:text-white' : 'text-slate-900'}`}>
+                      {selected ? `✓ ${sl.nombre}` : sl.nombre}
                     </strong>
-                    <span className="block text-[11.5px] text-slate-600 mt-1 leading-snug">
+                    <span className={`block text-[11.5px] mt-1 leading-snug ${selected ? 'text-emerald-800 dark:text-emerald-50' : 'text-slate-600'}`}>
                       {sl.descripcion}
                     </span>
                   </button>
@@ -564,7 +662,7 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
           <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200">
             <button
               type="button"
-              onClick={() => setMosquiteroModalOpen(true)}
+              onClick={openMosquiteroModal}
               className="min-h-[44px] px-4 rounded-xl border border-slate-300 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-[13px] cursor-pointer"
             >
               ← Cambiar mosquitero
@@ -617,16 +715,28 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
                         key={item.id}
                         className="p-3 rounded-xl border border-slate-300 bg-white flex items-center gap-3 min-w-0 overflow-hidden"
                       >
-                        <div
+                        <button
+                          type="button"
                           data-preserve-light="true"
-                          className="w-[64px] h-[64px] rounded-xl bg-white border border-slate-200 flex items-center justify-center shrink-0 p-1"
+                          onClick={() =>
+                            openZoomPerfil({
+                              perfilId: item.perfilId,
+                              codigo: item.codigo,
+                              nombre: item.nombre,
+                              subtitulo: `${item.cantidadLabel} · ${item.rol}`,
+                              orientacion: item.orientacion,
+                            })
+                          }
+                          title={`Ampliar dibujo técnico de ${item.nombre}`}
+                          aria-label={`Ampliar dibujo técnico de ${item.nombre}`}
+                          className="w-[64px] h-[64px] rounded-xl bg-white border border-slate-200 hover:border-blue-500 hover:ring-2 hover:ring-blue-400/40 flex items-center justify-center shrink-0 p-1 cursor-zoom-in transition-all active:scale-95"
                         >
                           <PerfilSectionSvg
                             perfilId={item.perfilId}
                             orientacion={item.orientacion}
                             size={52}
                           />
-                        </div>
+                        </button>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5 flex-wrap mb-1 min-w-0">
                             <span className="px-2 py-0.5 rounded-md bg-blue-50 border border-blue-200 text-blue-900 mono text-[10.5px] font-extrabold">
@@ -654,7 +764,7 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
           <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200">
             <button
               type="button"
-              onClick={() => setStep(3)}
+              onClick={() => (onRequestBack ? onRequestBack() : setStep(3))}
               className="min-h-[44px] px-4 rounded-xl border border-slate-300 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-[13px] cursor-pointer"
             >
               ← Cambiar serie
@@ -783,31 +893,69 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
           {/* SUB-PESTAÑA A: CHECKLIST DE CORTE POR SECCIÓN */}
           {paso5Tab === 'cortes' && (
             <div className="flex flex-col gap-3.5">
-              {/* Barra de progreso de corte */}
-              <div className="p-3 rounded-xl border border-slate-300 bg-slate-50">
-                <div className="flex items-center justify-between gap-2 text-[12px] font-extrabold mb-1.5">
-                  <span className="text-slate-700">
-                    Avance de corte en taller: <span className="mono text-blue-700">{totalPiezasCortadas}/{totalPiezasRequeridas}</span> piezas
-                  </span>
-                  {totalPiezasCortadas > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setCortadosMap({})}
-                      className="text-[11.5px] font-bold text-slate-500 hover:text-red-600 cursor-pointer bg-transparent border-0"
-                    >
-                      Reiniciar checklist
-                    </button>
-                  )}
-                </div>
-                <div className="w-full h-2.5 rounded-full bg-slate-200 overflow-hidden">
+              {/* Tarjeta resumen superior de avance global */}
+              {(() => {
+                const globalPct =
+                  totalPiezasRequeridas > 0
+                    ? Math.round((totalPiezasCortadas / totalPiezasRequeridas) * 100)
+                    : 0;
+                const allDone =
+                  totalPiezasRequeridas > 0 && totalPiezasCortadas >= totalPiezasRequeridas;
+                return (
                   <div
-                    className="h-full rounded-full bg-emerald-500 transition-all duration-200"
-                    style={{
-                      width: `${totalPiezasRequeridas > 0 ? Math.round((totalPiezasCortadas / totalPiezasRequeridas) * 100) : 0}%`,
-                    }}
-                  />
-                </div>
-              </div>
+                    id="mod-cut-summary-card"
+                    className={`p-3.5 rounded-2xl border-2 transition-colors ${
+                      allDone
+                        ? 'border-emerald-500 bg-emerald-50'
+                        : 'border-slate-300 bg-slate-50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <div className="min-w-0">
+                        <span className="block text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
+                          Avance de corte en taller
+                        </span>
+                        <div className="flex items-baseline gap-2 flex-wrap mt-0.5">
+                          <strong className="mono text-[20px] font-black text-blue-700 leading-none">
+                            {totalPiezasCortadas}/{totalPiezasRequeridas}
+                          </strong>
+                          <span className="text-[13.5px] font-extrabold text-slate-800">
+                            Total perfiles
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span
+                          className={`mono px-2.5 py-1 rounded-lg text-[12px] font-extrabold ${
+                            allDone
+                              ? 'bg-emerald-600 text-white'
+                              : 'bg-blue-50 border border-blue-200 text-blue-800'
+                          }`}
+                        >
+                          {allDone ? '✓ 100%' : `${globalPct}%`}
+                        </span>
+                        {totalPiezasCortadas > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setCortadosMap({})}
+                            className="px-2.5 py-1 rounded-lg border border-slate-300 bg-white hover:bg-red-50 hover:border-red-300 hover:text-red-700 text-[11.5px] font-bold text-slate-600 cursor-pointer transition-colors"
+                          >
+                            Reiniciar
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="w-full h-3 rounded-full bg-slate-200 overflow-hidden shadow-inner">
+                      <div
+                        className={`h-full rounded-full transition-all duration-300 ${
+                          allDone ? 'bg-emerald-500' : 'bg-emerald-500'
+                        }`}
+                        style={{ width: `${globalPct}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })()}
 
               {seccionesConFilas.map((sec) => {
                 const secReq = sec.rows.reduce((a, r) => a + r.cantidad, 0);
@@ -835,91 +983,204 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
                       </span>
                     </div>
 
-                    <div className="divide-y divide-slate-200 bg-white">
+                    <div className="p-2 bg-slate-50/70 flex flex-col gap-1.5">
                       {sec.rows.map((row) => {
                         const cutDone = getCutCount(row.id, row.cantidad);
                         const isComplete = cutDone >= row.cantidad;
+                        const rowPct =
+                          row.cantidad > 0
+                            ? Math.min(100, Math.round((cutDone / row.cantidad) * 100))
+                            : 0;
+                        const shortNombre = row.nombre
+                          .replace(/\s*\([^)]*\)\s*/g, ' ')
+                          .replace(/\s+/g, ' ')
+                          .trim();
+
                         return (
                           <div
                             key={row.id}
-                            className={`p-3 flex flex-wrap items-center justify-between gap-2.5 min-w-0 transition-colors ${
-                              isComplete ? 'bg-emerald-50/70' : 'bg-white'
+                            data-preserve-light="true"
+                            onClick={() => handleStepCutCount(row.id, row.cantidad, 1)}
+                            role="button"
+                            tabIndex={0}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                handleStepCutCount(row.id, row.cantidad, 1);
+                              }
+                            }}
+                            title={
+                              isComplete
+                                ? `${row.nombre} completado (${row.medidaCm.toFixed(1)} cm)`
+                                : `Toca para sumar +1 corte de ${row.nombre} (${row.medidaCm.toFixed(1)} cm · Corte ${row.angulo})`
+                            }
+                            aria-label={`${row.codigo} ${shortNombre}: ${cutDone} de ${row.cantidad}, ${row.medidaCm.toFixed(1)} cm`}
+                            className={`relative w-full rounded-xl border overflow-hidden cursor-pointer select-none transition-all active:scale-[0.995] ${
+                              isComplete
+                                ? 'border-emerald-600 shadow-sm'
+                                : 'border-slate-300 hover:border-emerald-500'
                             }`}
+                            style={{ backgroundColor: '#FFFFFF' }}
                           >
-                            <div className="flex items-center gap-2.5 min-w-0 flex-1 basis-[200px]">
-                              <div
+                            {/* Relleno progresivo en verde esmeralda de izquierda a derecha */}
+                            <div
+                              className="absolute inset-y-0 left-0 transition-all duration-300 ease-out pointer-events-none"
+                              style={{
+                                width: `${rowPct}%`,
+                                backgroundColor: isComplete ? '#10B981' : '#34D399',
+                              }}
+                            />
+
+                            {/* Contenido compacto en una sola línea horizontal (estilo Perfileto) */}
+                            <div className="relative z-10 py-1.5 px-2 sm:py-2 sm:px-3 flex items-center gap-1.5 sm:gap-2 min-w-0">
+                              {/* Clave + mini sección clicable para abrir plano CAD ampliado */}
+                              <button
+                                type="button"
                                 data-preserve-light="true"
-                                className="w-11 h-11 rounded-xl border border-slate-200 bg-white flex items-center justify-center shrink-0 p-1"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openZoomPerfil({
+                                    perfilId: row.perfilId,
+                                    codigo: row.codigo,
+                                    nombre: row.nombre,
+                                    subtitulo: `${row.medidaCm.toFixed(1)} cm (${row.medidaM.toFixed(2)} m · ×${row.cantidad}) · Corte ${row.angulo}`,
+                                    orientacion: row.orientacion,
+                                  });
+                                }}
+                                title={`Ver plano técnico ampliado de ${row.nombre}`}
+                                aria-label={`Ampliar plano técnico de ${row.codigo} ${row.nombre}`}
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-lg border border-slate-300/90 hover:border-blue-600 hover:ring-2 hover:ring-blue-400/35 shrink-0 cursor-zoom-in transition-all active:scale-95"
+                                style={{ backgroundColor: '#FFFFFF' }}
                               >
                                 <PerfilSectionSvg
                                   perfilId={row.perfilId}
                                   orientacion={row.orientacion}
-                                  size={36}
+                                  size={20}
                                 />
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-1.5 flex-wrap min-w-0">
-                                  <span className="mono px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-700 text-[10px] font-extrabold break-all">
-                                    {row.codigo}
-                                  </span>
-                                  <span className="text-[10.5px] font-bold text-slate-500">
-                                    Corte {row.angulo}
-                                  </span>
-                                </div>
-                                <strong
-                                  className={`block text-[13.5px] font-extrabold leading-tight mt-0.5 break-words ${
-                                    isComplete ? 'line-through text-emerald-800' : 'text-slate-900'
-                                  }`}
+                                <span
+                                  className="mono text-[10px] sm:text-[11px] font-black leading-none whitespace-nowrap"
+                                  style={{ color: '#0F172A' }}
                                 >
-                                  {row.nombre}
-                                </strong>
-                                <span className="block text-[11px] text-slate-500 mono break-words">
-                                  {row.formulaTexto}
+                                  {row.codigo}
                                 </span>
-                              </div>
-                            </div>
+                              </button>
 
-                            <div className="flex items-center justify-end gap-2.5 ml-auto shrink-0 max-w-full flex-wrap">
-                              <div className="text-right">
-                                <strong className="mono text-[15px] text-blue-700 block leading-tight whitespace-nowrap">
-                                  {row.medidaCm.toFixed(1)} cm
-                                </strong>
-                                <span className="mono text-[11px] text-slate-500 whitespace-nowrap">
-                                  {row.medidaM.toFixed(2)} m · ×{row.cantidad}
-                                </span>
-                              </div>
+                              {/* Nombre corto del perfil */}
+                              <span
+                                className="min-w-0 flex-1 truncate text-[12px] sm:text-[13px] font-extrabold leading-tight"
+                                style={{ color: isComplete ? '#FFFFFF' : '#0F172A' }}
+                              >
+                                {shortNombre}
+                              </span>
 
-                              {/* Contador interactivo 0/N */}
-                              <div className="inline-flex items-center gap-1 bg-slate-100 border border-slate-300 rounded-xl p-1">
-                                <button
-                                  type="button"
-                                  aria-label={`Restar pieza cortada de ${row.nombre}`}
-                                  onClick={() => handleStepCutCount(row.id, row.cantidad, -1)}
-                                  className="w-8 h-8 rounded-lg bg-white border border-slate-200 text-slate-800 font-extrabold text-[15px] cursor-pointer hover:bg-slate-50 active:scale-95"
-                                >
-                                  −
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleToggleCompleteRow(row.id, row.cantidad)}
-                                  title="Tocar para marcar o desmarcar todas"
-                                  className={`min-w-[46px] h-8 px-2 rounded-lg mono text-[12px] font-extrabold cursor-pointer transition-colors ${
-                                    isComplete
-                                      ? 'bg-emerald-600 text-white'
-                                      : 'bg-white text-slate-900 border border-slate-200'
-                                  }`}
+                              {/* Contador y medida en una sola línea (ej. 1/2  56.1 cm) */}
+                              <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap">
+                                <span
+                                  className="mono text-[11.5px] sm:text-[12.5px] font-black px-1.5 py-0.5 rounded-md"
+                                  style={{
+                                    backgroundColor: isComplete
+                                      ? 'rgba(255,255,255,0.22)'
+                                      : 'rgba(15,23,42,0.08)',
+                                    color: isComplete ? '#FFFFFF' : '#0F172A',
+                                  }}
                                 >
                                   {cutDone}/{row.cantidad}
-                                </button>
-                                <button
-                                  type="button"
-                                  aria-label={`Sumar pieza cortada de ${row.nombre}`}
-                                  onClick={() => handleStepCutCount(row.id, row.cantidad, 1)}
-                                  className="w-8 h-8 rounded-lg bg-blue-600 text-white font-extrabold text-[15px] cursor-pointer hover:bg-blue-700 active:scale-95"
+                                </span>
+                                <span
+                                  className="mono text-[12px] sm:text-[13px] font-black"
+                                  style={{ color: isComplete ? '#FFFFFF' : '#1D4ED8' }}
                                 >
-                                  +
-                                </button>
+                                  {row.medidaCm.toFixed(1)} cm
+                                </span>
                               </div>
+
+                              {/* Botón discreto -1 para corregir toque accidental */}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleStepCutCount(row.id, row.cantidad, -1);
+                                }}
+                                disabled={cutDone <= 0}
+                                title="Restar 1 pieza (-1)"
+                                aria-label={`Restar 1 pieza cortada de ${row.nombre}`}
+                                className={`w-6 h-7 sm:w-7 sm:h-7 rounded-lg border text-[14px] font-extrabold shrink-0 flex items-center justify-center transition-all ${
+                                  cutDone > 0
+                                    ? 'cursor-pointer active:scale-90'
+                                    : 'opacity-35 cursor-not-allowed'
+                                }`}
+                                style={{
+                                  backgroundColor: isComplete
+                                    ? 'rgba(255,255,255,0.18)'
+                                    : '#F1F5F9',
+                                  borderColor: isComplete
+                                    ? 'rgba(255,255,255,0.45)'
+                                    : '#CBD5E1',
+                                  color: isComplete ? '#FFFFFF' : '#334155',
+                                }}
+                              >
+                                −
+                              </button>
+
+                              {/* Botón de corte (+1) / palomita verde a la derecha */}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (isComplete) {
+                                    handleToggleCompleteRow(row.id, row.cantidad);
+                                  } else {
+                                    handleStepCutCount(row.id, row.cantidad, 1);
+                                  }
+                                }}
+                                title={
+                                  isComplete
+                                    ? 'Corte completado (tocar para reiniciar fila)'
+                                    : 'Registrar +1 corte'
+                                }
+                                aria-label={
+                                  isComplete
+                                    ? `${row.nombre} completado`
+                                    : `Sumar +1 corte de ${row.nombre}`
+                                }
+                                className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg border shrink-0 flex items-center justify-center cursor-pointer transition-all active:scale-90 shadow-sm"
+                                style={{
+                                  backgroundColor: isComplete ? '#047857' : '#2563EB',
+                                  borderColor: isComplete ? '#A7F3D0' : '#1D4ED8',
+                                  color: '#FFFFFF',
+                                }}
+                              >
+                                {isComplete ? (
+                                  <svg
+                                    width="16"
+                                    height="16"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="3.2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    aria-hidden="true"
+                                  >
+                                    <polyline points="20 6 9 17 4 12" />
+                                  </svg>
+                                ) : (
+                                  <svg
+                                    width="16"
+                                    height="16"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2.1"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    aria-hidden="true"
+                                  >
+                                    <path d="M12 2.5 L13.8 5.2 L17 4.2 L16.8 7.4 L19.8 8.2 L18 11 L20.5 13.4 L17.6 14.8 L18.4 18 L15.2 17.8 L14.4 20.8 L11.8 19 L9.4 21.3 L8.2 18.4 L5 19 L5.4 15.8 L2.6 14.8 L4.4 12.2 L2.3 9.6 L5.2 8.4 L4.8 5.2 L8 5.6 L9 2.8 L11.5 4.8 Z" />
+                                    <circle cx="11.5" cy="12" r="2.6" />
+                                  </svg>
+                                )}
+                              </button>
                             </div>
                           </div>
                         );
@@ -1050,12 +1311,23 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2 mb-3 min-w-0">
                       <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                        <div
+                        <button
+                          type="button"
                           data-preserve-light="true"
-                          className="w-10 h-10 rounded-xl bg-white border border-slate-200 flex items-center justify-center p-1 shrink-0"
+                          onClick={() =>
+                            openZoomPerfil({
+                              perfilId: grupo.perfilId,
+                              codigo: grupo.codigo,
+                              nombre: grupo.perfilNombre,
+                              subtitulo: `Cortes: ${grupo.metrosCortes.toFixed(2)} m · ${grupo.tramos610Requeridos} tramo(s) 6.10 m`,
+                            })
+                          }
+                          title={`Ampliar dibujo técnico de ${grupo.perfilNombre}`}
+                          aria-label={`Ampliar dibujo técnico de ${grupo.perfilNombre}`}
+                          className="w-10 h-10 rounded-xl bg-white border border-slate-200 hover:border-blue-500 hover:ring-2 hover:ring-blue-400/40 flex items-center justify-center p-1 shrink-0 cursor-zoom-in transition-all active:scale-95"
                         >
                           <PerfilSectionSvg perfilId={grupo.perfilId} size={32} />
-                        </div>
+                        </button>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5 flex-wrap min-w-0">
                             <span className="mono text-[10.5px] font-extrabold px-1.5 py-0.5 rounded bg-white border border-slate-200 text-slate-700">
@@ -1276,7 +1548,7 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
           <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200">
             <button
               type="button"
-              onClick={() => setStep(4)}
+              onClick={() => (onRequestBack ? onRequestBack() : setStep(4))}
               className="min-h-[44px] px-4 rounded-xl border border-slate-300 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-[13px] cursor-pointer"
             >
               ← Ver perfiles
@@ -1285,7 +1557,13 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
               type="button"
               onClick={() => {
                 setCortadosMap({});
-                setStep(1);
+                if (onNavigateModState) {
+                  onNavigateModState({ step: 1, paso5Tab: 'cortes', mosquiteroModalOpen: false });
+                } else {
+                  setLocalPaso5Tab('cortes');
+                  setLocalMosqOpen(false);
+                  setLocalStep(1);
+                }
               }}
               className="min-h-[44px] px-4 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-800 font-extrabold text-[13px] cursor-pointer"
             >
@@ -1304,7 +1582,10 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
           aria-modal="true"
           aria-label="¿Tu modulación tendrá mosquitero?"
           onClick={(e) => {
-            if (e.target === e.currentTarget) setMosquiteroModalOpen(false);
+            if (e.target === e.currentTarget) {
+              if (onRequestBack) onRequestBack();
+              else setLocalMosqOpen(false);
+            }
           }}
         >
           <div className="w-full max-w-[440px] bg-white text-slate-900 border-[1.5px] border-slate-300 rounded-[24px] p-5 sm:p-6 shadow-2xl">
@@ -1319,7 +1600,10 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
               </div>
               <button
                 type="button"
-                onClick={() => setMosquiteroModalOpen(false)}
+                onClick={() => {
+                  if (onRequestBack) onRequestBack();
+                  else setLocalMosqOpen(false);
+                }}
                 aria-label="Cerrar pregunta de mosquitero"
                 className="min-w-[36px] min-h-[36px] rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold cursor-pointer shrink-0"
               >
@@ -1336,7 +1620,7 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
                 type="button"
                 id="btn-mod-con-mosquitero"
                 onClick={() => handleChooseMosquitero(true)}
-                className="min-h-[76px] p-4 rounded-2xl border-2 border-emerald-500 bg-emerald-50 hover:bg-emerald-100 text-emerald-950 text-left cursor-pointer flex items-center gap-3.5 transition-transform active:scale-95 shadow-sm"
+                className="min-h-[76px] p-4 rounded-2xl border-2 border-emerald-500 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/60 dark:hover:bg-emerald-800/70 dark:border-emerald-400 text-emerald-950 dark:text-white text-left cursor-pointer flex items-center gap-3.5 transition-transform active:scale-95 shadow-sm"
               >
                 <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
                   <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" aria-hidden="true">
@@ -1345,8 +1629,10 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
                   </svg>
                 </div>
                 <div>
-                  <strong className="block text-[16px] font-extrabold">Con mosquitero</strong>
-                  <span className="block text-[12px] text-emerald-800">
+                  <strong className="block text-[16px] font-extrabold text-emerald-950 dark:text-white">
+                    Con mosquitero
+                  </strong>
+                  <span className="block text-[12px] text-emerald-800 dark:text-emerald-50">
                     Incluye marco, riel y medidas de corte para malla
                   </span>
                 </div>
@@ -1356,7 +1642,7 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
                 type="button"
                 id="btn-mod-sin-mosquitero"
                 onClick={() => handleChooseMosquitero(false)}
-                className="min-h-[76px] p-4 rounded-2xl border-2 border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-900 text-left cursor-pointer flex items-center gap-3.5 transition-transform active:scale-95 shadow-sm"
+                className="min-h-[76px] p-4 rounded-2xl border-2 border-slate-300 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/80 dark:hover:bg-slate-700/80 dark:border-slate-500 text-slate-900 dark:text-white text-left cursor-pointer flex items-center gap-3.5 transition-transform active:scale-95 shadow-sm"
               >
                 <div className="w-12 h-12 rounded-2xl bg-slate-700 text-white flex items-center justify-center shrink-0">
                   <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" aria-hidden="true">
@@ -1365,8 +1651,10 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
                   </svg>
                 </div>
                 <div>
-                  <strong className="block text-[16px] font-extrabold">Sin mosquitero</strong>
-                  <span className="block text-[12px] text-slate-600">
+                  <strong className="block text-[16px] font-extrabold text-slate-900 dark:text-white">
+                    Sin mosquitero
+                  </strong>
+                  <span className="block text-[12px] text-slate-600 dark:text-slate-200">
                     Solo perfiles de marco y hojas principales
                   </span>
                 </div>
@@ -1375,6 +1663,11 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
           </div>
         </div>
       )}
+
+      <PerfilZoomModal
+        data={zoomPerfil}
+        onClose={() => (onRequestBack ? onRequestBack() : setZoomPerfil(null))}
+      />
     </section>
   );
 };
