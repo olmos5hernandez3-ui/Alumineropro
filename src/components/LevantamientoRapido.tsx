@@ -883,8 +883,8 @@ export const LevantamientoRapido: React.FC<Props> = ({
                 })}
               </div>
 
-              <label>Color de vidrio</label>
-              <div className="lev-chip-group" role="group" aria-label="Color de vidrio">
+              <label>Vidrio</label>
+              <div className="lev-chip-group" role="group" aria-label="Vidrio">
                 {LEV_COLOR_VIDRIO_OPTS.map((opt) => {
                   const active = form.colorVidrio === opt.label;
                   return (
@@ -895,14 +895,7 @@ export const LevantamientoRapido: React.FC<Props> = ({
                       aria-pressed={active}
                       onClick={() => setForm((prev) => ({ ...prev, colorVidrio: opt.label }))}
                     >
-                      {opt.hex && (
-                        <span
-                          className="lev-swatch-glass"
-                          style={{ backgroundColor: opt.hex }}
-                          aria-hidden="true"
-                        />
-                      )}
-                      <span>{opt.label}</span>
+                      {opt.label}
                     </button>
                   );
                 })}
@@ -1053,23 +1046,9 @@ export const LevantamientoRapido: React.FC<Props> = ({
                               </span>
                             );
                           })()}
-                          {p.colorVidrio && (() => {
-                            const vidOpt = LEV_COLOR_VIDRIO_OPTS.find(
-                              (o) => o.label === p.colorVidrio
-                            );
-                            return (
-                              <span className="lev-piece-badge">
-                                {vidOpt?.hex && (
-                                  <span
-                                    className="lev-piece-dot"
-                                    style={{ backgroundColor: vidOpt.hex, opacity: 0.85 }}
-                                    aria-hidden="true"
-                                  />
-                                )}
-                                Vidrio: {p.colorVidrio}
-                              </span>
-                            );
-                          })()}
+                          {p.colorVidrio && (
+                            <span className="lev-piece-badge">Vidrio: {p.colorVidrio}</span>
+                          )}
                           {p.mosquitero && (
                             <span className="lev-piece-badge">{p.mosquitero}</span>
                           )}
