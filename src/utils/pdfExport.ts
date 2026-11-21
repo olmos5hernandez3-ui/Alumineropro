@@ -3,8 +3,6 @@ import {
   COLORES_CONFIG,
   CotizacionCalculada,
   DespieceCalculado,
-  getColorCorto,
-  getColorNombre,
   getRellenoLabel,
   LINEAS_CONFIG,
   PartidaObra,
@@ -296,7 +294,7 @@ export async function generarPdfTecnico(
 ): Promise<void> {
   const doc = await createLetterDoc();
   const linea = LINEAS_CONFIG[params.linea];
-  const colorNombre = getColorNombre(params.color, params.colorCustom);
+  const color = COLORES_CONFIG[params.color];
   const panelDesc = getRellenoLabel(params.relleno, params.vidrio);
   const aperturaLabel =
     linea.categoria === 'ventanas' && !linea.esMosquitero && !linea.esCancelBano
@@ -332,7 +330,7 @@ export async function generarPdfTecnico(
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9.5);
   doc.text(
-    `Acabado: ${colorNombre} · ${linea.esMosquitero ? 'Tela Mosquitera' : `Panel: ${panelDesc}`} · Área: ${cot.areaRealM2.toFixed(2)} m²`,
+    `Acabado: ${color.nombre} · ${linea.esMosquitero ? 'Tela Mosquitera' : `Panel: ${panelDesc}`} · Área: ${cot.areaRealM2.toFixed(2)} m²`,
     14,
     infoY + 7
   );
@@ -711,7 +709,7 @@ export async function generarPdfClienteBlob(
     const item = rawItem as PartidaObraExtended;
     subtotal += item.totalLinea;
     const linea = LINEAS_CONFIG[item.linea];
-    const colorCorto = getColorCorto(item.color, item.colorCustom);
+    const color = COLORES_CONFIG[item.color];
     const panelDesc = linea.esMosquitero ? 'Malla' : getRellenoLabel(item.relleno, item.vidrio);
     const apTag =
       linea.categoria === 'ventanas' && !linea.esMosquitero && !linea.esCancelBano
@@ -719,7 +717,7 @@ export async function generarPdfClienteBlob(
         : linea.categoria === 'puertas' && !linea.esCancelBano
           ? ` · Puerta ${item.sentidoPuerta === 'der' ? 'Der.' : 'Izq.'}`
           : '';
-    const desc = `${item.area ? `[${item.area}] ` : ''}${item.etiqueta ? `${item.etiqueta} · ` : ''}${linea.nombre}${apTag} (${colorCorto} · ${panelDesc})${item.notas ? ` · Nota: ${item.notas}` : ''}`;
+    const desc = `${item.area ? `[${item.area}] ` : ''}${item.etiqueta ? `${item.etiqueta} · ` : ''}${linea.nombre}${apTag} (${color.corto} · ${panelDesc})${item.notas ? ` · Nota: ${item.notas}` : ''}`;
     const wrappedDesc = doc.splitTextToSize(desc, 68) as string[];
     const hasPhoto = includePhotos && Boolean(item.fotoDataUrl && item.fotoDataUrl.startsWith('data:image/'));
     const neededH = Math.max(hasPhoto ? 34 : 24, wrappedDesc.length * 4.5 + (hasPhoto ? 14 : 5));
@@ -1124,14 +1122,14 @@ export async function generarPdfContratoServicio(
   for (const [idx, item] of hoja.partidas.entries()) {
     subtotal += item.totalLinea;
     const linea = LINEAS_CONFIG[item.linea];
-    const colorNombre = getColorNombre(item.color, item.colorCustom);
+    const color = COLORES_CONFIG[item.color];
     const panelDesc = getRellenoLabel(item.relleno, item.vidrio);
     const apLabel =
       linea.categoria === 'ventanas' && !linea.esMosquitero && !linea.esCancelBano
         ? ` · ${APERTURA_LABELS[item.apertura] || item.apertura}`
         : '';
     const titleDesc = `${idx + 1}. ${item.etiqueta ? `${item.etiqueta} · ` : ''}${linea.nombre}${apLabel}`;
-    const specDesc = `${item.area ? `Área: ${item.area} · ` : ''}Color: ${colorNombre} · ${
+    const specDesc = `${item.area ? `Área: ${item.area} · ` : ''}Color: ${color.nombre} · ${
       linea.esMosquitero ? 'Malla mosquitera' : `Panel: ${panelDesc}`
     }`;
     const wrappedTitle = doc.splitTextToSize(titleDesc, 92) as string[];

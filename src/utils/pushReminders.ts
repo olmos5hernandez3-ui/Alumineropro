@@ -1,5 +1,5 @@
 import { sanitizeWhatsappNumber } from './storageHelpers';
-import { canUseServiceWorker } from './runtimeEnv';
+import { isRunningInIframe } from './iframeEnv';
 
 export type CotizacionReminderStatus = 'pendiente' | 'seguimiento' | 'aprobada' | 'descartada';
 
@@ -550,28 +550,20 @@ export function getNotificationCapability(): NotificationCapabilityState {
       permission: 'unsupported',
     };
   }
-  try {
-    const supported = 'Notification' in window;
-    const swSupported = canUseServiceWorker();
-    const pushSupported = swSupported && 'PushManager' in window;
-    const permission: NotificationPermission | 'unsupported' = supported
-      ? Notification.permission
-      : 'unsupported';
+  const supported = 'Notification' in window;
+  const swSupported =
+    !isRunningInIframe() && typeof navigator !== 'undefined' && 'serviceWorker' in navigator;
+  const pushSupported = swSupported && 'PushManager' in window;
+  const permission: NotificationPermission | 'unsupported' = supported
+    ? Notification.permission
+    : 'unsupported';
 
-    return {
-      supported,
-      swSupported,
-      pushSupported,
-      permission,
-    };
-  } catch {
-    return {
-      supported: false,
-      swSupported: false,
-      pushSupported: false,
-      permission: 'unsupported',
-    };
-  }
+  return {
+    supported,
+    swSupported,
+    pushSupported,
+    permission,
+  };
 }
 
 export async function requestPushNotificationPermission(): Promise<NotificationPermission | 'unsupported'> {
@@ -611,7 +603,7 @@ export async function requestPushNotificationPermission(): Promise<NotificationP
 export async function getReadyServiceWorkerRegistration(
   timeoutMs = 3500
 ): Promise<ServiceWorkerRegistration | null> {
-  if (!canUseServiceWorker()) {
+  if (isRunningInIframe() || typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
     return null;
   }
   try {

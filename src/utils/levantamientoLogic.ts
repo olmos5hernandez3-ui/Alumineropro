@@ -1,12 +1,4 @@
-import {
-  AperturaVentanaId,
-  CategoriaTrabajo,
-  ColorId,
-  getColorCorto,
-  getRellenoItem,
-  LineaId,
-  normalizeColorId,
-} from './alumineroLogic';
+import { AperturaVentanaId, CategoriaTrabajo, LineaId } from './alumineroLogic';
 import { ModulacionCategoria, ModulacionModeloId } from './modulacionLogic';
 
 export const LEV_KEYS = {
@@ -70,10 +62,6 @@ export interface LevantamientoPieza {
   anchoCm: number;
   altoCm: number;
   cant: number;
-  colorAluminio?: ColorId;
-  colorAluminioCustom?: string;
-  colorVidrio?: string;
-  colorVidrioCustom?: string;
   notas: string;
   foto: string;
 }
@@ -98,10 +86,6 @@ export interface AlumBridgePayload {
   ancho: number;
   alto: number;
   cant: number;
-  color?: ColorId;
-  colorCustom?: string;
-  colorVidrio?: string;
-  colorVidrioCustom?: string;
   cliente?: string;
   area?: string;
   etiqueta?: string;
@@ -153,10 +137,6 @@ export function normalizeLevantamientoDraft(raw: unknown): LevantamientoDraft {
       anchoCm: Number(p.anchoCm) > 0 ? Number(p.anchoCm) : 0,
       altoCm: Number(p.altoCm) > 0 ? Number(p.altoCm) : 0,
       cant: Math.max(1, Math.round(Number(p.cant) || 1)),
-      colorAluminio: typeof p.colorAluminio === 'string' ? normalizeColorId(p.colorAluminio) : undefined,
-      colorAluminioCustom: typeof p.colorAluminioCustom === 'string' ? p.colorAluminioCustom : undefined,
-      colorVidrio: typeof p.colorVidrio === 'string' ? p.colorVidrio : undefined,
-      colorVidrioCustom: typeof p.colorVidrioCustom === 'string' ? p.colorVidrioCustom : undefined,
       notas: typeof p.notas === 'string' ? p.notas : '',
       foto: typeof p.foto === 'string' ? p.foto : '',
     }))
@@ -263,16 +243,8 @@ export function buildLevantamientoWhatsappText(draft: LevantamientoDraft): strin
   if (norm.direccion) lines.push(`Dirección: ${norm.direccion}`);
   lines.push(`Fecha: ${norm.fecha}`, '');
   norm.piezas.forEach((p, idx) => {
-    const alumTxt = p.colorAluminio ? ` · Alum: ${getColorCorto(p.colorAluminio, p.colorAluminioCustom)}` : '';
-    const vidTxt = p.colorVidrio
-      ? ` · Vidrio: ${
-          p.colorVidrio === 'flot-otro' && p.colorVidrioCustom?.trim()
-            ? p.colorVidrioCustom.trim()
-            : getRellenoItem(p.colorVidrio).nombre
-        }`
-      : '';
     lines.push(
-      `${idx + 1}) ${p.tipo}${p.area ? ` (${p.area})` : ''}: ${formatMedidaText(p)} · Cant: ${p.cant}${alumTxt}${vidTxt}${
+      `${idx + 1}) ${p.tipo}${p.area ? ` (${p.area})` : ''}: ${formatMedidaText(p)} · Cant: ${p.cant}${
         p.notas ? ` · ${p.notas}` : ''
       }`
     );
@@ -335,10 +307,6 @@ export function buildBridgePayloadFromPieza(
       ancho: pieza.anchoCm,
       alto: pieza.altoCm,
       cant: Math.max(1, Number(pieza.cant) || 1),
-      color: pieza.colorAluminio,
-      colorCustom: pieza.colorAluminioCustom,
-      colorVidrio: pieza.colorVidrio,
-      colorVidrioCustom: pieza.colorVidrioCustom,
       cliente: String(cliente || '').trim(),
       area: String(pieza.area || '').trim(),
       etiqueta: '',

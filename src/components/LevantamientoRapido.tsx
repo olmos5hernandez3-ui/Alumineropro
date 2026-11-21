@@ -8,7 +8,6 @@ import {
   formatMedida,
   formatMedidaText,
   LEV_KEYS,
-  LEV_MAPA,
   LEV_TIPOS,
   LevantamientoDestino,
   LevantamientoDraft,
@@ -20,20 +19,14 @@ import {
   overwriteHojaProyectoInStorage,
   resumenLevantamiento,
 } from '../utils/levantamientoLogic';
-import {
-  COLORES_CONFIG,
-  ColorId,
-  formatClientPhoneInput,
-  getColorCorto,
-  getRellenoItem,
-  VIDRIO_COLOR_PRESETS,
-} from '../utils/alumineroLogic';
+import { formatClientPhoneInput } from '../utils/alumineroLogic';
 import {
   ClienteGuardado,
   loadClientes,
   openExternalLinkSafe,
   upsertCliente,
 } from '../utils/storageHelpers';
+import { isRunningInIframe } from '../utils/iframeEnv';
 
 declare global {
   interface Window {
@@ -55,10 +48,6 @@ interface LevantamientoFormState {
   alto: string;
   u: LevantamientoUnidad;
   cant: number;
-  colorAluminio: ColorId;
-  colorAluminioCustom: string;
-  colorVidrio: string;
-  colorVidrioCustom: string;
   notas: string;
   foto: string;
   editId: string | null;
@@ -72,10 +61,6 @@ function createEmptyForm(u: LevantamientoUnidad = 'cm', tipo: string = LEV_TIPOS
     alto: '',
     u,
     cant: 1,
-    colorAluminio: 'natural',
-    colorAluminioCustom: '',
-    colorVidrio: 'flot-claro',
-    colorVidrioCustom: '',
     notas: '',
     foto: '',
     editId: null,
@@ -181,10 +166,12 @@ export const LevantamientoRapido: React.FC<Props> = ({
       viewsRef.current = next;
       return next;
     });
-    try {
-      window.history.pushState({ alumLev: 1, v }, '');
-    } catch {
-      // ignore if restricted
+    if (!isRunningInIframe()) {
+      try {
+        window.history.pushState({ alumLev: 1, v }, '');
+      } catch {
+        // ignore if restricted
+      }
     }
   }, []);
 
@@ -198,16 +185,40 @@ export const LevantamientoRapido: React.FC<Props> = ({
 
   const goBackView = useCallback(() => {
     if (viewsRef.current.length > 0) {
+      if (isRunningInIframe()) {
+        const next = viewsRef.current.slice(0, -1);
+        viewsRef.current = next;
+        setViews(next);
+        if (next.length === 0) {
+          document.body.style.overflow = '';
+          setViewerFoto('');
+        }
+        return;
+      }
       try {
         window.history.go(-1);
       } catch {
-        setViews((prev) => prev.slice(0, -1));
+        const next = viewsRef.current.slice(0, -1);
+        viewsRef.current = next;
+        setViews(next);
+        if (next.length === 0) {
+          document.body.style.overflow = '';
+          setViewerFoto('');
+        }
       }
     }
   }, []);
 
   const closeAllViews = useCallback((cb?: () => void) => {
     if (viewsRef.current.length === 0) {
+      cb?.();
+      return;
+    }
+    if (isRunningInIframe()) {
+      viewsRef.current = [];
+      setViews([]);
+      document.body.style.overflow = '';
+      setViewerFoto('');
       cb?.();
       return;
     }
@@ -226,6 +237,11 @@ export const LevantamientoRapido: React.FC<Props> = ({
   }, []);
 
   useEffect(() => {
+    if (isRunningInIframe()) {
+      return () => {
+        document.body.style.overflow = '';
+      };
+    }
     const onPopState = (e: PopStateEvent) => {
       if (viewsRef.current.length === 0 && !closingCbRef.current) return;
       e.stopImmediatePropagation();
@@ -330,16 +346,6 @@ export const LevantamientoRapido: React.FC<Props> = ({
       anchoCm,
       altoCm,
       cant: Math.max(1, form.cant),
-      colorAluminio: form.colorAluminio,
-      colorAluminioCustom:
-        form.colorAluminio === 'otro' && form.colorAluminioCustom.trim()
-          ? form.colorAluminioCustom.trim()
-          : undefined,
-      colorVidrio: form.colorVidrio,
-      colorVidrioCustom:
-        form.colorVidrio === 'flot-otro' && form.colorVidrioCustom.trim()
-          ? form.colorVidrioCustom.trim()
-          : undefined,
       notas: form.notas.trim(),
       foto: form.foto,
     };
@@ -533,25 +539,7 @@ export const LevantamientoRapido: React.FC<Props> = ({
       return;
     }
 
-    const enrichedPiezas = normalized.piezas.map((p) => {
-      const mapa = LEV_MAPA[p.tipo] || LEV_MAPA['Cancel / Otro'];
-      return {
-        ...p,
-        ancho: p.anchoCm,
-        alto: p.altoCm,
-        cat: mapa.cat,
-        modelo: mapa.modelo,
-      };
-    });
-    const firstSupportedIdx = enrichedPiezas.findIndex((p) => Boolean(p.modelo && p.cat));
-    const activoPayload = {
-      ...normalized,
-      tel: normalized.telefono || '',
-      dir: normalized.direccion || normalized.ref || '',
-      piezas: enrichedPiezas,
-      idx: firstSupportedIdx >= 0 ? firstSupportedIdx : 0,
-    };
-    safeSave(LEV_KEYS.activo, activoPayload);
+    safeSave(LEV_KEYS.activo, normalized);
     window.dispatchEvent(new CustomEvent('aluminero:lev-activo-updated'));
 
     if (dest === 'modulacion' && onOpenModulacion) {
@@ -815,97 +803,13 @@ export const LevantamientoRapido: React.FC<Props> = ({
                 </button>
               </div>
 
-              <label>Color de Aluminio</label>
-              <div className="swatch-grid" role="group" aria-label="Color de Aluminio">
-                {Object.values(COLORES_CONFIG).map((c) => {
-                  const active = form.colorAluminio === c.id;
-                  return (
-                    <button
-                      key={c.id}
-                      type="button"
-                      aria-pressed={active}
-                      className={`swatch-btn ${active ? 'on' : ''}`}
-                      onClick={() =>
-                        setForm((prev) => ({ ...prev, colorAluminio: c.id as ColorId }))
-                      }
-                    >
-                      <span
-                        className="swatch-dot"
-                        style={{ background: c.swatch }}
-                        aria-hidden="true"
-                      />
-                      <span className="swatch-label">{c.nombre}</span>
-                      {active && (
-                        <span className="swatch-check" aria-hidden="true">
-                          ✓
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-              {form.colorAluminio === 'otro' && (
-                <input
-                  id="lv-alum-otro"
-                  type="text"
-                  maxLength={50}
-                  value={form.colorAluminioCustom}
-                  onChange={(e) =>
-                    setForm((prev) => ({ ...prev, colorAluminioCustom: e.target.value }))
-                  }
-                  placeholder="Escribe el tono especial de aluminio..."
-                  style={{ marginTop: '6px' }}
-                />
-              )}
-
-              <label>Color de Vidrio</label>
-              <div className="swatch-grid" role="group" aria-label="Color de Vidrio">
-                {VIDRIO_COLOR_PRESETS.map((v) => {
-                  const active = form.colorVidrio === v.id;
-                  return (
-                    <button
-                      key={v.id}
-                      type="button"
-                      aria-pressed={active}
-                      className={`swatch-btn ${active ? 'on' : ''}`}
-                      onClick={() => setForm((prev) => ({ ...prev, colorVidrio: v.id }))}
-                    >
-                      <span
-                        className="swatch-dot"
-                        style={{ background: v.swatch }}
-                        aria-hidden="true"
-                      />
-                      <span className="swatch-label">{v.nombre}</span>
-                      {active && (
-                        <span className="swatch-check" aria-hidden="true">
-                          ✓
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-              {form.colorVidrio === 'flot-otro' && (
-                <input
-                  id="lv-vidrio-otro"
-                  type="text"
-                  maxLength={50}
-                  value={form.colorVidrioCustom}
-                  onChange={(e) =>
-                    setForm((prev) => ({ ...prev, colorVidrioCustom: e.target.value }))
-                  }
-                  placeholder="Tono especial de vidrio (opcional)..."
-                  style={{ marginTop: '6px' }}
-                />
-              )}
-
-              <label htmlFor="lv-nt">Notas adicionales (opcional)</label>
+              <label htmlFor="lv-nt">Notas (color, vidrio, detalle)</label>
               <textarea
                 id="lv-nt"
                 rows={2}
                 value={form.notas}
                 onChange={(e) => setForm((prev) => ({ ...prev, notas: e.target.value }))}
-                placeholder="Ej. Detalle de jaladera, mosquitero, instalación..."
+                placeholder="Ej. Aluminio negro, vidrio tintex"
               />
 
               <label>Foto de referencia (opcional)</label>
@@ -1004,21 +908,6 @@ export const LevantamientoRapido: React.FC<Props> = ({
                       <div>
                         {formatMedidaText(p)} · Cant: {p.cant}
                       </div>
-                      {(p.colorAluminio || p.colorVidrio) && (
-                        <small style={{ color: '#93c5fd', display: 'block' }}>
-                          {p.colorAluminio
-                            ? `Alum: ${getColorCorto(p.colorAluminio, p.colorAluminioCustom)}`
-                            : ''}
-                          {p.colorAluminio && p.colorVidrio ? ' · ' : ''}
-                          {p.colorVidrio
-                            ? `Vidrio: ${
-                                p.colorVidrio === 'flot-otro' && p.colorVidrioCustom?.trim()
-                                  ? p.colorVidrioCustom.trim()
-                                  : getRellenoItem(p.colorVidrio).nombre
-                              }`
-                            : ''}
-                        </small>
-                      )}
                       {p.notas && <small>{p.notas}</small>}
                     </div>
                     <div className="ac">
@@ -1042,10 +931,6 @@ export const LevantamientoRapido: React.FC<Props> = ({
                             alto: String(p.altoCm),
                             u: 'cm',
                             cant: p.cant,
-                            colorAluminio: p.colorAluminio || 'natural',
-                            colorAluminioCustom: p.colorAluminioCustom || '',
-                            colorVidrio: p.colorVidrio || 'flot-claro',
-                            colorVidrioCustom: p.colorVidrioCustom || '',
                             notas: p.notas,
                             foto: p.foto,
                             editId: p.id,

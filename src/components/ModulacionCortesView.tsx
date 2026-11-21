@@ -209,20 +209,7 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
       return null;
     }
   });
-  const [activeLevPiezaId, setActiveLevPiezaId] = useState<string | null>(() => {
-    try {
-      const raw = typeof window !== 'undefined' ? window.localStorage.getItem(LEV_KEYS.activo) : null;
-      if (!raw) return null;
-      const parsed = JSON.parse(raw) as { idx?: unknown };
-      const norm = normalizeLevantamientoDraft(parsed);
-      if (norm.piezas.length === 0) return null;
-      const rawIdx = typeof parsed?.idx === 'number' && Number.isFinite(parsed.idx) ? parsed.idx : 0;
-      const safeIdx = Math.max(0, Math.min(norm.piezas.length - 1, Math.round(rawIdx)));
-      return norm.piezas[safeIdx]?.id ?? null;
-    } catch {
-      return null;
-    }
-  });
+  const [activeLevPiezaId, setActiveLevPiezaId] = useState<string | null>(null);
 
   const step = controlledStep ?? localStep;
   const paso5Tab = controlledPaso5Tab ?? localPaso5Tab;
@@ -286,60 +273,18 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
     return () => window.removeEventListener('alum-mod-apply', applyPending);
   }, []);
 
-  const persistActivoLevToStorage = (draft: LevantamientoDraft, selectedIdx: number) => {
-    try {
-      const safeIdx =
-        draft.piezas.length > 0
-          ? Math.max(0, Math.min(draft.piezas.length - 1, Math.round(selectedIdx)))
-          : 0;
-      const enrichedPiezas = draft.piezas.map((piece) => {
-        const mapa = LEV_MAPA[piece.tipo] || LEV_MAPA['Cancel / Otro'];
-        return {
-          ...piece,
-          ancho: piece.anchoCm,
-          alto: piece.altoCm,
-          cat: mapa.cat,
-          modelo: mapa.modelo,
-        };
-      });
-      window.localStorage.setItem(
-        LEV_KEYS.activo,
-        JSON.stringify({
-          ...draft,
-          tel: draft.telefono || '',
-          dir: draft.direccion || draft.ref || '',
-          piezas: enrichedPiezas,
-          idx: safeIdx,
-        })
-      );
-    } catch {
-      // ignorar
-    }
-  };
-
   useEffect(() => {
     const syncActivo = () => {
       try {
         const raw = window.localStorage.getItem(LEV_KEYS.activo);
         if (!raw) {
           setActivoLev(null);
-          setActiveLevPiezaId(null);
           return;
         }
-        const parsed = JSON.parse(raw) as { idx?: unknown };
-        const norm = normalizeLevantamientoDraft(parsed);
-        if (norm.piezas.length === 0) {
-          setActivoLev(null);
-          setActiveLevPiezaId(null);
-          return;
-        }
-        setActivoLev(norm);
-        const rawIdx = typeof parsed?.idx === 'number' && Number.isFinite(parsed.idx) ? parsed.idx : 0;
-        const safeIdx = Math.max(0, Math.min(norm.piezas.length - 1, Math.round(rawIdx)));
-        setActiveLevPiezaId(norm.piezas[safeIdx]?.id ?? null);
+        const norm = normalizeLevantamientoDraft(JSON.parse(raw));
+        setActivoLev(norm.piezas.length > 0 ? norm : null);
       } catch {
         setActivoLev(null);
-        setActiveLevPiezaId(null);
       }
     };
     window.addEventListener('aluminero:lev-activo-updated', syncActivo);
@@ -350,16 +295,13 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
     };
   }, []);
 
-  const handleSelectLevPieza = (p: LevantamientoPieza, idx: number) => {
+  const handleSelectLevPieza = (p: LevantamientoPieza) => {
     const mapa = LEV_MAPA[p.tipo] || LEV_MAPA['Cancel / Otro'];
     if (!mapa.modelo || !mapa.cat) {
       onShowToast('Cancel / Otro no está disponible en Modulación.');
       return;
     }
     setActiveLevPiezaId(p.id);
-    if (activoLev) {
-      persistActivoLevToStorage(activoLev, idx);
-    }
     setUnidad('cm');
     setAnchoInput(String(p.anchoCm));
     setAltoInput(String(p.altoCm));
@@ -384,13 +326,12 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
     }
     const nextDraft: LevantamientoDraft = { ...activoLev, piezas: nextPiezas };
     setActivoLev(nextDraft);
-    const nextActiveId = activeLevPiezaId === id ? (nextPiezas[0]?.id ?? null) : activeLevPiezaId;
-    setActiveLevPiezaId(nextActiveId);
-    const nextIdx = Math.max(
-      0,
-      nextPiezas.findIndex((x) => x.id === nextActiveId)
-    );
-    persistActivoLevToStorage(nextDraft, nextIdx);
+    if (activeLevPiezaId === id) setActiveLevPiezaId(null);
+    try {
+      window.localStorage.setItem(LEV_KEYS.activo, JSON.stringify(nextDraft));
+    } catch {
+      // ignorar
+    }
     onShowToast('Trabajo quitado de la lista de modulación');
   };
 
@@ -654,7 +595,7 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
                     <button
                       type="button"
                       disabled={!supported}
-                      onClick={() => handleSelectLevPieza(p, idx)}
+                      onClick={() => handleSelectLevPieza(p)}
                       className="flex-1 min-w-0 text-left bg-transparent border-0 p-0 cursor-pointer disabled:cursor-not-allowed"
                     >
                       <div className="flex items-center gap-1.5">
@@ -1749,35 +1690,18 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
                       <option value="Extrusiones Metálicas">Marca: Extrusiones Metálicas</option>
                       <option value="Perfiles LM">Marca: Perfiles LM</option>
                     </select>
-                    <div
-                      role="group"
+                    <select
                       aria-label="Color para guardar sobrantes"
-                      className="flex flex-wrap items-center gap-1.5"
+                      value={colorParaSobrantes}
+                      onChange={(e) => setColorParaSobrantes(e.target.value as ColorId)}
+                      className="min-h-[38px] rounded-xl border border-amber-300 bg-white px-2.5 text-[12px] font-bold"
                     >
-                      {Object.values(COLORES_CONFIG).map((c) => {
-                        const active = colorParaSobrantes === c.id;
-                        return (
-                          <button
-                            key={c.id}
-                            type="button"
-                            aria-pressed={active}
-                            onClick={() => setColorParaSobrantes(c.id as ColorId)}
-                            className={`inline-flex items-center gap-1.5 min-h-[36px] px-2.5 py-1 rounded-xl border text-[11.5px] font-bold cursor-pointer transition-all active:scale-95 ${
-                              active
-                                ? 'border-blue-600 bg-blue-50 text-blue-800 ring-2 ring-blue-500/40 shadow-sm'
-                                : 'border-amber-300 bg-white text-slate-800 hover:bg-amber-50'
-                            }`}
-                          >
-                            <span
-                              className="w-4 h-4 rounded-full border border-slate-300 shadow-inner shrink-0"
-                              style={{ background: c.swatch }}
-                              aria-hidden="true"
-                            />
-                            <span>{c.corto}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
+                      {Object.values(COLORES_CONFIG).map((c) => (
+                        <option key={c.id} value={c.id}>
+                          Acabado: {c.corto}
+                        </option>
+                      ))}
+                    </select>
                     <button
                       type="button"
                       id="btn-mod-save-sobrantes"

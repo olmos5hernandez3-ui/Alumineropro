@@ -10,47 +10,7 @@ import {
   optimizarVidrio2D,
   PiezaVidrioInput,
 } from '../utils/glassOptimizer2D';
-import { LEV_KEYS } from '../utils/levantamientoLogic';
 import { HojaVidrioItem } from '../utils/storageHelpers';
-
-interface LevBorradorResumen {
-  cliente: string;
-  tel: string;
-  dir: string;
-  piezasCount: number;
-  piezasTotalCant: number;
-}
-
-function readLevantamientoBorrador(): LevBorradorResumen | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = window.localStorage.getItem(LEV_KEYS.draft);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    if (!parsed || typeof parsed !== 'object') return null;
-    const cliente = typeof parsed.cliente === 'string' ? parsed.cliente.trim() : '';
-    if (!cliente) return null;
-    const tel =
-      (typeof parsed.tel === 'string' && parsed.tel.trim()) ||
-      (typeof parsed.telefono === 'string' && parsed.telefono.trim()) ||
-      '';
-    const dir =
-      (typeof parsed.dir === 'string' && parsed.dir.trim()) ||
-      (typeof parsed.direccion === 'string' && parsed.direccion.trim()) ||
-      (typeof parsed.ref === 'string' && parsed.ref.trim()) ||
-      '';
-    const piezasArr = Array.isArray(parsed.piezas) ? parsed.piezas : [];
-    const piezasCount = piezasArr.length;
-    const piezasTotalCant = piezasArr.reduce((acc: number, item: unknown) => {
-      const cant =
-        item && typeof item === 'object' ? Number((item as { cant?: unknown }).cant) : 1;
-      return acc + Math.max(1, Number.isFinite(cant) ? Math.round(cant) : 1);
-    }, 0);
-    return { cliente, tel, dir, piezasCount, piezasTotalCant };
-  } catch {
-    return null;
-  }
-}
 
 interface VidrioOptimizerViewProps {
   hojasVidrio: HojaVidrioItem[];
@@ -105,30 +65,6 @@ export const VidrioOptimizerView: React.FC<VidrioOptimizerViewProps> = ({
             cantidad: 2,
           },
         ]
-  );
-
-  const [levBorrador, setLevBorrador] = useState<LevBorradorResumen | null>(() =>
-    readLevantamientoBorrador()
-  );
-
-  useEffect(() => {
-    const syncLev = () => setLevBorrador(readLevantamientoBorrador());
-    syncLev();
-    window.addEventListener('focus', syncLev);
-    window.addEventListener('storage', syncLev);
-    return () => {
-      window.removeEventListener('focus', syncLev);
-      window.removeEventListener('storage', syncLev);
-    };
-  }, []);
-
-  const hojaPiezasTotal = useMemo(
-    () =>
-      hojaPartidas.reduce(
-        (acc, p) => acc + Math.max(1, Math.round(Number(p.cantidad) || 1)),
-        0
-      ),
-    [hojaPartidas]
   );
 
   useEffect(() => {
@@ -274,54 +210,6 @@ export const VidrioOptimizerView: React.FC<VidrioOptimizerViewProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
         {/* Columna izquierda: Lista de piezas y configuración */}
         <div className="lg:col-span-5 flex flex-col gap-4">
-          {levBorrador && (
-            <div
-              id="vidrio-lev-cliente-card"
-              className="rounded-[18px] border border-sky-400/35 bg-[#0f1b31] text-slate-100 p-4 shadow-xl flex flex-col gap-2"
-            >
-              <div className="text-[11.5px] font-extrabold uppercase tracking-wider text-sky-300">
-                👤 Datos del cliente · Levantamiento Rápido
-              </div>
-              <div className="text-[15px] font-extrabold text-white leading-snug">
-                {levBorrador.cliente}
-              </div>
-              {(levBorrador.tel || levBorrador.dir) && (
-                <div className="text-[12px] text-slate-300 leading-relaxed">
-                  {[
-                    levBorrador.tel ? `Tel: ${levBorrador.tel}` : '',
-                    levBorrador.dir ? `Dir: ${levBorrador.dir}` : '',
-                  ]
-                    .filter(Boolean)
-                    .join(' · ')}
-                </div>
-              )}
-              <div className="text-[12.5px] text-slate-200 font-semibold pt-1 border-t border-slate-700/70">
-                🪟 Piezas del levantamiento: <strong className="mono text-white">{levBorrador.piezasCount}</strong> (
-                <strong className="mono text-white">{levBorrador.piezasTotalCant}</strong> en total) · En la hoja de cotización:{' '}
-                <strong className="mono text-white">{hojaPartidas.length}</strong> partida(s),{' '}
-                <strong className="mono text-white">{hojaPiezasTotal}</strong> pza(s)
-              </div>
-              {hojaPartidas.length >= levBorrador.piezasCount &&
-              hojaPiezasTotal >= levBorrador.piezasTotalCant ? (
-                <div className="text-[12px] font-bold text-emerald-400">
-                  ✔ La hoja tiene todas las piezas del levantamiento.
-                </div>
-              ) : (
-                <div className="text-[12px] font-bold text-amber-300 leading-snug">
-                  ⚠ La hoja no tiene todas las piezas del levantamiento. Envíalo a Cotización o Lista de Cortes y luego importa los vidrios.
-                </div>
-              )}
-              <button
-                type="button"
-                id="btn-vidrio-importar-todas-hoja"
-                onClick={handleImportarDesdeHoja}
-                className="mt-1 w-full min-h-[40px] px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[12.5px] font-extrabold cursor-pointer transition-all active:scale-[0.99]"
-              >
-                📥 Importar vidrios de todas las piezas de la hoja
-              </button>
-            </div>
-          )}
-
           {/* Agregar corte */}
           <div className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] p-4 shadow-xl">
             <h2 className="m-0 text-[16px] font-extrabold">1. Medidas de Vidrio a Cortar</h2>

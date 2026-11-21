@@ -17,8 +17,8 @@ interface Props {
 }
 
 export const BlueprintSvg: React.FC<Props> = ({ params, despiece, simProgress }) => {
-  const colorCfg = COLORES_CONFIG[params.color] || COLORES_CONFIG.natural;
-  const vidrioCfg = VIDRIOS_CONFIG[params.vidrio] || VIDRIOS_CONFIG.claro6;
+  const colorCfg = COLORES_CONFIG[params.color];
+  const vidrioCfg = VIDRIOS_CONFIG[params.vidrio];
   const rellenoItem = params.relleno ? getRellenoItem(params.relleno.materialId, params.vidrio) : null;
   const panelFill = rellenoItem ? rellenoItem.fill : vidrioCfg.fill;
   const panelLabel = params.relleno ? getRellenoLabel(params.relleno, params.vidrio) : vidrioCfg.nombre;

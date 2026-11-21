@@ -15,8 +15,8 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Aluminero" />
-    <meta name="app-version" content="aluminero-pro-v33-20261121" />
-    <link rel="manifest" href="./manifest.json?v=aluminero-pro-v33-20261121" />
+    <meta name="app-version" content="aluminero-pro-v29-20261121" />
+    <link rel="manifest" href="./manifest.json?v=aluminero-pro-v29-20261121" />
     <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
     <link rel="icon" type="image/png" sizes="192x192" href="./pwa-192x192.png" />
     <link rel="icon" type="image/svg+xml" href="./icon.svg" />
@@ -204,7 +204,14 @@
     <script type="module" src="/src/main.tsx"></script>
     <script>
       (function () {
+        var isInIframe = false;
+        try {
+          isInIframe = typeof window !== 'undefined' && window.self !== window.top;
+        } catch (e) {
+          isInIframe = true;
+        }
         if (
+          isInIframe ||
           typeof window === 'undefined' ||
           !('serviceWorker' in navigator) ||
           !/^https?:$/i.test(window.location.protocol)
@@ -215,63 +222,101 @@
         var swRegistration = null;
         var waitingWorker = null;
         var reloadingForUpdate = false;
+        var userClickedUpdate = false;
         var hadController = Boolean(navigator.serviceWorker.controller);
 
-        window.__alumineroWaitingSW = null;
-        window.__alumineroSwRegistration = null;
-        window.__alumineroUserTriggeredSwReload = false;
-
-        function notifyUpdateAvailable(worker) {
+        function ensureUpdateBanner(worker) {
           if (!worker) return;
           waitingWorker = worker;
-          window.__alumineroWaitingSW = worker;
-          window.__alumineroSwRegistration = swRegistration;
-          try {
-            window.dispatchEvent(
-              new CustomEvent('aluminero-sw-update-available', {
-                detail: { worker: worker, registration: swRegistration },
-              })
-            );
-          } catch (e) {}
-        }
 
-        function watchInstallingWorker(newWorker) {
-          if (!newWorker) return;
-          newWorker.addEventListener('statechange', function () {
-            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-              notifyUpdateAvailable((swRegistration && swRegistration.waiting) || newWorker);
+          var existing = document.getElementById('pwa-update-banner');
+          if (existing) {
+            existing.style.display = 'flex';
+            return;
+          }
+
+          var banner = document.createElement('div');
+          banner.id = 'pwa-update-banner';
+          banner.setAttribute('role', 'alert');
+          banner.setAttribute('aria-live', 'polite');
+          banner.style.cssText =
+            'position:fixed;top:66px;left:50%;transform:translateX(-50%);z-index:10050;' +
+            'width:min(420px,calc(100vw - 24px));display:flex;align-items:center;' +
+            'justify-content:space-between;gap:12px;padding:10px 14px;border-radius:14px;' +
+            'background:linear-gradient(135deg,#facc15 0%,#f59e0b 100%);color:#0f172a;' +
+            'border:1.5px solid #fef08a;box-shadow:0 12px 30px rgba(0,0,0,0.35);' +
+            'font-family:"Plus Jakarta Sans",system-ui,-apple-system,sans-serif;';
+
+          var msg = document.createElement('div');
+          msg.style.cssText = 'font-size:13px;font-weight:800;line-height:1.25;min-width:0;flex:1;';
+          msg.textContent = '✨ Nueva actualización disponible';
+
+          var btn = document.createElement('button');
+          btn.id = 'btn-pwa-update-now';
+          btn.type = 'button';
+          btn.textContent = 'Actualizar';
+          btn.style.cssText =
+            'flex-shrink:0;min-height:36px;padding:0 14px;border-radius:10px;border:none;' +
+            'background:#0f172a;color:#fef08a;font-size:12.5px;font-weight:800;cursor:pointer;' +
+            'white-space:nowrap;box-shadow:0 2px 8px rgba(15,23,42,0.25);';
+
+          btn.addEventListener('click', function () {
+            userClickedUpdate = true;
+            btn.disabled = true;
+            btn.textContent = 'Actualizando...';
+            btn.style.opacity = '0.8';
+            var target = (swRegistration && swRegistration.waiting) || waitingWorker;
+            if (target) {
+              try {
+                target.postMessage({ type: 'SKIP_WAITING' });
+              } catch (e) {
+                window.location.reload();
+              }
+              window.setTimeout(function () {
+                if (!reloadingForUpdate && target.state === 'activated') {
+                  reloadingForUpdate = true;
+                  window.location.reload();
+                }
+              }, 2500);
+            } else {
+              window.location.reload();
             }
           });
+
+          banner.appendChild(msg);
+          banner.appendChild(btn);
+          document.body.appendChild(banner);
         }
 
         function attachRegistrationListeners(reg) {
           swRegistration = reg;
-          window.__alumineroSwRegistration = reg;
 
           if (reg.waiting) {
-            notifyUpdateAvailable(reg.waiting);
-          }
-
-          if (reg.installing) {
-            watchInstallingWorker(reg.installing);
+            ensureUpdateBanner(reg.waiting);
           }
 
           reg.addEventListener('updatefound', function () {
-            watchInstallingWorker(reg.installing);
+            var newWorker = reg.installing;
+            if (!newWorker) return;
+            newWorker.addEventListener('statechange', function () {
+              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                ensureUpdateBanner(reg.waiting || newWorker);
+              }
+            });
           });
         }
 
         function triggerUpdateCheck() {
           if (!swRegistration) return;
           if (swRegistration.waiting) {
-            notifyUpdateAvailable(swRegistration.waiting);
+            ensureUpdateBanner(swRegistration.waiting);
           }
           swRegistration.update().catch(function () {});
         }
 
         navigator.serviceWorker.addEventListener('controllerchange', function () {
           if (reloadingForUpdate) return;
-          if (!hadController && !window.__alumineroUserTriggeredSwReload) return;
+          if (!hadController && !userClickedUpdate) return;
           reloadingForUpdate = true;
           window.location.reload();
         });
@@ -282,17 +327,11 @@
           }
         });
 
-        window.addEventListener('focus', function () {
-          triggerUpdateCheck();
-        });
-
         window.addEventListener('online', function () {
           triggerUpdateCheck();
         });
 
-        window.setInterval(triggerUpdateCheck, 5 * 60 * 1000);
-
-        function registerServiceWorker() {
+        window.addEventListener('load', function () {
           navigator.serviceWorker
             .register('./sw.js', { scope: './', updateViaCache: 'none' })
             .then(function (reg) {
@@ -300,13 +339,7 @@
               reg.update().catch(function () {});
             })
             .catch(function () {});
-        }
-
-        if (document.readyState === 'complete') {
-          registerServiceWorker();
-        } else {
-          window.addEventListener('load', registerServiceWorker, { once: true });
-        }
+        });
       })();
     </script>
   </body>

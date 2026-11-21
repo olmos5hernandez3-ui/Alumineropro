@@ -7,7 +7,6 @@ import {
   ColorId,
   CotizacionCalculada,
   DespieceCalculado,
-  getColorNombre,
   getRellenoLabel,
   LINEAS_CONFIG,
   LineaId,
@@ -150,8 +149,7 @@ export const TrabajoView: React.FC<Props> = ({
   const [simProgress, setSimProgress] = useState(0);
 
   const lineaCfg = LINEAS_CONFIG[params.linea];
-  const colorCfg = COLORES_CONFIG[params.color] || COLORES_CONFIG.natural;
-  const colorNombreDisplay = getColorNombre(params.color, params.colorCustom);
+  const colorCfg = COLORES_CONFIG[params.color];
   const rellenoLabel = getRellenoLabel(params.relleno, params.vidrio);
   const esMosq = Boolean(lineaCfg.esMosquitero);
   const esCancel = Boolean(lineaCfg.esCancelBano);
@@ -229,7 +227,7 @@ export const TrabajoView: React.FC<Props> = ({
     const msg = [
       `*${taller.nombre || 'COTIZACIÓN ALUMINERO PRO'}*`,
       `• ${lineaCfg.nombre} (${params.anchoCm} × ${params.altoCm} cm)`,
-      `• Acabado: ${colorNombreDisplay}`,
+      `• Acabado: ${colorCfg.nombre}`,
       `• ${lineDetail}`,
       `• Cantidad: ${params.cantidad} pza(s) · Área: ${cot.areaRealM2.toFixed(2)} m²`,
       `*Total: ${formatMXN(cot.totalFinal)}*`,
@@ -251,7 +249,7 @@ export const TrabajoView: React.FC<Props> = ({
             {lineaCfg.nombre}
           </h1>
           <p id="work-screen-sub" className="m-0 text-[12.5px] text-slate-300">
-            {params.anchoCm} × {params.altoCm} cm ({cot.areaRealM2.toFixed(2)} m²) · {colorNombreDisplay} ·{' '}
+            {params.anchoCm} × {params.altoCm} cm ({cot.areaRealM2.toFixed(2)} m²) · {colorCfg.nombre} ·{' '}
             {esMosq ? `${despiece.telaMosquiteraM2.toFixed(2)} m² malla` : rellenoLabel}
           </p>
         </div>
@@ -656,13 +654,8 @@ export const TrabajoView: React.FC<Props> = ({
               <hr className="border-t border-slate-100 my-4" />
 
               <div className="flex items-center justify-between gap-2 mb-2.5">
-                <div>
-                  <span className="block text-[14px] font-extrabold">Color de Aluminio</span>
-                  <span className="block text-[11.5px] text-slate-500">
-                    Seleccionado: <strong className="text-blue-700">{colorNombreDisplay}</strong>
-                  </span>
-                </div>
-                <span className="text-[12px] text-slate-500 mono font-bold">
+                <span className="text-[14px] font-extrabold">Acabado de Perfil</span>
+                <span className="text-[12px] text-slate-500 mono">
                   {colorCfg.extraM2 > 0 ? `+$${colorCfg.extraM2}/m²` : 'Base'}
                 </span>
               </div>
@@ -673,62 +666,27 @@ export const TrabajoView: React.FC<Props> = ({
                     <button
                       key={c.id}
                       type="button"
-                      aria-pressed={active}
                       onClick={() => onChangeParams({ color: c.id as ColorId })}
-                      className={`flex items-center gap-2.5 min-h-[50px] px-2.5 py-2 rounded-xl border text-left cursor-pointer transition-all active:scale-[0.98] ${
-                        active
-                          ? 'border-blue-600 bg-blue-50 ring-2 ring-blue-500/40 shadow-sm'
-                          : 'border-slate-200 bg-white hover:bg-slate-50'
+                      className={`flex items-center gap-2 min-h-[48px] px-2.5 py-2 rounded-xl border text-left cursor-pointer ${
+                        active ? 'border-blue-600 bg-blue-50 ring-1 ring-blue-600' : 'border-slate-200 bg-white'
                       }`}
                     >
                       <span
-                        className="w-6 h-6 rounded-full border border-slate-300 shadow-inner shrink-0"
+                        className="w-5 h-5 rounded-md border border-slate-300 shrink-0"
                         style={{ background: c.swatch }}
-                        aria-hidden="true"
                       />
-                      <div className="min-w-0 flex-1">
-                        <span
-                          className={`block text-[12.5px] font-bold leading-tight truncate ${
-                            active ? 'text-blue-700' : 'text-slate-900'
-                          }`}
-                        >
+                      <div>
+                        <span className={`block text-[12.5px] font-bold ${active ? 'text-blue-700' : 'text-slate-900'}`}>
                           {c.nombre}
                         </span>
                         <span className="block text-[11px] text-slate-500 mono">
                           {c.extraM2 > 0 ? `+$${c.extraM2}/m²` : 'Incluido'}
                         </span>
                       </div>
-                      {active && (
-                        <span
-                          className="w-5 h-5 rounded-full bg-blue-600 text-white text-[11px] font-extrabold inline-flex items-center justify-center shrink-0"
-                          aria-hidden="true"
-                        >
-                          ✓
-                        </span>
-                      )}
                     </button>
                   );
                 })}
               </div>
-              {params.color === 'otro' && (
-                <div className="mt-2.5">
-                  <label
-                    htmlFor="inp-color-aluminio-otro"
-                    className="block text-[11.5px] font-bold text-slate-600 mb-1"
-                  >
-                    Especifica el tono especial de aluminio
-                  </label>
-                  <input
-                    id="inp-color-aluminio-otro"
-                    type="text"
-                    maxLength={50}
-                    value={params.colorCustom || ''}
-                    onChange={(e) => onChangeParams({ colorCustom: e.target.value })}
-                    placeholder="Ej. Gris Oxford, Champagne claro, Dura-anodizado..."
-                    className="w-full min-h-[40px] rounded-xl border border-blue-300 bg-white px-3 text-[13px] font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-                  />
-                </div>
-              )}
 
               {!esMosq ? (
                 <>
@@ -1181,7 +1139,7 @@ export const TrabajoView: React.FC<Props> = ({
               <div>
                 <h2 className="m-0 text-[17px] font-extrabold">Resumen de Pieza Actual</h2>
                 <p className="m-0 text-[12px] text-slate-500">
-                  {params.cantidad} pza(s) · {lineaCfg.nombre} · {colorNombreDisplay}
+                  {params.cantidad} pza(s) · {lineaCfg.nombre} · {colorCfg.nombre}
                 </p>
               </div>
               <span className="mono text-[13px] font-extrabold text-blue-600">
@@ -1199,7 +1157,7 @@ export const TrabajoView: React.FC<Props> = ({
                 </span>
               </div>
               <div className="flex justify-between">
-                <span>Acabado {colorNombreDisplay}</span>
+                <span>Acabado {colorCfg.nombre}</span>
                 <span className="mono font-bold text-slate-900">
                   {formatMXN(modoPrecio === 'm2' ? cot.areaCobradaM2 * cot.extraColorM2 * params.cantidad : 0)}
                 </span>

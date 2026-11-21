@@ -13,7 +13,7 @@ export const PartidaMiniSvg: React.FC<PartidaMiniSvgProps> = ({
   height = 84,
 }) => {
   const linea = LINEAS_CONFIG[partida.linea];
-  const colorCfg = COLORES_CONFIG[partida.color] || COLORES_CONFIG.natural;
+  const colorCfg = COLORES_CONFIG[partida.color];
   const rellenoCfg = partida.relleno ? getRellenoItem(partida.relleno.materialId, partida.vidrio) : null;
   const interiorFill = isMosqPlaceholder(Boolean(linea?.esMosquitero))
     ? '#F1F5F9'

@@ -12,7 +12,7 @@ import {
   pushHistoryOverlay,
   removeHistoryOverlay,
 } from '../utils/historyOverlayStack';
-import { safeHistoryBack, safeHistoryPushState } from '../utils/runtimeEnv';
+import { isRunningInIframe } from '../utils/iframeEnv';
 import { SignaturePadModal } from './SignaturePadModal';
 
 interface PdfPreviewModalProps {
@@ -72,19 +72,20 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
       return;
     }
 
+    if (isRunningInIframe()) {
+      sheetHistoryPushedRef.current = false;
+      sheetOverlayTokenRef.current = null;
+      return;
+    }
+
     try {
-      const pushed = safeHistoryPushState({ apPdfLayer: 'sheet' }, '');
-      if (pushed) {
-        sheetHistoryPushedRef.current = true;
-        sheetOverlayTokenRef.current = pushHistoryOverlay('pdf-sheet', () => {
-          sheetHistoryPushedRef.current = false;
-          sheetOverlayTokenRef.current = null;
-          onCloseRef.current();
-        });
-      } else {
+      window.history.pushState({ apPdfLayer: 'sheet' }, '');
+      sheetHistoryPushedRef.current = true;
+      sheetOverlayTokenRef.current = pushHistoryOverlay('pdf-sheet', () => {
         sheetHistoryPushedRef.current = false;
         sheetOverlayTokenRef.current = null;
-      }
+        onCloseRef.current();
+      });
     } catch {
       sheetHistoryPushedRef.current = false;
       sheetOverlayTokenRef.current = null;
@@ -105,19 +106,20 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
       return;
     }
 
+    if (isRunningInIframe()) {
+      viewerHistoryPushedRef.current = false;
+      viewerOverlayTokenRef.current = null;
+      return;
+    }
+
     try {
-      const pushed = safeHistoryPushState({ apPdfLayer: 'viewer' }, '');
-      if (pushed) {
-        viewerHistoryPushedRef.current = true;
-        viewerOverlayTokenRef.current = pushHistoryOverlay('pdf-viewer', () => {
-          viewerHistoryPushedRef.current = false;
-          viewerOverlayTokenRef.current = null;
-          setViewerOpen(false);
-        });
-      } else {
+      window.history.pushState({ apPdfLayer: 'viewer' }, '');
+      viewerHistoryPushedRef.current = true;
+      viewerOverlayTokenRef.current = pushHistoryOverlay('pdf-viewer', () => {
         viewerHistoryPushedRef.current = false;
         viewerOverlayTokenRef.current = null;
-      }
+        setViewerOpen(false);
+      });
     } catch {
       viewerHistoryPushedRef.current = false;
       viewerOverlayTokenRef.current = null;
@@ -130,11 +132,13 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
   }, [open, viewerOpen]);
 
   const requestCloseSheet = useCallback(() => {
-    if (sheetHistoryPushedRef.current) {
-      if (safeHistoryBack()) {
+    if (!isRunningInIframe() && sheetHistoryPushedRef.current) {
+      try {
+        window.history.back();
         return;
+      } catch {
+        sheetHistoryPushedRef.current = false;
       }
-      sheetHistoryPushedRef.current = false;
     }
     removeHistoryOverlay(sheetOverlayTokenRef.current);
     sheetOverlayTokenRef.current = null;
@@ -147,11 +151,13 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
   };
 
   const closeViewerLayer = () => {
-    if (viewerHistoryPushedRef.current) {
-      if (safeHistoryBack()) {
+    if (!isRunningInIframe() && viewerHistoryPushedRef.current) {
+      try {
+        window.history.back();
         return;
+      } catch {
+        viewerHistoryPushedRef.current = false;
       }
-      viewerHistoryPushedRef.current = false;
     }
     removeHistoryOverlay(viewerOverlayTokenRef.current);
     viewerOverlayTokenRef.current = null;

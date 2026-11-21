@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { pushHistoryOverlay, removeHistoryOverlay } from '../utils/historyOverlayStack';
-import { safeHistoryBack, safeHistoryPushState } from '../utils/runtimeEnv';
+import { isRunningInIframe } from '../utils/iframeEnv';
 
 export function cropCanvasSignature(canvas: HTMLCanvasElement, padding = 10): string | null {
   const ctx = canvas.getContext('2d');
@@ -88,20 +88,21 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
     }
 
     closedByPopRef.current = false;
+    if (isRunningInIframe()) {
+      pushedHistoryRef.current = false;
+      overlayTokenRef.current = null;
+      return;
+    }
+
     try {
-      const pushed = safeHistoryPushState({ apSignaturePad: 1 }, '');
-      if (pushed) {
-        pushedHistoryRef.current = true;
-        overlayTokenRef.current = pushHistoryOverlay('signature-pad', () => {
-          pushedHistoryRef.current = false;
-          closedByPopRef.current = true;
-          overlayTokenRef.current = null;
-          onCloseRef.current();
-        });
-      } else {
+      window.history.pushState({ apSignaturePad: 1 }, '');
+      pushedHistoryRef.current = true;
+      overlayTokenRef.current = pushHistoryOverlay('signature-pad', () => {
         pushedHistoryRef.current = false;
+        closedByPopRef.current = true;
         overlayTokenRef.current = null;
-      }
+        onCloseRef.current();
+      });
     } catch {
       pushedHistoryRef.current = false;
       overlayTokenRef.current = null;
@@ -114,11 +115,13 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
   }, [open]);
 
   const requestCloseLayer = useCallback(() => {
-    if (pushedHistoryRef.current && !closedByPopRef.current) {
-      if (safeHistoryBack()) {
+    if (!isRunningInIframe() && pushedHistoryRef.current && !closedByPopRef.current) {
+      try {
+        window.history.back();
         return;
+      } catch {
+        pushedHistoryRef.current = false;
       }
-      pushedHistoryRef.current = false;
     }
     removeHistoryOverlay(overlayTokenRef.current);
     overlayTokenRef.current = null;

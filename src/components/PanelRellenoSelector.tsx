@@ -73,7 +73,6 @@ export const PanelRellenoSelector: React.FC<Props> = ({
         categoria: item.categoria,
         materialId: item.id,
         espesorMm: nextEsp,
-        customLabel: item.id === 'flot-otro' ? currentSel.customLabel || '' : undefined,
       },
       item.vidrioCompatId
     );
@@ -85,7 +84,6 @@ export const PanelRellenoSelector: React.FC<Props> = ({
         categoria: activeCat,
         materialId: activeItem.id,
         espesorMm: esp,
-        customLabel: activeItem.id === 'flot-otro' ? currentSel.customLabel || '' : undefined,
       },
       activeItem.vidrioCompatId
     );
@@ -96,7 +94,7 @@ export const PanelRellenoSelector: React.FC<Props> = ({
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
           <span className="block text-[14px] font-extrabold">
-            Color de Vidrio y Panel de Relleno
+            Panel de Relleno (Cristal, Espejo, Baño o Duela)
           </span>
           <span className="block text-[11.5px] text-slate-500">
             Seleccionado:{' '}
@@ -106,7 +104,6 @@ export const PanelRellenoSelector: React.FC<Props> = ({
                   categoria: activeCat,
                   materialId: activeItem.id,
                   espesorMm: activeEspesor,
-                  customLabel: currentSel.customLabel,
                 },
                 vidrioFallback
               )}
@@ -149,7 +146,7 @@ export const PanelRellenoSelector: React.FC<Props> = ({
         })}
       </div>
 
-      {/* Botones de selección visual con muestra de tono translúcido/real */}
+      {/* Cuadrícula compacta de 2 columnas (igual que Acabado de Perfil) */}
       <div className="grid grid-cols-2 gap-2.5">
         {itemsInCategory.map((item) => {
           const isSelected = activeItem.id === item.id;
@@ -166,16 +163,15 @@ export const PanelRellenoSelector: React.FC<Props> = ({
             <button
               key={item.id}
               type="button"
-              aria-pressed={isSelected}
               onClick={() => handleSelectMaterial(item)}
-              className={`flex items-center gap-2.5 min-h-[50px] px-2.5 py-2 rounded-xl border text-left cursor-pointer transition-all active:scale-[0.98] ${
+              className={`flex items-center gap-2 min-h-[48px] px-2.5 py-2 rounded-xl border text-left cursor-pointer transition-all ${
                 isSelected
-                  ? 'border-blue-600 bg-blue-50 ring-2 ring-blue-500/40 shadow-sm'
+                  ? 'border-blue-600 bg-blue-50 ring-1 ring-blue-600'
                   : 'border-slate-200 bg-white hover:bg-slate-50'
               }`}
             >
               <span
-                className="w-6 h-6 rounded-full border border-slate-300/90 shadow-inner shrink-0"
+                className="w-6 h-6 rounded-full border border-slate-300 shadow-inner shrink-0"
                 style={{ background: item.swatch }}
                 aria-hidden="true"
               />
@@ -191,48 +187,10 @@ export const PanelRellenoSelector: React.FC<Props> = ({
                   {formatMXN(itemPrecio)}/m²
                 </span>
               </div>
-              {isSelected && (
-                <span
-                  className="w-5 h-5 rounded-full bg-blue-600 text-white text-[11px] font-extrabold inline-flex items-center justify-center shrink-0"
-                  aria-hidden="true"
-                >
-                  ✓
-                </span>
-              )}
             </button>
           );
         })}
       </div>
-
-      {activeItem.id === 'flot-otro' && (
-        <div>
-          <label
-            htmlFor="inp-vidrio-otro"
-            className="block text-[11.5px] font-bold text-slate-600 mb-1"
-          >
-            Tono especial de vidrio (opcional)
-          </label>
-          <input
-            id="inp-vidrio-otro"
-            type="text"
-            maxLength={50}
-            value={currentSel.customLabel || ''}
-            onChange={(e) =>
-              onChange(
-                {
-                  categoria: activeCat,
-                  materialId: activeItem.id,
-                  espesorMm: activeEspesor,
-                  customLabel: e.target.value,
-                },
-                activeItem.vidrioCompatId
-              )
-            }
-            placeholder="Ej. Bronce Reflecta, Azul Cielo, Laminado..."
-            className="w-full min-h-[40px] rounded-xl border border-blue-300 bg-white px-3 text-[13px] font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-          />
-        </div>
-      )}
 
       {/* Espesores (mm) + Precio editable $/m² */}
       <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-end justify-between gap-3">
