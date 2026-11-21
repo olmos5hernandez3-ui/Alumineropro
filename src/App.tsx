@@ -1,7 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import {
-  buildColleaguePromoWhatsappUrl,
   calcularCotizacion,
   calcularDespiece,
   CategoriaTrabajo,
@@ -171,10 +170,13 @@ import { CalculadoraModal } from './components/CalculadoraModal';
 import { LevantamientoRapido } from './components/LevantamientoRapido';
 import {
   AlumBridgePayload,
-  LEV_MAPA,
   LevantamientoDraft,
+  mergePiezaSpecsAndNotes,
   normalizeLevantamientoDraft,
   overwriteHojaProyectoInStorage,
+  resolveColorAluminioFromLevantamiento,
+  resolveLineaFromLevantamiento,
+  resolveVidrioFromLevantamiento,
 } from './utils/levantamientoLogic';
 
 const InventarioView = lazy(() =>
@@ -323,6 +325,28 @@ export default function App() {
     subModal: null,
   };
 
+  // Invitación estilo Spotify (?ref=[Nombre]&promo=[NumeroPromo])
+  // Se inicializa antes de globalModals y navFramesRef para garantizar que la pantalla verde
+  // de invitación aparezca SIEMPRE desde el primer frame antes de cualquier aviso PWA.
+  const [savedColleagueReferral] = useState<SavedColleagueReferral | null>(() => {
+    const parsedFromUrl =
+      typeof window !== 'undefined' ? parseReferralFromSearch(window.location.search) : null;
+    if (parsedFromUrl) {
+      const nextRef: SavedColleagueReferral = {
+        refName: parsedFromUrl.refName,
+        promoNumber: parsedFromUrl.promoNumber,
+        savedAt: Date.now(),
+      };
+      saveColleagueReferral(nextRef);
+      return nextRef;
+    }
+    return loadSavedColleagueReferral();
+  });
+  const [initialReferralActive] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return Boolean(parseReferralFromSearch(window.location.search));
+  });
+
   const [currentView, setCurrentView] = useState<ScreenId>('menu');
   const [workTab, setWorkTab] = useState<'descuentos' | 'cotizacion'>('descuentos');
   const [invTab, setInvTab] = useState<'perfiles' | 'vidrios' | 'herrajes'>('perfiles');
@@ -330,11 +354,19 @@ export default function App() {
   const [modStep, setModStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [modPaso5Tab, setModPaso5Tab] = useState<'cortes' | 'tramos'>('cortes');
   const [modMosqOpen, setModMosqOpen] = useState<boolean>(false);
-  const [globalModals, setGlobalModals] = useState<GlobalModalId[]>([]);
+  const [globalModals, setGlobalModals] = useState<GlobalModalId[]>(() =>
+    initialReferralActive && !proActive && Boolean(savedColleagueReferral)
+      ? ['referralWelcome']
+      : []
+  );
   const [perfilModalId, setPerfilModalId] = useState<PerfilCatalogoId | null>(null);
   const [navTransitionDir, setNavTransitionDir] = useState<'none' | 'back' | 'forward'>('none');
 
-  const navFramesRef = useRef<NavFrame[]>([BASE_FRAME]);
+  const navFramesRef = useRef<NavFrame[]>(
+    initialReferralActive && !proActive && Boolean(savedColleagueReferral)
+      ? [BASE_FRAME, { ...BASE_FRAME, depth: 1, globalModals: ['referralWelcome'] }]
+      : [BASE_FRAME]
+  );
   const pendingInternalBackSyncRef = useRef<number>(0);
   const closeSubModalRef = useRef<(() => void) | null>(null);
   const historyInitializedRef = useRef<boolean>(false);
@@ -431,37 +463,15 @@ export default function App() {
   const remindersModalOpen = globalModals.includes('reminders');
   const levBatchConfirmOpen = globalModals.includes('levBatchConfirm');
 
-  // Invitación estilo Spotify (?ref=[Nombre]&promo=[NumeroPromo])
-  const [savedColleagueReferral] = useState<SavedColleagueReferral | null>(() => {
-    const parsedFromUrl =
-      typeof window !== 'undefined' ? parseReferralFromSearch(window.location.search) : null;
-    if (parsedFromUrl) {
-      const nextRef: SavedColleagueReferral = {
-        refName: parsedFromUrl.refName,
-        promoNumber: parsedFromUrl.promoNumber,
-        savedAt: Date.now(),
-      };
-      saveColleagueReferral(nextRef);
-      return nextRef;
-    }
-    return loadSavedColleagueReferral();
-  });
-  const [initialReferralActive] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
-    return Boolean(parseReferralFromSearch(window.location.search));
-  });
+  const isReferralWelcomeShowing =
+    referralWelcomeOpen && !proActive && Boolean(savedColleagueReferral);
 
   const handleClaimColleaguePromo = () => {
     if (!savedColleagueReferral) return;
-    const waDigits = sanitizeWhatsappNumber(PRO_PAYMENT_CONFIG.whatsapp10Digits || sugerenciasWhatsapp);
-    const url = buildColleaguePromoWhatsappUrl(
-      waDigits,
-      savedColleagueReferral.refName,
-      deviceId,
-      savedColleagueReferral.promoNumber
-    );
+    const msg = `Hola Administrador, solicito mi PIN de promoción colega de 3 días para Aluminero Pro. Mi ID de equipo es: ${deviceId} (Invitación de ${savedColleagueReferral.refName} · Promo #${savedColleagueReferral.promoNumber}).`;
+    const url = `https://wa.me/527351631532?text=${encodeURIComponent(msg)}`;
     openExternalLinkSafe(url);
-    showToast('Abriendo WhatsApp para solicitar tu código de 3 días gratis...', true);
+    showToast('Abriendo WhatsApp con el Administrador para solicitar tu PIN...', true);
   };
 
   const [toast, setToast] = useState<{ msg: string; topSuccess: boolean } | null>(null);
@@ -1373,7 +1383,12 @@ export default function App() {
   useEffect(() => {
     if (!historyInitializedRef.current) {
       historyInitializedRef.current = true;
-      if (initialReferralActive) {
+      if (
+        initialReferralActive &&
+        !proActive &&
+        Boolean(savedColleagueReferral) &&
+        !navFramesRef.current[navFramesRef.current.length - 1]?.globalModals.includes('referralWelcome')
+      ) {
         const refFrame: NavFrame = {
           ...BASE_FRAME,
           depth: 1,
@@ -1728,7 +1743,7 @@ export default function App() {
   };
 
   const handleInstallApp = async (fromDrawer = false) => {
-    if (pwa.isInstalled) return;
+    if (pwa.isInstalled || isReferralWelcomeShowing) return;
     if (pwa.canPromptNative) {
       const outcome = await pwa.install();
       if (outcome === 'accepted') {
@@ -1948,25 +1963,26 @@ export default function App() {
       for (const p of draft.piezas) {
         const dimCheck = validatePiezaDimensiones(p.anchoCm, p.altoCm);
         if (!dimCheck.valid) continue;
-        const mapa = LEV_MAPA[p.tipo] || LEV_MAPA['Cancel / Otro'];
-        const lineaCfg = LINEAS_CONFIG[mapa.linea];
+        const resolved = resolveLineaFromLevantamiento(p);
+        const lineaCfg = LINEAS_CONFIG[resolved.linea];
         if (!lineaCfg) continue;
 
         const apertura =
-          mapa.apertura || (lineaCfg.categoria === 'puertas' ? 'abatible' : 'corrediza');
+          resolved.apertura || (lineaCfg.categoria === 'puertas' ? 'abatible' : 'corrediza');
         const qty = Math.max(1, Number(p.cant) || 1);
-        if (!proActive && (lineaCfg.pro || isFeatureProRequired(mapa.linea, apertura, qty))) {
+        if (!proActive && (lineaCfg.pro || isFeatureProRequired(resolved.linea, apertura, qty))) {
           skippedProCount += 1;
           continue;
         }
 
-        const vidrio = 'claro6' as const;
-        const relleno = getDefaultRellenoFromVidrio(vidrio);
+        const color = resolveColorAluminioFromLevantamiento(p.colorAluminio);
+        const { vidrio, relleno } = resolveVidrioFromLevantamiento(p.colorVidrio);
+        const pieceNotas = mergePiezaSpecsAndNotes(p);
         const pieceParams: TrabajoParams = {
-          linea: mapa.linea,
+          linea: resolved.linea,
           anchoCm: p.anchoCm,
           altoCm: p.altoCm,
-          color: 'natural',
+          color,
           vidrio,
           relleno,
           hojas: 2,
@@ -1980,12 +1996,12 @@ export default function App() {
           tolerancias: { ...lineaCfg.toleranciasDefault },
         };
         const pieceDespiece = calcularDespiece(pieceParams);
-        const piecePrecioInput = taller.tarifasBase[mapa.linea] ?? lineaCfg.tarifaBaseDefault;
+        const piecePrecioInput = taller.tarifasBase[resolved.linea] ?? lineaCfg.tarifaBaseDefault;
         const pieceCot = calcularCotizacion({
-          linea: mapa.linea,
+          linea: resolved.linea,
           anchoCm: p.anchoCm,
           altoCm: p.altoCm,
-          color: 'natural',
+          color,
           vidrio,
           relleno,
           rellenoPrecioM2: getRellenoPrecioM2(relleno, taller.rellenoPreciosM2, vidrio),
@@ -2003,12 +2019,12 @@ export default function App() {
         partidas.push({
           id: `p-lev-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           categoria: lineaCfg.categoria,
-          linea: mapa.linea,
+          linea: resolved.linea,
           area: p.area.trim() || 'General',
           etiqueta: '',
           anchoCm: p.anchoCm,
           altoCm: p.altoCm,
-          color: 'natural',
+          color,
           vidrio,
           relleno,
           hojas: 2,
@@ -2025,7 +2041,7 @@ export default function App() {
           extraPct: 0,
           totalLinea: pieceCot.totalFinal,
           despiece: pieceDespiece,
-          notas: p.notas.trim() || undefined,
+          notas: pieceNotas || undefined,
           fotoDataUrl: p.foto || undefined,
         });
       }
@@ -2107,7 +2123,13 @@ export default function App() {
         altoCm: p.alto,
         cantidad: p.cant,
         ...(p.apertura ? { apertura: p.apertura } : {}),
+        ...(p.color ? { color: p.color } : {}),
+        ...(p.vidrio ? { vidrio: p.vidrio } : {}),
+        ...(p.relleno ? { relleno: p.relleno } : {}),
       }));
+      if (typeof p.notas === 'string') {
+        setReferencia(p.notas);
+      }
       const targetWorkTab = p.destino === 'cotizacion' ? 'cotizacion' : 'descuentos';
       if (currentViewRef.current === 'trabajo') {
         replaceNavFrame({ workTab: targetWorkTab });
@@ -2379,6 +2401,7 @@ export default function App() {
             dueRemindersCount={reminderSummary.dueCount}
             pushPermission={pushPermission}
             onClaimColleaguePromo={handleClaimColleaguePromo}
+            onOpenPro={() => openGlobalModal('pro')}
             onEntrarTrabajo={handleEntrarTrabajo}
             onEntrarHoja={handleEntrarHoja}
             onEntrarInventario={() => handleEntrarInventario()}
@@ -3335,12 +3358,12 @@ export default function App() {
       />
 
       <ColleagueReferralWelcomeModal
-        open={referralWelcomeOpen && !proActive && Boolean(savedColleagueReferral)}
+        open={isReferralWelcomeShowing}
         referral={savedColleagueReferral}
         deviceId={deviceId}
         whatsappNumber={sugerenciasWhatsapp}
         onExploreFree={() => {
-          requestBack();
+          goHome();
           if (!isRunningInIframe() && typeof window !== 'undefined' && window.location.search.includes('ref=')) {
             window.setTimeout(() => {
               try {
@@ -3557,7 +3580,7 @@ export default function App() {
       />
 
       <PwaInstallGuideModal
-        open={installGuideOpen && !pwa.isInstalled}
+        open={installGuideOpen && !pwa.isInstalled && !isReferralWelcomeShowing}
         isIOS={pwa.isIOS}
         onClose={requestBack}
       />
@@ -3622,7 +3645,13 @@ export default function App() {
       />
 
       <FloatingInstallButton
-        visible={currentView === 'menu' && !pwa.isInstalled && !installFabDismissed && !accessBlocked}
+        visible={
+          currentView === 'menu' &&
+          !pwa.isInstalled &&
+          !installFabDismissed &&
+          !accessBlocked &&
+          !isReferralWelcomeShowing
+        }
         onInstall={() => void handleInstallApp(false)}
         onDismiss={() => setInstallFabDismissed(true)}
       />

@@ -16,6 +16,7 @@ interface Props {
   dueRemindersCount?: number;
   pushPermission?: NotificationPermission | 'unsupported';
   onClaimColleaguePromo?: () => void;
+  onOpenPro?: () => void;
   onEntrarTrabajo: (cat: 'ventanas' | 'puertas') => void;
   onEntrarHoja: () => void;
   onEntrarInventario: () => void;
@@ -38,6 +39,7 @@ export const MainMenuView: React.FC<Props> = ({
   dueRemindersCount = 0,
   pushPermission = 'default',
   onClaimColleaguePromo,
+  onOpenPro,
   onEntrarTrabajo,
   onEntrarHoja,
   onEntrarInventario,
@@ -126,26 +128,41 @@ export const MainMenuView: React.FC<Props> = ({
         );
       })()}
 
-      {/* Acceso discreto para canjear los 3 días gratis enviados por un colega */}
+      {/* Acceso para canjear los 3 días gratis enviados por un colega */}
       {!proActive && savedReferral && onClaimColleaguePromo && (
-        <button
-          type="button"
-          id="btn-menu-claim-colleague-promo"
-          onClick={onClaimColleaguePromo}
-          className="mb-3.5 w-full rounded-2xl px-4 py-3 text-left cursor-pointer border border-emerald-400/45 bg-[#060b14] bg-[radial-gradient(circle_at_15%_50%,rgba(16,185,129,0.28)_0%,rgba(6,11,20,0.96)_70%)] hover:border-emerald-300/70 transition-all active:scale-[0.98] flex items-center justify-between gap-3 shadow-lg"
+        <div
+          id="card-menu-colleague-promo"
+          className="mb-3.5 w-full rounded-2xl p-3.5 sm:p-4 text-left border border-emerald-400/50 bg-[#060b14] bg-[radial-gradient(circle_at_15%_50%,rgba(16,185,129,0.28)_0%,rgba(6,11,20,0.96)_72%)] shadow-lg"
         >
-          <div className="min-w-0">
-            <span className="block text-[10.5px] font-extrabold uppercase tracking-wider text-emerald-300 truncate">
-              Invitación de {savedReferral.refName} · Promo #{savedReferral.promoNumber}
+          <div className="min-w-0 mb-2.5">
+            <span className="block text-[10.5px] font-extrabold uppercase tracking-wider text-emerald-300 leading-snug">
+              INVITACIÓN DE UN COLEGA · {savedReferral.refName} · Promo #{savedReferral.promoNumber}
             </span>
-            <span className="block text-[13.5px] sm:text-[14px] font-extrabold text-white leading-snug mt-0.5">
+            <span className="block text-[14px] sm:text-[15px] font-extrabold text-white leading-snug mt-0.5">
               Canjear mis 3 días gratis de colega
             </span>
           </div>
-          <span className="shrink-0 px-3 py-1.5 rounded-xl bg-emerald-400 text-slate-950 font-extrabold text-[11.5px] whitespace-nowrap shadow-sm">
-            Pedir PIN
-          </span>
-        </button>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <button
+              type="button"
+              id="btn-menu-claim-colleague-promo"
+              onClick={onClaimColleaguePromo}
+              className="flex-1 min-h-[42px] px-3.5 py-2 rounded-xl bg-emerald-400 hover:bg-emerald-300 active:scale-[0.98] text-slate-950 font-extrabold text-[12px] sm:text-[12.5px] leading-tight cursor-pointer shadow-sm transition-all text-center"
+            >
+              Solicitar PIN de promoción colega al Administrador
+            </button>
+            {onOpenPro && (
+              <button
+                type="button"
+                id="btn-menu-enter-colleague-pin"
+                onClick={onOpenPro}
+                className="sm:w-auto min-h-[40px] px-3.5 py-2 rounded-xl border border-emerald-300/45 bg-emerald-500/15 hover:bg-emerald-500/25 active:scale-[0.98] text-emerald-100 font-bold text-[12px] cursor-pointer transition-all whitespace-nowrap text-center"
+              >
+                Ya tengo mi PIN
+              </button>
+            )}
+          </div>
+        </div>
       )}
 
       {/* Tarjeta principal destacada: Hoja de Cotización */}

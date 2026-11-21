@@ -1486,6 +1486,79 @@ html[data-theme="light"] #calc-display {
   text-align: center;
   font-size: 26px;
 }
+#lev-root .lev-chip-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+#lev-root .lev-chip {
+  min-height: 38px;
+  padding: 6px 11px;
+  border-radius: 10px;
+  background: #081223;
+  border: 1.5px solid #94a3b844;
+  color: #cbd5e1;
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.2;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  transition: transform 0.12s ease, border-color 0.14s ease, background 0.14s ease, color 0.14s ease, box-shadow 0.14s ease;
+}
+#lev-root .lev-chip:active {
+  transform: scale(0.96);
+}
+#lev-root .lev-chip.on {
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.36), rgba(14, 165, 233, 0.24));
+  border-color: #38bdf8;
+  color: #ffffff;
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.45), 0 4px 12px rgba(37, 99, 235, 0.28);
+}
+#lev-root .lev-swatch {
+  width: 15px;
+  height: 15px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+  border: 1.5px solid rgba(255, 255, 255, 0.48);
+  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.35), 0 1px 3px rgba(0, 0, 0, 0.45);
+}
+#lev-root .lev-swatch-glass {
+  width: 15px;
+  height: 15px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+  border: 1.5px solid rgba(255, 255, 255, 0.65);
+  opacity: 0.78;
+  box-shadow: inset 0 2px 4px rgba(255, 255, 255, 0.55), 0 0 6px rgba(56, 189, 248, 0.3);
+}
+#lev-root .lev-piece-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 5px;
+}
+#lev-root .lev-piece-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  background: #17253d;
+  border: 1px solid #94a3b840;
+  color: #e2e8f0;
+}
+#lev-root .lev-piece-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  display: inline-block;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  flex: 0 0 auto;
+}
 #lev-root .pv {
   font-size: 12px;
   color: #7dd3fc;

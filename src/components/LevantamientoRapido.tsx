@@ -7,7 +7,12 @@ import {
   createEmptyLevantamiento,
   formatMedida,
   formatMedidaText,
+  getDefaultLineaPerfilForTipo,
+  LEV_COLOR_ALUMINIO_OPTS,
+  LEV_COLOR_VIDRIO_OPTS,
   LEV_KEYS,
+  LEV_LINEA_PERFIL_OPTS,
+  LEV_MOSQUITERO_OPTS,
   LEV_TIPOS,
   LevantamientoDestino,
   LevantamientoDraft,
@@ -48,12 +53,20 @@ interface LevantamientoFormState {
   alto: string;
   u: LevantamientoUnidad;
   cant: number;
+  lineaPerfil: string;
+  colorAluminio: string;
+  colorVidrio: string;
+  mosquitero: string;
   notas: string;
   foto: string;
   editId: string | null;
 }
 
-function createEmptyForm(u: LevantamientoUnidad = 'cm', tipo: string = LEV_TIPOS[0]): LevantamientoFormState {
+function createEmptyForm(
+  u: LevantamientoUnidad = 'cm',
+  tipo: string = LEV_TIPOS[0],
+  specs?: Partial<Pick<LevantamientoFormState, 'lineaPerfil' | 'colorAluminio' | 'colorVidrio' | 'mosquitero'>>
+): LevantamientoFormState {
   return {
     tipo,
     area: '',
@@ -61,6 +74,10 @@ function createEmptyForm(u: LevantamientoUnidad = 'cm', tipo: string = LEV_TIPOS
     alto: '',
     u,
     cant: 1,
+    lineaPerfil: specs?.lineaPerfil || getDefaultLineaPerfilForTipo(tipo),
+    colorAluminio: specs?.colorAluminio || 'Natural',
+    colorVidrio: specs?.colorVidrio || 'Claro',
+    mosquitero: specs?.mosquitero || 'Sin mosquitero',
     notas: '',
     foto: '',
     editId: null,
@@ -346,6 +363,10 @@ export const LevantamientoRapido: React.FC<Props> = ({
       anchoCm,
       altoCm,
       cant: Math.max(1, form.cant),
+      lineaPerfil: form.lineaPerfil,
+      colorAluminio: form.colorAluminio,
+      colorVidrio: form.colorVidrio,
+      mosquitero: form.mosquitero,
       notas: form.notas.trim(),
       foto: form.foto,
     };
@@ -353,7 +374,14 @@ export const LevantamientoRapido: React.FC<Props> = ({
       ? draft.piezas.map((x) => (x.id === form.editId ? pieza : x))
       : [...draft.piezas, pieza];
     persistDraft({ ...draft, piezas: nextPiezas });
-    setForm(createEmptyForm(form.u, form.tipo));
+    setForm(
+      createEmptyForm(form.u, form.tipo, {
+        lineaPerfil: form.lineaPerfil,
+        colorAluminio: form.colorAluminio,
+        colorVidrio: form.colorVidrio,
+        mosquitero: form.mosquitero,
+      })
+    );
     setLocalError(null);
     if (rootRef.current) rootRef.current.scrollTop = 0;
   };
@@ -727,7 +755,16 @@ export const LevantamientoRapido: React.FC<Props> = ({
               <select
                 id="lv-tipo"
                 value={form.tipo}
-                onChange={(e) => setForm((prev) => ({ ...prev, tipo: e.target.value }))}
+                onChange={(e) => {
+                  const nextTipo = e.target.value;
+                  setForm((prev) => ({
+                    ...prev,
+                    tipo: nextTipo,
+                    lineaPerfil: prev.editId
+                      ? prev.lineaPerfil
+                      : getDefaultLineaPerfilForTipo(nextTipo),
+                  }));
+                }}
               >
                 {LEV_TIPOS.map((tp) => (
                   <option key={tp} value={tp}>
@@ -803,13 +840,99 @@ export const LevantamientoRapido: React.FC<Props> = ({
                 </button>
               </div>
 
-              <label htmlFor="lv-nt">Notas (color, vidrio, detalle)</label>
+              <label>Línea de perfil</label>
+              <div className="lev-chip-group" role="group" aria-label="Línea de perfil">
+                {LEV_LINEA_PERFIL_OPTS.map((opt) => {
+                  const active = form.lineaPerfil === opt.label;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      className={`lev-chip${active ? ' on' : ''}`}
+                      aria-pressed={active}
+                      onClick={() => setForm((prev) => ({ ...prev, lineaPerfil: opt.label }))}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <label>Color de aluminio</label>
+              <div className="lev-chip-group" role="group" aria-label="Color de aluminio">
+                {LEV_COLOR_ALUMINIO_OPTS.map((opt) => {
+                  const active = form.colorAluminio === opt.label;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      className={`lev-chip${active ? ' on' : ''}`}
+                      aria-pressed={active}
+                      onClick={() => setForm((prev) => ({ ...prev, colorAluminio: opt.label }))}
+                    >
+                      {opt.hex && (
+                        <span
+                          className="lev-swatch"
+                          style={{ backgroundColor: opt.hex }}
+                          aria-hidden="true"
+                        />
+                      )}
+                      <span>{opt.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <label>Color de vidrio</label>
+              <div className="lev-chip-group" role="group" aria-label="Color de vidrio">
+                {LEV_COLOR_VIDRIO_OPTS.map((opt) => {
+                  const active = form.colorVidrio === opt.label;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      className={`lev-chip${active ? ' on' : ''}`}
+                      aria-pressed={active}
+                      onClick={() => setForm((prev) => ({ ...prev, colorVidrio: opt.label }))}
+                    >
+                      {opt.hex && (
+                        <span
+                          className="lev-swatch-glass"
+                          style={{ backgroundColor: opt.hex }}
+                          aria-hidden="true"
+                        />
+                      )}
+                      <span>{opt.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <label>Mosquitero</label>
+              <div className="lev-chip-group" role="group" aria-label="Mosquitero">
+                {LEV_MOSQUITERO_OPTS.map((opt) => {
+                  const active = form.mosquitero === opt.label;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      className={`lev-chip${active ? ' on' : ''}`}
+                      aria-pressed={active}
+                      onClick={() => setForm((prev) => ({ ...prev, mosquitero: opt.label }))}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <label htmlFor="lv-nt">Notas (detalle adicional)</label>
               <textarea
                 id="lv-nt"
                 rows={2}
                 value={form.notas}
                 onChange={(e) => setForm((prev) => ({ ...prev, notas: e.target.value }))}
-                placeholder="Ej. Aluminio negro, vidrio tintex"
+                placeholder="Ej. Detalle de instalación, jaladera, zoclo especial..."
               />
 
               <label>Foto de referencia (opcional)</label>
@@ -908,6 +1031,50 @@ export const LevantamientoRapido: React.FC<Props> = ({
                       <div>
                         {formatMedidaText(p)} · Cant: {p.cant}
                       </div>
+                      {(p.lineaPerfil || p.colorAluminio || p.colorVidrio || p.mosquitero) && (
+                        <div className="lev-piece-badges">
+                          {p.lineaPerfil && (
+                            <span className="lev-piece-badge">{p.lineaPerfil}</span>
+                          )}
+                          {p.colorAluminio && (() => {
+                            const alumOpt = LEV_COLOR_ALUMINIO_OPTS.find(
+                              (o) => o.label === p.colorAluminio
+                            );
+                            return (
+                              <span className="lev-piece-badge">
+                                {alumOpt?.hex && (
+                                  <span
+                                    className="lev-piece-dot"
+                                    style={{ backgroundColor: alumOpt.hex }}
+                                    aria-hidden="true"
+                                  />
+                                )}
+                                {p.colorAluminio}
+                              </span>
+                            );
+                          })()}
+                          {p.colorVidrio && (() => {
+                            const vidOpt = LEV_COLOR_VIDRIO_OPTS.find(
+                              (o) => o.label === p.colorVidrio
+                            );
+                            return (
+                              <span className="lev-piece-badge">
+                                {vidOpt?.hex && (
+                                  <span
+                                    className="lev-piece-dot"
+                                    style={{ backgroundColor: vidOpt.hex, opacity: 0.85 }}
+                                    aria-hidden="true"
+                                  />
+                                )}
+                                Vidrio: {p.colorVidrio}
+                              </span>
+                            );
+                          })()}
+                          {p.mosquitero && (
+                            <span className="lev-piece-badge">{p.mosquitero}</span>
+                          )}
+                        </div>
+                      )}
                       {p.notas && <small>{p.notas}</small>}
                     </div>
                     <div className="ac">
@@ -931,6 +1098,10 @@ export const LevantamientoRapido: React.FC<Props> = ({
                             alto: String(p.altoCm),
                             u: 'cm',
                             cant: p.cant,
+                            lineaPerfil: p.lineaPerfil || getDefaultLineaPerfilForTipo(p.tipo),
+                            colorAluminio: p.colorAluminio || 'Natural',
+                            colorVidrio: p.colorVidrio || 'Claro',
+                            mosquitero: p.mosquitero || 'Sin mosquitero',
                             notas: p.notas,
                             foto: p.foto,
                             editId: p.id,

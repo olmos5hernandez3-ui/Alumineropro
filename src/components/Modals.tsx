@@ -1099,7 +1099,7 @@ const FALLBACK_MANIFEST_JSON = JSON.stringify(
   2
 );
 
-const FALLBACK_SW_JS = `const CACHE_NAME = 'aluminero-pro-v35-20261121';
+const FALLBACK_SW_JS = `const CACHE_NAME = 'aluminero-pro-v37-20261121';
 const APP_SHELL_ASSETS = [
   './',
   './index.html',
@@ -4026,23 +4026,9 @@ export const ColleagueReferralWelcomeModal: React.FC<ColleagueReferralWelcomeMod
   open,
   referral,
   deviceId,
-  whatsappNumber = '',
   onExploreFree,
-  onShowToast,
 }) => {
   if (!open || !referral) return null;
-
-  const handleRequestCodeWhatsapp = () => {
-    const waDigits = sanitizeWhatsappNumber(PRO_PAYMENT_CONFIG.whatsapp10Digits || whatsappNumber);
-    const url = buildColleaguePromoWhatsappUrl(
-      waDigits,
-      referral.refName,
-      deviceId,
-      referral.promoNumber
-    );
-    openExternalLinkSafe(url);
-    onShowToast('Abriendo WhatsApp para solicitar tu código de 3 días gratis...', true);
-  };
 
   return (
     <div
@@ -4083,18 +4069,9 @@ export const ColleagueReferralWelcomeModal: React.FC<ColleagueReferralWelcomeMod
         <div className="w-full flex flex-col gap-3">
           <button
             type="button"
-            id="btn-referral-claim-wa"
-            onClick={handleRequestCodeWhatsapp}
-            className="w-full min-h-[54px] px-5 rounded-2xl bg-emerald-400 hover:bg-emerald-300 active:scale-[0.98] text-slate-950 font-extrabold text-[15px] cursor-pointer shadow-[0_10px_30px_rgba(16,185,129,0.42)] transition-all"
-          >
-            Solicitar mi código de 3 días por WhatsApp
-          </button>
-
-          <button
-            type="button"
             id="btn-referral-explore-free"
             onClick={onExploreFree}
-            className="w-full min-h-[46px] px-5 rounded-2xl border border-white/20 bg-white/5 hover:bg-white/10 active:scale-[0.98] text-slate-200 font-bold text-[13.5px] cursor-pointer transition-all"
+            className="w-full min-h-[54px] px-5 rounded-2xl bg-emerald-400 hover:bg-emerald-300 active:scale-[0.98] text-slate-950 font-extrabold text-[15px] cursor-pointer shadow-[0_10px_30px_rgba(16,185,129,0.42)] transition-all"
           >
             Explorar versión gratuita primero
           </button>

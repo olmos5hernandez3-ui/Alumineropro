@@ -1,5 +1,13 @@
-import { AperturaVentanaId, CategoriaTrabajo, LineaId } from './alumineroLogic';
-import { ModulacionCategoria, ModulacionModeloId } from './modulacionLogic';
+import {
+  AperturaVentanaId,
+  CategoriaTrabajo,
+  ColorId,
+  getDefaultRellenoFromVidrio,
+  LineaId,
+  PanelRellenoSelection,
+  VidrioId,
+} from './alumineroLogic';
+import { ModulacionCategoria, ModulacionModeloId, ModulacionSerieId } from './modulacionLogic';
 
 export const LEV_KEYS = {
   draft: 'aluminero_levantamiento_borrador_v1',
@@ -16,7 +24,44 @@ export const LEV_TIPOS = [
   'Cancel / Otro',
 ] as const;
 
+export const LEV_LINEA_PERFIL_OPTS = [
+  { id: 'linea-3', label: 'Línea 3"' },
+  { id: 'linea-2', label: 'Línea 2"' },
+  { id: 'europea', label: 'Línea Europea' },
+  { id: 'batiente-alumer', label: 'Batiente Alumer' },
+  { id: 'cancel-mosq', label: 'Cancel / Mosq.' },
+  { id: 'otra', label: 'Otra' },
+] as const;
+
+export const LEV_COLOR_ALUMINIO_OPTS = [
+  { id: 'natural', label: 'Natural', hex: '#C0C5CE' },
+  { id: 'blanco', label: 'Blanco', hex: '#F8FAFC' },
+  { id: 'negro', label: 'Negro', hex: '#1E293B' },
+  { id: 'bronce', label: 'Bronce / Champagne', hex: '#8C6D46' },
+  { id: 'madera', label: 'Madera', hex: '#7C4A27' },
+  { id: 'otro', label: 'Otro', hex: null },
+] as const;
+
+export const LEV_COLOR_VIDRIO_OPTS = [
+  { id: 'claro', label: 'Claro', hex: '#E0F2FE' },
+  { id: 'filtrasol', label: 'Filtrasol', hex: '#64748B' },
+  { id: 'tintex', label: 'Tintex', hex: '#34D399' },
+  { id: 'esmerilado', label: 'Esmerilado', hex: '#CBD5E1' },
+  { id: 'reflecta', label: 'Reflecta', hex: '#38BDF8' },
+  { id: 'sin-vidrio', label: 'Sin vidrio', hex: null },
+] as const;
+
+export const LEV_MOSQUITERO_OPTS = [
+  { id: 'sin', label: 'Sin mosquitero' },
+  { id: 'fijo', label: 'Mosquitero Fijo' },
+  { id: 'corredizo', label: 'Mosquitero Corredizo' },
+] as const;
+
 export type LevantamientoTipo = (typeof LEV_TIPOS)[number];
+export type LevantamientoLineaPerfil = (typeof LEV_LINEA_PERFIL_OPTS)[number]['label'];
+export type LevantamientoColorAluminio = (typeof LEV_COLOR_ALUMINIO_OPTS)[number]['label'];
+export type LevantamientoColorVidrio = (typeof LEV_COLOR_VIDRIO_OPTS)[number]['label'];
+export type LevantamientoMosquitero = (typeof LEV_MOSQUITERO_OPTS)[number]['label'];
 export type LevantamientoUnidad = 'cm' | 'm';
 export type LevantamientoDestino = 'modulacion' | 'cortes' | 'cotizacion';
 
@@ -62,6 +107,10 @@ export interface LevantamientoPieza {
   anchoCm: number;
   altoCm: number;
   cant: number;
+  lineaPerfil?: string;
+  colorAluminio?: string;
+  colorVidrio?: string;
+  mosquitero?: string;
   notas: string;
   foto: string;
 }
@@ -83,6 +132,16 @@ export interface AlumBridgePayload {
   apertura?: AperturaVentanaId;
   modelo?: ModulacionModeloId;
   cat?: ModulacionCategoria | CategoriaTrabajo;
+  serieMod?: ModulacionSerieId;
+  color?: ColorId;
+  vidrio?: VidrioId;
+  relleno?: PanelRellenoSelection;
+  conMosquitero?: boolean;
+  lineaPerfil?: string;
+  colorAluminio?: string;
+  colorVidrio?: string;
+  mosquitero?: string;
+  notas?: string;
   ancho: number;
   alto: number;
   cant: number;
@@ -94,6 +153,146 @@ export interface AlumBridgePayload {
 export interface StorageLike {
   getItem: (key: string) => string | null;
   setItem: (key: string, value: string) => void;
+}
+
+export function getDefaultLineaPerfilForTipo(tipo: string): LevantamientoLineaPerfil {
+  if (tipo === 'Ventana Abatible / Proyección') return 'Línea Europea';
+  if (tipo === 'Puerta') return 'Batiente Alumer';
+  if (tipo === 'Cancel / Otro') return 'Cancel / Mosq.';
+  return 'Línea 3"';
+}
+
+export function resolveLineaFromLevantamiento(pieza: LevantamientoPieza): {
+  linea: LineaId;
+  apertura?: AperturaVentanaId;
+  modelo?: ModulacionModeloId;
+  cat?: ModulacionCategoria;
+  serieMod: ModulacionSerieId;
+} {
+  const mapa = LEV_MAPA[pieza.tipo] || LEV_MAPA['Cancel / Otro'];
+  const lp = String(pieza.lineaPerfil || '').trim();
+  const isPuerta = pieza.tipo === 'Puerta';
+
+  let linea: LineaId = mapa.linea;
+  let apertura: AperturaVentanaId | undefined = mapa.apertura;
+  let modelo: ModulacionModeloId | undefined = mapa.modelo;
+  let cat: ModulacionCategoria | undefined = mapa.cat;
+  let serieMod: ModulacionSerieId =
+    mapa.linea === 'europea' || mapa.linea === 'puerta-europea'
+      ? 'serie-70'
+      : mapa.linea === '2' || mapa.linea === 'puerta-2'
+        ? 'linea-2'
+        : 'linea-3';
+
+  if (lp === 'Línea 3"') {
+    linea = isPuerta ? 'puerta-abatible' : '3';
+    serieMod = 'linea-3';
+  } else if (lp === 'Línea 2"') {
+    linea = isPuerta ? 'puerta-2' : '2';
+    serieMod = 'linea-2';
+  } else if (lp === 'Línea Europea') {
+    linea = isPuerta ? 'puerta-europea' : 'europea';
+    serieMod = 'serie-70';
+  } else if (lp === 'Batiente Alumer') {
+    linea = 'puerta-abatible';
+    apertura = 'abatible';
+    modelo = 'door-batiente';
+    cat = 'puertas';
+    serieMod = 'linea-3';
+  } else if (lp === 'Cancel / Mosq.') {
+    if (pieza.mosquitero === 'Mosquitero Fijo') {
+      linea = 'mosq-fijo';
+      apertura = 'fija';
+    } else if (pieza.mosquitero === 'Mosquitero Corredizo') {
+      linea = 'mosq-corredizo';
+      apertura = 'corrediza';
+    } else {
+      linea = 'cancel-bano';
+      apertura = 'corrediza';
+    }
+    serieMod = 'linea-3';
+  }
+
+  return { linea, apertura, modelo, cat, serieMod };
+}
+
+export function resolveColorAluminioFromLevantamiento(colorAluminio?: string): ColorId {
+  const clean = String(colorAluminio || '').trim().toLowerCase();
+  if (clean === 'blanco') return 'blanco';
+  if (clean === 'negro') return 'negro';
+  if (clean === 'madera' || clean.includes('bronce') || clean.includes('champagne')) return 'madera';
+  return 'natural';
+}
+
+export function resolveVidrioFromLevantamiento(colorVidrio?: string): {
+  vidrio: VidrioId;
+  relleno: PanelRellenoSelection;
+  sinVidrio: boolean;
+} {
+  const clean = String(colorVidrio || '').trim().toLowerCase();
+  if (clean === 'filtrasol') {
+    return {
+      vidrio: 'filtrasol6',
+      relleno: getDefaultRellenoFromVidrio('filtrasol6'),
+      sinVidrio: false,
+    };
+  }
+  if (clean === 'tintex') {
+    return {
+      vidrio: 'tintex6',
+      relleno: getDefaultRellenoFromVidrio('tintex6'),
+      sinVidrio: false,
+    };
+  }
+  if (clean === 'esmerilado') {
+    return {
+      vidrio: 'claro6',
+      relleno: { categoria: 'templado', materialId: 'temp-esmerilado', espesorMm: 6 },
+      sinVidrio: false,
+    };
+  }
+  if (clean === 'reflecta') {
+    return {
+      vidrio: 'claro6',
+      relleno: { categoria: 'flotado', materialId: 'flot-reflecta-azul', espesorMm: 6 },
+      sinVidrio: false,
+    };
+  }
+  if (clean === 'sin vidrio') {
+    return {
+      vidrio: 'claro6',
+      relleno: getDefaultRellenoFromVidrio('claro6'),
+      sinVidrio: true,
+    };
+  }
+  return {
+    vidrio: 'claro6',
+    relleno: getDefaultRellenoFromVidrio('claro6'),
+    sinVidrio: false,
+  };
+}
+
+export function resolveMosquiteroFromLevantamiento(mosquitero?: string): boolean {
+  const clean = String(mosquitero || '').trim().toLowerCase();
+  return clean === 'mosquitero fijo' || clean === 'mosquitero corredizo';
+}
+
+export function formatPiezaSpecs(p: Pick<LevantamientoPieza, 'lineaPerfil' | 'colorAluminio' | 'colorVidrio' | 'mosquitero'>): string {
+  const parts: string[] = [];
+  if (p.lineaPerfil) parts.push(p.lineaPerfil);
+  if (p.colorAluminio) parts.push(`Alum: ${p.colorAluminio}`);
+  if (p.colorVidrio) parts.push(`Vidrio: ${p.colorVidrio}`);
+  if (p.mosquitero && p.mosquitero !== 'Sin mosquitero') parts.push(p.mosquitero);
+  return parts.join(' · ');
+}
+
+export function mergePiezaSpecsAndNotes(
+  p: Pick<LevantamientoPieza, 'lineaPerfil' | 'colorAluminio' | 'colorVidrio' | 'mosquitero' | 'notas'>
+): string {
+  const specs = formatPiezaSpecs(p);
+  const rawNotes = String(p.notas || '').trim();
+  if (specs && rawNotes) return `${specs} · ${rawNotes}`;
+  return specs || rawNotes;
 }
 
 export function createLevantamientoId(): string {
@@ -130,16 +329,26 @@ export function normalizeLevantamientoDraft(raw: unknown): LevantamientoDraft {
   const piezasRaw = Array.isArray(obj.piezas) ? obj.piezas : [];
   const piezas: LevantamientoPieza[] = piezasRaw
     .filter((p): p is Record<string, unknown> => Boolean(p) && typeof p === 'object')
-    .map((p) => ({
-      id: typeof p.id === 'string' && p.id ? p.id : `p-${Date.now()}-${Math.floor(Math.random() * 9999)}`,
-      tipo: typeof p.tipo === 'string' && p.tipo ? p.tipo : 'Ventana Corrediza',
-      area: typeof p.area === 'string' ? p.area : '',
-      anchoCm: Number(p.anchoCm) > 0 ? Number(p.anchoCm) : 0,
-      altoCm: Number(p.altoCm) > 0 ? Number(p.altoCm) : 0,
-      cant: Math.max(1, Math.round(Number(p.cant) || 1)),
-      notas: typeof p.notas === 'string' ? p.notas : '',
-      foto: typeof p.foto === 'string' ? p.foto : '',
-    }))
+    .map((p) => {
+      const lineaPerfil = typeof p.lineaPerfil === 'string' ? p.lineaPerfil.trim() : '';
+      const colorAluminio = typeof p.colorAluminio === 'string' ? p.colorAluminio.trim() : '';
+      const colorVidrio = typeof p.colorVidrio === 'string' ? p.colorVidrio.trim() : '';
+      const mosquitero = typeof p.mosquitero === 'string' ? p.mosquitero.trim() : '';
+      return {
+        id: typeof p.id === 'string' && p.id ? p.id : `p-${Date.now()}-${Math.floor(Math.random() * 9999)}`,
+        tipo: typeof p.tipo === 'string' && p.tipo ? p.tipo : 'Ventana Corrediza',
+        area: typeof p.area === 'string' ? p.area : '',
+        anchoCm: Number(p.anchoCm) > 0 ? Number(p.anchoCm) : 0,
+        altoCm: Number(p.altoCm) > 0 ? Number(p.altoCm) : 0,
+        cant: Math.max(1, Math.round(Number(p.cant) || 1)),
+        ...(lineaPerfil ? { lineaPerfil } : {}),
+        ...(colorAluminio ? { colorAluminio } : {}),
+        ...(colorVidrio ? { colorVidrio } : {}),
+        ...(mosquitero ? { mosquitero } : {}),
+        notas: typeof p.notas === 'string' ? p.notas : '',
+        foto: typeof p.foto === 'string' ? p.foto : '',
+      };
+    })
     .filter((p) => p.anchoCm > 0 && p.altoCm > 0);
 
   return {
@@ -243,9 +452,10 @@ export function buildLevantamientoWhatsappText(draft: LevantamientoDraft): strin
   if (norm.direccion) lines.push(`Dirección: ${norm.direccion}`);
   lines.push(`Fecha: ${norm.fecha}`, '');
   norm.piezas.forEach((p, idx) => {
+    const extra = mergePiezaSpecsAndNotes(p);
     lines.push(
       `${idx + 1}) ${p.tipo}${p.area ? ` (${p.area})` : ''}: ${formatMedidaText(p)} · Cant: ${p.cant}${
-        p.notas ? ` · ${p.notas}` : ''
+        extra ? ` · ${extra}` : ''
       }`
     );
   });
@@ -292,18 +502,33 @@ export function buildBridgePayloadFromPieza(
   cliente: string,
   destino: LevantamientoDestino
 ): { payload: AlumBridgePayload | null; unsupportedInModulacion: boolean } {
-  const mapa = LEV_MAPA[pieza.tipo] || LEV_MAPA['Cancel / Otro'];
-  if (destino === 'modulacion' && !mapa.modelo) {
+  const resolved = resolveLineaFromLevantamiento(pieza);
+  if (destino === 'modulacion' && !resolved.modelo) {
     return { payload: null, unsupportedInModulacion: true };
   }
+  const color = resolveColorAluminioFromLevantamiento(pieza.colorAluminio);
+  const { vidrio, relleno } = resolveVidrioFromLevantamiento(pieza.colorVidrio);
+  const conMosquitero = resolveMosquiteroFromLevantamiento(pieza.mosquitero);
+  const mergedNotas = mergePiezaSpecsAndNotes(pieza);
+
   return {
     unsupportedInModulacion: false,
     payload: {
       destino,
-      linea: mapa.linea,
-      apertura: mapa.apertura,
-      modelo: mapa.modelo,
-      cat: mapa.cat,
+      linea: resolved.linea,
+      apertura: resolved.apertura,
+      modelo: resolved.modelo,
+      cat: resolved.cat,
+      serieMod: resolved.serieMod,
+      color,
+      vidrio,
+      relleno,
+      conMosquitero,
+      lineaPerfil: pieza.lineaPerfil,
+      colorAluminio: pieza.colorAluminio,
+      colorVidrio: pieza.colorVidrio,
+      mosquitero: pieza.mosquitero,
+      notas: mergedNotas || undefined,
       ancho: pieza.anchoCm,
       alto: pieza.altoCm,
       cant: Math.max(1, Number(pieza.cant) || 1),

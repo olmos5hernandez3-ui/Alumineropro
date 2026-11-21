@@ -24,11 +24,15 @@ import {
 import { SobranteItem } from '../utils/storageHelpers';
 import {
   formatMedidaText,
+  formatPiezaSpecs,
   LEV_KEYS,
   LEV_MAPA,
   LevantamientoDraft,
   LevantamientoPieza,
   normalizeLevantamientoDraft,
+  resolveColorAluminioFromLevantamiento,
+  resolveLineaFromLevantamiento,
+  resolveMosquiteroFromLevantamiento,
 } from '../utils/levantamientoLogic';
 import { PerfilSectionSvg } from './PerfilSectionSvg';
 import { PerfilZoomData, PerfilZoomModal } from './PerfilZoomModal';
@@ -267,6 +271,15 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
       if (p.modelo) {
         setModeloId(p.modelo);
       }
+      if (p.serieMod) {
+        setSerieId(p.serieMod);
+      }
+      if (p.color) {
+        setColorParaSobrantes(p.color);
+      }
+      if (typeof p.conMosquitero === 'boolean') {
+        setConMosquitero(p.conMosquitero);
+      }
     };
     applyPending();
     window.addEventListener('alum-mod-apply', applyPending);
@@ -296,8 +309,8 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
   }, []);
 
   const handleSelectLevPieza = (p: LevantamientoPieza) => {
-    const mapa = LEV_MAPA[p.tipo] || LEV_MAPA['Cancel / Otro'];
-    if (!mapa.modelo || !mapa.cat) {
+    const resolved = resolveLineaFromLevantamiento(p);
+    if (!resolved.modelo || !resolved.cat) {
       onShowToast('Cancel / Otro no está disponible en Modulación.');
       return;
     }
@@ -305,10 +318,19 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
     setUnidad('cm');
     setAnchoInput(String(p.anchoCm));
     setAltoInput(String(p.altoCm));
-    setCategoria(mapa.cat);
-    setModeloId(mapa.modelo);
+    setCategoria(resolved.cat);
+    setModeloId(resolved.modelo);
+    setSerieId(resolved.serieMod);
+    setColorParaSobrantes(resolveColorAluminioFromLevantamiento(p.colorAluminio));
+    setConMosquitero(resolveMosquiteroFromLevantamiento(p.mosquitero));
     setCortadosMap({});
-    onShowToast(`Cargado: ${p.tipo} (${formatMedidaText(p)})`, true);
+    const specs = formatPiezaSpecs(p);
+    onShowToast(
+      specs
+        ? `Cargado: ${p.tipo} (${formatMedidaText(p)}) · ${specs}`
+        : `Cargado: ${p.tipo} (${formatMedidaText(p)})`,
+      true
+    );
   };
 
   const handleRemoveLevPieza = (id: string) => {
@@ -617,6 +639,11 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
                         <span className="inline-block mt-1 px-2 py-0.5 rounded bg-amber-100 text-amber-900 text-[10px] font-extrabold">
                           No disponible en Modulación
                         </span>
+                      )}
+                      {supported && formatPiezaSpecs(p) && (
+                        <div className="text-[10.5px] font-bold text-blue-700 mt-0.5 truncate">
+                          {formatPiezaSpecs(p)}
+                        </div>
                       )}
                       {supported && p.notas && (
                         <div className="text-[11px] text-slate-500 mt-0.5 truncate">{p.notas}</div>
