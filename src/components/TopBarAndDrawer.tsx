@@ -47,34 +47,42 @@ export const TopBar: React.FC<TopBarProps> = ({
   const isDark = theme === 'dark';
   const [nowTs, setNowTs] = useState<number>(() => Date.now());
 
+  const effectiveExpiresAt =
+    licencia && licencia.active && licencia.expiresAt !== null
+      ? licencia.expiresAt
+      : trialExpiresAt;
+
   useEffect(() => {
     setNowTs(Date.now());
-    if (trialExpiresAt === null) return;
-    if (Date.now() >= trialExpiresAt) return;
+    if (effectiveExpiresAt === null) return;
+    if (Date.now() >= effectiveExpiresAt) return;
     const intervalId = window.setInterval(() => {
       const cur = Date.now();
       setNowTs(cur);
-      if (cur >= trialExpiresAt) {
+      if (cur >= effectiveExpiresAt) {
         window.clearInterval(intervalId);
       }
     }, 1000);
     return () => window.clearInterval(intervalId);
-  }, [trialExpiresAt]);
+  }, [effectiveExpiresAt]);
 
-  const paidLicenseActive = Boolean(
-    licencia && licencia.active && licencia.planCode !== 'G' && isProActive(licencia, nowTs)
-  );
-  const trialCountdown =
-    !paidLicenseActive && trialExpiresAt !== null ? getTrialCountdown(trialExpiresAt, nowTs) : null;
+  const licenseActiveNow = Boolean(licencia && licencia.active && isProActive(licencia, nowTs));
+  const activeCountdown =
+    effectiveExpiresAt !== null ? getTrialCountdown(effectiveExpiresAt, nowTs) : null;
 
-  const chipIsGreen = paidLicenseActive || Boolean(trialCountdown?.active);
-  const licChipText = paidLicenseActive
-    ? `PRO · ${licencia?.planLabel?.split(' ')[0] || 'Activo'}`
-    : trialCountdown?.active
-      ? trialCountdown.label
-      : proActive
-        ? `PRO · ${licencia?.planLabel?.split(' ')[0] || 'Activo'}`
-        : 'Versión Gratuita';
+  const chipIsGreen = licenseActiveNow || Boolean(activeCountdown?.active);
+  const countdownSuffix =
+    activeCountdown && activeCountdown.active
+      ? activeCountdown.days > 0 || activeCountdown.hours > 0
+        ? `${activeCountdown.days}d ${activeCountdown.hours}h`
+        : `${Math.max(1, Math.ceil(activeCountdown.remainingMs / 60000))}m`
+      : null;
+
+  const licChipText = chipIsGreen
+    ? countdownSuffix
+      ? `Promo PRO · ${countdownSuffix}`
+      : 'Promo PRO'
+    : 'Versión Gratuita';
 
   return (
     <header

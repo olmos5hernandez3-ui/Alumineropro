@@ -15,8 +15,8 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Aluminero" />
-    <meta name="app-version" content="aluminero-pro-v29-20261121" />
-    <link rel="manifest" href="./manifest.json?v=aluminero-pro-v29-20261121" />
+    <meta name="app-version" content="aluminero-pro-v30-20261121" />
+    <link rel="manifest" href="./manifest.json?v=aluminero-pro-v30-20261121" />
     <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
     <link rel="icon" type="image/png" sizes="192x192" href="./pwa-192x192.png" />
     <link rel="icon" type="image/svg+xml" href="./icon.svg" />
@@ -242,7 +242,7 @@
 
           var msg = document.createElement('div');
           msg.style.cssText = 'font-size:13px;font-weight:800;line-height:1.25;min-width:0;flex:1;';
-          msg.textContent = '✨ Nueva actualización disponible';
+          msg.textContent = '✨ Hay una actualización disponible';
 
           var btn = document.createElement('button');
           btn.id = 'btn-pwa-update-now';
@@ -281,6 +281,15 @@
           document.body.appendChild(banner);
         }
 
+        function watchInstallingWorker(newWorker) {
+          if (!newWorker) return;
+          newWorker.addEventListener('statechange', function () {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              ensureUpdateBanner((swRegistration && swRegistration.waiting) || newWorker);
+            }
+          });
+        }
+
         function attachRegistrationListeners(reg) {
           swRegistration = reg;
 
@@ -288,14 +297,12 @@
             ensureUpdateBanner(reg.waiting);
           }
 
+          if (reg.installing) {
+            watchInstallingWorker(reg.installing);
+          }
+
           reg.addEventListener('updatefound', function () {
-            var newWorker = reg.installing;
-            if (!newWorker) return;
-            newWorker.addEventListener('statechange', function () {
-              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                ensureUpdateBanner(reg.waiting || newWorker);
-              }
-            });
+            watchInstallingWorker(reg.installing);
           });
         }
 
@@ -320,11 +327,17 @@
           }
         });
 
+        window.addEventListener('focus', function () {
+          triggerUpdateCheck();
+        });
+
         window.addEventListener('online', function () {
           triggerUpdateCheck();
         });
 
-        window.addEventListener('load', function () {
+        window.setInterval(triggerUpdateCheck, 5 * 60 * 1000);
+
+        function registerServiceWorker() {
           navigator.serviceWorker
             .register('./sw.js', { scope: './', updateViaCache: 'none' })
             .then(function (reg) {
@@ -332,7 +345,13 @@
               reg.update().catch(function () {});
             })
             .catch(function () {});
-        });
+        }
+
+        if (document.readyState === 'complete') {
+          registerServiceWorker();
+        } else {
+          window.addEventListener('load', registerServiceWorker, { once: true });
+        }
       })();
     </script>
   </body>
