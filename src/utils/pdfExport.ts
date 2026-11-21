@@ -5,6 +5,7 @@ import {
   DespieceCalculado,
   getRellenoLabel,
   LINEAS_CONFIG,
+  PartidaObra,
   round2,
   TrabajoParams,
 } from './alumineroLogic';
@@ -147,6 +148,159 @@ export function generarPdfTecnico(
   doc.save(`orden-taller-${params.linea}-${params.apertura}-${params.anchoCm}x${params.altoCm}.pdf`);
 }
 
+function drawPartidaCroquisPdf(
+  doc: jsPDF,
+  item: PartidaObra,
+  x: number,
+  y: number,
+  boxMaxW = 24,
+  boxMaxH = 14
+): void {
+  const linea = LINEAS_CONFIG[item.linea];
+  const isDoor = item.categoria === 'puertas' && !linea?.esCancelBano;
+  const isMosq = Boolean(linea?.esMosquitero);
+  const hojas = Math.max(1, Math.min(4, Number(item.hojas) || (item.apertura === 'fija' ? 1 : 2)));
+
+  const ratio = Math.max(0.5, Math.min(1.8, (item.anchoCm || 120) / Math.max(20, item.altoCm || 100)));
+  let bw = boxMaxW;
+  let bh = bw / ratio;
+  if (bh > boxMaxH) {
+    bh = boxMaxH;
+    bw = bh * ratio;
+  }
+  const bx = x + (boxMaxW - bw) / 2;
+  const by = y + (boxMaxH - bh) / 2;
+
+  doc.setDrawColor(30, 58, 138);
+  if (isMosq) {
+    doc.setFillColor(241, 245, 249);
+  } else {
+    doc.setFillColor(224, 242, 254);
+  }
+  doc.setLineWidth(0.35);
+  doc.rect(bx, by, bw, bh, 'FD');
+
+  if (isMosq) {
+    doc.setDrawColor(148, 163, 184);
+    doc.setLineWidth(0.15);
+    doc.line(bx, by + bh * 0.33, bx + bw, by + bh * 0.33);
+    doc.line(bx, by + bh * 0.66, bx + bw, by + bh * 0.66);
+    doc.line(bx + bw * 0.33, by, bx + bw * 0.33, by + bh);
+    doc.line(bx + bw * 0.66, by, bx + bw * 0.66, by + bh);
+    doc.setDrawColor(30, 58, 138);
+    doc.setLineWidth(0.35);
+  }
+
+  if (isDoor) {
+    if (item.puertaIntermedio) {
+      doc.line(bx, by + bh * 0.62, bx + bw, by + bh * 0.62);
+    }
+    if (item.sentidoPuerta === 'der') {
+      doc.line(bx + bw, by, bx, by + bh / 2);
+      doc.line(bx, by + bh / 2, bx + bw, by + bh);
+    } else {
+      doc.line(bx, by, bx + bw, by + bh / 2);
+      doc.line(bx + bw, by + bh / 2, bx, by + bh);
+    }
+  } else if (item.apertura === 'fija' || item.linea === 'mosq-fijo') {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(5.5);
+    doc.setTextColor(30, 64, 175);
+    doc.text('FIJO', bx + bw / 2, by + bh / 2 + 1, { align: 'center' });
+  } else if (item.apertura === 'abatible' || item.apertura === 'oscilobatiente') {
+    if (item.invertido) {
+      doc.line(bx + bw, by, bx, by + bh / 2);
+      doc.line(bx, by + bh / 2, bx + bw, by + bh);
+    } else {
+      doc.line(bx, by, bx + bw, by + bh / 2);
+      doc.line(bx + bw, by + bh / 2, bx, by + bh);
+    }
+    if (item.apertura === 'oscilobatiente') {
+      doc.line(bx, by + bh, bx + bw / 2, by);
+      doc.line(bx + bw / 2, by, bx + bw, by + bh);
+    }
+  } else if (item.apertura === 'banderola') {
+    doc.line(bx, by, bx + bw / 2, by + bh);
+    doc.line(bx + bw / 2, by + bh, bx + bw, by);
+  } else if (item.apertura === 'guillotina') {
+    doc.line(bx, by + bh / 2, bx + bw, by + bh / 2);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(4.8);
+    doc.setTextColor(30, 64, 175);
+    doc.text('F', bx + bw / 2, by + bh * 0.3, { align: 'center' });
+    doc.line(bx + bw / 2, by + bh * 0.85, bx + bw / 2, by + bh * 0.56);
+    doc.line(bx + bw / 2 - 1.3, by + bh * 0.64, bx + bw / 2, by + bh * 0.56);
+    doc.line(bx + bw / 2 + 1.3, by + bh * 0.64, bx + bw / 2, by + bh * 0.56);
+  } else if (item.apertura === 'plegable') {
+    for (let i = 1; i < hojas; i += 1) {
+      const lx = bx + (bw / hojas) * i;
+      doc.line(lx, by, lx, by + bh);
+    }
+    const cellW = bw / hojas;
+    for (let i = 0; i < hojas; i += 1) {
+      const cx1 = bx + cellW * i + 0.8;
+      const cx2 = bx + cellW * (i + 1) - 0.8;
+      const mid = (cx1 + cx2) / 2;
+      const apexY = i % 2 === 0 ? by + bh * 0.32 : by + bh * 0.68;
+      doc.line(cx1, by + bh / 2, mid, apexY);
+      doc.line(mid, apexY, cx2, by + bh / 2);
+    }
+  } else {
+    // Corrediza / cancel por número de hojas
+    for (let i = 1; i < hojas; i += 1) {
+      const lx = bx + (bw / hojas) * i;
+      doc.line(lx, by, lx, by + bh);
+    }
+    const cellW = bw / hojas;
+    const ay = by + bh / 2;
+    for (let i = 0; i < hojas; i += 1) {
+      const cellX = bx + cellW * i;
+      let mode: 'fixed' | 'left' | 'right' = 'fixed';
+      if (hojas === 2) {
+        mode = item.invertido ? (i === 0 ? 'right' : 'fixed') : i === 0 ? 'fixed' : 'left';
+      } else if (hojas === 3) {
+        if (item.invertido) {
+          mode = i === 0 ? 'right' : i === 2 ? 'left' : 'fixed';
+        } else {
+          mode = i === 1 ? 'right' : 'fixed';
+        }
+      } else if (item.invertido) {
+        mode = i === 0 ? 'right' : i === hojas - 1 ? 'left' : 'fixed';
+      } else {
+        mode = i === 1 ? 'left' : i === 2 ? 'right' : 'fixed';
+      }
+
+      if (mode === 'fixed') {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(4.8);
+        doc.setTextColor(30, 64, 175);
+        doc.text('F', cellX + cellW / 2, ay + 1, { align: 'center' });
+      } else {
+        const ax1 = cellX + cellW * 0.22;
+        const ax2 = cellX + cellW * 0.78;
+        doc.line(ax1, ay, ax2, ay);
+        if (mode === 'left') {
+          doc.line(ax1 + 1.3, ay - 1.1, ax1, ay);
+          doc.line(ax1 + 1.3, ay + 1.1, ax1, ay);
+        } else {
+          doc.line(ax2 - 1.3, ay - 1.1, ax2, ay);
+          doc.line(ax2 - 1.3, ay + 1.1, ax2, ay);
+        }
+      }
+    }
+  }
+
+  // Cotas de ancho (abajo) y alto (derecha)
+  doc.setDrawColor(100, 116, 139);
+  doc.setLineWidth(0.25);
+  doc.line(bx, by + bh + 1.8, bx + bw, by + bh + 1.8);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(6);
+  doc.setTextColor(15, 23, 42);
+  doc.text(`${item.anchoCm} cm`, bx + bw / 2, by + bh + 4.8, { align: 'center' });
+  doc.text(`${item.altoCm}`, bx + bw + 1.8, by + bh / 2 + 1);
+}
+
 export function generarPdfClienteLimpio(hoja: HojaState, taller: TallerConfig): void {
   const doc = new jsPDF({ unit: 'mm', format: 'letter' });
 
@@ -154,7 +308,8 @@ export function generarPdfClienteLimpio(hoja: HojaState, taller: TallerConfig): 
   doc.rect(0, 0, 216, 30, 'F');
   if (taller.logoDataUrl) {
     try {
-      doc.addImage(taller.logoDataUrl, 'JPEG', 14, 5, 20, 20);
+      const fmt = taller.logoDataUrl.startsWith('data:image/png') ? 'PNG' : 'JPEG';
+      doc.addImage(taller.logoDataUrl, fmt, 14, 5, 20, 20);
     } catch {
       // ignore invalid image
     }
@@ -177,18 +332,23 @@ export function generarPdfClienteLimpio(hoja: HojaState, taller: TallerConfig): 
   doc.setFontSize(12);
   doc.text(`Proyecto / Cliente: ${hoja.proyecto || taller.clienteDefault || 'Cliente General'}`, 14, 40);
 
-  let y = 50;
-  doc.setFillColor(241, 245, 249);
-  doc.rect(14, y - 4, 188, 7, 'F');
-  doc.setFontSize(9.5);
-  doc.text('Concepto / Especificación', 16, y);
-  doc.text('Medidas', 120, y);
-  doc.text('Cant.', 152, y);
-  doc.text('Importe', 176, y);
-  y += 7;
+  const drawTableHeader = (headerY: number) => {
+    doc.setFillColor(241, 245, 249);
+    doc.rect(14, headerY - 4.5, 188, 7, 'F');
+    doc.setTextColor(15, 23, 42);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.text('Dibujo', 16, headerY);
+    doc.text('Concepto / Especificación', 52, headerY);
+    doc.text('Medidas', 124, headerY);
+    doc.text('Cant.', 158, headerY, { align: 'center' });
+    doc.text('Importe', 200, headerY, { align: 'right' });
+  };
 
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
+  let y = 50;
+  drawTableHeader(y);
+  y += 6.5;
+
   let subtotal = 0;
   for (const item of hoja.partidas) {
     subtotal += item.totalLinea;
@@ -198,20 +358,34 @@ export function generarPdfClienteLimpio(hoja: HojaState, taller: TallerConfig): 
     const apTag =
       linea.categoria === 'ventanas' && !linea.esMosquitero && !linea.esCancelBano
         ? ` · ${APERTURA_LABELS[item.apertura] || item.apertura}`
-        : '';
+        : linea.categoria === 'puertas' && !linea.esCancelBano
+          ? ` · Puerta ${item.sentidoPuerta === 'der' ? 'Der.' : 'Izq.'}`
+          : '';
     const desc = `${item.area ? `[${item.area}] ` : ''}${item.etiqueta ? `${item.etiqueta} · ` : ''}${linea.nombre}${apTag} (${color.corto} · ${panelDesc})`;
-    const wrappedDesc = doc.splitTextToSize(desc, 100) as string[];
-    const neededH = Math.max(6.5, wrappedDesc.length * 4.5 + 2);
+    const wrappedDesc = doc.splitTextToSize(desc, 68) as string[];
+    const neededH = Math.max(24, wrappedDesc.length * 4.5 + 5);
 
     if (y + neededH > 235) {
       doc.addPage();
       y = 20;
+      drawTableHeader(y);
+      y += 6.5;
     }
 
-    doc.text(wrappedDesc, 16, y);
-    doc.text(`${item.anchoCm}×${item.altoCm} cm`, 120, y);
-    doc.text(String(item.cantidad), 155, y);
-    doc.text(formatMXN(item.totalLinea), 174, y);
+    drawPartidaCroquisPdf(doc, item, 16, y, 24, 14);
+
+    doc.setTextColor(15, 23, 42);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.8);
+    doc.text(wrappedDesc, 52, y + 3.5);
+    doc.text(`${item.anchoCm}×${item.altoCm} cm`, 124, y + 3.5);
+    doc.text(String(item.cantidad), 158, y + 3.5, { align: 'center' });
+    doc.setFont('helvetica', 'bold');
+    doc.text(formatMXN(item.totalLinea), 200, y + 3.5, { align: 'right' });
+
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.2);
+    doc.line(14, y + neededH - 1.5, 202, y + neededH - 1.5);
     y += neededH;
   }
 
@@ -225,21 +399,24 @@ export function generarPdfClienteLimpio(hoja: HojaState, taller: TallerConfig): 
     doc.addPage();
     y = 20;
   }
+  doc.setDrawColor(148, 163, 184);
   doc.line(120, y, 202, y);
   y += 6;
-  doc.text(`Subtotal: ${formatMXN(subtotal)}`, 142, y);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9.5);
+  doc.text(`Subtotal: ${formatMXN(subtotal)}`, 200, y, { align: 'right' });
   if (descuento > 0) {
     y += 6;
-    doc.text(`Descuento (${hoja.descuentoPct}%): -${formatMXN(descuento)}`, 132, y);
+    doc.text(`Descuento (${hoja.descuentoPct}%): -${formatMXN(descuento)}`, 200, y, { align: 'right' });
   }
   if (iva > 0) {
     y += 6;
-    doc.text(`IVA (16%): ${formatMXN(iva)}`, 144, y);
+    doc.text(`IVA (16%): ${formatMXN(iva)}`, 200, y, { align: 'right' });
   }
   y += 8;
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(12);
-  doc.text(`TOTAL: ${formatMXN(total)}`, 138, y);
+  doc.text(`TOTAL: ${formatMXN(total)}`, 200, y, { align: 'right' });
 
   y += 14;
   doc.setFont('helvetica', 'bold');
@@ -280,7 +457,8 @@ export function generarPdfContratoServicio(
   doc.rect(0, 0, 216, 35, 'F');
   if (taller.logoDataUrl) {
     try {
-      doc.addImage(taller.logoDataUrl, 'JPEG', 14, 6, 22, 22);
+      const fmt = taller.logoDataUrl.startsWith('data:image/png') ? 'PNG' : 'JPEG';
+      doc.addImage(taller.logoDataUrl, fmt, 14, 6, 22, 22);
     } catch {
       // ignora logo inválido
     }
@@ -378,59 +556,7 @@ export function generarPdfContratoServicio(
     }
 
     // Dibuja croquis técnico vectorial con cotas y flechas de apertura
-    const boxMaxW = 24;
-    const boxMaxH = 14;
-    const ratio = Math.max(0.5, Math.min(1.8, (item.anchoCm || 120) / Math.max(20, item.altoCm || 100)));
-    let bw = boxMaxW;
-    let bh = bw / ratio;
-    if (bh > boxMaxH) {
-      bh = boxMaxH;
-      bw = bh * ratio;
-    }
-    const bx = 16 + (boxMaxW - bw) / 2;
-    const by = y + (boxMaxH - bh) / 2;
-
-    doc.setDrawColor(30, 58, 138);
-    doc.setFillColor(224, 242, 254);
-    doc.rect(bx, by, bw, bh, 'FD');
-
-    if (item.categoria === 'puertas') {
-      doc.line(bx, by, bx + bw, by + bh / 2);
-      doc.line(bx + bw, by + bh / 2, bx, by + bh);
-    } else if (item.apertura === 'abatible' || item.apertura === 'oscilobatiente') {
-      doc.line(bx, by, bx + bw, by + bh / 2);
-      doc.line(bx + bw, by + bh / 2, bx, by + bh);
-    } else if (item.apertura === 'banderola') {
-      doc.line(bx, by, bx + bw / 2, by + bh);
-      doc.line(bx + bw / 2, by + bh, bx + bw, by);
-    } else if (item.apertura === 'guillotina') {
-      doc.line(bx, by + bh / 2, bx + bw, by + bh / 2);
-      doc.line(bx + bw / 2, by + bh * 0.85, bx + bw / 2, by + bh * 0.56);
-      doc.line(bx + bw / 2 - 1.5, by + bh * 0.64, bx + bw / 2, by + bh * 0.56);
-      doc.line(bx + bw / 2 + 1.5, by + bh * 0.64, bx + bw / 2, by + bh * 0.56);
-    } else if (item.apertura === 'fija') {
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(5.5);
-      doc.text('FIJO', bx + bw / 2, by + bh / 2 + 1, { align: 'center' });
-    } else {
-      // Corrediza / cancel: divisor y flecha horizontal
-      doc.line(bx + bw / 2, by, bx + bw / 2, by + bh);
-      const ax1 = bx + bw * 0.6;
-      const ax2 = bx + bw * 0.88;
-      const ay = by + bh / 2;
-      doc.line(ax1, ay, ax2, ay);
-      doc.line(ax1 + 1.5, ay - 1.3, ax1, ay);
-      doc.line(ax1 + 1.5, ay + 1.3, ax1, ay);
-    }
-
-    // Cotas de ancho (abajo) y alto (derecha)
-    doc.setDrawColor(100, 116, 139);
-    doc.line(bx, by + bh + 1.8, bx + bw, by + bh + 1.8);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(6.2);
-    doc.setTextColor(15, 23, 42);
-    doc.text(`${item.anchoCm} cm`, bx + bw / 2, by + bh + 4.8, { align: 'center' });
-    doc.text(`${item.altoCm}`, bx + bw + 2.2, by + bh / 2 + 1);
+    drawPartidaCroquisPdf(doc, item, 16, y, 24, 14);
 
     // Texto partida
     doc.setFont('helvetica', 'bold');

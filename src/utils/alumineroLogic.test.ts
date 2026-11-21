@@ -23,6 +23,10 @@ import {
   verifyRecoveryPin,
   computeUsageStats30d,
   buildDailyUsageSeries30d,
+  formatCountdownTimer,
+  isEligibleForCloudBackup,
+  normalizeDeviceIdInput,
+  formatActivationKeyInput,
   type AperturaVentanaId,
 } from './alumineroLogic';
 import {
@@ -318,7 +322,7 @@ test('5. Planes G/M/Q/A, claves de reposición por días exactos y enlace oficia
   assert.equal(expiredTrial.active, false);
   assert.equal(expiredTrial.label, 'Activar PRO');
 
-  assert.equal(getOfficialShareUrl(), 'https://pages.dev');
+  assert.equal(getOfficialShareUrl(), 'https://alumineropro1.pages.dev');
 });
 
 test('6. Conversión de Nota de Obra en 1 clic e inventario de 6 carretillas + consolidado', () => {
@@ -418,18 +422,18 @@ test('6. Conversión de Nota de Obra en 1 clic e inventario de 6 carretillas + c
   assert.equal(cab.tramosFaltantes, 0);
 });
 
-test('7. Validación de contraseña del Panel de Administrador con .trim() y PIN maestro 202699', () => {
-  assert.equal(ADMIN_ACCESS_PASSWORD, 'Olmos5Hernandes32026');
-  assert.equal(verifyAdminPassword('Olmos5Hernandes32026'), true);
-  assert.equal(verifyAdminPassword('  Olmos5Hernandes32026  '), true);
+test('7. Validación de contraseña por defecto 1983 del Panel de Administrador con .trim() y PIN maestro 202699', () => {
+  assert.equal(ADMIN_ACCESS_PASSWORD, '1983');
+  assert.equal(verifyAdminPassword('1983'), true);
+  assert.equal(verifyAdminPassword('  1983  '), true);
   assert.equal(verifyAdminPassword(''), false);
   assert.equal(verifyAdminPassword('TU_CONTRASEÑA_AQUI'), false);
-  assert.equal(verifyAdminPassword('olmos5hernandes32026'), false);
-  // Si existiera un residuo viejo 'TU_CONTRASEÑA_AQUI' se ignora y sigue aplicando la clave fija
-  assert.equal(verifyAdminPassword('Olmos5Hernandes32026', 'TU_CONTRASEÑA_AQUI'), true);
-  // Contraseña personalizada guardada tras recuperación con PIN
+  assert.equal(verifyAdminPassword('Olmos5Hernandes32026'), false);
+  // Si existiera un residuo viejo 'TU_CONTRASEÑA_AQUI' se ignora y sigue aplicando la clave inicial 1983
+  assert.equal(verifyAdminPassword('1983', 'TU_CONTRASEÑA_AQUI'), true);
+  // Contraseña personalizada guardada tras recuperación con PIN se mantiene activa
   assert.equal(verifyAdminPassword('  NuevaClave2026 ', 'NuevaClave2026'), true);
-  assert.equal(verifyAdminPassword('Olmos5Hernandes32026', 'NuevaClave2026'), false);
+  assert.equal(verifyAdminPassword('1983', 'NuevaClave2026'), false);
 
   assert.equal(ADMIN_RECOVERY_PIN, '202699');
   assert.equal(verifyRecoveryPin('202699'), true);
@@ -873,4 +877,476 @@ test('17. Contrato: folio CONT-YYYY-NNN, 4 cláusulas base y ubicación del tall
   assert.equal(DEFAULT_CONTRATO_CLIENTE.clausulaCondicionesVano, DEFAULT_CONTRATO_CLAUSES.condicionesVano);
 });
 
+test('18. Contador en retroceso en tiempo real y elegibilidad de respaldo en nube (90 días y 1 año)', () => {
+  const now = 1_750_000_000_000;
+  const twoDays18h45m = ((2 * 24 + 18) * 60 + 45) * 60 * 1000;
+
+  const activeCountdown = formatCountdownTimer(now + twoDays18h45m, now);
+  assert.equal(activeCountdown.expired, false);
+  assert.equal(activeCountdown.label, '⏳ 2d 18h 45m');
+
+  const shortCountdown = formatCountdownTimer(now + 45_000, now);
+  assert.equal(shortCountdown.expired, false);
+  assert.equal(shortCountdown.label, '⏳ 0m 45s');
+
+  const expiredCountdown = formatCountdownTimer(now - 1000, now);
+  assert.equal(expiredCountdown.expired, true);
+  assert.equal(expiredCountdown.label, 'Expirado');
+
+  const lifetimeCountdown = formatCountdownTimer(null, now);
+  assert.equal(lifetimeCountdown.expired, false);
+  assert.equal(lifetimeCountdown.label, '⏳ Vitalicia');
+
+  // Prueba de 3 días / Gratis / 30 días NO elegibles; 90 días y 1 año SÍ elegibles
+  assert.equal(isEligibleForCloudBackup(null, false, now), false);
+  assert.equal(isEligibleForCloudBackup(null, true, now), false);
+  assert.equal(
+    isEligibleForCloudBackup(
+      { active: true, planCode: 'G', planLabel: 'Promoción 3 Días (Regalo)', expiresAt: now + 86_400_000 },
+      true,
+      now
+    ),
+    false
+  );
+  assert.equal(
+    isEligibleForCloudBackup(
+      { active: true, planCode: 'M', planLabel: '30 Días ($329 MXN)', expiresAt: now + 30 * 86_400_000 },
+      false,
+      now
+    ),
+    false
+  );
+  assert.equal(
+    isEligibleForCloudBackup(
+      { active: true, planCode: 'Q', planLabel: '90 Días ($799 MXN)', expiresAt: now + 90 * 86_400_000 },
+      false,
+      now
+    ),
+    true
+  );
+  assert.equal(
+    isEligibleForCloudBackup(
+      { active: true, planCode: 'A', planLabel: '1 Año / 365 Días ($1,499 MXN)', expiresAt: now + 365 * 86_400_000 },
+      false,
+      now
+    ),
+    true
+  );
+  // Expirado no es elegible
+  assert.equal(
+    isEligibleForCloudBackup(
+      { active: true, planCode: 'Q', planLabel: '90 Días ($799 MXN)', expiresAt: now - 1000 },
+      false,
+      now
+    ),
+    false
+  );
+});
+
+test('19. Normalización de ID de equipo, formato automático con guiones en clave y conteo exacto de PRO activos', () => {
+  // normalizeDeviceIdInput
+  assert.equal(normalizeDeviceIdInput('9x2k'), 'ALM-9X2K');
+  assert.equal(normalizeDeviceIdInput('alm9x2k'), 'ALM-9X2K');
+  assert.equal(normalizeDeviceIdInput('  alm-9x2k  '), 'ALM-9X2K');
+  assert.equal(normalizeDeviceIdInput('', 'ALM-FALL'), 'ALM-FALL');
+
+  // formatActivationKeyInput: inserción automática de guiones y borrado fluido
+  assert.equal(formatActivationKeyInput('ap'), 'AP-');
+  assert.equal(formatActivationKeyInput('apm', 'AP-'), 'AP-M-');
+  assert.equal(formatActivationKeyInput('apm123abc', 'AP-M-123AB'), 'AP-M-123ABC');
+  assert.equal(formatActivationKeyInput('AP-M', 'AP-M-'), 'AP-M');
+  assert.equal(formatActivationKeyInput('AP', 'AP-'), 'AP');
+  assert.equal(formatActivationKeyInput('ap-d18-ab12cd'), 'AP-D18-AB12CD');
+  assert.equal(formatActivationKeyInput('apd18ab12cd'), 'AP-D18-AB12CD');
+
+  // computeUsageStats30d excluye revocados y FREE incluso si tuvieran proActive residual
+  const now = 1_760_000_000_000;
+  const stats = computeUsageStats30d(
+    [
+      {
+        deviceId: 'ALM-PRO1',
+        cliente: 'Activo',
+        deviceLabel: 'Android',
+        firstSeenAt: now - 1000,
+        lastSeenAt: now,
+        totalSessions: 2,
+        totalMinutes: 10,
+        activeDays: ['2026-11-18'],
+        proActive: true,
+        planCode: 'M',
+        planLabel: '30 Días',
+        expiresAt: now + 86_400_000,
+        lastKey: 'AP-M-AAAAAA',
+        updatedAt: now,
+      },
+      {
+        deviceId: 'ALM-REV1',
+        cliente: 'Revocado',
+        deviceLabel: 'Android',
+        firstSeenAt: now - 1000,
+        lastSeenAt: now,
+        totalSessions: 2,
+        totalMinutes: 10,
+        activeDays: ['2026-11-18'],
+        proActive: true,
+        revoked: true,
+        planCode: 'REVOKED',
+        planLabel: 'Revocada',
+        expiresAt: now + 86_400_000,
+        lastKey: 'AP-G-BBBBBB',
+        updatedAt: now,
+      },
+      {
+        deviceId: 'ALM-FREE1',
+        cliente: 'Gratis',
+        deviceLabel: 'iPhone',
+        firstSeenAt: now - 1000,
+        lastSeenAt: now,
+        totalSessions: 1,
+        totalMinutes: 5,
+        activeDays: ['2026-11-18'],
+        proActive: true, // dato residual inconsistente
+        planCode: 'FREE',
+        planLabel: 'Versión Gratuita',
+        expiresAt: null,
+        lastKey: '',
+        updatedAt: now,
+      },
+      {
+        deviceId: 'ALM-BLK1',
+        cliente: 'Bloqueado',
+        deviceLabel: 'Android',
+        firstSeenAt: now - 1000,
+        lastSeenAt: now,
+        totalSessions: 1,
+        totalMinutes: 5,
+        activeDays: ['2026-11-18'],
+        proActive: true, // dato residual inconsistente
+        blocked: true,
+        planCode: 'BLOCKED',
+        planLabel: 'Bloqueado',
+        expiresAt: now + 86_400_000,
+        lastKey: '',
+        updatedAt: now,
+      },
+    ],
+    now
+  );
+  assert.equal(stats.totalDevices, 4);
+  assert.equal(stats.proActiveDevices, 1);
+});
+
+test('20. Inicio en Versión Gratuita y detección de pruebas automáticas sin clave ni asignación Admin', async () => {
+  const { isUnassignedAutoTrialDevice } = await import('./alumineroLogic.ts');
+
+  // Dispositivo que obtuvo prueba automática antigua sin clave ni asignación del Admin
+  assert.equal(
+    isUnassignedAutoTrialDevice({
+      lastKey: '',
+      adminAssigned: false,
+      trialActive: true,
+      planCode: 'G',
+      proActive: true,
+    }),
+    true
+  );
+
+  // Dispositivo nuevo en Versión Gratuita no es prueba automática
+  assert.equal(
+    isUnassignedAutoTrialDevice({
+      lastKey: '',
+      adminAssigned: false,
+      trialActive: false,
+      planCode: 'FREE',
+      proActive: false,
+    }),
+    false
+  );
+
+  // Dispositivo con clave válida generada por Admin (ej. 3 días) SÍ está autorizado
+  assert.equal(
+    isUnassignedAutoTrialDevice({
+      lastKey: 'AP-G-123456',
+      adminAssigned: false,
+      trialActive: true,
+      planCode: 'G',
+      proActive: true,
+    }),
+    false
+  );
+
+  // Dispositivo activado directamente desde el Panel Admin SÍ está autorizado
+  assert.equal(
+    isUnassignedAutoTrialDevice({
+      lastKey: '',
+      adminAssigned: true,
+      trialActive: true,
+      planCode: 'G',
+      proActive: true,
+    }),
+    false
+  );
+});
+
+test('21. Teléfono de cliente con guiones automáticos, borrado fluido y encabezado combinado', async () => {
+  const {
+    formatClientPhoneInput,
+    formatCombinedClientLabel,
+    formatClientHeaderDisplay,
+  } = await import('./alumineroLogic.ts');
+
+  // Auto-guiones progresivos XXX-XXX-XXXX
+  assert.equal(formatClientPhoneInput('555'), '555');
+  assert.equal(formatClientPhoneInput('5551'), '555-1');
+  assert.equal(formatClientPhoneInput('555123'), '555-123');
+  assert.equal(formatClientPhoneInput('5551234567'), '555-123-4567');
+  assert.equal(formatClientPhoneInput('555-123-456799'), '555-123-4567');
+
+  // Borrado fluido cuando el cursor retrocede justo sobre un guion
+  assert.equal(formatClientPhoneInput('555-123', '555-123-'), '555-12');
+  assert.equal(formatClientPhoneInput('555', '555-'), '55');
+
+  // Nombre y teléfono combinados para tarjetas del historial
+  assert.equal(formatCombinedClientLabel('  Juan Pérez  ', '5551234567'), 'Juan Pérez · 555-123-4567');
+  assert.equal(formatClientHeaderDisplay('Juan Pérez · 5551234567'), 'Juan Pérez · 555-123-4567');
+  assert.equal(formatClientHeaderDisplay('Juan Pérez 5551234567'), 'Juan Pérez · 555-123-4567');
+  assert.equal(formatClientHeaderDisplay(''), 'Cliente sin nombre');
+});
+
+test('22. Obras Aprobadas: cálculo de metros comprometidos, metros libres del tramo de 6 m y resumen total', async () => {
+  const { calcularMetrosObraAprobada, resumirObrasAprobadas } = await import('./alumineroLogic.ts');
+
+  const medioTramo = calcularMetrosObraAprobada(0.5);
+  assert.equal(medioTramo.metrosComprometidos, 3);
+  assert.equal(medioTramo.metrosLibres, 3);
+  assert.equal(medioTramo.tramosAsignados, 1);
+  assert.equal(medioTramo.resumenTexto, '3.00 m comprometidos · 3.00 m libres del tramo de 6 m');
+
+  const unTramo = calcularMetrosObraAprobada(1);
+  assert.equal(unTramo.metrosComprometidos, 6);
+  assert.equal(unTramo.metrosLibres, 0);
+  assert.equal(unTramo.tramosAsignados, 1);
+  assert.equal(unTramo.resumenTexto, '6.00 m comprometidos · 0.00 m libres');
+
+  const unoYMedio = calcularMetrosObraAprobada(1.5);
+  assert.equal(unoYMedio.metrosComprometidos, 9);
+  assert.equal(unoYMedio.metrosLibres, 3);
+  assert.equal(unoYMedio.tramosAsignados, 2);
+
+  const resumen = resumirObrasAprobadas([{ tramos: 0.5 }, { tramos: 1 }, { tramos: 1.5 }]);
+  assert.equal(resumen.totalApartados, 3);
+  assert.equal(resumen.totalTramos, 3);
+  assert.equal(resumen.totalMetrosComprometidos, 18);
+  assert.equal(resumen.totalMetrosLibres, 6);
+});
+
+test('23. Bodega Tramos completos (6.10 m): conserva Color (Blanco/Negro/Madera) y Marca sin agrupar como Natural', async () => {
+  const {
+    makeInventarioKey,
+    parseInventarioKey,
+    getInventarioTramosPorPerfilColor,
+    descontarInventarioPorPerfilColor,
+  } = await import('./alumineroLogic.ts');
+
+  const kBlancoAlumer = makeInventarioKey('3', 'cabezal', 'blanco', 'Alumer');
+  const kNegroCuprum = makeInventarioKey('3', 'cabezal', 'negro', 'Cuprum');
+  const kMaderaAlumer = makeInventarioKey('3', 'cabezal', 'madera', 'Alumer');
+  const kNegroAlumer = makeInventarioKey('3', 'cabezal', 'negro', 'Alumer');
+
+  assert.equal(kBlancoAlumer, '3__cabezal__blanco__Alumer');
+  assert.equal(kNegroCuprum, '3__cabezal__negro__Cuprum');
+  assert.equal(kMaderaAlumer, '3__cabezal__madera__Alumer');
+
+  assert.deepEqual(parseInventarioKey(kBlancoAlumer), {
+    linea: '3',
+    perfilId: 'cabezal',
+    color: 'blanco',
+    marca: 'Alumer',
+  });
+  assert.deepEqual(parseInventarioKey(kNegroCuprum), {
+    linea: '3',
+    perfilId: 'cabezal',
+    color: 'negro',
+    marca: 'Cuprum',
+  });
+  assert.deepEqual(parseInventarioKey('3__jamba__madera'), {
+    linea: '3',
+    perfilId: 'jamba',
+    color: 'madera',
+    marca: '',
+  });
+
+  const inv: Record<string, number> = {
+    [kBlancoAlumer]: 2,
+    [kNegroCuprum]: 3,
+    [kNegroAlumer]: 1,
+    [kMaderaAlumer]: 4,
+  };
+
+  // Natural debe ser 0 (no debe colapsar otros colores hacia Natural)
+  assert.equal(getInventarioTramosPorPerfilColor(inv, '3', 'cabezal', 'natural'), 0);
+  assert.equal(getInventarioTramosPorPerfilColor(inv, '3', 'cabezal', 'blanco'), 2);
+  assert.equal(getInventarioTramosPorPerfilColor(inv, '3', 'cabezal', 'negro'), 4);
+  assert.equal(getInventarioTramosPorPerfilColor(inv, '3', 'cabezal', 'madera'), 4);
+
+  // Descuento solo afecta el color solicitado
+  const despues = descontarInventarioPorPerfilColor(inv, '3', 'cabezal', 'negro', 2);
+  assert.equal(getInventarioTramosPorPerfilColor(despues, '3', 'cabezal', 'negro'), 2);
+  assert.equal(getInventarioTramosPorPerfilColor(despues, '3', 'cabezal', 'blanco'), 2);
+  assert.equal(getInventarioTramosPorPerfilColor(despues, '3', 'cabezal', 'madera'), 4);
+});
+
+test('24. Confirmación obligatoria de correo para activar PIN de 90 días y 1 año', async () => {
+  const {
+    keyRequiresCloudEmailConfirmation,
+    isShortPlanKeyPrefix,
+    validateCloudBackupEmailPair,
+  } = await import('./alumineroLogic.ts');
+
+  // Claves de 90 días (Q), 1 año (A) y >= 90 días personalizados (D90/D365) requieren correo confirmado
+  assert.equal(keyRequiresCloudEmailConfirmation('AP-Q-1A2B3C'), true);
+  assert.equal(keyRequiresCloudEmailConfirmation('AP-A-9Z8Y7X'), true);
+  assert.equal(keyRequiresCloudEmailConfirmation('AP-D90-123456'), true);
+  assert.equal(keyRequiresCloudEmailConfirmation('AP-D365-123456'), true);
+
+  // Claves cortas (3 días G, 30 días M, D15) no son obligatorias
+  assert.equal(keyRequiresCloudEmailConfirmation('AP-G-123456'), false);
+  assert.equal(keyRequiresCloudEmailConfirmation('AP-M-123456'), false);
+  assert.equal(isShortPlanKeyPrefix('AP-M-123456'), true);
+  assert.equal(isShortPlanKeyPrefix('AP-G-123456'), true);
+  assert.equal(isShortPlanKeyPrefix('AP-Q-123456'), false);
+
+  // Validación de formato y coincidencia exacta
+  assert.equal(validateCloudBackupEmailPair('', '').status, 'empty');
+  assert.equal(validateCloudBackupEmailPair('correo-malo', 'correo-malo').status, 'invalid_format');
+  assert.equal(validateCloudBackupEmailPair('taller@ejemplo.com', '').status, 'pending_confirm');
+
+  const mismatch = validateCloudBackupEmailPair('taller@ejemplo.com', 'otro@ejemplo.com');
+  assert.equal(mismatch.status, 'mismatch');
+  assert.equal(mismatch.message, 'Los correos no coinciden');
+
+  const ok = validateCloudBackupEmailPair('  Taller@Ejemplo.COM ', 'taller@ejemplo.com');
+  assert.equal(ok.status, 'confirmed');
+  assert.equal(ok.normalizedEmail, 'taller@ejemplo.com');
+  assert.equal(ok.message, 'Correo confirmado');
+});
+
+test('25. Invitación estilo Spotify: URL con ?ref y &promo, parser y mensaje de WhatsApp de 3 días', async () => {
+  const {
+    buildReferralInviteUrl,
+    parseReferralFromSearch,
+    buildColleaguePromoWhatsappMessage,
+    buildColleaguePromoWhatsappUrl,
+  } = await import('./alumineroLogic.ts');
+
+  const url = buildReferralInviteUrl('Taller Olmos', 17);
+  assert.equal(url, 'https://alumineropro1.pages.dev/?ref=Taller+Olmos&promo=17');
+
+  const parsed = parseReferralFromSearch('?ref=Taller%20Olmos&promo=17');
+  assert.deepEqual(parsed, { refName: 'Taller Olmos', promoNumber: 17 });
+  assert.equal(parseReferralFromSearch(''), null);
+  assert.equal(parseReferralFromSearch('?promo=5'), null);
+
+  const msg = buildColleaguePromoWhatsappMessage('Taller Olmos', 'ALM-9X2K', 17);
+  assert.equal(
+    msg,
+    'Hola, me llegó este mensaje de un colega (Taller Olmos) para probar Aluminero Pro. Mi ID de equipo es: ALM-9X2K (Promoción enviada #17). ¿Me compartes mi código de 3 días gratis?'
+  );
+
+  const wa10 = buildColleaguePromoWhatsappUrl('5512345678', 'Taller Olmos', 'ALM-9X2K', 17);
+  assert.ok(wa10.startsWith('https://wa.me/525512345678?text='));
+  assert.ok(decodeURIComponent(wa10).includes('Promoción enviada #17'));
+
+  const waEmpty = buildColleaguePromoWhatsappUrl('', 'Taller Olmos', 'ALM-9X2K', 17);
+  assert.ok(waEmpty.startsWith('https://wa.me/?text='));
+});
+
+test('26. Levantamiento Rápido: sobrescribe aluminero_hoja_v1.proyecto y propaga área sin conservar modo edición', async () => {
+  const {
+    LEV_KEYS,
+    overwriteHojaProyectoInStorage,
+    buildBridgePayloadFromPieza,
+    cmFromUnit,
+  } = await import('./levantamientoLogic.ts');
+
+  const store = new Map<string, string>();
+  store.set(
+    LEV_KEYS.hoja,
+    JSON.stringify({
+      proyecto: 'Cliente Anterior / Default',
+      partidas: [{ id: 'p-1', area: 'Patio', totalLinea: 1500 }],
+      descuentoPct: 10,
+      incluirIva: true,
+    })
+  );
+
+  const mockStorage = {
+    getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+    setItem: (k: string, v: string) => {
+      store.set(k, v);
+    },
+  };
+
+  assert.equal(overwriteHojaProyectoInStorage('  Carlos Mendoza  ', mockStorage), true);
+  const updatedHoja = JSON.parse(store.get(LEV_KEYS.hoja)!);
+  assert.equal(updatedHoja.proyecto, 'Carlos Mendoza');
+  assert.equal(updatedHoja.partidas.length, 1);
+  assert.equal(updatedHoja.descuentoPct, 10);
+  assert.equal(updatedHoja.incluirIva, true);
+
+  assert.equal(cmFromUnit('1.5', 'm'), 150);
+
+  const p1 = buildBridgePayloadFromPieza(
+    {
+      id: 'lv-1',
+      tipo: 'Ventana Corrediza',
+      area: 'Sala',
+      anchoCm: 150,
+      altoCm: 100,
+      cant: 1,
+      notas: '',
+      foto: '',
+    },
+    'Carlos Mendoza',
+    'cotizacion'
+  );
+  assert.equal(p1.unsupportedInModulacion, false);
+  assert.equal(p1.payload?.cliente, 'Carlos Mendoza');
+  assert.equal(p1.payload?.area, 'Sala');
+  assert.equal(p1.payload?.etiqueta, '');
+
+  const p2 = buildBridgePayloadFromPieza(
+    {
+      id: 'lv-2',
+      tipo: 'Ventana Fija',
+      area: 'Cocina',
+      anchoCm: 120,
+      altoCm: 80,
+      cant: 2,
+      notas: '',
+      foto: '',
+    },
+    'Carlos Mendoza',
+    'cotizacion'
+  );
+  assert.equal(p2.payload?.area, 'Cocina');
+  assert.equal(p2.payload?.apertura, 'fija');
+
+  const pUnsupported = buildBridgePayloadFromPieza(
+    {
+      id: 'lv-3',
+      tipo: 'Cancel / Otro',
+      area: 'Baño',
+      anchoCm: 140,
+      altoCm: 190,
+      cant: 1,
+      notas: '',
+      foto: '',
+    },
+    'Carlos Mendoza',
+    'modulacion'
+  );
+  assert.equal(pUnsupported.unsupportedInModulacion, true);
+  assert.equal(pUnsupported.payload, null);
+});
 

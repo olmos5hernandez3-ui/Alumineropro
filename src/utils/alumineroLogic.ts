@@ -1265,19 +1265,9 @@ export function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-export const APP_SHARE_URL = 'https://pages.dev';
+export const APP_SHARE_URL = 'https://alumineropro1.pages.dev';
 
 export function getOfficialShareUrl(): string {
-  try {
-    if (typeof window !== 'undefined' && window.location) {
-      const origin = window.location.origin;
-      if (origin && origin !== 'null' && /^https?:$/i.test(window.location.protocol)) {
-        return origin;
-      }
-    }
-  } catch {
-    // fallback cuando no hay entorno de navegador
-  }
   return APP_SHARE_URL;
 }
 
@@ -2570,6 +2560,74 @@ export function calcularCotizacion(args: {
 }
 
 // ==================== LICENCIA PRO, PLANES Y REPOSICIÓN DE DÍAS ====================
+export function normalizeDeviceIdInput(raw: string, fallbackDeviceId = ''): string {
+  const clean = String(raw || '')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, '');
+  if (!clean) return String(fallbackDeviceId || '').trim().toUpperCase();
+  if (clean.startsWith('ALM-')) return clean;
+  if (/^ALM[A-Z0-9]{3,}$/.test(clean)) {
+    return `ALM-${clean.slice(3)}`;
+  }
+  if (/^[A-Z0-9]{2,16}$/.test(clean) && !clean.includes('-')) {
+    return `ALM-${clean}`;
+  }
+  return clean;
+}
+
+export function formatActivationKeyInput(rawValue: string, prevValue = ''): string {
+  const upperRaw = String(rawValue || '').toUpperCase();
+  const isDeleting = prevValue.length > 0 && rawValue.length < prevValue.length;
+  const alnum = upperRaw.replace(/[^A-Z0-9]/g, '');
+  if (!alnum) return '';
+
+  if (alnum.length === 1) return alnum;
+  if (alnum.length === 2) {
+    return isDeleting ? alnum : `${alnum}-`;
+  }
+
+  const prefix = alnum.slice(0, 2);
+  const rest = alnum.slice(2);
+
+  if (rest.startsWith('D')) {
+    const cleanWithHyphens = upperRaw.replace(/[^A-Z0-9-]/g, '');
+    const parts = cleanWithHyphens.split('-');
+    if (parts.length >= 3 && parts[1].startsWith('D') && /^D\d{1,4}$/.test(parts[1])) {
+      const daysToken = parts[1];
+      const hashToken = parts.slice(2).join('').slice(0, 6);
+      if (!hashToken) {
+        return isDeleting && !cleanWithHyphens.endsWith('-')
+          ? `${prefix}-${daysToken}`
+          : `${prefix}-${daysToken}-`;
+      }
+      return `${prefix}-${daysToken}-${hashToken}`;
+    }
+
+    const afterD = rest.slice(1);
+    if (!afterD) return `${prefix}-D`;
+    const mLetter = afterD.match(/^(\d{1,4})([A-Z][A-Z0-9]*)$/);
+    if (mLetter) {
+      return `${prefix}-D${mLetter[1]}-${mLetter[2].slice(0, 6)}`;
+    }
+    if (/^\d+$/.test(afterD)) {
+      if (afterD.length >= 7) {
+        const splitIdx = Math.min(4, afterD.length - 6);
+        return `${prefix}-D${afterD.slice(0, splitIdx)}-${afterD.slice(splitIdx, splitIdx + 6)}`;
+      }
+      return `${prefix}-D${afterD}`;
+    }
+    return `${prefix}-${rest.slice(0, 1)}-${rest.slice(1, 7)}`;
+  }
+
+  const planChar = rest.slice(0, 1);
+  const hash = rest.slice(1, 7);
+  if (!hash) {
+    return isDeleting ? `${prefix}-${planChar}` : `${prefix}-${planChar}-`;
+  }
+  return `${prefix}-${planChar}-${hash}`;
+}
+
 export function computeDeviceHash(deviceId: string, token: string): string {
   const seed = `${deviceId.trim().toUpperCase()}::${token.toUpperCase()}::AP2026`;
   let h1 = 2166136261;
@@ -2682,6 +2740,51 @@ export function getTrialCountdown(expiresAt: number, now: number = Date.now()): 
   };
 }
 
+export function formatCountdownTimer(expiresAt: number | null, now: number = Date.now()): {
+  expired: boolean;
+  label: string;
+} {
+  if (expiresAt === null) {
+    return { expired: false, label: '⏳ Vitalicia' };
+  }
+  const remainingMs = expiresAt - now;
+  if (remainingMs <= 0) {
+    return { expired: true, label: 'Expirado' };
+  }
+  const totalSecs = Math.floor(remainingMs / 1000);
+  const days = Math.floor(totalSecs / 86400);
+  const hours = Math.floor((totalSecs % 86400) / 3600);
+  const mins = Math.floor((totalSecs % 3600) / 60);
+  const secs = totalSecs % 60;
+  if (days > 0) {
+    return { expired: false, label: `⏳ ${days}d ${hours}h ${mins}m` };
+  }
+  if (hours > 0) {
+    return { expired: false, label: `⏳ ${hours}h ${mins}m ${secs}s` };
+  }
+  return { expired: false, label: `⏳ ${mins}m ${secs}s` };
+}
+
+export function isEligibleForCloudBackup(
+  licencia: { active: boolean; planCode: string; planLabel?: string; expiresAt: number | null } | null,
+  isTrialActive: boolean,
+  now: number = Date.now()
+): boolean {
+  if (isTrialActive) return false;
+  if (!licencia || !licencia.active || !isProActive(licencia, now)) return false;
+  const code = String(licencia.planCode || '').trim().toUpperCase();
+  if (code === 'Q' || code === 'A') return true;
+  if (code.startsWith('D')) {
+    const days = Number(code.slice(1));
+    if (Number.isFinite(days) && days >= 90) return true;
+  }
+  const lbl = String(licencia.planLabel || '').toLowerCase();
+  if (lbl.includes('90') || lbl.includes('365') || lbl.includes('1 año') || lbl.includes('1 ano')) {
+    return true;
+  }
+  return false;
+}
+
 // ==================== CONSOLIDADO DE OBRA E INVENTARIO ====================
 export interface PartidaObra {
   id: string;
@@ -2768,7 +2871,12 @@ export function consolidarMaterialesObra(
   for (const [key, val] of map.entries()) {
     const metrosRequeridos = round2(val.cm / 100);
     const tramosRequeridos = Math.max(1, Math.ceil((val.cm * 1.06) / TRAMO_STD_CM));
-    const tramosEnBodega = round2(inventario[key] || 0);
+    const tramosEnBodega = getInventarioTramosPorPerfilColor(
+      inventario,
+      val.linea,
+      val.perfilId,
+      val.color
+    );
     const tramosComprometidos = round2(comprometidos[key] || 0);
     const tramosDisponibles = Math.max(0, round2(tramosEnBodega - tramosComprometidos));
     const metrosSobrantesDisponibles = round2(sobrantesMap[key] || 0);
@@ -2886,7 +2994,7 @@ export function parseNotaACotizacion(nota: {
   };
 }
 
-export const ADMIN_ACCESS_PASSWORD = 'Olmos5Hernandes32026';
+export const ADMIN_ACCESS_PASSWORD = '1983';
 export const ADMIN_RECOVERY_PIN = '202699';
 
 export function verifyAdminPassword(candidate: string, customOverride?: string | null): boolean {
@@ -2914,9 +3022,30 @@ export interface CloudDeviceRecord {
   proActive: boolean;
   planCode: string;
   planLabel: string;
+  status?: 'free' | 'pro' | 'blocked';
   expiresAt: number | null;
   lastKey: string;
   updatedAt: number;
+  revoked?: boolean;
+  revokedAt?: number | null;
+  blocked?: boolean;
+  blockedAt?: number | null;
+  trialActive?: boolean;
+  adminAssigned?: boolean;
+  linkedEmail?: string;
+}
+
+export function isUnassignedAutoTrialDevice(
+  dev:
+    | Pick<CloudDeviceRecord, 'lastKey' | 'adminAssigned' | 'trialActive' | 'planCode' | 'proActive'>
+    | null
+    | undefined
+): boolean {
+  if (!dev) return false;
+  const hasKey = Boolean(String(dev.lastKey || '').trim());
+  const isAssigned = Boolean(dev.adminAssigned);
+  if (hasKey || isAssigned) return false;
+  return Boolean(dev.trialActive || dev.planCode === 'G' || dev.proActive);
 }
 
 export interface UsageStats30d {
@@ -2946,7 +3075,15 @@ export function computeUsageStats30d(
   const activeUsers30d = activeList.length;
   const totalDevices = devices.length;
   const proActiveDevices = devices.filter(
-    (d) => d.proActive && (d.expiresAt === null || d.expiresAt > now)
+    (d) =>
+      !d.revoked &&
+      !d.blocked &&
+      d.planCode !== 'FREE' &&
+      d.planCode !== 'REVOKED' &&
+      d.planCode !== 'BLOCKED' &&
+      d.planCode !== 'SESSION_MOVED' &&
+      d.proActive &&
+      (d.expiresAt === null || d.expiresAt > now)
   ).length;
 
   if (activeUsers30d === 0) {
@@ -3020,5 +3157,364 @@ export function buildDailyUsageSeries30d(
   return points;
 }
 
+export function formatClientPhoneInput(rawValue: string, previousFormatted?: string): string {
+  let digits = String(rawValue || '').replace(/\D/g, '').slice(0, 10);
 
+  if (
+    previousFormatted !== undefined &&
+    String(rawValue || '').length < previousFormatted.length &&
+    digits === previousFormatted.replace(/\D/g, '').slice(0, 10) &&
+    digits.length > 0
+  ) {
+    digits = digits.slice(0, -1);
+  }
 
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 6) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+  return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6, 10)}`;
+}
+
+export function formatCombinedClientLabel(nombre: string, telefono?: string): string {
+  const cleanName = String(nombre || '').trim().replace(/\s+/g, ' ');
+  const formattedPhone = formatClientPhoneInput(String(telefono || ''));
+  if (cleanName && formattedPhone) return `${cleanName} · ${formattedPhone}`;
+  return cleanName || formattedPhone;
+}
+
+export function formatClientHeaderDisplay(rawCliente?: string): string {
+  const clean = String(rawCliente || '').trim();
+  if (!clean) return 'Cliente sin nombre';
+  if (clean.includes(' · ')) {
+    const [left, right] = clean.split(' · ');
+    const leftTrim = (left || '').trim();
+    const rightTrim = (right || '').trim();
+    const digitsOnly = rightTrim.replace(/\D/g, '');
+    const formattedPhone = digitsOnly.length >= 7 && digitsOnly.length <= 10 && /^[\d\s()-]+$/.test(rightTrim)
+      ? formatClientPhoneInput(digitsOnly)
+      : rightTrim;
+    if (leftTrim && formattedPhone) return `${leftTrim} · ${formattedPhone}`;
+    return leftTrim || formattedPhone || 'Cliente sin nombre';
+  }
+  const trailingDigitsMatch = clean.match(/^(.*?)\s+(\d{7,10})$/);
+  if (trailingDigitsMatch) {
+    const namePart = trailingDigitsMatch[1].trim();
+    const phonePart = formatClientPhoneInput(trailingDigitsMatch[2]);
+    if (namePart && phonePart) return `${namePart} · ${phonePart}`;
+  }
+  return clean;
+}
+
+export const TRAMO_COMPROMETIDO_M = 6;
+
+export interface ObraAprobadaMetrosInfo {
+  tramos: number;
+  tramosAsignados: number;
+  metrosComprometidos: number;
+  metrosLibres: number;
+  resumenTexto: string;
+}
+
+export function calcularMetrosObraAprobada(
+  tramosRaw: number,
+  largoTramoM = TRAMO_COMPROMETIDO_M
+): ObraAprobadaMetrosInfo {
+  const tramos = Math.max(0, Number(tramosRaw) || 0);
+  const metrosComprometidos = round2(tramos * largoTramoM);
+  const tramosAsignados = tramos > 0 ? Math.ceil(round2(tramos)) : 0;
+  const metrosLibres = round2(Math.max(0, tramosAsignados * largoTramoM - metrosComprometidos));
+  const resumenTexto =
+    metrosLibres > 0
+      ? `${metrosComprometidos.toFixed(2)} m comprometidos · ${metrosLibres.toFixed(2)} m libres del tramo de ${largoTramoM} m`
+      : `${metrosComprometidos.toFixed(2)} m comprometidos · 0.00 m libres`;
+  return {
+    tramos,
+    tramosAsignados,
+    metrosComprometidos,
+    metrosLibres,
+    resumenTexto,
+  };
+}
+
+export interface ResumenObrasAprobadasMetros {
+  totalApartados: number;
+  totalTramos: number;
+  totalMetrosComprometidos: number;
+  totalMetrosLibres: number;
+}
+
+export function resumirObrasAprobadas(
+  obras: Array<{ tramos: number }>,
+  largoTramoM = TRAMO_COMPROMETIDO_M
+): ResumenObrasAprobadasMetros {
+  let totalTramos = 0;
+  let totalMetrosComprometidos = 0;
+  let totalMetrosLibres = 0;
+  for (const ob of obras) {
+    const info = calcularMetrosObraAprobada(ob.tramos, largoTramoM);
+    totalTramos = round2(totalTramos + info.tramos);
+    totalMetrosComprometidos = round2(totalMetrosComprometidos + info.metrosComprometidos);
+    totalMetrosLibres = round2(totalMetrosLibres + info.metrosLibres);
+  }
+  return {
+    totalApartados: obras.length,
+    totalTramos,
+    totalMetrosComprometidos,
+    totalMetrosLibres,
+  };
+}
+
+export const INVENTARIO_DEFAULT_MARCA = 'Alumer';
+
+export interface ParsedInventarioKey {
+  linea: LineaId;
+  perfilId: PerfilCatalogoId;
+  color: ColorId;
+  marca: string;
+}
+
+export function normalizeColorId(raw?: string): ColorId {
+  const clean = String(raw || '').trim().toLowerCase() as ColorId;
+  if (clean && Object.prototype.hasOwnProperty.call(COLORES_CONFIG, clean)) {
+    return clean;
+  }
+  return 'natural';
+}
+
+export function makeInventarioKey(
+  linea: LineaId,
+  perfilId: PerfilCatalogoId,
+  color: ColorId,
+  marca?: string
+): string {
+  const validColor = normalizeColorId(color);
+  const cleanMarca = String(marca || '')
+    .trim()
+    .replace(/__/g, ' ')
+    .replace(/\s+/g, ' ');
+  return cleanMarca
+    ? `${linea}__${perfilId}__${validColor}__${cleanMarca}`
+    : `${linea}__${perfilId}__${validColor}`;
+}
+
+export function parseInventarioKey(key: string): ParsedInventarioKey {
+  const parts = String(key || '').split('__');
+  const linea = (parts[0] || '3') as LineaId;
+  const perfilId = (parts[1] || 'cabezal') as PerfilCatalogoId;
+  const color = normalizeColorId(parts[2]);
+  const marca = parts.length > 3 ? parts.slice(3).join(' ').trim() : '';
+  return { linea, perfilId, color, marca };
+}
+
+export function getInventarioTramosPorPerfilColor(
+  inventario: Record<string, number>,
+  linea: LineaId,
+  perfilId: PerfilCatalogoId,
+  color: ColorId
+): number {
+  const targetColor = normalizeColorId(color);
+  let total = 0;
+  for (const [k, rawVal] of Object.entries(inventario || {})) {
+    const val = Number(rawVal) || 0;
+    if (val <= 0) continue;
+    const parsed = parseInventarioKey(k);
+    if (parsed.linea === linea && parsed.perfilId === perfilId && parsed.color === targetColor) {
+      total = round2(total + val);
+    }
+  }
+  return total;
+}
+
+export function descontarInventarioPorPerfilColor(
+  inventario: Record<string, number>,
+  linea: LineaId,
+  perfilId: PerfilCatalogoId,
+  color: ColorId,
+  tramosRequeridos: number
+): Record<string, number> {
+  const next: Record<string, number> = { ...inventario };
+  const targetColor = normalizeColorId(color);
+  let restante = Math.max(0, round2(Number(tramosRequeridos) || 0));
+  if (restante <= 0) return next;
+
+  const matchingKeys = Object.keys(next)
+    .filter((k) => {
+      const val = Number(next[k]) || 0;
+      if (val <= 0) return false;
+      const parsed = parseInventarioKey(k);
+      return parsed.linea === linea && parsed.perfilId === perfilId && parsed.color === targetColor;
+    })
+    .sort((a, b) => a.split('__').length - b.split('__').length);
+
+  for (const k of matchingKeys) {
+    if (restante <= 0) break;
+    const disponible = Math.max(0, round2(Number(next[k]) || 0));
+    const descontar = Math.min(disponible, restante);
+    const nuevoValor = round2(disponible - descontar);
+    if (nuevoValor <= 0) {
+      delete next[k];
+    } else {
+      next[k] = nuevoValor;
+    }
+    restante = round2(restante - descontar);
+  }
+
+  return next;
+}
+
+export type CloudEmailValidationStatus =
+  | 'empty'
+  | 'invalid_format'
+  | 'pending_confirm'
+  | 'mismatch'
+  | 'confirmed';
+
+export interface CloudEmailValidationResult {
+  status: CloudEmailValidationStatus;
+  normalizedEmail: string;
+  message: string;
+}
+
+export function keyRequiresCloudEmailConfirmation(rawKey: string): boolean {
+  const clean = String(rawKey || '').trim().toUpperCase();
+  if (!clean) return false;
+  const parts = clean.split('-');
+  if (parts.length >= 2 && parts[0] === 'AP') {
+    const code = parts[1];
+    if (code === 'Q' || code === 'A') return true;
+    const customMatch = /^D(\d+)$/.exec(code);
+    if (customMatch) {
+      return Number(customMatch[1]) >= 90;
+    }
+    return false;
+  }
+  return false;
+}
+
+export function isShortPlanKeyPrefix(rawKey: string): boolean {
+  const clean = String(rawKey || '').trim().toUpperCase();
+  const parts = clean.split('-');
+  if (parts.length >= 2 && parts[0] === 'AP') {
+    const code = parts[1];
+    if (code === 'G' || code === 'M') return true;
+    const customMatch = /^D(\d+)$/.exec(code);
+    if (customMatch) {
+      const days = Number(customMatch[1]);
+      return days > 0 && days < 90;
+    }
+  }
+  return false;
+}
+
+export function validateCloudBackupEmailPair(
+  emailRaw: string,
+  confirmEmailRaw: string
+): CloudEmailValidationResult {
+  const email = String(emailRaw || '').trim().toLowerCase();
+  const confirm = String(confirmEmailRaw || '').trim().toLowerCase();
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+  if (!email && !confirm) {
+    return {
+      status: 'empty',
+      normalizedEmail: '',
+      message: 'Ingresa y confirma tu correo para el respaldo en la nube',
+    };
+  }
+  if (!emailRegex.test(email) || email.length > 160) {
+    return {
+      status: 'invalid_format',
+      normalizedEmail: '',
+      message: 'Ingresa un correo electrónico válido (ej. nombre@correo.com)',
+    };
+  }
+  if (!confirm) {
+    return {
+      status: 'pending_confirm',
+      normalizedEmail: '',
+      message: 'Confirma tu correo electrónico para habilitar la activación',
+    };
+  }
+  if (email !== confirm) {
+    return {
+      status: 'mismatch',
+      normalizedEmail: '',
+      message: 'Los correos no coinciden',
+    };
+  }
+  return {
+    status: 'confirmed',
+    normalizedEmail: email,
+    message: 'Correo confirmado',
+  };
+}
+
+export interface ParsedColleagueReferral {
+  refName: string;
+  promoNumber: number;
+}
+
+export const OFFICIAL_ALUMINERO_URL = 'https://alumineropro1.pages.dev';
+
+export function sanitizeReferralSenderName(raw: string): string {
+  return String(raw || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 60);
+}
+
+export function buildReferralInviteUrl(senderName: string, promoNumber: number): string {
+  const cleanName = sanitizeReferralSenderName(senderName) || 'Un colega';
+  const safePromo = Math.max(1, Math.round(Number(promoNumber) || 1));
+  const params = new URLSearchParams();
+  params.set('ref', cleanName);
+  params.set('promo', String(safePromo));
+  return `${OFFICIAL_ALUMINERO_URL}/?${params.toString()}`;
+}
+
+export function parseReferralFromSearch(search: string): ParsedColleagueReferral | null {
+  try {
+    const cleanSearch = String(search || '').trim();
+    if (!cleanSearch) return null;
+    const params = new URLSearchParams(cleanSearch.startsWith('?') ? cleanSearch.slice(1) : cleanSearch);
+    const rawRef = params.get('ref');
+    if (!rawRef) return null;
+    const refName = sanitizeReferralSenderName(rawRef);
+    if (!refName) return null;
+    const rawPromo = params.get('promo');
+    const parsedPromo = rawPromo ? parseInt(rawPromo, 10) : 1;
+    const promoNumber = Number.isFinite(parsedPromo) && parsedPromo >= 1 ? parsedPromo : 1;
+    return { refName, promoNumber };
+  } catch {
+    return null;
+  }
+}
+
+export function buildColleaguePromoWhatsappMessage(
+  refName: string,
+  deviceId: string,
+  promoNumber: number
+): string {
+  const cleanRef = sanitizeReferralSenderName(refName) || 'Un colega';
+  const cleanDev = String(deviceId || '').trim().toUpperCase() || 'SIN-ID';
+  const safePromo = Math.max(1, Math.round(Number(promoNumber) || 1));
+  return `Hola, me llegó este mensaje de un colega (${cleanRef}) para probar Aluminero Pro. Mi ID de equipo es: ${cleanDev} (Promoción enviada #${safePromo}). ¿Me compartes mi código de 3 días gratis?`;
+}
+
+export function buildColleaguePromoWhatsappUrl(
+  whatsappDigitsRaw: string,
+  refName: string,
+  deviceId: string,
+  promoNumber: number
+): string {
+  const digits = String(whatsappDigitsRaw || '').replace(/\D+/g, '');
+  const fullNumber =
+    digits.length === 10
+      ? `52${digits}`
+      : digits.length > 10
+        ? digits
+        : '';
+  const msg = buildColleaguePromoWhatsappMessage(refName, deviceId, promoNumber);
+  return fullNumber
+    ? `https://wa.me/${fullNumber}?text=${encodeURIComponent(msg)}`
+    : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+}

@@ -2,6 +2,7 @@ import {
   AperturaVentanaId,
   ColorId,
   LineaId,
+  normalizeDeviceIdInput,
   PartidaObra,
   PerfilCatalogoId,
 } from './alumineroLogic';
@@ -21,14 +22,22 @@ const KEYS = {
   FORMULAS: 'aluminero_formulas_v1',
   PERFIL_FOTOS: 'aluminero_perfil_fotos_v1',
   ADMIN_KEYS: 'aluminero_admin_keys_v1',
+  ADMIN_KEYS_DELETED: 'aluminero_deleted_admin_keys_v1',
+  REVOKED_DEVICES: 'aluminero_revoked_devices_v1',
+  CLOUD_ACCOUNT: 'aluminero_cloud_account_v1',
   THEME: 'aluminero_theme_v1',
   ADMIN_PWD_OVERRIDE: 'aluminero_admin_pwd_v2',
   SUGERENCIAS_WA: 'aluminero_wa_sugerencias_v1',
   TRABAJOS_ANTES_DESPUES: 'aluminero_antes_despues_v1',
   TRIAL_START: 'aluminero_trial_start_v1',
+  TRIAL_REVOKED: 'aluminero_trial_revoked_v1',
+  ACCESS_BLOCKED: 'aluminero_access_blocked_v1',
   INVENTARIO_VIDRIOS: 'aluminero_inv_vidrios_v1',
   CONTRATO_CLIENTE: 'aluminero_contrato_cliente_v1',
   CONTRATO_FOLIO: 'aluminero_contrato_folio_v1',
+  REFERRAL_SENDER_NAME: 'aluminero_ref_sender_v1',
+  SAVED_COLLEAGUE_REFERRAL: 'aluminero_saved_referral_v1',
+  PROMO_COUNT_CACHE: 'aluminero_promo_count_cache_v1',
 };
 
 export type AppTheme = 'light' | 'dark';
@@ -39,6 +48,9 @@ export interface LicenciaState {
   planLabel: string;
   expiresAt: number | null;
   activatedAt: number;
+  activatedKey?: string;
+  adminAssigned?: boolean;
+  linkedEmail?: string;
 }
 
 export interface AdminKeyRecord {
@@ -50,6 +62,31 @@ export interface AdminKeyRecord {
   key: string;
   createdAt: number;
   expiresAt: number | null;
+  revoked?: boolean;
+  revokedAt?: number | null;
+  linkedEmail?: string;
+}
+
+export interface CloudAccountSession {
+  email: string;
+  sessionToken: string;
+  linkedDeviceId: string;
+  lastBackedUpAt: number | null;
+}
+
+export interface CloudAccountBackupPayload {
+  licencia: LicenciaState | null;
+  hoja: HojaState;
+  historial: HistorialItem[];
+  contratoCliente?: ContratoClienteInfo;
+  inventario: Record<string, number>;
+  inventarioHerrajes: Record<string, number>;
+  sobrantes: SobranteItem[];
+  hojasVidrio: HojaVidrioItem[];
+  obrasAprobadas: ObraAprobadaApartado[];
+  notas?: NotaObra[];
+  formulas?: FormulaPersonalizada[];
+  updatedAt: number;
 }
 
 export interface TallerConfig {
@@ -253,19 +290,13 @@ export function saveLicencia(lic: LicenciaState | null): void {
   }
 }
 
-export function getOrInitTrialStart(now: number = Date.now()): number {
-  if (typeof localStorage === 'undefined') return now;
-  const raw = localStorage.getItem(KEYS.TRIAL_START);
-  const parsed = raw ? Number(raw) : NaN;
-  if (Number.isFinite(parsed) && parsed > 0) {
-    return parsed;
-  }
+export function clearTrialStart(): void {
+  if (typeof localStorage === 'undefined') return;
   try {
-    localStorage.setItem(KEYS.TRIAL_START, String(now));
+    localStorage.removeItem(KEYS.TRIAL_START);
   } catch {
     // ignorar si localStorage no permite escritura
   }
-  return now;
 }
 
 export const DEFAULT_TALLER: TallerConfig = {
@@ -453,6 +484,79 @@ export function saveAdminKeys(list: AdminKeyRecord[]): void {
   localStorage.setItem(KEYS.ADMIN_KEYS, JSON.stringify(list.slice(0, 60)));
 }
 
+export function buildAdminKeySignature(rec: Pick<AdminKeyRecord, 'deviceId' | 'key'>): string {
+  const normDev = normalizeDeviceIdInput(String(rec.deviceId || ''));
+  const normKey = String(rec.key || '').trim().toUpperCase();
+  return `${normDev}::${normKey}`;
+}
+
+export function loadDeletedAdminKeySigs(): string[] {
+  const raw = safeJsonParse<unknown>(localStorage.getItem(KEYS.ADMIN_KEYS_DELETED), []);
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((item): item is string => typeof item === 'string' && item.includes('::')).slice(0, 200);
+}
+
+export function saveDeletedAdminKeySigs(sigs: string[]): void {
+  const unique = Array.from(new Set(sigs.filter((s) => typeof s === 'string' && s.includes('::')))).slice(0, 200);
+  localStorage.setItem(KEYS.ADMIN_KEYS_DELETED, JSON.stringify(unique));
+}
+
+export function loadTrialRevoked(): boolean {
+  return localStorage.getItem(KEYS.TRIAL_REVOKED) === '1';
+}
+
+export function saveTrialRevoked(revoked: boolean): void {
+  if (revoked) {
+    localStorage.setItem(KEYS.TRIAL_REVOKED, '1');
+  } else {
+    localStorage.removeItem(KEYS.TRIAL_REVOKED);
+  }
+}
+
+export function loadAccessBlocked(): boolean {
+  return localStorage.getItem(KEYS.ACCESS_BLOCKED) === '1';
+}
+
+export function saveAccessBlocked(blocked: boolean): void {
+  if (blocked) {
+    localStorage.setItem(KEYS.ACCESS_BLOCKED, '1');
+  } else {
+    localStorage.removeItem(KEYS.ACCESS_BLOCKED);
+  }
+}
+
+export function loadRevokedDevicesMap(): Record<string, number> {
+  const raw = safeJsonParse<unknown>(localStorage.getItem(KEYS.REVOKED_DEVICES), {});
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const clean: Record<string, number> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    const norm = k.trim().toUpperCase();
+    const ts = Number(v);
+    if (norm && Number.isFinite(ts) && ts > 0) {
+      clean[norm] = ts;
+    }
+  }
+  return clean;
+}
+
+export function saveRevokedDevicesMap(map: Record<string, number>): void {
+  localStorage.setItem(KEYS.REVOKED_DEVICES, JSON.stringify(map));
+}
+
+export function loadCloudAccountSession(): CloudAccountSession | null {
+  const raw = safeJsonParse<CloudAccountSession | null>(localStorage.getItem(KEYS.CLOUD_ACCOUNT), null);
+  if (!raw || typeof raw !== 'object' || !raw.email || !raw.sessionToken) return null;
+  return raw;
+}
+
+export function saveCloudAccountSession(session: CloudAccountSession | null): void {
+  if (!session) {
+    localStorage.removeItem(KEYS.CLOUD_ACCOUNT);
+  } else {
+    localStorage.setItem(KEYS.CLOUD_ACCOUNT, JSON.stringify(session));
+  }
+}
+
 export function compressImageToDataUrl(file: File, maxDim = 600, quality = 0.78): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -583,13 +687,19 @@ const LEGACY_ADMIN_STORAGE_KEYS = [
   'aluminero_admin_auth',
 ];
 
+const LEGACY_DEFAULT_ADMIN_PASSWORDS = new Set([
+  'TU_CONTRASEÑA_AQUI',
+  'Olmos5Hernandes32026',
+  'Olmos5hernandes32026',
+]);
+
 export function clearLegacyAdminKeys(): void {
   if (typeof localStorage === 'undefined') return;
   for (const k of LEGACY_ADMIN_STORAGE_KEYS) {
     localStorage.removeItem(k);
   }
   const current = localStorage.getItem(KEYS.ADMIN_PWD_OVERRIDE);
-  if (current && current.trim() === 'TU_CONTRASEÑA_AQUI') {
+  if (current && LEGACY_DEFAULT_ADMIN_PASSWORDS.has(current.trim())) {
     localStorage.removeItem(KEYS.ADMIN_PWD_OVERRIDE);
   }
 }
@@ -599,7 +709,7 @@ export function loadAdminPasswordOverride(): string | null {
   const val = localStorage.getItem(KEYS.ADMIN_PWD_OVERRIDE);
   if (!val) return null;
   const trimmed = val.trim();
-  if (!trimmed || trimmed === 'TU_CONTRASEÑA_AQUI') {
+  if (!trimmed || LEGACY_DEFAULT_ADMIN_PASSWORDS.has(trimmed)) {
     localStorage.removeItem(KEYS.ADMIN_PWD_OVERRIDE);
     return null;
   }
@@ -786,6 +896,81 @@ export async function buildBeforeAfterCollageFile(
   return dataUrlToJpegFile(canvas.toDataURL('image/jpeg', 0.84), filename);
 }
 
+export interface SavedColleagueReferral {
+  refName: string;
+  promoNumber: number;
+  savedAt: number;
+}
 
+export function loadReferralSenderName(): string {
+  if (typeof localStorage === 'undefined') return '';
+  try {
+    return (localStorage.getItem(KEYS.REFERRAL_SENDER_NAME) || '').trim().slice(0, 60);
+  } catch {
+    return '';
+  }
+}
 
+export function saveReferralSenderName(name: string): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    const clean = String(name || '').trim().slice(0, 60);
+    if (clean) {
+      localStorage.setItem(KEYS.REFERRAL_SENDER_NAME, clean);
+    } else {
+      localStorage.removeItem(KEYS.REFERRAL_SENDER_NAME);
+    }
+  } catch {
+    // ignorar si localStorage no permite escritura
+  }
+}
 
+export function loadSavedColleagueReferral(): SavedColleagueReferral | null {
+  if (typeof localStorage === 'undefined') return null;
+  const raw = safeJsonParse<SavedColleagueReferral | null>(
+    localStorage.getItem(KEYS.SAVED_COLLEAGUE_REFERRAL),
+    null
+  );
+  if (!raw || typeof raw !== 'object' || typeof raw.refName !== 'string' || !raw.refName.trim()) {
+    return null;
+  }
+  const promoNum = Math.max(1, Math.round(Number(raw.promoNumber) || 1));
+  return {
+    refName: raw.refName.trim().slice(0, 60),
+    promoNumber: promoNum,
+    savedAt: Number(raw.savedAt) || Date.now(),
+  };
+}
+
+export function saveColleagueReferral(referral: SavedColleagueReferral | null): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    if (!referral) {
+      localStorage.removeItem(KEYS.SAVED_COLLEAGUE_REFERRAL);
+    } else {
+      localStorage.setItem(KEYS.SAVED_COLLEAGUE_REFERRAL, JSON.stringify(referral));
+    }
+  } catch {
+    // ignorar si localStorage no permite escritura
+  }
+}
+
+export function loadCachedPromoCount(): number {
+  if (typeof localStorage === 'undefined') return 1;
+  try {
+    const val = parseInt(localStorage.getItem(KEYS.PROMO_COUNT_CACHE) || '1', 10);
+    return Number.isFinite(val) && val >= 1 ? val : 1;
+  } catch {
+    return 1;
+  }
+}
+
+export function saveCachedPromoCount(total: number): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    const safe = Math.max(1, Math.round(Number(total) || 1));
+    localStorage.setItem(KEYS.PROMO_COUNT_CACHE, String(safe));
+  } catch {
+    // ignorar si localStorage no permite escritura
+  }
+}
