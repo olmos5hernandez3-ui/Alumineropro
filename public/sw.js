@@ -58,7 +58,11 @@ function normalizePushPayload(raw) {
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) =>
-      Promise.allSettled(APP_SHELL_ASSETS.map((asset) => cache.add(asset).catch(() => {})))
+      Promise.allSettled(
+        APP_SHELL_ASSETS.map((asset) =>
+          cache.add(new Request(asset, { cache: 'reload' })).catch(() => {})
+        )
+      )
     )
   );
 });
@@ -168,10 +172,13 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
 
-  // No cachear rutas de API en tiempo real, SSE ni descarga standalone
+  // Nunca interceptar rutas de API en tiempo real, SSE, sw.js, descarga standalone ni sondas _swcheck
   if (
     url.origin === self.location.origin &&
-    (url.pathname.startsWith('/api/') || url.pathname === '/__aluminero_single.html')
+    (url.pathname.startsWith('/api/') ||
+      url.pathname === '/__aluminero_single.html' ||
+      url.pathname === '/sw.js' ||
+      url.searchParams.has('_swcheck'))
   ) {
     return;
   }
@@ -201,10 +208,10 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Navegación SPA: Network-first con respaldo offline a /index.html
+  // Navegación SPA: Network-first sin caché HTTP vieja, con respaldo offline a /index.html
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request)
+      fetch(request.url, { cache: 'no-cache' })
         .then((response) => {
           if (response && response.ok && url.origin === self.location.origin) {
             const copy = response.clone();
@@ -224,10 +231,10 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Recursos estáticos del mismo origen: Network-first con caché offline
+  // Recursos estáticos del mismo origen: Network-first revalidado con respaldo offline
   if (url.origin === self.location.origin) {
     event.respondWith(
-      fetch(request)
+      fetch(new Request(request, { cache: 'no-cache' }))
         .then((response) => {
           if (response && response.ok) {
             const copy = response.clone();

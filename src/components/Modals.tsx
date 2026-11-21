@@ -1099,7 +1099,7 @@ const FALLBACK_MANIFEST_JSON = JSON.stringify(
   2
 );
 
-const FALLBACK_SW_JS = `const CACHE_NAME = 'aluminero-pro-v17-20261121';
+const FALLBACK_SW_JS = `const CACHE_NAME = 'aluminero-pro-v30-20261121';
 const APP_SHELL_ASSETS = [
   './',
   './index.html',
@@ -1248,7 +1248,10 @@ self.addEventListener('fetch', (event) => {
 
   if (
     url.origin === self.location.origin &&
-    (url.pathname.startsWith('/api/') || url.pathname === '/__aluminero_single.html')
+    (url.pathname.startsWith('/api/') ||
+      url.pathname === '/__aluminero_single.html' ||
+      url.pathname === '/sw.js' ||
+      url.searchParams.has('_swcheck'))
   ) {
     return;
   }
@@ -1279,7 +1282,7 @@ self.addEventListener('fetch', (event) => {
 
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request)
+      fetch(request.url, { cache: 'no-cache' })
         .then((response) => {
           if (response && response.ok && url.origin === self.location.origin) {
             const copy = response.clone();

@@ -204,154 +204,369 @@
     <script type="module" src="/src/main.tsx"></script>
     <script>
       (function () {
-        if (
-          typeof window === 'undefined' ||
-          !('serviceWorker' in navigator) ||
-          !/^https?:$/i.test(window.location.protocol)
-        ) {
-          return;
-        }
-
-        var swRegistration = null;
-        var waitingWorker = null;
-        var reloadingForUpdate = false;
-        var userClickedUpdate = false;
-        var hadController = Boolean(navigator.serviceWorker.controller);
-
-        function ensureUpdateBanner(worker) {
-          if (!worker) return;
-          waitingWorker = worker;
-
-          var existing = document.getElementById('pwa-update-banner');
-          if (existing) {
-            existing.style.display = 'flex';
+        try {
+          if (typeof window === 'undefined') {
+            return;
+          }
+          var inIframe = false;
+          try {
+            inIframe = window.self !== window.top;
+          } catch (e) {
+            inIframe = true;
+          }
+          if (inIframe) {
+            return;
+          }
+          if (
+            typeof navigator === 'undefined' ||
+            !('serviceWorker' in navigator) ||
+            !/^https?:$/i.test(window.location.protocol)
+          ) {
             return;
           }
 
-          var banner = document.createElement('div');
-          banner.id = 'pwa-update-banner';
-          banner.setAttribute('role', 'alert');
-          banner.setAttribute('aria-live', 'polite');
-          banner.style.cssText =
-            'position:fixed;top:66px;left:50%;transform:translateX(-50%);z-index:10050;' +
-            'width:min(420px,calc(100vw - 24px));display:flex;align-items:center;' +
-            'justify-content:space-between;gap:12px;padding:10px 14px;border-radius:14px;' +
-            'background:linear-gradient(135deg,#facc15 0%,#f59e0b 100%);color:#0f172a;' +
-            'border:1.5px solid #fef08a;box-shadow:0 12px 30px rgba(0,0,0,0.35);' +
-            'font-family:"Plus Jakarta Sans",system-ui,-apple-system,sans-serif;';
+          var swRegistration = null;
+          var waitingWorker = null;
+          var reloadingForUpdate = false;
+          var userClickedUpdate = false;
+          var hadController = false;
+          try {
+            hadController = Boolean(navigator.serviceWorker.controller);
+          } catch (e) {
+            hadController = false;
+          }
+          var lastSwCheckAt = 0;
+          var lastHtmlCheckAt = 0;
+          var fallbackTimer = null;
 
-          var msg = document.createElement('div');
-          msg.style.cssText = 'font-size:13px;font-weight:800;line-height:1.25;min-width:0;flex:1;';
-          msg.textContent = '✨ Hay una actualización disponible';
+          function getCurrentMetaVersion() {
+            try {
+              var meta = document.querySelector('meta[name="app-version"]');
+              return meta ? String(meta.getAttribute('content') || '').trim() : '';
+            } catch (e) {
+              return '';
+            }
+          }
 
-          var btn = document.createElement('button');
-          btn.id = 'btn-pwa-update-now';
-          btn.type = 'button';
-          btn.textContent = 'Actualizar';
-          btn.style.cssText =
-            'flex-shrink:0;min-height:36px;padding:0 14px;border-radius:10px;border:none;' +
-            'background:#0f172a;color:#fef08a;font-size:12.5px;font-weight:800;cursor:pointer;' +
-            'white-space:nowrap;box-shadow:0 2px 8px rgba(15,23,42,0.25);';
+          function extractVersionFromHtml(html) {
+            var matches = String(html || '').match(/<meta\b[^>]*>/gi) || [];
+            for (var i = 0; i < matches.length; i++) {
+              var tag = matches[i];
+              var nameMatch = tag.match(/\bname\s*=\s*["']([^"']+)["']/i);
+              if (!nameMatch || nameMatch[1].trim().toLowerCase() !== 'app-version') continue;
+              var contentMatch = tag.match(/\bcontent\s*=\s*["']([^"']+)["']/i);
+              if (contentMatch && contentMatch[1].trim()) return contentMatch[1].trim();
+            }
+            return '';
+          }
 
-          btn.addEventListener('click', function () {
-            userClickedUpdate = true;
-            btn.disabled = true;
-            btn.textContent = 'Actualizando...';
-            btn.style.opacity = '0.8';
-            var target = (swRegistration && swRegistration.waiting) || waitingWorker;
-            if (target) {
-              try {
-                target.postMessage({ type: 'SKIP_WAITING' });
-              } catch (e) {
-                window.location.reload();
+          function renderFallbackDomBanner() {
+            try {
+              if (window.__alumineroUpdateBannerMounted) return;
+              var existing = document.getElementById('pwa-update-banner');
+              if (existing) {
+                existing.style.display = 'flex';
+                return;
               }
-              window.setTimeout(function () {
-                if (!reloadingForUpdate && target.state === 'activated') {
-                  reloadingForUpdate = true;
-                  window.location.reload();
+
+              var banner = document.createElement('div');
+              banner.id = 'pwa-update-banner';
+              banner.setAttribute('role', 'alert');
+              banner.setAttribute('aria-live', 'assertive');
+              banner.style.cssText =
+                'position:fixed;bottom:86px;left:50%;transform:translateX(-50%);z-index:10050;' +
+                'width:min(430px,calc(100vw - 24px));display:flex;align-items:center;' +
+                'justify-content:space-between;gap:12px;padding:10px 14px;border-radius:16px;' +
+                'background:linear-gradient(135deg,#fde047 0%,#f59e0b 100%);color:#0f172a;' +
+                'border:1.5px solid #fef08a;box-shadow:0 12px 30px rgba(0,0,0,0.35);' +
+                'font-family:"Plus Jakarta Sans",system-ui,-apple-system,sans-serif;';
+
+              var msg = document.createElement('div');
+              msg.style.cssText = 'font-size:13px;font-weight:800;line-height:1.25;min-width:0;flex:1;';
+              msg.textContent = 'Hay una nueva actualización disponible';
+
+              var btn = document.createElement('button');
+              btn.id = 'btn-pwa-update-now';
+              btn.type = 'button';
+              btn.textContent = 'Actualizar';
+              btn.style.cssText =
+                'flex-shrink:0;min-height:36px;padding:0 14px;border-radius:10px;border:none;' +
+                'background:#0f172a;color:#fef08a;font-size:12.5px;font-weight:800;cursor:pointer;' +
+                'white-space:nowrap;box-shadow:0 2px 8px rgba(15,23,42,0.25);';
+
+              btn.addEventListener('click', function () {
+                btn.disabled = true;
+                btn.textContent = 'Actualizando...';
+                btn.style.opacity = '0.8';
+                applyUpdateNow();
+              });
+
+              banner.appendChild(msg);
+              banner.appendChild(btn);
+              document.body.appendChild(banner);
+            } catch (e) {}
+          }
+
+          function notifyUpdateAvailable(worker, reason, remoteVersion) {
+            if (worker) {
+              waitingWorker = worker;
+            }
+            var detail = {
+              available: true,
+              reason: reason || 'sw',
+              remoteVersion: remoteVersion || null,
+            };
+            window.__alumineroUpdateState = detail;
+            try {
+              window.dispatchEvent(new CustomEvent('aluminero:sw-update-available', { detail: detail }));
+            } catch (e) {}
+
+            if (!window.__alumineroUpdateBannerMounted && !fallbackTimer) {
+              fallbackTimer = window.setTimeout(function () {
+                fallbackTimer = null;
+                if (
+                  !window.__alumineroUpdateBannerMounted &&
+                  window.__alumineroUpdateState &&
+                  window.__alumineroUpdateState.available
+                ) {
+                  renderFallbackDomBanner();
                 }
               }, 2500);
+            }
+          }
+
+          function forceClearAndReload() {
+            if (reloadingForUpdate) return;
+            reloadingForUpdate = true;
+            var done = function () {
+              try {
+                window.location.reload();
+              } catch (e) {}
+            };
+            try {
+              if (window.caches && typeof window.caches.keys === 'function') {
+                window.caches
+                  .keys()
+                  .then(function (keys) {
+                    return Promise.all(
+                      keys.map(function (k) {
+                        return window.caches.delete(k);
+                      })
+                    );
+                  })
+                  .then(done)
+                  .catch(done);
+              } else {
+                done();
+              }
+            } catch (e) {
+              done();
+            }
+          }
+
+          function applyUpdateNow() {
+            try {
+              userClickedUpdate = true;
+              var target = (swRegistration && swRegistration.waiting) || waitingWorker;
+              if (target) {
+                try {
+                  target.postMessage({ type: 'SKIP_WAITING' });
+                } catch (e) {
+                  forceClearAndReload();
+                  return;
+                }
+                window.setTimeout(function () {
+                  if (!reloadingForUpdate) {
+                    forceClearAndReload();
+                  }
+                }, 1600);
+              } else if (swRegistration) {
+                swRegistration
+                  .update()
+                  .then(function () {
+                    var nextTarget = swRegistration.waiting || swRegistration.installing;
+                    if (nextTarget) {
+                      try {
+                        nextTarget.postMessage({ type: 'SKIP_WAITING' });
+                      } catch (e) {}
+                      window.setTimeout(forceClearAndReload, 1200);
+                    } else {
+                      forceClearAndReload();
+                    }
+                  })
+                  .catch(forceClearAndReload);
+              } else {
+                forceClearAndReload();
+              }
+            } catch (e) {
+              forceClearAndReload();
+            }
+          }
+
+          window.__alumineroApplyUpdate = applyUpdateNow;
+
+          function watchInstallingWorker(worker) {
+            try {
+              if (!worker || worker.__apWatched) return;
+              worker.__apWatched = true;
+              worker.addEventListener('statechange', function () {
+                try {
+                  if (worker.state === 'installed' && navigator.serviceWorker.controller) {
+                    notifyUpdateAvailable((swRegistration && swRegistration.waiting) || worker, 'sw', null);
+                  }
+                } catch (e) {}
+              });
+            } catch (e) {}
+          }
+
+          function attachRegistrationListeners(reg) {
+            try {
+              swRegistration = reg;
+
+              if (reg.waiting) {
+                notifyUpdateAvailable(reg.waiting, 'sw', null);
+              }
+              if (reg.installing) {
+                watchInstallingWorker(reg.installing);
+              }
+
+              reg.addEventListener('updatefound', function () {
+                watchInstallingWorker(reg.installing);
+              });
+            } catch (e) {}
+          }
+
+          function probeRemoteAppVersion(force) {
+            try {
+              if (typeof fetch !== 'function' || !navigator.onLine) return Promise.resolve(false);
+              var now = Date.now();
+              if (!force && now - lastHtmlCheckAt < 20000) return Promise.resolve(false);
+              lastHtmlCheckAt = now;
+
+              var currentVer = getCurrentMetaVersion();
+              if (!currentVer) return Promise.resolve(false);
+
+              return fetch('./index.html?_swcheck=' + now, {
+                cache: 'no-store',
+                headers: { 'Cache-Control': 'no-cache' },
+              })
+                .then(function (res) {
+                  if (!res || !res.ok) return false;
+                  return res.text().then(function (html) {
+                    var remoteVer = extractVersionFromHtml(html);
+                    if (remoteVer && remoteVer !== currentVer) {
+                      if (swRegistration) {
+                        try {
+                          swRegistration.update().catch(function () {});
+                        } catch (e) {}
+                      }
+                      notifyUpdateAvailable(
+                        (swRegistration && swRegistration.waiting) || waitingWorker,
+                        'version',
+                        remoteVer
+                      );
+                      return true;
+                    }
+                    return false;
+                  });
+                })
+                .catch(function () {
+                  return false;
+                });
+            } catch (e) {
+              return Promise.resolve(false);
+            }
+          }
+
+          function triggerUpdateCheck(force) {
+            try {
+              var now = Date.now();
+              if (!force && now - lastSwCheckAt < 4000) {
+                return Promise.resolve(false);
+              }
+              lastSwCheckAt = now;
+
+              if (swRegistration) {
+                if (swRegistration.waiting) {
+                  notifyUpdateAvailable(swRegistration.waiting, 'sw', null);
+                }
+                if (swRegistration.installing) {
+                  watchInstallingWorker(swRegistration.installing);
+                }
+                try {
+                  swRegistration.update().catch(function () {});
+                } catch (e) {}
+              }
+              return probeRemoteAppVersion(Boolean(force));
+            } catch (e) {
+              return Promise.resolve(false);
+            }
+          }
+
+          window.__alumineroCheckForUpdate = function () {
+            return triggerUpdateCheck(true);
+          };
+
+          try {
+            navigator.serviceWorker.addEventListener('controllerchange', function () {
+              if (reloadingForUpdate) return;
+              if (!hadController && !userClickedUpdate) {
+                hadController = true;
+                return;
+              }
+              reloadingForUpdate = true;
+              try {
+                window.location.reload();
+              } catch (e) {}
+            });
+          } catch (e) {}
+
+          document.addEventListener('visibilitychange', function () {
+            if (document.visibilityState === 'visible') {
+              triggerUpdateCheck(false);
+            }
+          });
+
+          window.addEventListener('focus', function () {
+            triggerUpdateCheck(false);
+          });
+
+          window.addEventListener('pageshow', function (ev) {
+            if (ev && ev.persisted) {
+              triggerUpdateCheck(true);
             } else {
-              window.location.reload();
+              triggerUpdateCheck(false);
             }
           });
 
-          banner.appendChild(msg);
-          banner.appendChild(btn);
-          document.body.appendChild(banner);
-        }
+          window.addEventListener('online', function () {
+            triggerUpdateCheck(true);
+          });
 
-        function watchInstallingWorker(newWorker) {
-          if (!newWorker) return;
-          newWorker.addEventListener('statechange', function () {
-            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-              ensureUpdateBanner((swRegistration && swRegistration.waiting) || newWorker);
+          window.setInterval(function () {
+            if (document.visibilityState === 'visible') {
+              triggerUpdateCheck(false);
             }
-          });
-        }
+          }, 15 * 60 * 1000);
 
-        function attachRegistrationListeners(reg) {
-          swRegistration = reg;
-
-          if (reg.waiting) {
-            ensureUpdateBanner(reg.waiting);
+          function registerSwNow() {
+            try {
+              navigator.serviceWorker
+                .register('./sw.js', { scope: './', updateViaCache: 'none' })
+                .then(function (reg) {
+                  attachRegistrationListeners(reg);
+                  triggerUpdateCheck(true);
+                })
+                .catch(function () {});
+            } catch (e) {}
           }
 
-          if (reg.installing) {
-            watchInstallingWorker(reg.installing);
+          if (document.readyState === 'complete') {
+            registerSwNow();
+          } else {
+            window.addEventListener('load', registerSwNow, { once: true });
           }
-
-          reg.addEventListener('updatefound', function () {
-            watchInstallingWorker(reg.installing);
-          });
-        }
-
-        function triggerUpdateCheck() {
-          if (!swRegistration) return;
-          if (swRegistration.waiting) {
-            ensureUpdateBanner(swRegistration.waiting);
-          }
-          swRegistration.update().catch(function () {});
-        }
-
-        navigator.serviceWorker.addEventListener('controllerchange', function () {
-          if (reloadingForUpdate) return;
-          if (!hadController && !userClickedUpdate) return;
-          reloadingForUpdate = true;
-          window.location.reload();
-        });
-
-        document.addEventListener('visibilitychange', function () {
-          if (document.visibilityState === 'visible') {
-            triggerUpdateCheck();
-          }
-        });
-
-        window.addEventListener('focus', function () {
-          triggerUpdateCheck();
-        });
-
-        window.addEventListener('online', function () {
-          triggerUpdateCheck();
-        });
-
-        window.setInterval(triggerUpdateCheck, 5 * 60 * 1000);
-
-        function registerServiceWorker() {
-          navigator.serviceWorker
-            .register('./sw.js', { scope: './', updateViaCache: 'none' })
-            .then(function (reg) {
-              attachRegistrationListeners(reg);
-              reg.update().catch(function () {});
-            })
-            .catch(function () {});
-        }
-
-        if (document.readyState === 'complete') {
-          registerServiceWorker();
-        } else {
-          window.addEventListener('load', registerServiceWorker, { once: true });
-        }
+        } catch (e) {}
       })();
     </script>
   </body>

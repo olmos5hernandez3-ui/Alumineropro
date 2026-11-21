@@ -5,18 +5,29 @@ import {
   buildLevantamientoWhatsappText,
   cmFromUnit,
   createEmptyLevantamiento,
+  defaultLevLineaForTipo,
   formatMedida,
   formatMedidaText,
+  formatPiezaSpecsSummary,
+  LEV_COLORES_ALUMINIO_OPCIONES,
+  LEV_COLORES_VIDRIO_OPCIONES,
   LEV_KEYS,
+  LEV_LINEAS_OPCIONES,
   LEV_TIPOS,
   LevantamientoDestino,
   LevantamientoDraft,
   LevantamientoPieza,
   LevantamientoUnidad,
+  LevColorAluminioId,
+  LevColorVidrioId,
+  LevLineaId,
   mergeLevantamientosBackup,
   normalizeLevantamientoDraft,
   normalizeLevantamientoList,
   overwriteHojaProyectoInStorage,
+  resolvePiezaColorAluminio,
+  resolvePiezaLineaLabel,
+  resolvePiezaVidrioSpec,
   resumenLevantamiento,
 } from '../utils/levantamientoLogic';
 import { formatClientPhoneInput } from '../utils/alumineroLogic';
@@ -26,6 +37,12 @@ import {
   openExternalLinkSafe,
   upsertCliente,
 } from '../utils/storageHelpers';
+import {
+  canUseBrowserHistory,
+  safeAddPopStateListener,
+  safeHistoryGo,
+  safeHistoryPushState,
+} from '../utils/runtimeEnv';
 
 declare global {
   interface Window {
@@ -49,10 +66,32 @@ interface LevantamientoFormState {
   cant: number;
   notas: string;
   foto: string;
+  lineaAluminio: LevLineaId;
+  lineaAluminioOtra: string;
+  colorAluminio: LevColorAluminioId;
+  colorAluminioOtro: string;
+  colorVidrio: LevColorVidrioId;
+  colorVidrioOtro: string;
+  lineaCustomTouched: boolean;
   editId: string | null;
 }
 
-function createEmptyForm(u: LevantamientoUnidad = 'cm', tipo: string = LEV_TIPOS[0]): LevantamientoFormState {
+function createEmptyForm(
+  u: LevantamientoUnidad = 'cm',
+  tipo: string = LEV_TIPOS[0],
+  keepSpecs?: Partial<
+    Pick<
+      LevantamientoFormState,
+      | 'lineaAluminio'
+      | 'lineaAluminioOtra'
+      | 'colorAluminio'
+      | 'colorAluminioOtro'
+      | 'colorVidrio'
+      | 'colorVidrioOtro'
+      | 'lineaCustomTouched'
+    >
+  >
+): LevantamientoFormState {
   return {
     tipo,
     area: '',
@@ -62,6 +101,13 @@ function createEmptyForm(u: LevantamientoUnidad = 'cm', tipo: string = LEV_TIPOS
     cant: 1,
     notas: '',
     foto: '',
+    lineaAluminio: keepSpecs?.lineaAluminio ?? defaultLevLineaForTipo(tipo),
+    lineaAluminioOtra: keepSpecs?.lineaAluminioOtra ?? '',
+    colorAluminio: keepSpecs?.colorAluminio ?? 'natural',
+    colorAluminioOtro: keepSpecs?.colorAluminioOtro ?? '',
+    colorVidrio: keepSpecs?.colorVidrio ?? 'claro',
+    colorVidrioOtro: keepSpecs?.colorVidrioOtro ?? '',
+    lineaCustomTouched: keepSpecs?.lineaCustomTouched ?? false,
     editId: null,
   };
 }
@@ -165,11 +211,7 @@ export const LevantamientoRapido: React.FC<Props> = ({
       viewsRef.current = next;
       return next;
     });
-    try {
-      window.history.pushState({ alumLev: 1, v }, '');
-    } catch {
-      // ignore if restricted
-    }
+    safeHistoryPushState({ alumLev: 1, v }, '');
   }, []);
 
   const openModal = useCallback(() => {
@@ -181,12 +223,16 @@ export const LevantamientoRapido: React.FC<Props> = ({
   }, [pushView]);
 
   const goBackView = useCallback(() => {
-    if (viewsRef.current.length > 0) {
-      try {
-        window.history.go(-1);
-      } catch {
-        setViews((prev) => prev.slice(0, -1));
-      }
+    if (viewsRef.current.length === 0) return;
+    if (canUseBrowserHistory() && safeHistoryGo(-1)) {
+      return;
+    }
+    const next = viewsRef.current.slice(0, -1);
+    viewsRef.current = next;
+    setViews(next);
+    if (next.length === 0) {
+      document.body.style.overflow = '';
+      setViewerFoto('');
     }
   }, []);
 
@@ -195,24 +241,28 @@ export const LevantamientoRapido: React.FC<Props> = ({
       cb?.();
       return;
     }
-    closingCbRef.current = cb || (() => {});
-    try {
-      window.history.go(-viewsRef.current.length);
-    } catch {
-      const fn = closingCbRef.current;
+    if (canUseBrowserHistory()) {
+      closingCbRef.current = cb || (() => {});
+      if (safeHistoryGo(-viewsRef.current.length)) {
+        return;
+      }
       closingCbRef.current = null;
-      viewsRef.current = [];
-      setViews([]);
-      document.body.style.overflow = '';
-      setViewerFoto('');
-      fn?.();
     }
+    viewsRef.current = [];
+    setViews([]);
+    document.body.style.overflow = '';
+    setViewerFoto('');
+    cb?.();
   }, []);
 
   useEffect(() => {
-    const onPopState = (e: PopStateEvent) => {
+    const removePopListener = safeAddPopStateListener((e: PopStateEvent) => {
       if (viewsRef.current.length === 0 && !closingCbRef.current) return;
-      e.stopImmediatePropagation();
+      try {
+        e.stopImmediatePropagation();
+      } catch {
+        // Ignorar si stopImmediatePropagation no está disponible
+      }
       if (closingCbRef.current) {
         const cb = closingCbRef.current;
         closingCbRef.current = null;
@@ -230,10 +280,9 @@ export const LevantamientoRapido: React.FC<Props> = ({
         document.body.style.overflow = '';
         setViewerFoto('');
       }
-    };
-    window.addEventListener('popstate', onPopState, true);
+    }, true);
     return () => {
-      window.removeEventListener('popstate', onPopState, true);
+      removePopListener();
       document.body.style.overflow = '';
     };
   }, []);
@@ -316,12 +365,34 @@ export const LevantamientoRapido: React.FC<Props> = ({
       cant: Math.max(1, form.cant),
       notas: form.notas.trim(),
       foto: form.foto,
+      lineaAluminio: form.lineaAluminio,
+      ...(form.lineaAluminio === 'otra' && form.lineaAluminioOtra.trim()
+        ? { lineaAluminioOtra: form.lineaAluminioOtra.trim() }
+        : {}),
+      colorAluminio: form.colorAluminio,
+      ...(form.colorAluminio === 'otro' && form.colorAluminioOtro.trim()
+        ? { colorAluminioOtro: form.colorAluminioOtro.trim() }
+        : {}),
+      colorVidrio: form.colorVidrio,
+      ...(form.colorVidrio === 'sin-vidrio' && form.colorVidrioOtro.trim()
+        ? { colorVidrioOtro: form.colorVidrioOtro.trim() }
+        : {}),
     };
     const nextPiezas = form.editId
       ? draft.piezas.map((x) => (x.id === form.editId ? pieza : x))
       : [...draft.piezas, pieza];
     persistDraft({ ...draft, piezas: nextPiezas });
-    setForm(createEmptyForm(form.u, form.tipo));
+    setForm(
+      createEmptyForm(form.u, form.tipo, {
+        lineaAluminio: form.lineaAluminio,
+        lineaAluminioOtra: form.lineaAluminioOtra,
+        colorAluminio: form.colorAluminio,
+        colorAluminioOtro: form.colorAluminioOtro,
+        colorVidrio: form.colorVidrio,
+        colorVidrioOtro: form.colorVidrioOtro,
+        lineaCustomTouched: form.lineaCustomTouched,
+      })
+    );
     setLocalError(null);
     if (rootRef.current) rootRef.current.scrollTop = 0;
   };
@@ -695,7 +766,16 @@ export const LevantamientoRapido: React.FC<Props> = ({
               <select
                 id="lv-tipo"
                 value={form.tipo}
-                onChange={(e) => setForm((prev) => ({ ...prev, tipo: e.target.value }))}
+                onChange={(e) => {
+                  const nextTipo = e.target.value;
+                  setForm((prev) => ({
+                    ...prev,
+                    tipo: nextTipo,
+                    lineaAluminio: prev.lineaCustomTouched
+                      ? prev.lineaAluminio
+                      : defaultLevLineaForTipo(nextTipo),
+                  }));
+                }}
               >
                 {LEV_TIPOS.map((tp) => (
                   <option key={tp} value={tp}>
@@ -771,13 +851,143 @@ export const LevantamientoRapido: React.FC<Props> = ({
                 </button>
               </div>
 
-              <label htmlFor="lv-nt">Notas (color, vidrio, detalle)</label>
+              <div className="spec-section" aria-label="Especificaciones rápidas de la medida">
+                <div className="spec-header">⚡ Especificaciones rápidas</div>
+
+                <div className="spec-group">
+                  <span className="spec-group-label">1. Línea de Aluminio</span>
+                  <div className="spec-chips" role="radiogroup" aria-label="Línea de Aluminio">
+                    {LEV_LINEAS_OPCIONES.map((opt) => {
+                      const active = form.lineaAluminio === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          role="radio"
+                          aria-checked={active}
+                          data-spec-linea={opt.id}
+                          className={`spec-chip ${active ? 'on' : ''}`}
+                          onClick={() =>
+                            setForm((prev) => ({
+                              ...prev,
+                              lineaAluminio: opt.id,
+                              lineaCustomTouched: true,
+                            }))
+                          }
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {form.lineaAluminio === 'otra' && (
+                    <input
+                      id="lv-linea-otra"
+                      type="text"
+                      className="spec-custom-input"
+                      value={form.lineaAluminioOtra}
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, lineaAluminioOtra: e.target.value }))
+                      }
+                      placeholder="Especifica la línea (ej. Serie 45, Cuprum...)"
+                    />
+                  )}
+                </div>
+
+                <div className="spec-group">
+                  <span className="spec-group-label">2. Color de Aluminio</span>
+                  <div className="spec-chips" role="radiogroup" aria-label="Color de Aluminio">
+                    {LEV_COLORES_ALUMINIO_OPCIONES.map((opt) => {
+                      const active = form.colorAluminio === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          role="radio"
+                          aria-checked={active}
+                          data-spec-color-alum={opt.id}
+                          className={`spec-chip ${active ? 'on' : ''}`}
+                          onClick={() =>
+                            setForm((prev) => ({ ...prev, colorAluminio: opt.id }))
+                          }
+                        >
+                          <span
+                            className="spec-swatch"
+                            style={{ backgroundColor: opt.swatch }}
+                            aria-hidden="true"
+                          />
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {form.colorAluminio === 'otro' && (
+                    <input
+                      id="lv-color-alum-otro"
+                      type="text"
+                      className="spec-custom-input"
+                      value={form.colorAluminioOtro}
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, colorAluminioOtro: e.target.value }))
+                      }
+                      placeholder="Especifica el color de aluminio (ej. Gris Oxford)"
+                    />
+                  )}
+                </div>
+
+                <div className="spec-group">
+                  <span className="spec-group-label">3. Color de Vidrio</span>
+                  <div className="spec-chips" role="radiogroup" aria-label="Color de Vidrio">
+                    {LEV_COLORES_VIDRIO_OPCIONES.map((opt) => {
+                      const active = form.colorVidrio === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          role="radio"
+                          aria-checked={active}
+                          data-spec-color-vidrio={opt.id}
+                          className={`spec-chip ${active ? 'on' : ''}`}
+                          onClick={() =>
+                            setForm((prev) => ({ ...prev, colorVidrio: opt.id }))
+                          }
+                        >
+                          <span
+                            className={`spec-glass-swatch ${opt.id === 'sin-vidrio' ? 'none' : ''}`}
+                            style={
+                              opt.id === 'sin-vidrio'
+                                ? undefined
+                                : { backgroundColor: opt.swatch, opacity: 0.78 }
+                            }
+                            aria-hidden="true"
+                          />
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {form.colorVidrio === 'sin-vidrio' && (
+                    <input
+                      id="lv-color-vidrio-otro"
+                      type="text"
+                      className="spec-custom-input"
+                      value={form.colorVidrioOtro}
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, colorVidrioOtro: e.target.value }))
+                      }
+                      placeholder="Opcional: Sin vidrio, acrílico, policarbonato..."
+                    />
+                  )}
+                </div>
+              </div>
+
+              <label htmlFor="lv-nt">Notas adicionales (detalle, herraje)</label>
               <textarea
                 id="lv-nt"
                 rows={2}
                 value={form.notas}
                 onChange={(e) => setForm((prev) => ({ ...prev, notas: e.target.value }))}
-                placeholder="Ej. Aluminio negro, vidrio tintex"
+                placeholder="Ej. Mosquitero incluido, chapa de seguridad"
               />
 
               <label>Foto de referencia (opcional)</label>
@@ -876,6 +1086,41 @@ export const LevantamientoRapido: React.FC<Props> = ({
                       <div>
                         {formatMedidaText(p)} · Cant: {p.cant}
                       </div>
+                      {(p.lineaAluminio || p.colorAluminio || p.colorVidrio) && (() => {
+                        const alumSpec = resolvePiezaColorAluminio(p);
+                        const vidrioSpec = resolvePiezaVidrioSpec(p);
+                        return (
+                          <div className="spec-badges">
+                            {p.lineaAluminio && (
+                              <span className="spec-badge">{resolvePiezaLineaLabel(p)}</span>
+                            )}
+                            {p.colorAluminio && (
+                              <span className="spec-badge">
+                                <span
+                                  className="spec-badge-dot"
+                                  style={{ backgroundColor: alumSpec.swatch }}
+                                  aria-hidden="true"
+                                />
+                                {alumSpec.label}
+                              </span>
+                            )}
+                            {p.colorVidrio && (
+                              <span className="spec-badge">
+                                <span
+                                  className="spec-badge-dot"
+                                  style={
+                                    p.colorVidrio === 'sin-vidrio'
+                                      ? { background: '#475569' }
+                                      : { backgroundColor: vidrioSpec.swatch, opacity: 0.82 }
+                                  }
+                                  aria-hidden="true"
+                                />
+                                {vidrioSpec.label}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
                       {p.notas && <small>{p.notas}</small>}
                     </div>
                     <div className="ac">
@@ -901,6 +1146,13 @@ export const LevantamientoRapido: React.FC<Props> = ({
                             cant: p.cant,
                             notas: p.notas,
                             foto: p.foto,
+                            lineaAluminio: p.lineaAluminio || defaultLevLineaForTipo(p.tipo),
+                            lineaAluminioOtra: p.lineaAluminioOtra || '',
+                            colorAluminio: p.colorAluminio || 'natural',
+                            colorAluminioOtro: p.colorAluminioOtro || '',
+                            colorVidrio: p.colorVidrio || 'claro',
+                            colorVidrioOtro: p.colorVidrioOtro || '',
+                            lineaCustomTouched: Boolean(p.lineaAluminio),
                             editId: p.id,
                           });
                           if (rootRef.current) rootRef.current.scrollTop = 0;
@@ -1157,6 +1409,9 @@ export const LevantamientoRapido: React.FC<Props> = ({
             {activeQueuePieza.tipo}
             {activeQueuePieza.area ? ` · ${activeQueuePieza.area}` : ''} ·{' '}
             {formatMedidaText(activeQueuePieza)} ×{activeQueuePieza.cant}
+            {formatPiezaSpecsSummary(activeQueuePieza)
+              ? ` · ${formatPiezaSpecsSummary(activeQueuePieza)}`
+              : ''}
           </span>
           <button
             type="button"

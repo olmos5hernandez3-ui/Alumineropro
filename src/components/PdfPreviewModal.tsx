@@ -12,6 +12,7 @@ import {
   pushHistoryOverlay,
   removeHistoryOverlay,
 } from '../utils/historyOverlayStack';
+import { safeHistoryBack, safeHistoryPushState } from '../utils/runtimeEnv';
 import { SignaturePadModal } from './SignaturePadModal';
 
 interface PdfPreviewModalProps {
@@ -72,13 +73,18 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
     }
 
     try {
-      window.history.pushState({ apPdfLayer: 'sheet' }, '');
-      sheetHistoryPushedRef.current = true;
-      sheetOverlayTokenRef.current = pushHistoryOverlay('pdf-sheet', () => {
+      const pushed = safeHistoryPushState({ apPdfLayer: 'sheet' }, '');
+      if (pushed) {
+        sheetHistoryPushedRef.current = true;
+        sheetOverlayTokenRef.current = pushHistoryOverlay('pdf-sheet', () => {
+          sheetHistoryPushedRef.current = false;
+          sheetOverlayTokenRef.current = null;
+          onCloseRef.current();
+        });
+      } else {
         sheetHistoryPushedRef.current = false;
         sheetOverlayTokenRef.current = null;
-        onCloseRef.current();
-      });
+      }
     } catch {
       sheetHistoryPushedRef.current = false;
       sheetOverlayTokenRef.current = null;
@@ -100,13 +106,18 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
     }
 
     try {
-      window.history.pushState({ apPdfLayer: 'viewer' }, '');
-      viewerHistoryPushedRef.current = true;
-      viewerOverlayTokenRef.current = pushHistoryOverlay('pdf-viewer', () => {
+      const pushed = safeHistoryPushState({ apPdfLayer: 'viewer' }, '');
+      if (pushed) {
+        viewerHistoryPushedRef.current = true;
+        viewerOverlayTokenRef.current = pushHistoryOverlay('pdf-viewer', () => {
+          viewerHistoryPushedRef.current = false;
+          viewerOverlayTokenRef.current = null;
+          setViewerOpen(false);
+        });
+      } else {
         viewerHistoryPushedRef.current = false;
         viewerOverlayTokenRef.current = null;
-        setViewerOpen(false);
-      });
+      }
     } catch {
       viewerHistoryPushedRef.current = false;
       viewerOverlayTokenRef.current = null;
@@ -120,12 +131,10 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
 
   const requestCloseSheet = useCallback(() => {
     if (sheetHistoryPushedRef.current) {
-      try {
-        window.history.back();
+      if (safeHistoryBack()) {
         return;
-      } catch {
-        sheetHistoryPushedRef.current = false;
       }
+      sheetHistoryPushedRef.current = false;
     }
     removeHistoryOverlay(sheetOverlayTokenRef.current);
     sheetOverlayTokenRef.current = null;
@@ -139,12 +148,10 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
 
   const closeViewerLayer = () => {
     if (viewerHistoryPushedRef.current) {
-      try {
-        window.history.back();
+      if (safeHistoryBack()) {
         return;
-      } catch {
-        viewerHistoryPushedRef.current = false;
       }
+      viewerHistoryPushedRef.current = false;
     }
     removeHistoryOverlay(viewerOverlayTokenRef.current);
     viewerOverlayTokenRef.current = null;

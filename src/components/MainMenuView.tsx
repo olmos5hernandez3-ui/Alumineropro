@@ -52,7 +52,7 @@ export const MainMenuView: React.FC<Props> = ({
       data-pro-active={proActive ? 'true' : 'false'}
       className="screen-animate"
     >
-      <div className="mb-4 sm:mb-5 flex items-baseline gap-2.5 flex-wrap">
+      <div className="mb-4 sm:mb-5">
         <h1 className="m-0 text-[clamp(1.45rem,3.6vw,2.1rem)] font-extrabold text-white leading-[1.15] tracking-tight [text-wrap:balance]">
           ¿Qué vamos a trabajar?
         </h1>

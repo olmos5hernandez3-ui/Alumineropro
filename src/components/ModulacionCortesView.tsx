@@ -4,8 +4,10 @@ import {
   ColorId,
   CorteVidrio,
   LineaId,
+  PanelRellenoSelection,
   PartidaObra,
   round2,
+  VidrioId,
 } from '../utils/alumineroLogic';
 import {
   buildPartidaFromModulacion,
@@ -24,11 +26,16 @@ import {
 import { SobranteItem } from '../utils/storageHelpers';
 import {
   formatMedidaText,
+  formatPiezaSpecsSummary,
   LEV_KEYS,
   LEV_MAPA,
   LevantamientoDraft,
   LevantamientoPieza,
   normalizeLevantamientoDraft,
+  resolvePiezaColorAluminio,
+  resolvePiezaLineaLabel,
+  resolvePiezaModulacionSerieId,
+  resolvePiezaVidrioSpec,
 } from '../utils/levantamientoLogic';
 import { PerfilSectionSvg } from './PerfilSectionSvg';
 import { PerfilZoomData, PerfilZoomModal } from './PerfilZoomModal';
@@ -210,6 +217,13 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
     }
   });
   const [activeLevPiezaId, setActiveLevPiezaId] = useState<string | null>(null);
+  const [transferredVidrio, setTransferredVidrio] = useState<{
+    vidrio: VidrioId;
+    relleno: PanelRellenoSelection;
+    lineaLabel: string;
+    colorLabel: string;
+    vidrioLabel: string;
+  } | null>(null);
 
   const step = controlledStep ?? localStep;
   const paso5Tab = controlledPaso5Tab ?? localPaso5Tab;
@@ -267,14 +281,73 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
       if (p.modelo) {
         setModeloId(p.modelo);
       }
+      if (p.serieId) {
+        setSerieId(p.serieId);
+      }
+      if (p.color) {
+        setColorParaSobrantes(p.color);
+      }
+      if (p.vidrio && p.relleno) {
+        setTransferredVidrio({
+          vidrio: p.vidrio,
+          relleno: p.relleno,
+          lineaLabel: p.lineaLabel || '',
+          colorLabel: p.colorLabel || '',
+          vidrioLabel: p.vidrioLabel || '',
+        });
+      }
     };
     applyPending();
     window.addEventListener('alum-mod-apply', applyPending);
     return () => window.removeEventListener('alum-mod-apply', applyPending);
   }, []);
 
+  const applyLevPiezaSpecsSilent = (p: LevantamientoPieza): boolean => {
+    const mapa = LEV_MAPA[p.tipo] || LEV_MAPA['Cancel / Otro'];
+    const isBatiente = p.lineaAluminio === 'batiente-alumer';
+    const targetModelo = isBatiente ? 'door-batiente' : mapa.modelo;
+    const targetCat = isBatiente ? 'puertas' : mapa.cat;
+    if (!targetModelo || !targetCat) return false;
+
+    const nextSerie = resolvePiezaModulacionSerieId(p);
+    const colorSpec = resolvePiezaColorAluminio(p);
+    const vidrioSpec = resolvePiezaVidrioSpec(p);
+    const lineaLabel = resolvePiezaLineaLabel(p);
+
+    setActiveLevPiezaId(p.id);
+    setUnidad('cm');
+    setAnchoInput(String(p.anchoCm));
+    setAltoInput(String(p.altoCm));
+    setCategoria(targetCat);
+    setModeloId(targetModelo);
+    setSerieId(nextSerie);
+    setColorParaSobrantes(colorSpec.colorId);
+    setTransferredVidrio({
+      vidrio: vidrioSpec.vidrio,
+      relleno: vidrioSpec.relleno,
+      lineaLabel,
+      colorLabel: colorSpec.label,
+      vidrioLabel: vidrioSpec.label,
+    });
+    setCortadosMap({});
+    return true;
+  };
+
   useEffect(() => {
-    const syncActivo = () => {
+    if (window.__alumModPending) return;
+    if (!activoLev || activeLevPiezaId) return;
+    const firstSupported = activoLev.piezas.find((p) => {
+      const mapa = LEV_MAPA[p.tipo] || LEV_MAPA['Cancel / Otro'];
+      return Boolean(mapa.modelo || p.lineaAluminio === 'batiente-alumer');
+    });
+    if (firstSupported) {
+      applyLevPiezaSpecsSilent(firstSupported);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const syncActivo = (ev?: Event) => {
       try {
         const raw = window.localStorage.getItem(LEV_KEYS.activo);
         if (!raw) {
@@ -282,7 +355,17 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
           return;
         }
         const norm = normalizeLevantamientoDraft(JSON.parse(raw));
-        setActivoLev(norm.piezas.length > 0 ? norm : null);
+        const nextDraft = norm.piezas.length > 0 ? norm : null;
+        setActivoLev(nextDraft);
+        if (ev?.type === 'aluminero:lev-activo-updated' && nextDraft) {
+          const firstSupported = nextDraft.piezas.find((p) => {
+            const mapa = LEV_MAPA[p.tipo] || LEV_MAPA['Cancel / Otro'];
+            return Boolean(mapa.modelo || p.lineaAluminio === 'batiente-alumer');
+          });
+          if (firstSupported) {
+            applyLevPiezaSpecsSilent(firstSupported);
+          }
+        }
       } catch {
         setActivoLev(null);
       }
@@ -297,18 +380,39 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
 
   const handleSelectLevPieza = (p: LevantamientoPieza) => {
     const mapa = LEV_MAPA[p.tipo] || LEV_MAPA['Cancel / Otro'];
-    if (!mapa.modelo || !mapa.cat) {
+    const isBatiente = p.lineaAluminio === 'batiente-alumer';
+    const targetModelo = isBatiente ? 'door-batiente' : mapa.modelo;
+    const targetCat = isBatiente ? 'puertas' : mapa.cat;
+    if (!targetModelo || !targetCat) {
       onShowToast('Cancel / Otro no está disponible en Modulación.');
       return;
     }
+    const nextSerie = resolvePiezaModulacionSerieId(p);
+    const colorSpec = resolvePiezaColorAluminio(p);
+    const vidrioSpec = resolvePiezaVidrioSpec(p);
+    const lineaLabel = resolvePiezaLineaLabel(p);
+
     setActiveLevPiezaId(p.id);
     setUnidad('cm');
     setAnchoInput(String(p.anchoCm));
     setAltoInput(String(p.altoCm));
-    setCategoria(mapa.cat);
-    setModeloId(mapa.modelo);
+    setCategoria(targetCat);
+    setModeloId(targetModelo);
+    setSerieId(nextSerie);
+    setColorParaSobrantes(colorSpec.colorId);
+    setTransferredVidrio({
+      vidrio: vidrioSpec.vidrio,
+      relleno: vidrioSpec.relleno,
+      lineaLabel,
+      colorLabel: colorSpec.label,
+      vidrioLabel: vidrioSpec.label,
+    });
     setCortadosMap({});
-    onShowToast(`Cargado: ${p.tipo} (${formatMedidaText(p)})`, true);
+    const specTxt = formatPiezaSpecsSummary(p);
+    onShowToast(
+      `Cargado: ${p.tipo} (${formatMedidaText(p)})${specTxt ? ` · ${specTxt}` : ''}`,
+      true
+    );
   };
 
   const handleRemoveLevPieza = (id: string) => {
@@ -483,7 +587,17 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
   };
 
   const handleSendToHoja = () => {
-    const partida = buildPartidaFromModulacion(calculoCortes, tarifasBase);
+    const basePartida = buildPartidaFromModulacion(calculoCortes, tarifasBase);
+    const partida: PartidaObra = {
+      ...basePartida,
+      color: colorParaSobrantes,
+      ...(transferredVidrio
+        ? {
+            vidrio: transferredVidrio.vidrio,
+            relleno: transferredVidrio.relleno,
+          }
+        : {}),
+    };
     const ok = onSendToHoja(partida, proActive);
     if (ok === false) return;
     onShowToast(
@@ -579,8 +693,9 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {activoLev.piezas.map((p, idx) => {
                 const mapa = LEV_MAPA[p.tipo] || LEV_MAPA['Cancel / Otro'];
-                const supported = Boolean(mapa.modelo);
+                const supported = Boolean(mapa.modelo || p.lineaAluminio === 'batiente-alumer');
                 const isSelected = activeLevPiezaId === p.id;
+                const specSummary = formatPiezaSpecsSummary(p);
                 return (
                   <div
                     key={p.id}
@@ -613,6 +728,11 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
                         <span className="mono font-bold text-slate-800">{formatMedidaText(p)}</span>
                         {` · Cant: ${p.cant}`}
                       </div>
+                      {specSummary && (
+                        <div className="text-[11px] font-bold text-blue-700 mt-0.5 truncate">
+                          {specSummary}
+                        </div>
+                      )}
                       {!supported && (
                         <span className="inline-block mt-1 px-2 py-0.5 rounded bg-amber-100 text-amber-900 text-[10px] font-extrabold">
                           No disponible en Modulación
@@ -689,10 +809,39 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
           >
             {conMosquitero ? '✓ Con mosquitero' : 'Sin mosquitero'}
           </button>
-          {step >= 3 && (
+          {(step >= 3 || transferredVidrio) && (
             <span className="px-2.5 py-1 rounded-lg bg-slate-100 border border-slate-300 text-slate-800">
-              {selectedSerie.nombre} · {selectedSublinea.nombre}
+              {selectedSerie.nombre}
+              {step >= 3 ? ` · ${selectedSublinea.nombre}` : ''}
             </span>
+          )}
+          {transferredVidrio && (
+            <>
+              {transferredVidrio.lineaLabel && (
+                <span
+                  data-testid="mod-spec-linea"
+                  className="px-2.5 py-1 rounded-lg bg-blue-50 border border-blue-200 text-blue-800"
+                >
+                  Línea: {transferredVidrio.lineaLabel}
+                </span>
+              )}
+              {transferredVidrio.colorLabel && (
+                <span
+                  data-testid="mod-spec-color"
+                  className="px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-900"
+                >
+                  Aluminio: {transferredVidrio.colorLabel}
+                </span>
+              )}
+              {transferredVidrio.vidrioLabel && (
+                <span
+                  data-testid="mod-spec-vidrio"
+                  className="px-2.5 py-1 rounded-lg bg-sky-50 border border-sky-200 text-sky-900"
+                >
+                  Vidrio: {transferredVidrio.vidrioLabel}
+                </span>
+              )}
+            </>
           )}
         </div>
       </div>

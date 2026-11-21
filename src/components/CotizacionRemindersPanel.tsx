@@ -19,6 +19,7 @@ import {
   formatWhatsappUrlDigits,
   openExternalLinkSafe,
 } from '../utils/storageHelpers';
+import { canUseServiceWorker } from '../utils/runtimeEnv';
 
 interface PanelProps {
   reminders: CotizacionReminder[];
@@ -110,18 +111,22 @@ export const CotizacionRemindersPanel: React.FC<PanelProps> = ({
     };
     refreshCap();
 
-    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
-      navigator.serviceWorker
-        .getRegistration()
-        .then((reg) => {
-          if (active) setSwReady(Boolean(reg));
-        })
-        .catch(() => {});
-      navigator.serviceWorker.ready
-        .then((reg) => {
-          if (active) setSwReady(Boolean(reg));
-        })
-        .catch(() => {});
+    if (canUseServiceWorker()) {
+      try {
+        navigator.serviceWorker
+          .getRegistration()
+          .then((reg) => {
+            if (active) setSwReady(Boolean(reg));
+          })
+          .catch(() => {});
+        navigator.serviceWorker.ready
+          .then((reg) => {
+            if (active) setSwReady(Boolean(reg));
+          })
+          .catch(() => {});
+      } catch {
+        if (active) setSwReady(false);
+      }
     }
 
     const onFocusOrVisible = () => refreshCap();

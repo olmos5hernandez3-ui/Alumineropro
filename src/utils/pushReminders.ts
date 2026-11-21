@@ -1,4 +1,5 @@
 import { sanitizeWhatsappNumber } from './storageHelpers';
+import { canUseServiceWorker } from './runtimeEnv';
 
 export type CotizacionReminderStatus = 'pendiente' | 'seguimiento' | 'aprobada' | 'descartada';
 
@@ -549,19 +550,28 @@ export function getNotificationCapability(): NotificationCapabilityState {
       permission: 'unsupported',
     };
   }
-  const supported = 'Notification' in window;
-  const swSupported = typeof navigator !== 'undefined' && 'serviceWorker' in navigator;
-  const pushSupported = swSupported && 'PushManager' in window;
-  const permission: NotificationPermission | 'unsupported' = supported
-    ? Notification.permission
-    : 'unsupported';
+  try {
+    const supported = 'Notification' in window;
+    const swSupported = canUseServiceWorker();
+    const pushSupported = swSupported && 'PushManager' in window;
+    const permission: NotificationPermission | 'unsupported' = supported
+      ? Notification.permission
+      : 'unsupported';
 
-  return {
-    supported,
-    swSupported,
-    pushSupported,
-    permission,
-  };
+    return {
+      supported,
+      swSupported,
+      pushSupported,
+      permission,
+    };
+  } catch {
+    return {
+      supported: false,
+      swSupported: false,
+      pushSupported: false,
+      permission: 'unsupported',
+    };
+  }
 }
 
 export async function requestPushNotificationPermission(): Promise<NotificationPermission | 'unsupported'> {
@@ -601,7 +611,7 @@ export async function requestPushNotificationPermission(): Promise<NotificationP
 export async function getReadyServiceWorkerRegistration(
   timeoutMs = 3500
 ): Promise<ServiceWorkerRegistration | null> {
-  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
+  if (!canUseServiceWorker()) {
     return null;
   }
   try {
