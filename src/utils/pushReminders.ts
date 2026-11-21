@@ -58,6 +58,155 @@ export interface NotificationCapabilityState {
   permission: NotificationPermission | 'unsupported';
 }
 
+export type PushPermissionGuideStatus = 'granted' | 'default' | 'denied' | 'unsupported';
+
+export interface PushPermissionGuide {
+  status: PushPermissionGuideStatus;
+  needsAction: boolean;
+  canRequestDirectly: boolean;
+  badgeLabel: string;
+  headline: string;
+  description: string;
+  steps: string[];
+  ctaLabel: string | null;
+  swStatusLabel: string;
+}
+
+export function detectAppleMobileAndStandalone(): {
+  isAppleMobile: boolean;
+  isStandalone: boolean;
+} {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') {
+    return { isAppleMobile: false, isStandalone: false };
+  }
+  const ua = navigator.userAgent || '';
+  const isAppleMobile =
+    /iPad|iPhone|iPod/i.test(ua) ||
+    (navigator.platform === 'MacIntel' && (navigator.maxTouchPoints || 0) > 1);
+  const navStandalone = Boolean((navigator as { standalone?: boolean }).standalone);
+  const mediaStandalone =
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(display-mode: standalone)').matches;
+  return {
+    isAppleMobile,
+    isStandalone: navStandalone || mediaStandalone,
+  };
+}
+
+export function getPushPermissionGuide(
+  cap: NotificationCapabilityState,
+  options?: {
+    swReady?: boolean;
+    pendingCount?: number;
+    isAppleMobile?: boolean;
+    isStandalone?: boolean;
+  }
+): PushPermissionGuide {
+  const swReady = Boolean(options?.swReady);
+  const pendingCount = Math.max(0, Math.round(Number(options?.pendingCount) || 0));
+  const isAppleMobile = Boolean(options?.isAppleMobile);
+  const isStandalone = Boolean(options?.isStandalone);
+  const swStatusLabel = !cap.swSupported
+    ? 'Sin soporte de Service Worker'
+    : swReady
+      ? 'Service Worker activo'
+      : 'Service Worker registrándose';
+
+  if (!cap.supported || cap.permission === 'unsupported') {
+    if (isAppleMobile && !isStandalone) {
+      return {
+        status: 'unsupported',
+        needsAction: true,
+        canRequestDirectly: false,
+        badgeLabel: 'Instala la app en iPhone/iPad',
+        headline: 'En iOS, instala Aluminero Pro para activar Push',
+        description:
+          'Safari en iPhone y iPad solo permite notificaciones Push cuando agregas la app a tu pantalla de inicio.',
+        steps: [
+          'Toca el botón Compartir (cuadro con flecha hacia arriba) en Safari.',
+          'Elige "Agregar a inicio" y confirma con "Agregar".',
+          'Abre Aluminero Pro desde el ícono instalado y toca "Activar notificaciones".',
+        ],
+        ctaLabel: null,
+        swStatusLabel,
+      };
+    }
+
+    return {
+      status: 'unsupported',
+      needsAction: false,
+      canRequestDirectly: false,
+      badgeLabel: 'No compatible',
+      headline: 'Tu navegador actual no soporta notificaciones Push',
+      description:
+        'Aún puedes administrar tus seguimientos desde aquí. Para recibir alertas automáticas del sistema, abre la app en Chrome, Edge, Firefox o Safari actualizado.',
+      steps: [],
+      ctaLabel: null,
+      swStatusLabel,
+    };
+  }
+
+  if (cap.permission === 'granted') {
+    return {
+      status: 'granted',
+      needsAction: false,
+      canRequestDirectly: false,
+      badgeLabel: swReady ? 'Push SW Activo ✓' : 'Permiso Activo ✓',
+      headline: 'Notificaciones Push activadas correctamente',
+      description:
+        pendingCount > 0
+          ? `Tu navegador enviará avisos automáticos para tus ${pendingCount} seguimiento(s) pendiente(s), incluso en segundo plano.`
+          : 'Tu navegador está listo para avisarte cuando venza un seguimiento de cotización.',
+      steps: [],
+      ctaLabel: null,
+      swStatusLabel,
+    };
+  }
+
+  if (cap.permission === 'denied') {
+    return {
+      status: 'denied',
+      needsAction: true,
+      canRequestDirectly: false,
+      badgeLabel: 'Bloqueadas en navegador',
+      headline:
+        pendingCount > 0
+          ? `Tienes ${pendingCount} seguimiento(s) pendiente(s) pero las alertas están bloqueadas`
+          : 'Las notificaciones están bloqueadas para este sitio',
+      description:
+        'El navegador no puede volver a mostrar la ventana automática mientras el permiso siga bloqueado. Habilítalo manualmente en 3 pasos:',
+      steps: [
+        'Toca el ícono de candado o configuración (🔒 / ⚙) junto a la dirección web arriba.',
+        'Busca "Notificaciones" y cámbialo de "Bloquear" a "Permitir".',
+        'Presiona el botón "Verificar permiso ahora" en esta tarjeta para conectar el Service Worker.',
+      ],
+      ctaLabel: 'Verificar permiso ahora',
+      swStatusLabel,
+    };
+  }
+
+  // cap.permission === 'default'
+  return {
+    status: 'default',
+    needsAction: true,
+    canRequestDirectly: true,
+    badgeLabel: 'Pendiente de activar',
+    headline:
+      pendingCount > 0
+        ? `Activa los avisos Push para tus ${pendingCount} cotización(es) pendiente(s)`
+        : 'Activa las notificaciones Push de seguimiento',
+    description:
+      'Autoriza el permiso de tu navegador en 2 pasos para recibir recordatorios cuando toque dar seguimiento al cliente:',
+    steps: [
+      'Presiona el botón azul "Activar notificaciones Push" en esta tarjeta.',
+      'Cuando aparezca el aviso de tu navegador en la parte superior, selecciona "Permitir".',
+      'Listo: usaremos el Service Worker para avisarte y podrás probarlo al instante.',
+    ],
+    ctaLabel: 'Activar notificaciones Push',
+    swStatusLabel,
+  };
+}
+
 export const REMINDER_DEFAULT_COOLDOWN_MS = 4 * 60 * 60 * 1000; // 4 horas entre recordatorios automáticos
 export const REMINDER_SNOOZE_1D_MS = 24 * 60 * 60 * 1000;
 
@@ -419,8 +568,31 @@ export async function requestPushNotificationPermission(): Promise<NotificationP
   if (typeof window === 'undefined' || !('Notification' in window)) {
     return 'unsupported';
   }
+  if (Notification.permission === 'granted') {
+    await getReadyServiceWorkerRegistration();
+    return 'granted';
+  }
   try {
-    return await Notification.requestPermission();
+    const result = await new Promise<NotificationPermission>((resolve) => {
+      let settled = false;
+      const finish = (perm: NotificationPermission) => {
+        if (settled) return;
+        settled = true;
+        resolve(perm);
+      };
+      try {
+        const maybePromise = Notification.requestPermission((perm) => finish(perm));
+        if (maybePromise && typeof maybePromise.then === 'function') {
+          maybePromise.then(finish, () => finish(Notification.permission));
+        }
+      } catch {
+        finish(Notification.permission);
+      }
+    });
+    if (result === 'granted') {
+      await getReadyServiceWorkerRegistration();
+    }
+    return result;
   } catch {
     return Notification.permission;
   }

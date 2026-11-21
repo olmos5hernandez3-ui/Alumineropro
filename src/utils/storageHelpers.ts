@@ -8,7 +8,7 @@ import {
 } from './alumineroLogic';
 import type { CotizacionReminder } from './pushReminders';
 
-const KEYS = {
+export const KEYS = {
   DEVICE_ID: 'aluminero_device_id_v1',
   LICENCIA: 'aluminero_licencia_v1',
   TALLER: 'aluminero_taller_v1',
@@ -36,6 +36,10 @@ const KEYS = {
   INVENTARIO_VIDRIOS: 'aluminero_inv_vidrios_v1',
   CONTRATO_CLIENTE: 'aluminero_contrato_cliente_v1',
   CONTRATO_FOLIO: 'aluminero_contrato_folio_v1',
+  COT_COUNTER: 'aluminero_cot_counter_v1',
+  COT_ACTUAL: 'aluminero_cot_actual_v1',
+  COTIZACIONES_HISTORIAL: 'aluminero_cotizaciones_v1',
+  CLIENTES: 'aluminero_clientes_v1',
   REFERRAL_SENDER_NAME: 'aluminero_ref_sender_v1',
   SAVED_COLLEAGUE_REFERRAL: 'aluminero_saved_referral_v1',
   PROMO_COUNT_CACHE: 'aluminero_promo_count_cache_v1',
@@ -92,6 +96,7 @@ export interface CloudAccountBackupPayload {
 }
 
 export type PdfHeaderColorId = 'navy' | 'blue' | 'slate' | 'emerald' | 'charcoal';
+export type PdfLogoAlign = 'left' | 'center' | 'right';
 
 export interface PdfHeaderConfig {
   mostrarLogo?: boolean;
@@ -102,6 +107,8 @@ export interface PdfHeaderConfig {
   rfc?: string;
   colorTema?: PdfHeaderColorId;
   tituloCotizacion?: string;
+  logoZoomPct?: number;
+  logoAlign?: PdfLogoAlign;
 }
 
 export interface TallerConfig {
@@ -117,11 +124,22 @@ export interface TallerConfig {
   pdfHeader?: PdfHeaderConfig;
 }
 
+export interface PartidaObraExtended extends PartidaObra {
+  notas?: string;
+  fotoDataUrl?: string;
+}
+
 export interface HojaState {
   proyecto: string;
-  partidas: PartidaObra[];
+  clienteTel?: string;
+  clienteDir?: string;
+  partidas: PartidaObraExtended[];
   descuentoPct: number;
   incluirIva: boolean;
+  vigenciaDias?: number;
+  anticipoPct?: number;
+  tiempoEntrega?: string;
+  incluirFotosPdf?: boolean;
 }
 
 export interface NotaObra {
@@ -325,6 +343,8 @@ export const DEFAULT_PDF_HEADER: Required<PdfHeaderConfig> = {
   rfc: '',
   colorTema: 'navy',
   tituloCotizacion: '',
+  logoZoomPct: 100,
+  logoAlign: 'left',
 };
 
 export const DEFAULT_TALLER: TallerConfig = {
@@ -356,13 +376,35 @@ export function saveTaller(t: TallerConfig): void {
   localStorage.setItem(KEYS.TALLER, JSON.stringify(t));
 }
 
+export const DEFAULT_HOJA_CONDITIONS = {
+  vigenciaDias: 8,
+  anticipoPct: 50,
+  tiempoEntrega: '5 a 7 días hábiles',
+};
+
 export function loadHoja(): HojaState {
-  return safeJsonParse<HojaState>(localStorage.getItem(KEYS.HOJA), {
-    proyecto: '',
-    partidas: [],
-    descuentoPct: 0,
-    incluirIva: false,
-  });
+  const saved = safeJsonParse<Partial<HojaState>>(localStorage.getItem(KEYS.HOJA), {});
+  return {
+    proyecto: typeof saved.proyecto === 'string' ? saved.proyecto : '',
+    clienteTel: typeof saved.clienteTel === 'string' ? saved.clienteTel : '',
+    clienteDir: typeof saved.clienteDir === 'string' ? saved.clienteDir : '',
+    partidas: Array.isArray(saved.partidas) ? (saved.partidas as PartidaObraExtended[]) : [],
+    descuentoPct: Number.isFinite(Number(saved.descuentoPct)) ? Number(saved.descuentoPct) : 0,
+    incluirIva: Boolean(saved.incluirIva),
+    vigenciaDias:
+      typeof saved.vigenciaDias === 'number' && Number.isFinite(saved.vigenciaDias)
+        ? saved.vigenciaDias
+        : DEFAULT_HOJA_CONDITIONS.vigenciaDias,
+    anticipoPct:
+      typeof saved.anticipoPct === 'number' && Number.isFinite(saved.anticipoPct)
+        ? saved.anticipoPct
+        : DEFAULT_HOJA_CONDITIONS.anticipoPct,
+    tiempoEntrega:
+      typeof saved.tiempoEntrega === 'string' && saved.tiempoEntrega.trim()
+        ? saved.tiempoEntrega
+        : DEFAULT_HOJA_CONDITIONS.tiempoEntrega,
+    incluirFotosPdf: Boolean(saved.incluirFotosPdf),
+  };
 }
 
 export function saveHoja(h: HojaState): void {
@@ -471,6 +513,211 @@ export function issueNextContratoFolio(year: number = new Date().getFullYear()):
   } catch {
     return formatContratoFolio(1, year);
   }
+}
+
+// ==================== FOLIO DE COTIZACIÓN (COT-AAAA-NNN) ====================
+export function formatCotizacionFolio(seq: number, year: number = new Date().getFullYear()): string {
+  const n = Math.max(1, Math.round(seq));
+  return `COT-${year}-${String(n).padStart(3, '0')}`;
+}
+
+export function peekNextCotizacionFolio(
+  year: number = new Date().getFullYear(),
+  storage: Pick<Storage, 'getItem'> | null = typeof localStorage !== 'undefined' ? localStorage : null
+): string {
+  try {
+    const raw = storage ? storage.getItem(KEYS.COT_COUNTER) : null;
+    const parsed = raw ? safeJsonParse<{ year?: number; seq?: number }>(raw, {}) : {};
+    const nextSeq = parsed.year === year && typeof parsed.seq === 'number' ? parsed.seq + 1 : 1;
+    return formatCotizacionFolio(nextSeq, year);
+  } catch {
+    return formatCotizacionFolio(1, year);
+  }
+}
+
+export function getSavedCurrentCotizacionFolio(
+  year: number = new Date().getFullYear(),
+  storage: Pick<Storage, 'getItem'> | null = typeof localStorage !== 'undefined' ? localStorage : null
+): string {
+  try {
+    const saved = storage ? (storage.getItem(KEYS.COT_ACTUAL) || '').trim() : '';
+    if (saved) return saved;
+  } catch {
+    // ignorar
+  }
+  return peekNextCotizacionFolio(year, storage);
+}
+
+export function issueNextCotizacionFolio(
+  year: number = new Date().getFullYear(),
+  storage: Pick<Storage, 'getItem' | 'setItem'> | null = typeof localStorage !== 'undefined' ? localStorage : null
+): string {
+  try {
+    const raw = storage ? storage.getItem(KEYS.COT_COUNTER) : null;
+    const parsed = raw ? safeJsonParse<{ year?: number; seq?: number }>(raw, {}) : {};
+    const nextSeq = parsed.year === year && typeof parsed.seq === 'number' ? parsed.seq + 1 : 1;
+    const folio = formatCotizacionFolio(nextSeq, year);
+    if (storage) {
+      storage.setItem(KEYS.COT_COUNTER, JSON.stringify({ year, seq: nextSeq }));
+      storage.setItem(KEYS.COT_ACTUAL, folio);
+    }
+    return folio;
+  } catch {
+    return formatCotizacionFolio(1, year);
+  }
+}
+
+// ==================== LIBRETA DE CLIENTES ====================
+export interface ClienteGuardado {
+  id: string;
+  nombre: string;
+  telefono: string;
+  direccion: string;
+  updatedAt: number;
+}
+
+export function loadClientes(
+  storage: Pick<Storage, 'getItem'> | null = typeof localStorage !== 'undefined' ? localStorage : null
+): ClienteGuardado[] {
+  if (!storage) return [];
+  const raw = safeJsonParse<unknown>(storage.getItem(KEYS.CLIENTES), []);
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(
+    (c): c is ClienteGuardado =>
+      Boolean(c) && typeof c === 'object' && typeof (c as ClienteGuardado).nombre === 'string' && Boolean((c as ClienteGuardado).nombre.trim())
+  );
+}
+
+export function saveClientes(
+  list: ClienteGuardado[],
+  storage: Pick<Storage, 'setItem'> | null = typeof localStorage !== 'undefined' ? localStorage : null
+): void {
+  if (!storage) return;
+  try {
+    storage.setItem(KEYS.CLIENTES, JSON.stringify(list.slice(0, 200)));
+  } catch {
+    // ignorar si cuota llena
+  }
+}
+
+export function upsertCliente(
+  input: { nombre: string; telefono?: string; direccion?: string },
+  storage: Pick<Storage, 'getItem' | 'setItem'> | null = typeof localStorage !== 'undefined' ? localStorage : null
+): ClienteGuardado[] {
+  const nombre = String(input.nombre || '').trim();
+  if (!nombre || nombre.toLowerCase() === 'cliente general') {
+    return loadClientes(storage);
+  }
+  const tel = String(input.telefono || '').trim();
+  const dir = String(input.direccion || '').trim();
+  const current = loadClientes(storage);
+  const normKey = nombre.toLowerCase();
+  const idx = current.findIndex((c) => c.nombre.trim().toLowerCase() === normKey);
+  const now = Date.now();
+  let next: ClienteGuardado[];
+  if (idx >= 0) {
+    const prev = current[idx];
+    const updated: ClienteGuardado = {
+      ...prev,
+      nombre,
+      telefono: tel || prev.telefono,
+      direccion: dir || prev.direccion,
+      updatedAt: now,
+    };
+    next = [updated, ...current.filter((_, i) => i !== idx)];
+  } else {
+    const created: ClienteGuardado = {
+      id: `cli-${now}-${Math.floor(Math.random() * 9999)}`,
+      nombre,
+      telefono: tel,
+      direccion: dir,
+      updatedAt: now,
+    };
+    next = [created, ...current];
+  }
+  saveClientes(next, storage);
+  return next;
+}
+
+// ==================== HISTORIAL DE COTIZACIONES (PDF FINAL) ====================
+export type CotizacionEstado = 'enviada' | 'aprobada' | 'rechazada';
+
+export interface CotizacionGuardada {
+  id: string;
+  folio: string;
+  fecha: string;
+  cliente: string;
+  telefono?: string;
+  direccion?: string;
+  total: number;
+  piezasCount?: number;
+  estado: CotizacionEstado;
+  createdAt: number;
+}
+
+export function loadCotizacionesGuardadas(
+  storage: Pick<Storage, 'getItem'> | null = typeof localStorage !== 'undefined' ? localStorage : null
+): CotizacionGuardada[] {
+  if (!storage) return [];
+  const raw = safeJsonParse<unknown>(storage.getItem(KEYS.COTIZACIONES_HISTORIAL), []);
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(
+    (c): c is CotizacionGuardada =>
+      Boolean(c) && typeof c === 'object' && typeof (c as CotizacionGuardada).folio === 'string'
+  );
+}
+
+export function saveCotizacionesGuardadas(
+  list: CotizacionGuardada[],
+  storage: Pick<Storage, 'setItem'> | null = typeof localStorage !== 'undefined' ? localStorage : null
+): void {
+  if (!storage) return;
+  try {
+    storage.setItem(KEYS.COTIZACIONES_HISTORIAL, JSON.stringify(list.slice(0, 300)));
+  } catch {
+    // ignorar si cuota llena
+  }
+}
+
+export function recordCotizacionGuardada(
+  entry: Omit<CotizacionGuardada, 'id' | 'estado' | 'createdAt'> & { estado?: CotizacionEstado },
+  storage: Pick<Storage, 'getItem' | 'setItem'> | null = typeof localStorage !== 'undefined' ? localStorage : null
+): CotizacionGuardada[] {
+  const list = loadCotizacionesGuardadas(storage);
+  const existingIdx = list.findIndex((c) => c.folio === entry.folio);
+  const nextEntry: CotizacionGuardada = {
+    id: existingIdx >= 0 ? list[existingIdx].id : `cot-${Date.now()}-${Math.floor(Math.random() * 9999)}`,
+    folio: entry.folio,
+    fecha: entry.fecha,
+    cliente: entry.cliente.trim() || 'Cliente General',
+    telefono: entry.telefono?.trim() || undefined,
+    direccion: entry.direccion?.trim() || undefined,
+    total: Number.isFinite(entry.total) ? entry.total : 0,
+    piezasCount: entry.piezasCount,
+    estado: entry.estado || (existingIdx >= 0 ? list[existingIdx].estado : 'enviada'),
+    createdAt: Date.now(),
+  };
+  const next = [nextEntry, ...list.filter((c) => c.folio !== entry.folio)];
+  saveCotizacionesGuardadas(next, storage);
+  return next;
+}
+
+export function updateCotizacionEstado(
+  id: string,
+  estado: CotizacionEstado,
+  storage: Pick<Storage, 'getItem' | 'setItem'> | null = typeof localStorage !== 'undefined' ? localStorage : null
+): CotizacionGuardada[] {
+  const next = loadCotizacionesGuardadas(storage).map((c) => (c.id === id ? { ...c, estado } : c));
+  saveCotizacionesGuardadas(next, storage);
+  return next;
+}
+
+export function filterCotizacionesByEstado(
+  list: CotizacionGuardada[],
+  filter: 'todas' | CotizacionEstado
+): CotizacionGuardada[] {
+  if (filter === 'todas') return list;
+  return list.filter((c) => c.estado === filter);
 }
 
 export function loadObrasAprobadas(): ObraAprobadaApartado[] {

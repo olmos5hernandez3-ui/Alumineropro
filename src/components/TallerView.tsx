@@ -1,5 +1,7 @@
 import React from 'react';
+import { FileDown } from 'lucide-react';
 import { COLORES_CONFIG, LINEAS_CONFIG, LineaId } from '../utils/alumineroLogic';
+import { generarPdfHistorialCotizaciones } from '../utils/pdfExport';
 import {
   formatMXN,
   FormulaPersonalizada,
@@ -241,6 +243,28 @@ export const TallerView: React.FC<Props> = ({
             <p className="m-0 text-[12px] text-slate-500">Guardado en este equipo ({historial.length})</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              id="btn-exportar-historial-pdf"
+              disabled={historial.length === 0}
+              onClick={() => {
+                void generarPdfHistorialCotizaciones(historial, taller).then((ok) => {
+                  if (ok) {
+                    onShowToast('Historial de cotizaciones exportado a PDF', true);
+                  } else {
+                    onShowToast('Aún no tienes cotizaciones guardadas para exportar');
+                  }
+                });
+              }}
+              className={`px-3 py-1.5 rounded-lg text-[12px] font-bold inline-flex items-center gap-1.5 transition-colors ${
+                historial.length === 0
+                  ? 'border border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed'
+                  : 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer shadow-xs'
+              }`}
+            >
+              <FileDown className="w-3.5 h-3.5" aria-hidden="true" />
+              Exportar PDF
+            </button>
             {onOpenReminders && (
               <button
                 type="button"

@@ -13,10 +13,19 @@ import {
   LevantamientoDraft,
   LevantamientoPieza,
   LevantamientoUnidad,
+  mergeLevantamientosBackup,
+  normalizeLevantamientoDraft,
+  normalizeLevantamientoList,
   overwriteHojaProyectoInStorage,
   resumenLevantamiento,
 } from '../utils/levantamientoLogic';
-import { openExternalLinkSafe } from '../utils/storageHelpers';
+import { formatClientPhoneInput } from '../utils/alumineroLogic';
+import {
+  ClienteGuardado,
+  loadClientes,
+  openExternalLinkSafe,
+  upsertCliente,
+} from '../utils/storageHelpers';
 
 declare global {
   interface Window {
@@ -80,14 +89,21 @@ function safeSave(key: string, value: unknown): boolean {
 type LevScreen = 'main' | 'dest' | 'hist' | 'foto';
 
 interface Props {
-  onSetHojaProyecto: (cliente: string) => void;
+  onSetHojaProyecto: (cliente: string, telefono?: string, direccion?: string) => void;
+  onBatchSendToHoja?: (draft: LevantamientoDraft) => void;
+  onOpenModulacion?: () => void;
   onShowToast?: (msg: string, topSuccess?: boolean) => void;
 }
 
-export const LevantamientoRapido: React.FC<Props> = ({ onSetHojaProyecto, onShowToast }) => {
+export const LevantamientoRapido: React.FC<Props> = ({
+  onSetHojaProyecto,
+  onBatchSendToHoja,
+  onOpenModulacion,
+  onShowToast,
+}) => {
   const [draft, setDraft] = useState<LevantamientoDraft>(() => {
     const loaded = typeof window !== 'undefined' ? safeLoad<LevantamientoDraft | null>(LEV_KEYS.draft, null) : null;
-    if (loaded && Array.isArray(loaded.piezas)) return loaded;
+    if (loaded && Array.isArray(loaded.piezas)) return normalizeLevantamientoDraft(loaded);
     return createEmptyLevantamiento();
   });
   const [form, setForm] = useState<LevantamientoFormState>(() => createEmptyForm());
@@ -98,11 +114,16 @@ export const LevantamientoRapido: React.FC<Props> = ({ onSetHojaProyecto, onShow
   const [queueCli, setQueueCli] = useState<string>('');
   const [queueDest, setQueueDest] = useState<LevantamientoDestino>('cotizacion');
   const [savedList, setSavedList] = useState<LevantamientoDraft[]>(() =>
-    typeof window !== 'undefined' ? safeLoad<LevantamientoDraft[]>(LEV_KEYS.saved, []) : []
+    typeof window !== 'undefined' ? normalizeLevantamientoList(safeLoad<unknown[]>(LEV_KEYS.saved, [])) : []
   );
+  const [clientesGuardados, setClientesGuardados] = useState<ClienteGuardado[]>(() =>
+    typeof window !== 'undefined' ? loadClientes() : []
+  );
+  const [showCliSuggestions, setShowCliSuggestions] = useState(false);
   const [confirmNewOpen, setConfirmNewOpen] = useState(false);
   const [confirmDeletePieceId, setConfirmDeletePieceId] = useState<string | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
+  const importFileRef = useRef<HTMLInputElement | null>(null);
 
   const rootRef = useRef<HTMLDivElement | null>(null);
   const cliInputRef = useRef<HTMLInputElement | null>(null);
@@ -153,7 +174,8 @@ export const LevantamientoRapido: React.FC<Props> = ({ onSetHojaProyecto, onShow
 
   const openModal = useCallback(() => {
     if (viewsRef.current.length > 0) return;
-    setSavedList(safeLoad<LevantamientoDraft[]>(LEV_KEYS.saved, []));
+    setSavedList(normalizeLevantamientoList(safeLoad<unknown[]>(LEV_KEYS.saved, [])));
+    setClientesGuardados(loadClientes());
     document.body.style.overflow = 'hidden';
     pushView('main');
   }, [pushView]);
@@ -226,11 +248,11 @@ export const LevantamientoRapido: React.FC<Props> = ({ onSetHojaProyecto, onShow
   }, [openModal]);
 
   const applyClienteToHoja = useCallback(
-    (clienteName: string) => {
+    (clienteName: string, telefono?: string, direccion?: string) => {
       const clean = String(clienteName || '').trim();
       if (!clean) return;
       overwriteHojaProyectoInStorage(clean);
-      onSetHojaProyecto(clean);
+      onSetHojaProyecto(clean, telefono, direccion);
       window.__alumBridge?.setProyecto?.(clean);
     },
     [onSetHojaProyecto]
@@ -352,16 +374,23 @@ export const LevantamientoRapido: React.FC<Props> = ({ onSetHojaProyecto, onShow
   };
 
   const handleSaveLevantamiento = () => {
-    if (!ensureCliente()) return;
+    const cli = ensureCliente();
+    if (!cli) return;
     if (draft.piezas.length === 0) {
       notify('Agrega al menos una medida.');
       return;
     }
-    const currentList = safeLoad<LevantamientoDraft[]>(LEV_KEYS.saved, []);
-    const copy: LevantamientoDraft = {
+    const nextClientes = upsertCliente({
+      nombre: cli,
+      telefono: draft.telefono,
+      direccion: draft.direccion,
+    });
+    setClientesGuardados(nextClientes);
+    const currentList = normalizeLevantamientoList(safeLoad<unknown[]>(LEV_KEYS.saved, []));
+    const copy: LevantamientoDraft = normalizeLevantamientoDraft({
       ...JSON.parse(JSON.stringify(draft)),
       guardado: true,
-    };
+    });
     const existingIdx = currentList.findIndex((r) => r.id === copy.id);
     const nextList =
       existingIdx >= 0
@@ -378,6 +407,68 @@ export const LevantamientoRapido: React.FC<Props> = ({ onSetHojaProyecto, onShow
     }
   };
 
+  const handleDuplicatePieza = (idx: number) => {
+    const source = draft.piezas[idx];
+    if (!source) return;
+    const cloned: LevantamientoPieza = {
+      ...source,
+      id: `lv-${Date.now()}-${Math.floor(Math.random() * 9999)}`,
+    };
+    const nextPiezas = [
+      ...draft.piezas.slice(0, idx + 1),
+      cloned,
+      ...draft.piezas.slice(idx + 1),
+    ];
+    persistDraft({ ...draft, piezas: nextPiezas });
+    notify('Medida duplicada.', true);
+  };
+
+  const handleExportBackupJson = () => {
+    const payload = {
+      app: 'Aluminero Pro',
+      tipo: 'levantamientos',
+      exportedAt: new Date().toISOString(),
+      levantamientos: savedList,
+    };
+    const json = JSON.stringify(payload, null, 2);
+    const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `levantamientos-aluminero-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    notify('Respaldo de levantamientos exportado (.json).', true);
+  };
+
+  const handleImportBackupJson = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(String(reader.result || '[]'));
+        const { merged, addedCount, updatedCount } = mergeLevantamientosBackup(savedList, parsed);
+        if (addedCount === 0 && updatedCount === 0) {
+          notify('El archivo no contiene levantamientos válidos.');
+          return;
+        }
+        if (safeSave(LEV_KEYS.saved, merged)) {
+          setSavedList(merged);
+          notify(
+            `Respaldo importado: ${addedCount} nuevo(s), ${updatedCount} actualizado(s).`,
+            true
+          );
+        } else {
+          notify('No hay espacio suficiente para importar el respaldo.');
+        }
+      } catch {
+        notify('Archivo JSON inválido.');
+      }
+    };
+    reader.readAsText(file);
+  };
+
   const handleOpenSendDest = () => {
     const cli = ensureCliente();
     if (!cli) return;
@@ -385,16 +476,47 @@ export const LevantamientoRapido: React.FC<Props> = ({ onSetHojaProyecto, onShow
       notify('Agrega al menos una medida.');
       return;
     }
-    // 1) Al presionar 'Enviar a Cotizador', sobrescribe Proyecto / Cliente y aluminero_hoja_v1.proyecto
-    applyClienteToHoja(cli);
+    const nextClientes = upsertCliente({
+      nombre: cli,
+      telefono: draft.telefono,
+      direccion: draft.direccion,
+    });
+    setClientesGuardados(nextClientes);
+    applyClienteToHoja(cli, draft.telefono, draft.direccion);
     safeSave(LEV_KEYS.draft, draft);
     pushView('dest');
   };
 
   const handleLaunchDestino = (dest: LevantamientoDestino) => {
-    const piecesCopy = draft.piezas.slice();
-    const clienteCopy = draft.cliente.trim();
-    applyClienteToHoja(clienteCopy);
+    const normalized = normalizeLevantamientoDraft(draft);
+    const piecesCopy = normalized.piezas.slice();
+    const clienteCopy = normalized.cliente.trim();
+    applyClienteToHoja(clienteCopy, normalized.telefono, normalized.direccion);
+    setClientesGuardados(
+      upsertCliente({
+        nombre: clienteCopy,
+        telefono: normalized.telefono,
+        direccion: normalized.direccion,
+      })
+    );
+
+    if (dest === 'cotizacion' && onBatchSendToHoja) {
+      closeAllViews(() => {
+        onBatchSendToHoja(normalized);
+      });
+      return;
+    }
+
+    safeSave(LEV_KEYS.activo, normalized);
+    window.dispatchEvent(new CustomEvent('aluminero:lev-activo-updated'));
+
+    if (dest === 'modulacion' && onOpenModulacion) {
+      closeAllViews(() => {
+        onOpenModulacion();
+      });
+      return;
+    }
+
     closeAllViews(() => {
       setQueue(piecesCopy);
       setQueueIdx(0);
@@ -464,26 +586,106 @@ export const LevantamientoRapido: React.FC<Props> = ({ onSetHojaProyecto, onShow
               </div>
             )}
 
-            <div className="card">
+            <div className="card" style={{ position: 'relative' }}>
               <label htmlFor="lv-cli">Cliente *</label>
               <input
                 ref={cliInputRef}
                 id="lv-cli"
                 type="text"
+                autoComplete="off"
                 value={draft.cliente}
+                onFocus={() => setShowCliSuggestions(true)}
+                onBlur={() => setTimeout(() => setShowCliSuggestions(false), 180)}
                 onChange={(e) => {
                   setLocalError(null);
+                  setShowCliSuggestions(true);
                   persistDraft({ ...draft, cliente: e.target.value });
                 }}
                 placeholder="Ej. Sr. Juan Pérez"
               />
-              <label htmlFor="lv-ref">Teléfono o ubicación (opcional)</label>
+              {showCliSuggestions && clientesGuardados.length > 0 && (() => {
+                const q = draft.cliente.trim().toLowerCase();
+                const matches = clientesGuardados
+                  .filter((c) => !q || c.nombre.toLowerCase().includes(q))
+                  .slice(0, 5);
+                if (matches.length === 0) return null;
+                return (
+                  <div
+                    style={{
+                      marginTop: '4px',
+                      borderRadius: '10px',
+                      border: '1px solid rgba(96,165,250,0.45)',
+                      background: '#0f172a',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    {matches.map((c) => (
+                      <button
+                        key={c.nombre}
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          persistDraft({
+                            ...draft,
+                            cliente: c.nombre,
+                            telefono: c.telefono || draft.telefono || '',
+                            direccion: c.direccion || draft.direccion || '',
+                            ref: c.direccion || draft.ref || '',
+                          });
+                          setShowCliSuggestions(false);
+                        }}
+                        style={{
+                          width: '100%',
+                          textAlign: 'left',
+                          padding: '8px 10px',
+                          background: 'transparent',
+                          border: 'none',
+                          borderBottom: '1px solid rgba(148,163,184,0.18)',
+                          color: '#e2e8f0',
+                          cursor: 'pointer',
+                          fontSize: '12.5px',
+                        }}
+                      >
+                        <strong style={{ display: 'block', color: '#fff' }}>{c.nombre}</strong>
+                        {(c.telefono || c.direccion) && (
+                          <small style={{ color: '#94a3b8' }}>
+                            {[c.telefono, c.direccion].filter(Boolean).join(' · ')}
+                          </small>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                );
+              })()}
+
+              <label htmlFor="lv-tel">Teléfono (opcional)</label>
               <input
-                id="lv-ref"
+                id="lv-tel"
+                type="tel"
+                inputMode="tel"
+                value={draft.telefono || ''}
+                onChange={(e) =>
+                  persistDraft({
+                    ...draft,
+                    telefono: formatClientPhoneInput(e.target.value, draft.telefono ?? ''),
+                  })
+                }
+                placeholder="Ej. 735-163-1532"
+              />
+
+              <label htmlFor="lv-dir">Dirección / ubicación / referencia (opcional)</label>
+              <input
+                id="lv-dir"
                 type="text"
-                value={draft.ref}
-                onChange={(e) => persistDraft({ ...draft, ref: e.target.value })}
-                placeholder="Ej. 55 1234 5678 / Col. Centro"
+                value={draft.direccion ?? draft.ref ?? ''}
+                onChange={(e) =>
+                  persistDraft({
+                    ...draft,
+                    direccion: e.target.value,
+                    ref: e.target.value,
+                  })
+                }
+                placeholder="Ej. Col. Centro #45, entre Hidalgo y Juárez"
               />
             </div>
 
@@ -624,7 +826,7 @@ export const LevantamientoRapido: React.FC<Props> = ({ onSetHojaProyecto, onShow
 
               <div className="grid" style={{ marginTop: '12px' }}>
                 <button type="button" className="or" id="lv-btn-add" onClick={handleAddOrUpdatePieza}>
-                  {form.editId ? '💾 Guardar cambios' : '➕ Agregar pieza'}
+                  {form.editId ? '💾 Guardar cambios' : '＋ Agregar Medida'}
                 </button>
                 {form.editId && (
                   <button
@@ -679,6 +881,16 @@ export const LevantamientoRapido: React.FC<Props> = ({ onSetHojaProyecto, onShow
                     <div className="ac">
                       <button
                         type="button"
+                        title="Duplicar medida"
+                        aria-label={`Duplicar ${p.tipo}`}
+                        onClick={() => handleDuplicatePieza(idx)}
+                      >
+                        📋
+                      </button>
+                      <button
+                        type="button"
+                        title="Editar medida"
+                        aria-label={`Editar ${p.tipo}`}
                         onClick={() => {
                           setForm({
                             tipo: p.tipo,
@@ -713,6 +925,8 @@ export const LevantamientoRapido: React.FC<Props> = ({ onSetHojaProyecto, onShow
                         <button
                           type="button"
                           className="dg"
+                          title="Eliminar medida"
+                          aria-label={`Eliminar ${p.tipo}`}
                           onClick={() => setConfirmDeletePieceId(p.id)}
                         >
                           🗑
@@ -824,7 +1038,7 @@ export const LevantamientoRapido: React.FC<Props> = ({ onSetHojaProyecto, onShow
               </button>
             </div>
             <div className="pv" style={{ color: '#94a3b8', marginTop: '10px' }}>
-              Se carga la primera pieza; con la barra inferior pasas a las demás.
+              Cotización agrega todas las piezas de una vez a tu Hoja. Modulación y Lista de Cortes cargan tu lista activa de trabajos.
             </div>
           </div>
         )}
@@ -837,6 +1051,37 @@ export const LevantamientoRapido: React.FC<Props> = ({ onSetHojaProyecto, onShow
               </button>
               <h2>📂 Levantamientos Guardados</h2>
             </div>
+            <div className="card">
+              <div className="row" style={{ gap: '8px' }}>
+                <button
+                  type="button"
+                  id="lv-btn-export-backup"
+                  className="gh"
+                  onClick={handleExportBackupJson}
+                >
+                  ⬇ Exportar respaldo (.json)
+                </button>
+                <button
+                  type="button"
+                  id="lv-btn-import-backup"
+                  className="gh"
+                  onClick={() => importFileRef.current?.click()}
+                >
+                  ⬆ Importar respaldo (.json)
+                </button>
+                <input
+                  ref={importFileRef}
+                  type="file"
+                  accept=".json,application/json"
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleImportBackupJson(f);
+                    e.target.value = '';
+                  }}
+                />
+              </div>
+            </div>
             {savedList.length === 0 ? (
               <div className="card pv" style={{ color: '#94a3b8' }}>
                 Todavía no hay levantamientos guardados.
@@ -846,9 +1091,9 @@ export const LevantamientoRapido: React.FC<Props> = ({ onSetHojaProyecto, onShow
                 <div className="card" key={rec.id}>
                   <div className="row" style={{ alignItems: 'center' }}>
                     <div
-                      style={{ cursor: 'pointer' }}
+                      style={{ cursor: 'pointer', flex: 1 }}
                       onClick={() => {
-                        const loaded = JSON.parse(JSON.stringify(rec)) as LevantamientoDraft;
+                        const loaded = normalizeLevantamientoDraft(JSON.parse(JSON.stringify(rec)));
                         setDraft(loaded);
                         setForm(createEmptyForm());
                         safeSave(LEV_KEYS.draft, loaded);
@@ -856,6 +1101,11 @@ export const LevantamientoRapido: React.FC<Props> = ({ onSetHojaProyecto, onShow
                       }}
                     >
                       <b>{rec.cliente}</b>
+                      {(rec.telefono || rec.direccion) && (
+                        <small style={{ display: 'block', color: '#cbd5e1' }}>
+                          {[rec.telefono, rec.direccion].filter(Boolean).join(' · ')}
+                        </small>
+                      )}
                       <small style={{ display: 'block', color: '#94a3b8' }}>
                         {rec.fecha} · {resumenLevantamiento(rec.piezas)}
                       </small>
@@ -864,6 +1114,7 @@ export const LevantamientoRapido: React.FC<Props> = ({ onSetHojaProyecto, onShow
                       type="button"
                       className="dg"
                       style={{ flex: '0 0 auto' }}
+                      aria-label={`Eliminar levantamiento de ${rec.cliente}`}
                       onClick={() => {
                         const next = savedList.filter((x) => x.id !== rec.id);
                         setSavedList(next);

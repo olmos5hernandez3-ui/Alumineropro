@@ -4,6 +4,7 @@ import { ModulacionCategoria, ModulacionModeloId } from './modulacionLogic';
 export const LEV_KEYS = {
   draft: 'aluminero_levantamiento_borrador_v1',
   saved: 'aluminero_levantamientos_v1',
+  activo: 'aluminero_lev_activo_v1',
   hoja: 'aluminero_hoja_v1',
 } as const;
 
@@ -68,6 +69,8 @@ export interface LevantamientoPieza {
 export interface LevantamientoDraft {
   id: string;
   cliente: string;
+  telefono?: string;
+  direccion?: string;
   ref: string;
   fecha: string;
   piezas: LevantamientoPieza[];
@@ -107,9 +110,91 @@ export function createEmptyLevantamiento(): LevantamientoDraft {
   return {
     id: createLevantamientoId(),
     cliente: '',
+    telefono: '',
+    direccion: '',
     ref: '',
     fecha: formatHoyEsMx(),
     piezas: [],
+  };
+}
+
+export function normalizeLevantamientoDraft(raw: unknown): LevantamientoDraft {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return createEmptyLevantamiento();
+  }
+  const obj = raw as Record<string, unknown>;
+  const legacyRef = typeof obj.ref === 'string' ? obj.ref.trim() : '';
+  const rawDir = typeof obj.direccion === 'string' ? obj.direccion.trim() : '';
+  const direccion = rawDir || legacyRef;
+  const telefono = typeof obj.telefono === 'string' ? obj.telefono.trim() : '';
+  const piezasRaw = Array.isArray(obj.piezas) ? obj.piezas : [];
+  const piezas: LevantamientoPieza[] = piezasRaw
+    .filter((p): p is Record<string, unknown> => Boolean(p) && typeof p === 'object')
+    .map((p) => ({
+      id: typeof p.id === 'string' && p.id ? p.id : `p-${Date.now()}-${Math.floor(Math.random() * 9999)}`,
+      tipo: typeof p.tipo === 'string' && p.tipo ? p.tipo : 'Ventana Corrediza',
+      area: typeof p.area === 'string' ? p.area : '',
+      anchoCm: Number(p.anchoCm) > 0 ? Number(p.anchoCm) : 0,
+      altoCm: Number(p.altoCm) > 0 ? Number(p.altoCm) : 0,
+      cant: Math.max(1, Math.round(Number(p.cant) || 1)),
+      notas: typeof p.notas === 'string' ? p.notas : '',
+      foto: typeof p.foto === 'string' ? p.foto : '',
+    }))
+    .filter((p) => p.anchoCm > 0 && p.altoCm > 0);
+
+  return {
+    id: typeof obj.id === 'string' && obj.id ? obj.id : createLevantamientoId(),
+    cliente: typeof obj.cliente === 'string' ? obj.cliente : '',
+    telefono,
+    direccion,
+    ref: typeof obj.ref === 'string' ? obj.ref : direccion,
+    fecha: typeof obj.fecha === 'string' && obj.fecha ? obj.fecha : formatHoyEsMx(),
+    piezas,
+    guardado: typeof obj.guardado === 'boolean' ? obj.guardado : undefined,
+  };
+}
+
+export function normalizeLevantamientoList(raw: unknown): LevantamientoDraft[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((item) => normalizeLevantamientoDraft(item));
+}
+
+export function mergeLevantamientosBackup(
+  existing: LevantamientoDraft[],
+  importedRaw: unknown
+): { merged: LevantamientoDraft[]; addedCount: number; updatedCount: number } {
+  const incoming = normalizeLevantamientoList(
+    Array.isArray(importedRaw)
+      ? importedRaw
+      : importedRaw && typeof importedRaw === 'object' && Array.isArray((importedRaw as Record<string, unknown>).levantamientos)
+        ? (importedRaw as Record<string, unknown>).levantamientos
+        : []
+  );
+  const byId = new Map<string, LevantamientoDraft>();
+  const order: string[] = [];
+
+  for (const item of existing.map((x) => normalizeLevantamientoDraft(x))) {
+    byId.set(item.id, item);
+    order.push(item.id);
+  }
+
+  let addedCount = 0;
+  let updatedCount = 0;
+  for (const item of incoming) {
+    if (byId.has(item.id)) {
+      byId.set(item.id, { ...item, guardado: true });
+      updatedCount += 1;
+    } else {
+      byId.set(item.id, { ...item, guardado: true });
+      order.unshift(item.id);
+      addedCount += 1;
+    }
+  }
+
+  return {
+    merged: order.map((id) => byId.get(id)!).filter(Boolean),
+    addedCount,
+    updatedCount,
   };
 }
 
@@ -152,17 +237,19 @@ export function resumenLevantamiento(piezas: LevantamientoPieza[]): string {
 }
 
 export function buildLevantamientoWhatsappText(draft: LevantamientoDraft): string {
-  const lines: string[] = ['*LEVANTAMIENTO DE MEDIDAS*', `Cliente: ${draft.cliente}`];
-  if (draft.ref) lines.push(`Tel./Ubicación: ${draft.ref}`);
-  lines.push(`Fecha: ${draft.fecha}`, '');
-  draft.piezas.forEach((p, idx) => {
+  const norm = normalizeLevantamientoDraft(draft);
+  const lines: string[] = ['*LEVANTAMIENTO DE MEDIDAS*', `Cliente: ${norm.cliente}`];
+  if (norm.telefono) lines.push(`Teléfono: ${norm.telefono}`);
+  if (norm.direccion) lines.push(`Dirección: ${norm.direccion}`);
+  lines.push(`Fecha: ${norm.fecha}`, '');
+  norm.piezas.forEach((p, idx) => {
     lines.push(
       `${idx + 1}) ${p.tipo}${p.area ? ` (${p.area})` : ''}: ${formatMedidaText(p)} · Cant: ${p.cant}${
         p.notas ? ` · ${p.notas}` : ''
       }`
     );
   });
-  lines.push('', resumenLevantamiento(draft.piezas));
+  lines.push('', resumenLevantamiento(norm.piezas));
   return lines.join('\n');
 }
 

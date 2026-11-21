@@ -22,6 +22,14 @@ import {
   optimizarTramos1D,
 } from '../utils/modulacionLogic';
 import { SobranteItem } from '../utils/storageHelpers';
+import {
+  formatMedidaText,
+  LEV_KEYS,
+  LEV_MAPA,
+  LevantamientoDraft,
+  LevantamientoPieza,
+  normalizeLevantamientoDraft,
+} from '../utils/levantamientoLogic';
 import { PerfilSectionSvg } from './PerfilSectionSvg';
 import { PerfilZoomData, PerfilZoomModal } from './PerfilZoomModal';
 
@@ -191,6 +199,17 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
   const [discoKerfMm, setDiscoKerfMm] = useState<number>(3.5);
   const [umbralSobranteCm, setUmbralSobranteCm] = useState<number>(45);
   const [zoomPerfil, setZoomPerfil] = useState<PerfilZoomData | null>(null);
+  const [activoLev, setActivoLev] = useState<LevantamientoDraft | null>(() => {
+    try {
+      const raw = typeof window !== 'undefined' ? window.localStorage.getItem(LEV_KEYS.activo) : null;
+      if (!raw) return null;
+      const norm = normalizeLevantamientoDraft(JSON.parse(raw));
+      return norm.piezas.length > 0 ? norm : null;
+    } catch {
+      return null;
+    }
+  });
+  const [activeLevPiezaId, setActiveLevPiezaId] = useState<string | null>(null);
 
   const step = controlledStep ?? localStep;
   const paso5Tab = controlledPaso5Tab ?? localPaso5Tab;
@@ -253,6 +272,78 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
     window.addEventListener('alum-mod-apply', applyPending);
     return () => window.removeEventListener('alum-mod-apply', applyPending);
   }, []);
+
+  useEffect(() => {
+    const syncActivo = () => {
+      try {
+        const raw = window.localStorage.getItem(LEV_KEYS.activo);
+        if (!raw) {
+          setActivoLev(null);
+          return;
+        }
+        const norm = normalizeLevantamientoDraft(JSON.parse(raw));
+        setActivoLev(norm.piezas.length > 0 ? norm : null);
+      } catch {
+        setActivoLev(null);
+      }
+    };
+    window.addEventListener('aluminero:lev-activo-updated', syncActivo);
+    window.addEventListener('focus', syncActivo);
+    return () => {
+      window.removeEventListener('aluminero:lev-activo-updated', syncActivo);
+      window.removeEventListener('focus', syncActivo);
+    };
+  }, []);
+
+  const handleSelectLevPieza = (p: LevantamientoPieza) => {
+    const mapa = LEV_MAPA[p.tipo] || LEV_MAPA['Cancel / Otro'];
+    if (!mapa.modelo || !mapa.cat) {
+      onShowToast('Cancel / Otro no está disponible en Modulación.');
+      return;
+    }
+    setActiveLevPiezaId(p.id);
+    setUnidad('cm');
+    setAnchoInput(String(p.anchoCm));
+    setAltoInput(String(p.altoCm));
+    setCategoria(mapa.cat);
+    setModeloId(mapa.modelo);
+    setCortadosMap({});
+    onShowToast(`Cargado: ${p.tipo} (${formatMedidaText(p)})`, true);
+  };
+
+  const handleRemoveLevPieza = (id: string) => {
+    if (!activoLev) return;
+    const nextPiezas = activoLev.piezas.filter((x) => x.id !== id);
+    if (nextPiezas.length === 0) {
+      try {
+        window.localStorage.removeItem(LEV_KEYS.activo);
+      } catch {
+        // ignorar
+      }
+      setActivoLev(null);
+      setActiveLevPiezaId(null);
+      return;
+    }
+    const nextDraft: LevantamientoDraft = { ...activoLev, piezas: nextPiezas };
+    setActivoLev(nextDraft);
+    if (activeLevPiezaId === id) setActiveLevPiezaId(null);
+    try {
+      window.localStorage.setItem(LEV_KEYS.activo, JSON.stringify(nextDraft));
+    } catch {
+      // ignorar
+    }
+    onShowToast('Trabajo quitado de la lista de modulación');
+  };
+
+  const handleClearActivoLev = () => {
+    try {
+      window.localStorage.removeItem(LEV_KEYS.activo);
+    } catch {
+      // ignorar
+    }
+    setActivoLev(null);
+    setActiveLevPiezaId(null);
+  };
 
   const modelosVisibles = useMemo(
     () => MODULACION_MODELOS.filter((m) => m.categoria === categoria),
@@ -443,6 +534,109 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
           </p>
         </div>
       </div>
+
+      {/* Lista activa de Levantamiento Rápido */}
+      {activoLev && activoLev.piezas.length > 0 && (
+        <div id="mod-lev-activo-panel" className="mb-4 flex flex-col gap-3">
+          <div className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] p-3.5 sm:p-4 shadow-md flex flex-wrap items-start justify-between gap-2.5">
+            <div className="min-w-0">
+              <div className="text-[11px] font-extrabold uppercase tracking-wider text-blue-700">
+                👤 Datos del cliente (Levantamiento activo)
+              </div>
+              <div className="text-[15px] font-extrabold text-slate-900 mt-0.5">
+                {activoLev.cliente || 'Cliente General'}
+              </div>
+              {(activoLev.telefono || activoLev.direccion || activoLev.fecha) && (
+                <div className="text-[12px] text-slate-600 mt-0.5">
+                  {[
+                    activoLev.telefono ? `Tel: ${activoLev.telefono}` : '',
+                    activoLev.direccion || '',
+                    activoLev.fecha ? `Fecha: ${activoLev.fecha}` : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={handleClearActivoLev}
+              className="min-h-[34px] px-3 py-1 rounded-xl border border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700 text-[11.5px] font-bold cursor-pointer"
+            >
+              Cerrar lista
+            </button>
+          </div>
+
+          <div className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] p-3.5 sm:p-4 shadow-md">
+            <div className="flex items-center justify-between gap-2 mb-2.5">
+              <h2 className="m-0 text-[14.5px] font-extrabold text-slate-900">
+                🪟 Trabajos a modular ({activoLev.piezas.length})
+              </h2>
+              <span className="text-[11px] text-slate-500 font-semibold">
+                Toca uno para cargar sus medidas
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {activoLev.piezas.map((p, idx) => {
+                const mapa = LEV_MAPA[p.tipo] || LEV_MAPA['Cancel / Otro'];
+                const supported = Boolean(mapa.modelo);
+                const isSelected = activeLevPiezaId === p.id;
+                return (
+                  <div
+                    key={p.id}
+                    className={`rounded-xl border p-2.5 flex items-center justify-between gap-2 transition-all ${
+                      !supported
+                        ? 'border-slate-200 bg-slate-100 opacity-75'
+                        : isSelected
+                          ? 'border-2 border-blue-600 bg-blue-50 shadow-sm'
+                          : 'border-slate-300 bg-slate-50 hover:border-blue-400'
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      disabled={!supported}
+                      onClick={() => handleSelectLevPieza(p)}
+                      className="flex-1 min-w-0 text-left bg-transparent border-0 p-0 cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        {isSelected && (
+                          <span className="text-blue-700 font-black text-[12px]" aria-hidden="true">
+                            ▶
+                          </span>
+                        )}
+                        <strong className="text-[13px] font-extrabold text-slate-900 truncate">
+                          {idx + 1}. {p.tipo}
+                        </strong>
+                      </div>
+                      <div className="text-[11.5px] text-slate-600 mt-0.5 truncate">
+                        {p.area ? `${p.area} · ` : ''}
+                        <span className="mono font-bold text-slate-800">{formatMedidaText(p)}</span>
+                        {` · Cant: ${p.cant}`}
+                      </div>
+                      {!supported && (
+                        <span className="inline-block mt-1 px-2 py-0.5 rounded bg-amber-100 text-amber-900 text-[10px] font-extrabold">
+                          No disponible en Modulación
+                        </span>
+                      )}
+                      {supported && p.notas && (
+                        <div className="text-[11px] text-slate-500 mt-0.5 truncate">{p.notas}</div>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveLevPieza(p.id)}
+                      aria-label={`Quitar ${p.tipo}`}
+                      className="min-h-[32px] px-2.5 py-1 rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-[11px] font-extrabold cursor-pointer shrink-0"
+                    >
+                      Quitar
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Stepper interactivo de 5 pasos */}
       <div className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] p-2 sm:p-3 mb-4 shadow-md">

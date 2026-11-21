@@ -5,8 +5,11 @@ import {
   CotizacionReminder,
   CotizacionReminderStatus,
   createCotizacionReminder,
+  detectAppleMobileAndStandalone,
   formatReminderRelativeTime,
   getNotificationCapability,
+  getPushPermissionGuide,
+  getReadyServiceWorkerRegistration,
   partitionCotizacionReminders,
   REMINDER_PRESET_LABELS,
   ReminderPresetKey,
@@ -60,6 +63,9 @@ export const CotizacionRemindersPanel: React.FC<PanelProps> = ({
 }) => {
   const [cap, setCap] = useState(() => getNotificationCapability());
   const [swReady, setSwReady] = useState(false);
+  const [requestingPush, setRequestingPush] = useState(false);
+  const [newlyScheduledNeedsPush, setNewlyScheduledNeedsPush] = useState(false);
+  const [envFlags] = useState(() => detectAppleMobileAndStandalone());
   const [proyecto, setProyecto] = useState(defaultProyecto);
   const [totalStr, setTotalStr] = useState(() =>
     defaultTotal > 0 ? String(Math.round(defaultTotal * 100) / 100) : ''
@@ -96,7 +102,11 @@ export const CotizacionRemindersPanel: React.FC<PanelProps> = ({
     let active = true;
     const refreshCap = () => {
       if (!active) return;
-      setCap(getNotificationCapability());
+      const next = getNotificationCapability();
+      setCap(next);
+      if (next.permission === 'granted') {
+        setNewlyScheduledNeedsPush(false);
+      }
     };
     refreshCap();
 
@@ -114,12 +124,18 @@ export const CotizacionRemindersPanel: React.FC<PanelProps> = ({
         .catch(() => {});
     }
 
+    const onFocusOrVisible = () => refreshCap();
+    window.addEventListener('focus', onFocusOrVisible);
+    document.addEventListener('visibilitychange', onFocusOrVisible);
+
     const timer = window.setInterval(() => {
       setNowTs(Date.now());
       refreshCap();
     }, 15_000);
     return () => {
       active = false;
+      window.removeEventListener('focus', onFocusOrVisible);
+      document.removeEventListener('visibilitychange', onFocusOrVisible);
       window.clearInterval(timer);
     };
   }, []);
@@ -128,16 +144,40 @@ export const CotizacionRemindersPanel: React.FC<PanelProps> = ({
     () => partitionCotizacionReminders(reminders, nowTs),
     [reminders, nowTs]
   );
+  const activeList = [...partitioned.due, ...partitioned.upcoming];
+
+  const guide = useMemo(
+    () =>
+      getPushPermissionGuide(cap, {
+        swReady,
+        pendingCount: activeList.length,
+        isAppleMobile: envFlags.isAppleMobile,
+        isStandalone: envFlags.isStandalone,
+      }),
+    [activeList.length, cap, envFlags.isAppleMobile, envFlags.isStandalone, swReady]
+  );
 
   const handleEnablePush = async () => {
-    const result = await onRequestPermission();
-    setCap(getNotificationCapability());
-    if (result === 'granted') {
-      onShowToast('Notificaciones push activadas con Service Worker', true);
-    } else if (result === 'denied') {
-      onShowToast('Notificaciones bloqueadas en el navegador. Habilítalas en el candado de la URL.');
-    } else {
-      onShowToast('Permiso de notificaciones pendiente o no compatible');
+    if (requestingPush) return;
+    setRequestingPush(true);
+    try {
+      const result = await onRequestPermission();
+      const refreshed = getNotificationCapability();
+      setCap(refreshed);
+      if (result === 'granted') {
+        setNewlyScheduledNeedsPush(false);
+        const reg = await getReadyServiceWorkerRegistration();
+        setSwReady(Boolean(reg));
+        onShowToast('Notificaciones Push activadas correctamente', true);
+      } else if (result === 'denied') {
+        onShowToast(
+          'Permiso bloqueado en el navegador. Sigue los 3 pasos para desbloquearlo en el candado de la URL.'
+        );
+      } else {
+        onShowToast('Permiso pendiente. Presiona "Permitir" en la ventana del navegador.');
+      }
+    } finally {
+      setRequestingPush(false);
     }
   };
 
@@ -175,25 +215,39 @@ export const CotizacionRemindersPanel: React.FC<PanelProps> = ({
 
     onAddReminder(res.reminder);
     setNota('');
-    onShowToast(
-      `Recordatorio programado para "${res.reminder.proyecto}"`,
-      true
-    );
+
+    const currentCap = getNotificationCapability();
+    setCap(currentCap);
+    if (currentCap.supported && currentCap.permission !== 'granted') {
+      setNewlyScheduledNeedsPush(true);
+      onShowToast(
+        `Recordatorio guardado. Activa las notificaciones Push para recibir el aviso de "${res.reminder.proyecto}".`
+      );
+    } else {
+      onShowToast(
+        `Recordatorio programado para "${res.reminder.proyecto}"`,
+        true
+      );
+    }
   };
 
-  const permissionBadge =
-    !cap.supported
-      ? { label: 'No compatible', cls: 'bg-slate-100 text-slate-600 border-slate-300' }
-      : cap.permission === 'granted'
-        ? {
-            label: swReady ? 'Push SW Activo ✓' : 'Permiso Activo ✓',
-            cls: 'bg-emerald-50 text-emerald-700 border-emerald-300',
-          }
-        : cap.permission === 'denied'
-          ? { label: 'Bloqueadas en navegador', cls: 'bg-red-50 text-red-700 border-red-300' }
-          : { label: 'Pendiente de activar', cls: 'bg-amber-50 text-amber-800 border-amber-300' };
+  const permissionBadgeCls =
+    guide.status === 'granted'
+      ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+      : guide.status === 'denied'
+        ? 'bg-red-50 text-red-700 border-red-300'
+        : guide.status === 'default' || guide.needsAction
+          ? 'bg-amber-50 text-amber-800 border-amber-300'
+          : 'bg-slate-100 text-slate-600 border-slate-300';
 
-  const activeList = [...partitioned.due, ...partitioned.upcoming];
+  const guideCardCls =
+    guide.status === 'granted'
+      ? 'border-emerald-300 bg-emerald-50'
+      : guide.status === 'denied'
+        ? 'border-red-300 bg-red-50'
+        : guide.needsAction
+          ? 'border-amber-300 bg-amber-50'
+          : 'border-slate-200 bg-slate-50';
 
   return (
     <div
@@ -211,51 +265,82 @@ export const CotizacionRemindersPanel: React.FC<PanelProps> = ({
         </div>
         <span
           id="badge-push-permission-status"
-          className={`inline-flex items-center px-2.5 py-1 rounded-full border text-[11px] font-extrabold whitespace-nowrap ${permissionBadge.cls}`}
+          data-permission-status={guide.status}
+          className={`inline-flex items-center px-2.5 py-1 rounded-full border text-[11px] font-extrabold whitespace-nowrap ${permissionBadgeCls}`}
         >
-          {permissionBadge.label}
+          {guide.badgeLabel}
         </span>
       </div>
 
-      {/* Controles de permiso y prueba SW */}
-      <div className="mb-3.5 p-3 rounded-xl border border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-2">
-        <div className="text-[12px] text-slate-600 min-w-0 flex-1">
-          {cap.permission === 'granted' ? (
-            <span>
-              <strong className="text-slate-900">Service Worker listo.</strong> Recibirás alertas cuando venza un seguimiento.
-            </span>
-          ) : cap.permission === 'denied' ? (
-            <span className="text-red-700 font-semibold">
-              Las notificaciones fueron bloqueadas. Permite notificaciones en la configuración del navegador para recibir avisos.
-            </span>
-          ) : (
-            <span>
-              Activa las notificaciones Push para recibir avisos de cotizaciones por vencer.
-            </span>
-          )}
+      {/* Guía paso a paso de activación Push y estado de Service Worker */}
+      <div
+        id="push-permission-guide-card"
+        data-guide-status={guide.status}
+        className={`mb-3.5 p-3.5 rounded-xl border transition-colors ${guideCardCls}`}
+      >
+        <div className="flex flex-wrap items-start justify-between gap-2.5">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <strong className="text-[13px] text-slate-900">
+                {guide.headline}
+              </strong>
+              <span className="text-[10.5px] font-bold text-slate-600 px-2 py-0.5 rounded-full bg-white border border-slate-200">
+                {guide.swStatusLabel}
+              </span>
+            </div>
+            <p className="m-0 mt-1 text-[12px] text-slate-700 leading-relaxed">
+              {guide.description}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {guide.ctaLabel && (
+              <button
+                type="button"
+                id="btn-enable-push-notifications"
+                disabled={requestingPush}
+                onClick={() => void handleEnablePush()}
+                className={`min-h-[38px] px-3.5 py-1.5 rounded-xl text-[12px] font-extrabold cursor-pointer shadow-xs transition-colors ${
+                  requestingPush
+                    ? 'bg-blue-400 text-white cursor-wait'
+                    : guide.status === 'denied'
+                      ? 'bg-red-600 hover:bg-red-700 text-white'
+                      : 'bg-blue-600 hover:bg-blue-700 text-white'
+                }`}
+              >
+                {requestingPush ? 'Solicitando permiso...' : guide.ctaLabel}
+              </button>
+            )}
+            {guide.status === 'granted' && (
+              <button
+                type="button"
+                id="btn-test-sw-notification"
+                onClick={() => void onTestPushNotification()}
+                className="min-h-[38px] px-3.5 py-1.5 rounded-xl border border-blue-300 bg-blue-50 hover:bg-blue-100 text-blue-800 text-[12px] font-extrabold cursor-pointer"
+              >
+                Probar notificación SW
+              </button>
+            )}
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2 shrink-0">
-          {cap.supported && cap.permission !== 'granted' && (
-            <button
-              type="button"
-              id="btn-enable-push-notifications"
-              onClick={() => void handleEnablePush()}
-              className="min-h-[36px] px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[12px] font-extrabold cursor-pointer"
-            >
-              {cap.permission === 'denied' ? 'Reintentar / Verificar permiso' : 'Activar notificaciones'}
-            </button>
-          )}
-          {cap.supported && cap.permission === 'granted' && (
-            <button
-              type="button"
-              id="btn-test-sw-notification"
-              onClick={() => void onTestPushNotification()}
-              className="min-h-[36px] px-3 py-1.5 rounded-xl border border-blue-300 bg-blue-50 hover:bg-blue-100 text-blue-800 text-[12px] font-extrabold cursor-pointer"
-            >
-              Probar notificación SW
-            </button>
-          )}
-        </div>
+
+        {guide.steps.length > 0 && (
+          <ol
+            id="push-permission-guide-steps"
+            className="mt-2.5 mb-0 pl-0 list-none flex flex-col gap-1.5"
+          >
+            {guide.steps.map((step, idx) => (
+              <li
+                key={idx}
+                className="flex items-start gap-2 text-[12px] text-slate-800 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5"
+              >
+                <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-[11px] font-extrabold inline-flex items-center justify-center shrink-0 mt-0.5">
+                  {idx + 1}
+                </span>
+                <span className="leading-snug">{step}</span>
+              </li>
+            ))}
+          </ol>
+        )}
       </div>
 
       {/* Formulario para programar recordatorio */}
@@ -381,6 +466,34 @@ export const CotizacionRemindersPanel: React.FC<PanelProps> = ({
           + Programar recordatorio de cotización
         </button>
       </form>
+
+      {newlyScheduledNeedsPush && cap.supported && cap.permission !== 'granted' && (
+        <div
+          id="push-followup-guide-callout"
+          role="status"
+          className="mb-4 p-3 rounded-xl border border-blue-300 bg-blue-50 flex flex-wrap items-center justify-between gap-2.5"
+        >
+          <div className="min-w-0 flex-1 text-[12px] text-slate-800">
+            <strong className="block text-blue-900">
+              ¡Seguimiento guardado! Falta activar los avisos Push
+            </strong>
+            <span>
+              {cap.permission === 'denied'
+                ? 'Permite las notificaciones en el candado de la barra de direcciones para que este aviso aparezca en tu pantalla.'
+                : 'Haz clic para autorizar las notificaciones en tu navegador y recibir el aviso al vencer.'}
+            </span>
+          </div>
+          <button
+            type="button"
+            id="btn-followup-enable-push"
+            disabled={requestingPush}
+            onClick={() => void handleEnablePush()}
+            className="min-h-[36px] px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[12px] font-extrabold cursor-pointer shrink-0"
+          >
+            {cap.permission === 'denied' ? 'Verificar permiso' : 'Activar alertas Push ahora'}
+          </button>
+        </div>
+      )}
 
       {/* Lista de recordatorios activos */}
       <div className="flex items-center justify-between gap-2 mb-2">

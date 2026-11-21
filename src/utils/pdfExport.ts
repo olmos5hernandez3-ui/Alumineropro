@@ -1,4 +1,4 @@
-import { jsPDF } from 'jspdf';
+import type { jsPDF as JsPdfType } from 'jspdf';
 import {
   COLORES_CONFIG,
   CotizacionCalculada,
@@ -9,8 +9,24 @@ import {
   round2,
   TrabajoParams,
 } from './alumineroLogic';
-import { ContratoClienteInfo, formatMXN, HojaState, TallerConfig } from './storageHelpers';
-import { buildPdfHeaderSpec, PdfHeaderSpec } from './pdfHeaderUtils';
+import {
+  ContratoClienteInfo,
+  DEFAULT_HOJA_CONDITIONS,
+  formatMXN,
+  HistorialItem,
+  HojaState,
+  PartidaObraExtended,
+  peekNextCotizacionFolio,
+  issueNextCotizacionFolio,
+  TallerConfig,
+} from './storageHelpers';
+import {
+  buildHistorialPdfReport,
+  buildPdfHeaderSpec,
+  computePdfLogoMetrics,
+  PdfHeaderSpec,
+  PdfLogoMetrics,
+} from './pdfHeaderUtils';
 
 const APERTURA_LABELS: Record<string, string> = {
   corrediza: 'Corrediza',
@@ -22,22 +38,111 @@ const APERTURA_LABELS: Record<string, string> = {
   plegable: 'Plegable (libro)',
 };
 
-function drawWorkshopLogoInHeader(doc: jsPDF, logoDataUrl: string, x: number, y: number, size: number): void {
+async function createLetterDoc(): Promise<JsPdfType> {
+  const { jsPDF } = await import('jspdf');
+  return new jsPDF({ unit: 'mm', format: 'letter' });
+}
+
+function getSafeImageDims(doc: JsPdfType, dataUrl: string): { width?: number; height?: number } {
+  if (!dataUrl) return {};
+  try {
+    const props = doc.getImageProperties(dataUrl);
+    if (props && Number(props.width) > 0 && Number(props.height) > 0) {
+      return { width: Number(props.width), height: Number(props.height) };
+    }
+  } catch {
+    // ignorar metadatos no válidos
+  }
+  return {};
+}
+
+function drawWorkshopLogoInHeader(
+  doc: JsPdfType,
+  logoDataUrl: string,
+  x: number,
+  y: number,
+  metrics: PdfLogoMetrics
+): void {
   if (!logoDataUrl) return;
   try {
     const fmt = logoDataUrl.startsWith('data:image/png') ? 'PNG' : 'JPEG';
     doc.setFillColor(255, 255, 255);
-    doc.roundedRect(x, y, size, size, 2, 2, 'F');
-    doc.addImage(logoDataUrl, fmt, x + 1, y + 1, size - 2, size - 2);
+    doc.roundedRect(x, y, metrics.frameW, metrics.frameH, 2, 2, 'F');
+    doc.addImage(
+      logoDataUrl,
+      fmt,
+      x + metrics.innerPadMm,
+      y + metrics.innerPadMm,
+      metrics.drawW,
+      metrics.drawH
+    );
   } catch {
-    // ignore invalid image
+    // ignorar imagen inválida
+  }
+}
+
+function formatDateEsMx(date: Date = new Date()): string {
+  const d = String(date.getDate()).padStart(2, '0');
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  return `${d}/${m}/${date.getFullYear()}`;
+}
+
+export function buildCotizacionPdfFilename(folio: string, clienteNombre: string): string {
+  const slug = (clienteNombre || 'cliente')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'cliente';
+  const cleanFolio = (folio || 'COT').trim().toUpperCase().replace(/[^A-Z0-9-]+/g, '-');
+  return `${cleanFolio}-${slug}.pdf`;
+}
+
+function drawHeaderContactLines(
+  doc: JsPdfType,
+  spec: PdfHeaderSpec,
+  x: number,
+  startY: number,
+  maxW: number,
+  align: 'left' | 'center'
+): void {
+  const textOpts = align === 'center' ? ({ align: 'center' } as const) : undefined;
+  let y = startY;
+
+  if (spec.contactPrimary) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(...spec.theme.mutedRgb);
+    const primaryLines = doc.splitTextToSize(spec.contactPrimary, maxW) as string[];
+    doc.text(primaryLines[0] || '', x, y, textOpts);
+    y += 4.0;
+  }
+
+  // Ubicación / Dirección del taller en una sola línea pequeña bajo el teléfono (si existe)
+  if (spec.ubicacionLine) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(...spec.theme.mutedRgb);
+    const ubicLines = doc.splitTextToSize(spec.ubicacionLine, maxW) as string[];
+    doc.text(ubicLines[0] || '', x, y, textOpts);
+    y += 3.8;
+  }
+
+  if (spec.contactSecondary) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.8);
+    doc.setTextColor(...spec.theme.mutedRgb);
+    const secLines = doc.splitTextToSize(spec.contactSecondary, maxW) as string[];
+    doc.text(secLines[0] || '', x, y, textOpts);
   }
 }
 
 function drawStandardWorkshopHeader(
-  doc: jsPDF,
+  doc: JsPdfType,
   spec: PdfHeaderSpec,
-  dateLabel: string
+  dateLabel: string,
+  logoMetrics: PdfLogoMetrics | null,
+  folioLabel?: string
 ): void {
   const h = spec.headerHeightMm;
   doc.setFillColor(...spec.theme.bgRgb);
@@ -45,20 +150,113 @@ function drawStandardWorkshopHeader(
   doc.setFillColor(...spec.theme.accentRgb);
   doc.rect(0, h - 1.5, 216, 1.5, 'F');
 
-  const logoSize = h >= 34 ? 22 : 19;
-  const logoY = Math.max(4.5, (h - 1.5 - logoSize) / 2);
-  if (spec.showLogo) {
-    drawWorkshopLogoInHeader(doc, spec.logoDataUrl, 14, logoY, logoSize);
+  const drawTopRightFolioAndDate = (rightX: number, topY: number) => {
+    let curY = topY;
+    if (folioLabel) {
+      doc.setTextColor(...spec.theme.textRgb);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.8);
+      doc.text(folioLabel, rightX, curY, { align: 'right' });
+      curY += 4.3;
+    }
+    doc.setTextColor(...spec.theme.mutedRgb);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.2);
+    doc.text(`Fecha: ${dateLabel}`, rightX, curY, { align: 'right' });
+  };
+
+  if (spec.logoAlign === 'center') {
+    drawTopRightFolioAndDate(202, 8.8);
+
+    let cursorY = 12;
+    if (spec.showLogo && logoMetrics) {
+      const logoX = (216 - logoMetrics.frameW) / 2;
+      const logoY = 4.5;
+      drawWorkshopLogoInHeader(doc, spec.logoDataUrl, logoX, logoY, logoMetrics);
+      cursorY = logoY + logoMetrics.frameH + 5.8;
+    }
+
+    doc.setTextColor(...spec.theme.textRgb);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(spec.headline.length > 34 ? 12.2 : 14);
+    const headlineLines = doc.splitTextToSize(spec.headline, 170) as string[];
+    doc.text(headlineLines[0] || spec.headline, 108, cursorY, { align: 'center' });
+    cursorY += 5.4;
+
+    if (spec.workshopName) {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.6);
+      doc.setTextColor(...spec.theme.accentRgb);
+      const subParts = [spec.documentLabel, spec.eslogan].filter(Boolean).join(' · ');
+      const subLines = doc.splitTextToSize(subParts, 184) as string[];
+      doc.text(subLines[0] || '', 108, cursorY, { align: 'center' });
+      cursorY += 4.8;
+    } else if (spec.eslogan) {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.6);
+      doc.setTextColor(...spec.theme.mutedRgb);
+      const esloganLines = doc.splitTextToSize(spec.eslogan, 184) as string[];
+      doc.text(esloganLines[0] || '', 108, cursorY, { align: 'center' });
+      cursorY += 4.8;
+    }
+
+    drawHeaderContactLines(doc, spec, 108, cursorY, 184, 'center');
+    return;
   }
 
-  const textX = spec.showLogo ? 14 + logoSize + 5 : 14;
-  const maxFullW = 202 - textX;
-  const maxHeadlineW = Math.max(70, maxFullW - 40);
+  if (spec.logoAlign === 'right') {
+    let textMaxW = 140;
+    if (spec.showLogo && logoMetrics) {
+      const logoX = 202 - logoMetrics.frameW;
+      const logoY = 4.5;
+      drawWorkshopLogoInHeader(doc, spec.logoDataUrl, logoX, logoY, logoMetrics);
+      const metaY = Math.min(h - 7.5, logoY + logoMetrics.frameH + 4.2);
+      drawTopRightFolioAndDate(202, metaY);
+      textMaxW = Math.max(82, logoX - 6 - 14);
+    } else {
+      drawTopRightFolioAndDate(202, 10.2);
+    }
 
-  doc.setTextColor(...spec.theme.mutedRgb);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
-  doc.text(`Fecha: ${dateLabel}`, 202, 10.5, { align: 'right' });
+    doc.setTextColor(...spec.theme.textRgb);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(spec.headline.length > 34 ? 12.5 : 14.5);
+    const headlineLines = doc.splitTextToSize(spec.headline, textMaxW) as string[];
+    doc.text(headlineLines[0] || spec.headline, 14, 11.5);
+
+    let cursorY = 17.5;
+    if (spec.workshopName) {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.8);
+      doc.setTextColor(...spec.theme.accentRgb);
+      const subParts = [spec.documentLabel, spec.eslogan].filter(Boolean).join(' · ');
+      const subLines = doc.splitTextToSize(subParts, textMaxW) as string[];
+      doc.text(subLines[0] || '', 14, cursorY);
+      cursorY += 5.2;
+    } else if (spec.eslogan) {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.8);
+      doc.setTextColor(...spec.theme.mutedRgb);
+      const esloganLines = doc.splitTextToSize(spec.eslogan, textMaxW) as string[];
+      doc.text(esloganLines[0] || '', 14, cursorY);
+      cursorY += 5.2;
+    }
+
+    drawHeaderContactLines(doc, spec, 14, cursorY, textMaxW, 'left');
+    return;
+  }
+
+  // Alineación izquierda (por defecto)
+  if (spec.showLogo && logoMetrics) {
+    const logoY = Math.max(4.5, (h - 1.5 - logoMetrics.frameH) / 2);
+    drawWorkshopLogoInHeader(doc, spec.logoDataUrl, 14, logoY, logoMetrics);
+  }
+
+  const textX = spec.showLogo && logoMetrics ? 14 + logoMetrics.frameW + 5 : 14;
+  const maxFullW = 202 - textX;
+  const rightMetaReserve = folioLabel ? 56 : 40;
+  const maxHeadlineW = Math.max(68, maxFullW - rightMetaReserve);
+
+  drawTopRightFolioAndDate(202, 10.2);
 
   doc.setTextColor(...spec.theme.textRgb);
   doc.setFont('helvetica', 'bold');
@@ -73,38 +271,28 @@ function drawStandardWorkshopHeader(
     doc.setFontSize(8.8);
     doc.setTextColor(...spec.theme.accentRgb);
     const subParts = [spec.documentLabel, spec.eslogan].filter(Boolean).join(' · ');
-    const subLines = doc.splitTextToSize(subParts, maxFullW) as string[];
+    const subLines = doc.splitTextToSize(subParts, maxHeadlineW) as string[];
     doc.text(subLines[0] || '', textX, cursorY);
     cursorY += 5.2;
   } else if (spec.eslogan) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8.8);
     doc.setTextColor(...spec.theme.mutedRgb);
-    const esloganLines = doc.splitTextToSize(spec.eslogan, maxFullW) as string[];
+    const esloganLines = doc.splitTextToSize(spec.eslogan, maxHeadlineW) as string[];
     doc.text(esloganLines[0] || '', textX, cursorY);
     cursorY += 5.2;
   }
 
-  if (spec.contactParts.length > 0) {
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8.5);
-    doc.setTextColor(...spec.theme.mutedRgb);
-    const contactText = spec.contactParts.join(' · ');
-    const contactLines = doc.splitTextToSize(contactText, maxFullW) as string[];
-    doc.text(contactLines[0] || '', textX, cursorY);
-    if (contactLines[1]) {
-      doc.text(contactLines[1], textX, cursorY + 4.3);
-    }
-  }
+  drawHeaderContactLines(doc, spec, textX, cursorY, maxFullW, 'left');
 }
 
-export function generarPdfTecnico(
+export async function generarPdfTecnico(
   params: TrabajoParams,
   despiece: DespieceCalculado,
   cot: CotizacionCalculada,
   taller: TallerConfig
-): void {
-  const doc = new jsPDF({ unit: 'mm', format: 'letter' });
+): Promise<void> {
+  const doc = await createLetterDoc();
   const linea = LINEAS_CONFIG[params.linea];
   const color = COLORES_CONFIG[params.color];
   const panelDesc = getRellenoLabel(params.relleno, params.vidrio);
@@ -113,9 +301,22 @@ export function generarPdfTecnico(
       ? ` · ${APERTURA_LABELS[params.apertura] || params.apertura}`
       : '';
 
-  const dateLabel = new Date().toLocaleDateString('es-MX');
-  const headerSpec = buildPdfHeaderSpec(taller, 'tecnico', { dateLabel });
-  drawStandardWorkshopHeader(doc, headerSpec, dateLabel);
+  const dateLabel = formatDateEsMx();
+  const dims = getSafeImageDims(doc, taller.logoDataUrl);
+  const headerSpec = buildPdfHeaderSpec(taller, 'tecnico', {
+    dateLabel,
+    naturalLogoWidth: dims.width,
+    naturalLogoHeight: dims.height,
+  });
+  const logoMetrics = headerSpec.showLogo
+    ? computePdfLogoMetrics({
+        naturalWidth: dims.width,
+        naturalHeight: dims.height,
+        zoomPct: headerSpec.logoZoomPct,
+        align: headerSpec.logoAlign,
+      })
+    : null;
+  drawStandardWorkshopHeader(doc, headerSpec, dateLabel, logoMetrics);
 
   const infoY = headerSpec.bodyStartY - 1;
   doc.setTextColor(15, 23, 42);
@@ -217,7 +418,7 @@ export function generarPdfTecnico(
 }
 
 function drawPartidaCroquisPdf(
-  doc: jsPDF,
+  doc: JsPdfType,
   item: PartidaObra,
   x: number,
   y: number,
@@ -314,7 +515,6 @@ function drawPartidaCroquisPdf(
       doc.line(mid, apexY, cx2, by + bh / 2);
     }
   } else {
-    // Corrediza / cancel por número de hojas
     for (let i = 1; i < hojas; i += 1) {
       const lx = bx + (bw / hojas) * i;
       doc.line(lx, by, lx, by + bh);
@@ -358,7 +558,6 @@ function drawPartidaCroquisPdf(
     }
   }
 
-  // Cotas de ancho (abajo) y alto (derecha)
   doc.setDrawColor(100, 116, 139);
   doc.setLineWidth(0.25);
   doc.line(bx, by + bh + 1.8, bx + bw, by + bh + 1.8);
@@ -369,18 +568,122 @@ function drawPartidaCroquisPdf(
   doc.text(`${item.altoCm}`, bx + bw + 1.8, by + bh / 2 + 1);
 }
 
-export function generarPdfClienteLimpio(hoja: HojaState, taller: TallerConfig): void {
-  const doc = new jsPDF({ unit: 'mm', format: 'letter' });
-  const dateLabel = new Date().toLocaleDateString('es-MX');
-  const headerSpec = buildPdfHeaderSpec(taller, 'cotizacion', { dateLabel });
+function drawSignatureImageProportional(
+  doc: JsPdfType,
+  signatureDataUrl: string,
+  centerX: number,
+  lineY: number,
+  maxW = 72,
+  maxH = 21
+): void {
+  if (!signatureDataUrl) return;
+  try {
+    const dims = getSafeImageDims(doc, signatureDataUrl);
+    const ratio =
+      dims.width && dims.height && dims.height > 0 ? dims.width / dims.height : 2.6;
+    let w = maxW;
+    let h = w / Math.max(0.4, ratio);
+    if (h > maxH) {
+      h = maxH;
+      w = h * Math.max(0.4, ratio);
+    }
+    const fmt = signatureDataUrl.startsWith('data:image/jpeg') ? 'JPEG' : 'PNG';
+    doc.addImage(signatureDataUrl, fmt, centerX - w / 2, lineY - h - 1.2, w, h);
+  } catch {
+    // ignorar firma inválida
+  }
+}
 
-  drawStandardWorkshopHeader(doc, headerSpec, dateLabel);
+export interface CotizacionPdfOptions {
+  folio?: string;
+  dateLabel?: string;
+  clienteFallback?: {
+    nombre?: string;
+    telefono?: string;
+    direccion?: string;
+  };
+  signatureDataUrl?: string;
+  acceptedDateLabel?: string;
+}
 
-  const clientY = headerSpec.bodyStartY - 1;
+export interface CotizacionPdfBlobResult {
+  blob: Blob;
+  filename: string;
+  folio: string;
+  dateLabel: string;
+  clienteNombre: string;
+  total: number;
+}
+
+/**
+ * Construye el PDF de cotización como Blob sin incrementar el folio (`peekNextCotizacionFolio` si no se pasa folio).
+ */
+export async function generarPdfClienteBlob(
+  hoja: HojaState,
+  taller: TallerConfig,
+  options?: CotizacionPdfOptions
+): Promise<CotizacionPdfBlobResult> {
+  const doc = await createLetterDoc();
+  const dateLabel = options?.dateLabel || formatDateEsMx();
+  const folio = options?.folio?.trim() || peekNextCotizacionFolio();
+  const dims = getSafeImageDims(doc, taller.logoDataUrl);
+  const headerSpec = buildPdfHeaderSpec(taller, 'cotizacion', {
+    dateLabel,
+    naturalLogoWidth: dims.width,
+    naturalLogoHeight: dims.height,
+  });
+  const logoMetrics = headerSpec.showLogo
+    ? computePdfLogoMetrics({
+        naturalWidth: dims.width,
+        naturalHeight: dims.height,
+        zoomPct: headerSpec.logoZoomPct,
+        align: headerSpec.logoAlign,
+      })
+    : null;
+
+  drawStandardWorkshopHeader(
+    doc,
+    headerSpec,
+    dateLabel,
+    logoMetrics,
+    `COTIZACIÓN No. ${folio}`
+  );
+
+  const clienteNombre =
+    (hoja.proyecto || '').trim() ||
+    (options?.clienteFallback?.nombre || '').trim() ||
+    'Cliente General';
+  const clienteTel =
+    (hoja.clienteTel || '').trim() ||
+    (options?.clienteFallback?.telefono || '').trim();
+  const clienteDir =
+    (hoja.clienteDir || '').trim() ||
+    (options?.clienteFallback?.direccion || '').trim();
+
+  let infoCursorY = headerSpec.bodyStartY - 1;
   doc.setTextColor(15, 23, 42);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(12);
-  doc.text(`Proyecto / Cliente: ${hoja.proyecto || taller.clienteDefault || 'Cliente General'}`, 14, clientY);
+  doc.setFontSize(11.5);
+  const projLines = doc.splitTextToSize(`Proyecto / Cliente: ${clienteNombre}`, 186) as string[];
+  doc.text(projLines, 14, infoCursorY);
+  infoCursorY += projLines.length * 4.8 + 0.5;
+
+  if (clienteTel) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9.2);
+    doc.setTextColor(51, 65, 85);
+    doc.text(`Tel.: ${clienteTel}`, 14, infoCursorY);
+    infoCursorY += 4.5;
+  }
+
+  if (clienteDir) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9.2);
+    doc.setTextColor(51, 65, 85);
+    const dirLines = doc.splitTextToSize(`Dir.: ${clienteDir}`, 186) as string[];
+    doc.text(dirLines, 14, infoCursorY);
+    infoCursorY += dirLines.length * 4.3 + 0.5;
+  }
 
   const drawTableHeader = (headerY: number) => {
     doc.setFillColor(241, 245, 249);
@@ -395,12 +698,15 @@ export function generarPdfClienteLimpio(hoja: HojaState, taller: TallerConfig): 
     doc.text('Importe', 200, headerY, { align: 'right' });
   };
 
-  let y = clientY + 10;
+  let y = infoCursorY + 6;
   drawTableHeader(y);
   y += 6.5;
 
+  const includePhotos = Boolean(hoja.incluirFotosPdf);
   let subtotal = 0;
-  for (const item of hoja.partidas) {
+
+  for (const rawItem of hoja.partidas) {
+    const item = rawItem as PartidaObraExtended;
     subtotal += item.totalLinea;
     const linea = LINEAS_CONFIG[item.linea];
     const color = COLORES_CONFIG[item.color];
@@ -411,9 +717,10 @@ export function generarPdfClienteLimpio(hoja: HojaState, taller: TallerConfig): 
         : linea.categoria === 'puertas' && !linea.esCancelBano
           ? ` · Puerta ${item.sentidoPuerta === 'der' ? 'Der.' : 'Izq.'}`
           : '';
-    const desc = `${item.area ? `[${item.area}] ` : ''}${item.etiqueta ? `${item.etiqueta} · ` : ''}${linea.nombre}${apTag} (${color.corto} · ${panelDesc})`;
+    const desc = `${item.area ? `[${item.area}] ` : ''}${item.etiqueta ? `${item.etiqueta} · ` : ''}${linea.nombre}${apTag} (${color.corto} · ${panelDesc})${item.notas ? ` · Nota: ${item.notas}` : ''}`;
     const wrappedDesc = doc.splitTextToSize(desc, 68) as string[];
-    const neededH = Math.max(24, wrappedDesc.length * 4.5 + 5);
+    const hasPhoto = includePhotos && Boolean(item.fotoDataUrl && item.fotoDataUrl.startsWith('data:image/'));
+    const neededH = Math.max(hasPhoto ? 34 : 24, wrappedDesc.length * 4.5 + (hasPhoto ? 14 : 5));
 
     if (y + neededH > 235) {
       doc.addPage();
@@ -423,6 +730,15 @@ export function generarPdfClienteLimpio(hoja: HojaState, taller: TallerConfig): 
     }
 
     drawPartidaCroquisPdf(doc, item, 16, y, 24, 14);
+
+    if (hasPhoto && item.fotoDataUrl) {
+      try {
+        const fmt = item.fotoDataUrl.startsWith('data:image/png') ? 'PNG' : 'JPEG';
+        doc.addImage(item.fotoDataUrl, fmt, 52, y + wrappedDesc.length * 4.4 + 2, 18, 12);
+      } catch {
+        // ignorar foto no válida
+      }
+    }
 
     doc.setTextColor(15, 23, 42);
     doc.setFont('helvetica', 'normal');
@@ -445,7 +761,7 @@ export function generarPdfClienteLimpio(hoja: HojaState, taller: TallerConfig): 
   const total = base + iva;
 
   y += 6;
-  if (y > 220) {
+  if (y > 218) {
     doc.addPage();
     y = 20;
   }
@@ -454,6 +770,7 @@ export function generarPdfClienteLimpio(hoja: HojaState, taller: TallerConfig): 
   y += 6;
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9.5);
+  doc.setTextColor(15, 23, 42);
   doc.text(`Subtotal: ${formatMXN(subtotal)}`, 200, y, { align: 'right' });
   if (descuento > 0) {
     y += 6;
@@ -468,25 +785,123 @@ export function generarPdfClienteLimpio(hoja: HojaState, taller: TallerConfig): 
   doc.setFontSize(12);
   doc.text(`TOTAL: ${formatMXN(total)}`, 200, y, { align: 'right' });
 
-  y += 14;
+  const vigenciaDias =
+    typeof hoja.vigenciaDias === 'number' && hoja.vigenciaDias > 0
+      ? Math.round(hoja.vigenciaDias)
+      : DEFAULT_HOJA_CONDITIONS.vigenciaDias;
+  const anticipoPct =
+    typeof hoja.anticipoPct === 'number' && hoja.anticipoPct >= 0 && hoja.anticipoPct <= 100
+      ? Math.round(hoja.anticipoPct)
+      : DEFAULT_HOJA_CONDITIONS.anticipoPct;
+  const tiempoEntrega =
+    (hoja.tiempoEntrega || '').trim() || DEFAULT_HOJA_CONDITIONS.tiempoEntrega;
+
+  y += 12;
+  if (y + 30 > 240) {
+    doc.addPage();
+    y = 20;
+  }
+
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9.5);
+  doc.setTextColor(15, 23, 42);
   doc.text('Notas y Condiciones:', 14, y);
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  doc.text('• Vigencia de esta cotización: 8 días naturales (sujeta a variación por precio de materiales).', 14, y + 6);
-  doc.text('• Garantía de 30 días en mano de obra, sellado hermético y funcionamiento de herrajes.', 14, y + 11);
+  doc.setFontSize(8.8);
+  doc.setTextColor(51, 65, 85);
+  doc.text(
+    `• Vigencia de esta cotización: ${vigenciaDias} día(s) natural(es) (sujeta a variación por precio de materiales).`,
+    14,
+    y + 5.5
+  );
+  doc.text(
+    `• Anticipo requerido para iniciar fabricación: ${anticipoPct}% · Tiempo estimado de entrega: ${tiempoEntrega}.`,
+    14,
+    y + 10.5
+  );
+  doc.text(
+    '• Garantía de 30 días en mano de obra, sellado hermético y funcionamiento de herrajes.',
+    14,
+    y + 15.5
+  );
+  y += 22;
 
-  doc.save(`cotizacion-${(hoja.proyecto || 'aluminero').toLowerCase().replace(/\s+/g, '-')}.pdf`);
+  // Bloque de firma de aceptación siempre al pie de la última página
+  const neededSigSpace = options?.signatureDataUrl ? 34 : 24;
+  if (y + neededSigSpace > 268) {
+    doc.addPage();
+    y = 22;
+  }
+
+  const sigLineY = Math.max(y + 18, 248);
+  if (options?.signatureDataUrl) {
+    drawSignatureImageProportional(doc, options.signatureDataUrl, 108, sigLineY, 72, 21);
+  }
+  doc.setDrawColor(71, 85, 105);
+  doc.setLineWidth(0.35);
+  doc.line(58, sigLineY, 158, sigLineY);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(15, 23, 42);
+  doc.text('FIRMA DE ACEPTACIÓN DEL CLIENTE', 108, sigLineY + 4.8, { align: 'center' });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.2);
+  doc.setTextColor(71, 85, 105);
+  doc.text(clienteNombre, 108, sigLineY + 9.2, { align: 'center' });
+
+  if (options?.signatureDataUrl) {
+    doc.setFontSize(7.8);
+    doc.text(
+      `Fecha de aceptación: ${options.acceptedDateLabel || dateLabel}`,
+      108,
+      sigLineY + 13.4,
+      { align: 'center' }
+    );
+  }
+
+  const blob = doc.output('blob');
+  const filename = buildCotizacionPdfFilename(folio, clienteNombre);
+  return {
+    blob,
+    filename,
+    folio,
+    dateLabel,
+    clienteNombre,
+    total,
+  };
 }
 
-export function generarPdfContratoServicio(
+export async function generarPdfClienteLimpio(
+  hoja: HojaState,
+  taller: TallerConfig,
+  options?: Omit<CotizacionPdfOptions, 'folio'> & { advanceFolio?: boolean }
+): Promise<CotizacionPdfBlobResult> {
+  const folio = options?.advanceFolio === false
+    ? peekNextCotizacionFolio()
+    : issueNextCotizacionFolio();
+  const res = await generarPdfClienteBlob(hoja, taller, {
+    ...options,
+    folio,
+  });
+  const url = URL.createObjectURL(res.blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = res.filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 2500);
+  return res;
+}
+
+export async function generarPdfContratoServicio(
   hoja: HojaState,
   taller: TallerConfig,
   cliente: ContratoClienteInfo,
-  folioOverride?: string
-): void {
-  const doc = new jsPDF({ unit: 'mm', format: 'letter' });
+  folioOverride?: string,
+  clientSignatureDataUrl?: string
+): Promise<void> {
+  const doc = await createLetterDoc();
   const fechaHoy = new Date().toLocaleDateString('es-MX', {
     year: 'numeric',
     month: 'long',
@@ -502,7 +917,20 @@ export function generarPdfContratoServicio(
       })
     : 'A convenir con el cliente';
 
-  const headerSpec = buildPdfHeaderSpec(taller, 'contrato', { dateLabel: fechaHoy });
+  const dims = getSafeImageDims(doc, taller.logoDataUrl);
+  const headerSpec = buildPdfHeaderSpec(taller, 'contrato', {
+    dateLabel: fechaHoy,
+    naturalLogoWidth: dims.width,
+    naturalLogoHeight: dims.height,
+  });
+  const logoMetrics = headerSpec.showLogo
+    ? computePdfLogoMetrics({
+        naturalWidth: dims.width,
+        naturalHeight: dims.height,
+        zoomPct: headerSpec.logoZoomPct,
+        align: headerSpec.logoAlign,
+      })
+    : null;
   const h = headerSpec.headerHeightMm;
 
   // Encabezado ejecutivo del taller
@@ -510,49 +938,147 @@ export function generarPdfContratoServicio(
   doc.rect(0, 0, 216, h, 'F');
   doc.setFillColor(...headerSpec.theme.accentRgb);
   doc.rect(0, h - 1.5, 216, 1.5, 'F');
-  if (headerSpec.showLogo) {
-    drawWorkshopLogoInHeader(doc, headerSpec.logoDataUrl, 14, 6.5, 22);
-  }
-  const headX = headerSpec.showLogo ? 41 : 14;
-  doc.setTextColor(...headerSpec.theme.textRgb);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(12.5);
-  doc.text(headerSpec.documentLabel, headX, 11);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.text(headerSpec.workshopName || 'Taller de Aluminio y Vidrio', headX, 17);
-  let infoY = 22;
-  if (headerSpec.eslogan) {
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8.2);
-    doc.setTextColor(...headerSpec.theme.accentRgb);
-    const esloganLines = doc.splitTextToSize(headerSpec.eslogan, 108) as string[];
-    doc.text(esloganLines[0] || '', headX, infoY);
-    infoY += 4.5;
-  }
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.3);
-  doc.setTextColor(...headerSpec.theme.mutedRgb);
+
   const tallerInfoLine =
     headerSpec.contactParts.length > 0
       ? headerSpec.contactParts.join(' · ')
       : `Tel: ${taller.tel || 'Sin especificar'}`;
-  const wrappedTallerInfo = doc.splitTextToSize(tallerInfoLine, 108) as string[];
-  doc.text(wrappedTallerInfo[0] || '', headX, infoY);
-  if (wrappedTallerInfo[1]) {
-    doc.text(wrappedTallerInfo[1], headX, infoY + 4.2);
-  }
 
-  // Recuadro derecho de Folio y Fecha
-  doc.setTextColor(...headerSpec.theme.textRgb);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9.5);
-  doc.text(`FOLIO: ${folio}`, 202, 12, { align: 'right' });
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.3);
-  doc.setTextColor(...headerSpec.theme.mutedRgb);
-  doc.text(`Fecha: ${fechaHoy}`, 202, 18, { align: 'right' });
-  doc.text(`Entrega est.: ${fechaEntregaTexto}`, 202, 23.5, { align: 'right' });
+  if (headerSpec.logoAlign === 'center') {
+    doc.setTextColor(...headerSpec.theme.textRgb);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.text(`FOLIO: ${folio}`, 202, 9.5, { align: 'right' });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.8);
+    doc.setTextColor(...headerSpec.theme.mutedRgb);
+    doc.text(`Fecha: ${fechaHoy}`, 202, 14.2, { align: 'right' });
+    doc.text(`Entrega: ${fechaEntregaTexto}`, 202, 18.8, { align: 'right' });
+
+    let cursorY = 11.5;
+    if (headerSpec.showLogo && logoMetrics) {
+      const logoX = (216 - logoMetrics.frameW) / 2;
+      const logoY = 4.5;
+      drawWorkshopLogoInHeader(doc, headerSpec.logoDataUrl, logoX, logoY, logoMetrics);
+      cursorY = logoY + logoMetrics.frameH + 5.5;
+    }
+
+    doc.setTextColor(...headerSpec.theme.textRgb);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.text(headerSpec.documentLabel, 108, cursorY, { align: 'center' });
+    cursorY += 5.2;
+    doc.setFontSize(9.8);
+    doc.text(headerSpec.workshopName || 'Taller de Aluminio y Vidrio', 108, cursorY, {
+      align: 'center',
+    });
+    cursorY += 4.6;
+    if (headerSpec.eslogan) {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(...headerSpec.theme.accentRgb);
+      const esloganLines = doc.splitTextToSize(headerSpec.eslogan, 180) as string[];
+      doc.text(esloganLines[0] || '', 108, cursorY, { align: 'center' });
+      cursorY += 4.3;
+    }
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.1);
+    doc.setTextColor(...headerSpec.theme.mutedRgb);
+    const wrappedTallerInfo = doc.splitTextToSize(tallerInfoLine, 184) as string[];
+    doc.text(wrappedTallerInfo[0] || '', 108, cursorY, { align: 'center' });
+    if (wrappedTallerInfo[1]) {
+      doc.text(wrappedTallerInfo[1], 108, cursorY + 4, { align: 'center' });
+    }
+  } else if (headerSpec.logoAlign === 'right') {
+    let rightMetaX = 202;
+    if (headerSpec.showLogo && logoMetrics) {
+      const logoX = 202 - logoMetrics.frameW;
+      const logoY = Math.max(4.5, (h - 1.5 - logoMetrics.frameH) / 2);
+      drawWorkshopLogoInHeader(doc, headerSpec.logoDataUrl, logoX, logoY, logoMetrics);
+      rightMetaX = logoX - 5;
+    }
+
+    const leftMaxW = Math.max(74, rightMetaX - 48 - 14);
+    doc.setTextColor(...headerSpec.theme.textRgb);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12);
+    const titleLines = doc.splitTextToSize(headerSpec.documentLabel, leftMaxW) as string[];
+    doc.text(titleLines[0] || headerSpec.documentLabel, 14, 11);
+    doc.setFontSize(9.8);
+    const nameLines = doc.splitTextToSize(
+      headerSpec.workshopName || 'Taller de Aluminio y Vidrio',
+      leftMaxW
+    ) as string[];
+    doc.text(nameLines[0] || '', 14, 17);
+    let infoY = 22;
+    if (headerSpec.eslogan) {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(...headerSpec.theme.accentRgb);
+      const esloganLines = doc.splitTextToSize(headerSpec.eslogan, leftMaxW) as string[];
+      doc.text(esloganLines[0] || '', 14, infoY);
+      infoY += 4.5;
+    }
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.1);
+    doc.setTextColor(...headerSpec.theme.mutedRgb);
+    const wrappedTallerInfo = doc.splitTextToSize(tallerInfoLine, leftMaxW) as string[];
+    doc.text(wrappedTallerInfo[0] || '', 14, infoY);
+    if (wrappedTallerInfo[1]) {
+      doc.text(wrappedTallerInfo[1], 14, infoY + 4.1);
+    }
+
+    doc.setTextColor(...headerSpec.theme.textRgb);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.2);
+    doc.text(`FOLIO: ${folio}`, rightMetaX, 12, { align: 'right' });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.1);
+    doc.setTextColor(...headerSpec.theme.mutedRgb);
+    doc.text(`Fecha: ${fechaHoy}`, rightMetaX, 18, { align: 'right' });
+    doc.text(`Entrega est.: ${fechaEntregaTexto}`, rightMetaX, 23.5, { align: 'right' });
+  } else {
+    if (headerSpec.showLogo && logoMetrics) {
+      const logoY = Math.max(4.5, (h - 1.5 - logoMetrics.frameH) / 2);
+      drawWorkshopLogoInHeader(doc, headerSpec.logoDataUrl, 14, logoY, logoMetrics);
+    }
+    const headX = headerSpec.showLogo && logoMetrics ? 14 + logoMetrics.frameW + 5 : 14;
+    const leftMaxW = Math.max(82, 146 - headX);
+    doc.setTextColor(...headerSpec.theme.textRgb);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12.2);
+    doc.text(headerSpec.documentLabel, headX, 11);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text(headerSpec.workshopName || 'Taller de Aluminio y Vidrio', headX, 17);
+    let infoY = 22;
+    if (headerSpec.eslogan) {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.2);
+      doc.setTextColor(...headerSpec.theme.accentRgb);
+      const esloganLines = doc.splitTextToSize(headerSpec.eslogan, leftMaxW) as string[];
+      doc.text(esloganLines[0] || '', headX, infoY);
+      infoY += 4.5;
+    }
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.3);
+    doc.setTextColor(...headerSpec.theme.mutedRgb);
+    const wrappedTallerInfo = doc.splitTextToSize(tallerInfoLine, leftMaxW) as string[];
+    doc.text(wrappedTallerInfo[0] || '', headX, infoY);
+    if (wrappedTallerInfo[1]) {
+      doc.text(wrappedTallerInfo[1], headX, infoY + 4.2);
+    }
+
+    doc.setTextColor(...headerSpec.theme.textRgb);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.text(`FOLIO: ${folio}`, 202, 12, { align: 'right' });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.3);
+    doc.setTextColor(...headerSpec.theme.mutedRgb);
+    doc.text(`Fecha: ${fechaHoy}`, 202, 18, { align: 'right' });
+    doc.text(`Entrega est.: ${fechaEntregaTexto}`, 202, 23.5, { align: 'right' });
+  }
 
   // Recuadro de Datos del Cliente y Obra
   const boxY = h + 4;
@@ -567,9 +1093,9 @@ export function generarPdfContratoServicio(
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.8);
-  const cliNombre = cliente.nombre.trim() || hoja.proyecto || taller.clienteDefault || 'Cliente por confirmar';
-  const cliTel = cliente.telefono.trim() || 'No especificado';
-  const cliDir = cliente.direccion.trim() || 'Por confirmar en obra';
+  const cliNombre = cliente.nombre.trim() || hoja.proyecto || 'Cliente por confirmar';
+  const cliTel = cliente.telefono.trim() || hoja.clienteTel?.trim() || 'No especificado';
+  const cliDir = cliente.direccion.trim() || hoja.clienteDir?.trim() || 'Por confirmar en obra';
   const cliProy = hoja.proyecto.trim() || 'Suministro e instalación de cancelería';
 
   doc.text(`Cliente: ${cliNombre}`, 18, boxY + 12);
@@ -616,10 +1142,8 @@ export function generarPdfContratoServicio(
       y = 20;
     }
 
-    // Dibuja croquis técnico vectorial con cotas y flechas de apertura
     drawPartidaCroquisPdf(doc, item, 16, y, 24, 14);
 
-    // Texto partida
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.8);
     doc.text(wrappedTitle, 54, y + 3.8);
@@ -663,7 +1187,6 @@ export function generarPdfContratoServicio(
     y = 20;
   }
 
-  // Resumen de Pagos (derecha)
   const boxH = 33 + (descuento > 0 ? 5 : 0) + (iva > 0 ? 5 : 0);
   doc.setFillColor(248, 250, 252);
   doc.setDrawColor(148, 163, 184);
@@ -701,7 +1224,6 @@ export function generarPdfContratoServicio(
   doc.text('Saldo contra entrega:', 120, ty);
   doc.text(formatMXN(saldo), 198, ty, { align: 'right' });
 
-  // 4 Cláusulas Legales Editables (izquierda)
   const cy = y + 1;
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
@@ -729,34 +1251,149 @@ export function generarPdfContratoServicio(
   const clausulasLines = doc.splitTextToSize(clausulasText, 97) as string[];
   doc.text(clausulasLines, 14, cy + 9);
 
-  // Bloques de Firmas
-  const fy = Math.max(y + boxH + 22, cy + 12 + clausulasLines.length * 3.6 + 12);
-  if (fy + 16 > 272) {
+  const fy = Math.max(y + boxH + 24, cy + 12 + clausulasLines.length * 3.6 + 16);
+  let targetSigY = fy;
+  if (fy + 22 > 272) {
     doc.addPage();
-    doc.line(24, 42, 92, 42);
-    doc.line(124, 42, 192, 42);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8.8);
-    doc.text('El Prestador del Servicio', 58, 47, { align: 'center' });
-    doc.text('El Cliente', 158, 47, { align: 'center' });
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.text(taller.nombre || 'Taller de Aluminio y Vidrio', 58, 51.5, { align: 'center' });
-    doc.text(cliNombre, 158, 51.5, { align: 'center' });
-  } else {
-    doc.setDrawColor(71, 85, 105);
-    doc.line(24, fy, 92, fy);
-    doc.line(124, fy, 192, fy);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8.8);
-    doc.text('El Prestador del Servicio', 58, fy + 5, { align: 'center' });
-    doc.text('El Cliente', 158, fy + 5, { align: 'center' });
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.text(taller.nombre || 'Taller de Aluminio y Vidrio', 58, fy + 9.5, { align: 'center' });
-    doc.text(cliNombre, 158, fy + 9.5, { align: 'center' });
+    targetSigY = 46;
   }
+
+  doc.setDrawColor(71, 85, 105);
+  if (clientSignatureDataUrl) {
+    drawSignatureImageProportional(doc, clientSignatureDataUrl, 158, targetSigY, 64, 20);
+  }
+  doc.line(24, targetSigY, 92, targetSigY);
+  doc.line(124, targetSigY, 192, targetSigY);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.8);
+  doc.setTextColor(15, 23, 42);
+  doc.text('El Prestador del Servicio', 58, targetSigY + 5, { align: 'center' });
+  doc.text('El Cliente', 158, targetSigY + 5, { align: 'center' });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.text(taller.nombre || 'Taller de Aluminio y Vidrio', 58, targetSigY + 9.5, { align: 'center' });
+  doc.text(cliNombre, 158, targetSigY + 9.5, { align: 'center' });
 
   doc.save(`contrato-${folio.toLowerCase()}-${(cliNombre || 'cliente').toLowerCase().replace(/\s+/g, '-')}.pdf`);
 }
 
+export async function generarPdfHistorialCotizaciones(
+  historial: HistorialItem[],
+  taller: TallerConfig
+): Promise<boolean> {
+  if (!Array.isArray(historial) || historial.length === 0) {
+    return false;
+  }
+
+  const doc = await createLetterDoc();
+  const now = new Date();
+  const dateLabel = formatDateEsMx(now);
+  const dims = getSafeImageDims(doc, taller.logoDataUrl);
+  const headerSpec = buildPdfHeaderSpec(taller, 'historial', {
+    dateLabel,
+    naturalLogoWidth: dims.width,
+    naturalLogoHeight: dims.height,
+  });
+  const logoMetrics = headerSpec.showLogo
+    ? computePdfLogoMetrics({
+        naturalWidth: dims.width,
+        naturalHeight: dims.height,
+        zoomPct: headerSpec.logoZoomPct,
+        align: headerSpec.logoAlign,
+      })
+    : null;
+
+  drawStandardWorkshopHeader(doc, headerSpec, dateLabel, logoMetrics);
+
+  const report = buildHistorialPdfReport(historial);
+  const introY = headerSpec.bodyStartY - 1;
+
+  doc.setTextColor(15, 23, 42);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11.5);
+  doc.text('Historial de Cotizaciones Guardadas', 14, introY);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(71, 85, 105);
+  doc.text(
+    `Registros: ${report.totalCotizaciones} · Piezas totales: ${report.totalPiezas} · Total acumulado: ${report.montoAcumuladoFormatted}`,
+    14,
+    introY + 5.5
+  );
+
+  const drawTableHeader = (headerY: number) => {
+    doc.setFillColor(241, 245, 249);
+    doc.rect(14, headerY - 4.5, 188, 7, 'F');
+    doc.setTextColor(15, 23, 42);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.text('#', 16, headerY);
+    doc.text('Fecha', 24, headerY);
+    doc.text('Referencia / Trabajo', 49, headerY);
+    doc.text('Línea, Medidas y Color', 98, headerY);
+    doc.text('Cant.', 168, headerY, { align: 'center' });
+    doc.text('Total', 200, headerY, { align: 'right' });
+  };
+
+  let y = introY + 13;
+  drawTableHeader(y);
+  y += 6.5;
+
+  for (const row of report.rows) {
+    const refLines = doc.splitTextToSize(row.referencia, 45) as string[];
+    const specLines = doc.splitTextToSize(row.especificacion, 60) as string[];
+    const lineCount = Math.max(refLines.length, specLines.length, 1);
+    const rowH = Math.max(7.5, lineCount * 4.2 + 3);
+
+    if (y + rowH > 246) {
+      doc.addPage();
+      y = 20;
+      drawTableHeader(y);
+      y += 6.5;
+    }
+
+    doc.setTextColor(71, 85, 105);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.3);
+    doc.text(String(row.index), 16, y);
+    doc.text(row.fecha.slice(0, 12), 24, y);
+
+    doc.setTextColor(15, 23, 42);
+    doc.setFont('helvetica', 'bold');
+    doc.text(refLines, 49, y);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(51, 65, 85);
+    doc.text(specLines, 98, y);
+
+    doc.setTextColor(15, 23, 42);
+    doc.text(String(row.cantidad), 168, y, { align: 'center' });
+    doc.setFont('helvetica', 'bold');
+    doc.text(row.totalFormatted, 200, y, { align: 'right' });
+
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.2);
+    doc.line(14, y + rowH - 3.2, 202, y + rowH - 3.2);
+    y += rowH;
+  }
+
+  y += 4;
+  if (y > 250) {
+    doc.addPage();
+    y = 20;
+  }
+
+  doc.setFillColor(248, 250, 252);
+  doc.setDrawColor(148, 163, 184);
+  doc.roundedRect(120, y, 82, 12, 1.5, 1.5, 'FD');
+  doc.setTextColor(15, 23, 42);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9.5);
+  doc.text('Total acumulado:', 124, y + 7.5);
+  doc.text(report.montoAcumuladoFormatted, 198, y + 7.5, { align: 'right' });
+
+  const isoDate = now.toISOString().slice(0, 10);
+  doc.save(`historial-cotizaciones-${isoDate}.pdf`);
+  return true;
+}

@@ -1,17 +1,28 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
   Building2,
   Check,
   Eye,
   EyeOff,
   ImagePlus,
   Palette,
+  RotateCcw,
   Trash2,
   X,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
 import {
   buildPdfHeaderSpec,
+  clampLogoZoomPct,
+  computePdfLogoMetrics,
   PDF_HEADER_THEMES,
+  PDF_LOGO_ZOOM_MAX,
+  PDF_LOGO_ZOOM_MIN,
+  PDF_LOGO_ZOOM_STEP,
   PdfDocumentKind,
   resolvePdfHeaderConfig,
 } from '../utils/pdfHeaderUtils';
@@ -19,6 +30,7 @@ import {
   compressImageToDataUrl,
   PdfHeaderColorId,
   PdfHeaderConfig,
+  PdfLogoAlign,
   TallerConfig,
 } from '../utils/storageHelpers';
 
@@ -26,17 +38,63 @@ interface PdfHeaderPreviewProps {
   taller: TallerConfig;
   proyectoNombre?: string;
   kind?: PdfDocumentKind;
+  onPreviewPdf?: () => void;
 }
 
 export const PdfHeaderPreview: React.FC<PdfHeaderPreviewProps> = ({
   taller,
   proyectoNombre,
   kind = 'cotizacion',
+  onPreviewPdf,
 }) => {
+  const [naturalDims, setNaturalDims] = useState<{ w: number; h: number }>({ w: 1, h: 1 });
+
+  useEffect(() => {
+    setNaturalDims({ w: 1, h: 1 });
+  }, [taller.logoDataUrl]);
+
   const dateLabel = new Date().toLocaleDateString('es-MX');
-  const spec = buildPdfHeaderSpec(taller, kind, { dateLabel });
-  const clienteTexto =
-    (proyectoNombre || '').trim() || taller.clienteDefault.trim() || 'Cliente General';
+  const spec = buildPdfHeaderSpec(taller, kind, {
+    dateLabel,
+    naturalLogoWidth: naturalDims.w,
+    naturalLogoHeight: naturalDims.h,
+  });
+  const logoMetrics = spec.showLogo
+    ? computePdfLogoMetrics({
+        naturalWidth: naturalDims.w,
+        naturalHeight: naturalDims.h,
+        zoomPct: spec.logoZoomPct,
+        align: spec.logoAlign,
+      })
+    : null;
+  const pxScale = 2.4;
+  const clienteTexto = (proyectoNombre || '').trim() || 'Cliente General';
+
+  const logoElement = spec.showLogo && logoMetrics && (
+    <div
+      data-testid="pdf-preview-logo-frame"
+      data-align={spec.logoAlign}
+      data-zoom={spec.logoZoomPct}
+      className="rounded-lg bg-[#fefefe] shrink-0 flex items-center justify-center overflow-hidden shadow-xs transition-all"
+      style={{
+        width: `${Math.round(logoMetrics.frameW * pxScale)}px`,
+        height: `${Math.round(logoMetrics.frameH * pxScale)}px`,
+        padding: `${Math.max(2, Math.round(logoMetrics.innerPadMm * pxScale))}px`,
+      }}
+    >
+      <img
+        src={spec.logoDataUrl}
+        alt="Logo del taller en encabezado PDF"
+        onLoad={(e) => {
+          const img = e.currentTarget;
+          if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+            setNaturalDims({ w: img.naturalWidth, h: img.naturalHeight });
+          }
+        }}
+        className="w-full h-full object-contain"
+      />
+    </div>
+  );
 
   return (
     <div
@@ -45,49 +103,37 @@ export const PdfHeaderPreview: React.FC<PdfHeaderPreviewProps> = ({
       className="rounded-xl border border-slate-300 bg-white overflow-hidden shadow-sm"
     >
       <div
-        className="px-4 py-3.5 transition-colors"
+        className="px-4 py-3.5 transition-colors relative"
         style={{
           backgroundColor: spec.theme.hex,
           borderBottom: `3px solid ${spec.theme.accentHex}`,
         }}
       >
-        <div className="flex items-start gap-3">
-          {spec.showLogo && (
-            <div className="w-12 h-12 rounded-lg bg-[#fefefe] p-1 shrink-0 flex items-center justify-center overflow-hidden shadow-xs">
-              <img
-                src={spec.logoDataUrl}
-                alt="Logo del taller en encabezado PDF"
-                className="w-full h-full object-contain"
-              />
-            </div>
-          )}
-          <div className="min-w-0 flex-1">
-            <div className="flex items-start justify-between gap-2">
-              <p className="m-0 text-[13.5px] font-extrabold tracking-tight text-[#fefefe] truncate">
-                {spec.headline}
-              </p>
-              <span className="text-[10px] font-medium text-[#e2e8f0] whitespace-nowrap shrink-0 mono">
-                Fecha: {dateLabel}
-              </span>
-            </div>
-
+        {spec.logoAlign === 'center' ? (
+          <div className="flex flex-col items-center text-center">
+            <span className="self-end text-[9.5px] font-medium text-[#e2e8f0] whitespace-nowrap mono mb-1">
+              Fecha: {dateLabel}
+            </span>
+            {logoElement && <div className="mb-2">{logoElement}</div>}
+            <p className="m-0 text-[13.5px] font-extrabold tracking-tight text-[#fefefe] max-w-full truncate">
+              {spec.headline}
+            </p>
             {spec.workshopName ? (
               <p
-                className="m-0 mt-0.5 text-[10.5px] font-bold truncate"
+                className="m-0 mt-0.5 text-[10.5px] font-bold max-w-full truncate"
                 style={{ color: spec.theme.accentHex }}
               >
                 {[spec.documentLabel, spec.eslogan].filter(Boolean).join(' · ')}
               </p>
             ) : (
               spec.eslogan && (
-                <p className="m-0 mt-0.5 text-[10.5px] text-[#e2e8f0] truncate">
+                <p className="m-0 mt-0.5 text-[10.5px] text-[#e2e8f0] max-w-full truncate">
                   {spec.eslogan}
                 </p>
               )
             )}
-
             {spec.contactParts.length > 0 ? (
-              <p className="m-0 mt-1 text-[10px] leading-snug text-[#cbd5e1] line-clamp-2">
+              <p className="m-0 mt-1 text-[10px] leading-snug text-[#cbd5e1] line-clamp-2 max-w-full">
                 {spec.contactParts.join(' · ')}
               </p>
             ) : (
@@ -96,16 +142,80 @@ export const PdfHeaderPreview: React.FC<PdfHeaderPreviewProps> = ({
               </p>
             )}
           </div>
-        </div>
+        ) : (
+          <div
+            className={`flex items-start gap-3 ${
+              spec.logoAlign === 'right' ? 'flex-row-reverse' : 'flex-row'
+            }`}
+          >
+            <div className="flex flex-col items-end shrink-0 gap-1">
+              {logoElement}
+              {spec.logoAlign === 'right' && (
+                <span className="text-[9.5px] font-medium text-[#e2e8f0] whitespace-nowrap mono">
+                  Fecha: {dateLabel}
+                </span>
+              )}
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <div className="flex items-start justify-between gap-2">
+                <p className="m-0 text-[13.5px] font-extrabold tracking-tight text-[#fefefe] truncate">
+                  {spec.headline}
+                </p>
+                {spec.logoAlign !== 'right' && (
+                  <span className="text-[10px] font-medium text-[#e2e8f0] whitespace-nowrap shrink-0 mono">
+                    Fecha: {dateLabel}
+                  </span>
+                )}
+              </div>
+
+              {spec.workshopName ? (
+                <p
+                  className="m-0 mt-0.5 text-[10.5px] font-bold truncate"
+                  style={{ color: spec.theme.accentHex }}
+                >
+                  {[spec.documentLabel, spec.eslogan].filter(Boolean).join(' · ')}
+                </p>
+              ) : (
+                spec.eslogan && (
+                  <p className="m-0 mt-0.5 text-[10.5px] text-[#e2e8f0] truncate">
+                    {spec.eslogan}
+                  </p>
+                )
+              )}
+
+              {spec.contactParts.length > 0 ? (
+                <p className="m-0 mt-1 text-[10px] leading-snug text-[#cbd5e1] line-clamp-2">
+                  {spec.contactParts.join(' · ')}
+                </p>
+              ) : (
+                <p className="m-0 mt-1 text-[10px] italic text-[#94a3b8]">
+                  Sin datos de contacto visibles en el encabezado
+                </p>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="px-4 py-2.5 bg-[#ffffff] flex items-center justify-between gap-2 text-[11px] border-t border-[#e2e8f0]">
         <span className="font-bold text-[#0f1729] truncate">
           Proyecto / Cliente: {clienteTexto}
         </span>
-        <span className="text-[10px] text-[#64748b] whitespace-nowrap shrink-0">
-          Vista previa PDF
-        </span>
+        {onPreviewPdf ? (
+          <button
+            type="button"
+            id="btn-hoja-vista-previa-badge"
+            onClick={onPreviewPdf}
+            className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 font-extrabold text-[10.5px] whitespace-nowrap shrink-0 cursor-pointer"
+          >
+            👁 Vista Previa
+          </button>
+        ) : (
+          <span className="text-[10px] text-[#64748b] whitespace-nowrap shrink-0">
+            Vista previa PDF
+          </span>
+        )}
       </div>
     </div>
   );
@@ -285,6 +395,113 @@ export const PdfHeaderCustomizer: React.FC<CustomizerProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Controles sencillos de Alineación y Escalado (Zoom) del logotipo */}
+        <div className="w-full pt-2.5 mt-1 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <span className="block text-[11.5px] font-bold text-slate-600 mb-1.5">
+              Alineación del logotipo
+            </span>
+            <div
+              className="grid grid-cols-3 gap-1.5"
+              role="group"
+              aria-label="Alineación del logotipo"
+            >
+              {(
+                [
+                  { id: 'left', label: 'Izq.', full: 'Alinear logotipo a la izquierda', Icon: AlignLeft },
+                  { id: 'center', label: 'Centro', full: 'Centrar logotipo', Icon: AlignCenter },
+                  { id: 'right', label: 'Der.', full: 'Alinear logotipo a la derecha', Icon: AlignRight },
+                ] as const
+              ).map(({ id, label, full, Icon }) => {
+                const active = headerCfg.logoAlign === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    id={compact ? `btn-compact-logo-align-${id}` : `btn-logo-align-${id}`}
+                    data-logo-align={id}
+                    aria-label={full}
+                    aria-pressed={active}
+                    onClick={() => updatePdfHeader({ logoAlign: id as PdfLogoAlign })}
+                    className={`min-h-[36px] px-2 rounded-lg border text-[11.5px] font-bold cursor-pointer inline-flex items-center justify-center gap-1 transition-colors whitespace-nowrap ${
+                      active
+                        ? 'border-blue-500 bg-blue-50 text-blue-800 ring-1 ring-blue-500'
+                        : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    <Icon className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between gap-2 mb-1.5">
+              <label
+                htmlFor={compact ? 'inp-compact-logo-zoom' : 'inp-logo-zoom'}
+                className="text-[11.5px] font-bold text-slate-600"
+              >
+                Escala del logo:{' '}
+                <span className="mono text-blue-700">{headerCfg.logoZoomPct}%</span>
+              </label>
+              {headerCfg.logoZoomPct !== 100 && (
+                <button
+                  type="button"
+                  onClick={() => updatePdfHeader({ logoZoomPct: 100 })}
+                  className="text-[11px] font-bold text-blue-700 hover:underline cursor-pointer inline-flex items-center gap-1"
+                >
+                  <RotateCcw className="w-3 h-3" aria-hidden="true" />
+                  100%
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                id={compact ? 'btn-compact-logo-zoom-out' : 'btn-logo-zoom-out'}
+                aria-label="Reducir tamaño del logotipo"
+                disabled={headerCfg.logoZoomPct <= PDF_LOGO_ZOOM_MIN}
+                onClick={() =>
+                  updatePdfHeader({
+                    logoZoomPct: clampLogoZoomPct(headerCfg.logoZoomPct - PDF_LOGO_ZOOM_STEP * 2),
+                  })
+                }
+                className="w-9 h-9 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 flex items-center justify-center cursor-pointer text-slate-700 shrink-0"
+              >
+                <ZoomOut className="w-4 h-4" aria-hidden="true" />
+              </button>
+              <input
+                id={compact ? 'inp-compact-logo-zoom' : 'inp-logo-zoom'}
+                type="range"
+                min={PDF_LOGO_ZOOM_MIN}
+                max={PDF_LOGO_ZOOM_MAX}
+                step={PDF_LOGO_ZOOM_STEP}
+                value={headerCfg.logoZoomPct}
+                onChange={(e) =>
+                  updatePdfHeader({ logoZoomPct: clampLogoZoomPct(Number(e.target.value)) })
+                }
+                className="flex-1 min-w-[80px] accent-blue-600 cursor-pointer"
+              />
+              <button
+                type="button"
+                id={compact ? 'btn-compact-logo-zoom-in' : 'btn-logo-zoom-in'}
+                aria-label="Aumentar tamaño del logotipo"
+                disabled={headerCfg.logoZoomPct >= PDF_LOGO_ZOOM_MAX}
+                onClick={() =>
+                  updatePdfHeader({
+                    logoZoomPct: clampLogoZoomPct(headerCfg.logoZoomPct + PDF_LOGO_ZOOM_STEP * 2),
+                  })
+                }
+                className="w-9 h-9 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 flex items-center justify-center cursor-pointer text-slate-700 shrink-0"
+              >
+                <ZoomIn className="w-4 h-4" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Selector de color del encabezado PDF */}
@@ -460,25 +677,6 @@ export const PdfHeaderCustomizer: React.FC<CustomizerProps> = ({
             className="w-full min-h-[42px] rounded-xl border border-slate-200 px-3 mono text-[13px] font-medium uppercase"
           />
         </div>
-
-        {!compact && (
-          <div className="sm:col-span-2">
-            <label
-              htmlFor="inp-taller-cliente"
-              className="block text-[12px] font-bold text-slate-500 mb-1"
-            >
-              Cliente predeterminado
-            </label>
-            <input
-              id="inp-taller-cliente"
-              type="text"
-              value={taller.clienteDefault}
-              onChange={(e) => onUpdateTaller({ clienteDefault: e.target.value })}
-              placeholder="Ej. Arq. Ramírez"
-              className="w-full min-h-[42px] rounded-xl border border-slate-200 px-3 text-[13.5px] font-semibold"
-            />
-          </div>
-        )}
       </div>
     </div>
   );

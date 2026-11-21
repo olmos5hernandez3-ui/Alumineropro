@@ -6,6 +6,7 @@ export type ScreenId =
   | 'menu'
   | 'trabajo'
   | 'hoja'
+  | 'cotizaciones'
   | 'taller'
   | 'notas'
   | 'modulacion'
@@ -271,6 +272,7 @@ interface SideDrawerProps {
   pendingRemindersCount?: number;
   dueRemindersCount?: number;
   onOpenReminders?: () => void;
+  onOpenCotizaciones?: () => void;
 }
 
 export const SideDrawer: React.FC<SideDrawerProps> = ({
@@ -294,6 +296,7 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
   pendingRemindersCount = 0,
   dueRemindersCount = 0,
   onOpenReminders,
+  onOpenCotizaciones,
 }) => {
   if (!open) return null;
 
@@ -427,7 +430,20 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
             <span>›</span>
           </button>
 
-          {/* 5.5 Recordatorios Push de Cotizaciones */}
+          {/* 5.5 Historial de Cotizaciones */}
+          {onOpenCotizaciones && (
+            <button
+              type="button"
+              id="btn-drawer-cotizaciones"
+              onClick={onOpenCotizaciones}
+              className="flex items-center justify-between w-full min-h-[46px] px-3.5 py-2.5 rounded-xl border border-indigo-400/45 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-100 text-[13.5px] font-extrabold text-left cursor-pointer"
+            >
+              <span>📋 Historial de Cotizaciones</span>
+              <span>›</span>
+            </button>
+          )}
+
+          {/* 5.6 Recordatorios Push de Cotizaciones */}
           {onOpenReminders && (
             <button
               type="button"

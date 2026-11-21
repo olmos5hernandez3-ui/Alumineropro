@@ -44,32 +44,70 @@ import {
   DEFAULT_CONTRATO_CLIENTE,
   DEFAULT_PDF_HEADER,
   DEFAULT_TALLER,
+  filterCotizacionesByEstado,
   formatContratoFolio,
+  formatCotizacionFolio,
   formatWhatsappUrlDigits,
+  getSavedCurrentCotizacionFolio,
+  issueNextCotizacionFolio,
+  KEYS,
+  loadClientes,
   loadCotizacionReminders,
+  loadCotizacionesGuardadas,
   loadSugerenciasWhatsapp,
   loadTaller,
+  peekNextCotizacionFolio,
+  recordCotizacionGuardada,
   sanitizeWhatsappNumber,
   saveCotizacionReminders,
   saveSugerenciasWhatsapp,
   saveSugerenciasWhatsappValidated,
   saveTaller,
+  updateCotizacionEstado,
+  upsertCliente,
   validateWhatsappNumber,
 } from './storageHelpers';
 import {
+  buildHistorialPdfReport,
   buildPdfHeaderSpec,
+  clampLogoZoomPct,
+  computePdfLogoMetrics,
+  normalizeLogoAlign,
   PDF_HEADER_THEMES,
   resolvePdfHeaderConfig,
 } from './pdfHeaderUtils';
+import {
+  buildLevantamientoWhatsappText,
+  LEV_KEYS,
+  mergeLevantamientosBackup,
+  normalizeLevantamientoDraft,
+} from './levantamientoLogic';
+import {
+  computeCorredizaLeafTranslateX,
+  computeSimProgressFromElapsed,
+  SIM_CLOSE_MS,
+  SIM_CYCLE_MS,
+  SIM_OPEN_MS,
+  SIM_PAUSE_OPEN_MS,
+} from './blueprintMotion';
+import {
+  clearHistoryOverlayStack,
+  consumeTopHistoryOverlay,
+  getHistoryOverlayDepth,
+  pushHistoryOverlay,
+  removeHistoryOverlay,
+} from './historyOverlayStack';
 import {
   buildQuoteReminderNotificationPayload,
   computeReminderDueAt,
   createCotizacionReminder,
   formatReminderRelativeTime,
   getDueCotizacionReminders,
+  getPushPermissionGuide,
   markReminderNotified,
   parseSwPushPayload,
   partitionCotizacionReminders,
+  requestPushNotificationPermission,
   snoozeCotizacionReminder,
   updateCotizacionReminderStatus,
 } from './pushReminders';
@@ -1669,8 +1707,8 @@ test('38. Personalización de encabezado PDF: temas, logo, contacto, eslogan y m
     '@aluminiosdelvalle',
     'RFC: ALVA900101ABC',
   ]);
-  assert.equal(quoteSpec.headerHeightMm, 36);
-  assert.equal(quoteSpec.bodyStartY, 45);
+  assert.equal(quoteSpec.headerHeightMm, 37);
+  assert.equal(quoteSpec.bodyStartY, 46);
 
   const techSpec = buildPdfHeaderSpec(customTaller, 'tecnico', { dateLabel: '21/11/2026' });
   assert.equal(techSpec.headline, 'Aluminios del Valle');
@@ -1755,7 +1793,366 @@ test('39. loadTaller mantiene compatibilidad retroactiva al cargar talleres sin 
   }
 });
 
+test('40. Escalado (zoom), alineación (izq/centro/der) y conservación de aspecto del logotipo PDF en distintos formatos', () => {
+  // Clamp y normalización segura
+  assert.equal(clampLogoZoomPct(undefined), 100);
+  assert.equal(clampLogoZoomPct(25), 60);
+  assert.equal(clampLogoZoomPct(260), 150);
+  assert.equal(clampLogoZoomPct(124.6), 125);
+  assert.equal(normalizeLogoAlign('center'), 'center');
+  assert.equal(normalizeLogoAlign('right'), 'right');
+  assert.equal(normalizeLogoAlign('invalid'), 'left');
 
+  // Logo cuadrado (1:1) al 60%, 100% y 150%
+  const sq60 = computePdfLogoMetrics({ naturalWidth: 300, naturalHeight: 300, zoomPct: 60, align: 'left' });
+  const sq100 = computePdfLogoMetrics({ naturalWidth: 300, naturalHeight: 300, zoomPct: 100, align: 'left' });
+  const sq150 = computePdfLogoMetrics({ naturalWidth: 300, naturalHeight: 300, zoomPct: 150, align: 'left' });
+  assert.equal(sq100.drawW, sq100.drawH);
+  assert.ok(sq60.frameW < sq100.frameW);
+  assert.ok(sq150.frameW > sq100.frameW);
 
+  // Logo horizontal panorámico (3:1): conserva relación de aspecto sin superar el ancho máximo
+  const wideLeft = computePdfLogoMetrics({ naturalWidth: 600, naturalHeight: 200, zoomPct: 100, align: 'left' });
+  assert.equal(wideLeft.aspectRatio, 3);
+  assert.ok(wideLeft.drawW <= 42);
+  assert.ok(Math.abs(wideLeft.drawW / wideLeft.drawH - 3) < 0.05);
 
+  const wideCenter = computePdfLogoMetrics({ naturalWidth: 600, naturalHeight: 200, zoomPct: 120, align: 'center' });
+  assert.ok(wideCenter.drawW > wideLeft.drawW);
+  assert.ok(wideCenter.drawW <= 72);
 
+  // Logo vertical alto (1:2): conserva proporción vertical
+  const tallRight = computePdfLogoMetrics({ naturalWidth: 150, naturalHeight: 300, zoomPct: 100, align: 'right' });
+  assert.equal(tallRight.aspectRatio, 0.5);
+  assert.ok(Math.abs(tallRight.drawW / tallRight.drawH - 0.5) < 0.05);
+
+  // Altura del encabezado crece automáticamente para evitar cortes al centrar o ampliar el logo
+  const tallerConLogo = {
+    ...DEFAULT_TALLER,
+    nombre: 'Vidrios Norte',
+    logoDataUrl: 'data:image/png;base64,iVBORw0KGgo=',
+    pdfHeader: {
+      mostrarLogo: true,
+      logoZoomPct: 140,
+      logoAlign: 'center' as const,
+    },
+  };
+  const centerSpec = buildPdfHeaderSpec(tallerConLogo, 'cotizacion', {
+    dateLabel: '21/11/2026',
+    naturalLogoWidth: 400,
+    naturalLogoHeight: 200,
+  });
+  assert.equal(centerSpec.logoAlign, 'center');
+  assert.equal(centerSpec.logoZoomPct, 140);
+  assert.ok(centerSpec.headerHeightMm >= 46);
+  assert.equal(centerSpec.bodyStartY, centerSpec.headerHeightMm + 9);
+
+  // Valores por defecto en resolvePdfHeaderConfig
+  const resolved = resolvePdfHeaderConfig({ ...DEFAULT_TALLER, pdfHeader: {} });
+  assert.equal(resolved.logoZoomPct, 100);
+  assert.equal(resolved.logoAlign, 'left');
+});
+
+test('41. Reporte de Historial de Cotizaciones para exportación a PDF calcula filas, piezas y total acumulado', () => {
+  const emptyReport = buildHistorialPdfReport([]);
+  assert.equal(emptyReport.totalCotizaciones, 0);
+  assert.equal(emptyReport.totalPiezas, 0);
+  assert.equal(emptyReport.montoAcumulado, 0);
+
+  const histSpec = buildPdfHeaderSpec(
+    { ...DEFAULT_TALLER, nombre: 'Taller Central' },
+    'historial',
+    { dateLabel: '21/11/2026' }
+  );
+  assert.equal(histSpec.documentLabel, 'HISTORIAL DE COTIZACIONES');
+  assert.equal(histSpec.headline, 'Taller Central');
+
+  const report = buildHistorialPdfReport([
+    {
+      id: 'h-1',
+      referencia: 'Sala Residencia Norte',
+      fecha: '20/11/2026',
+      linea: '3',
+      anchoCm: 150,
+      altoCm: 120,
+      color: 'natural',
+      cantidad: 2,
+      total: 10260,
+    },
+    {
+      id: 'h-2',
+      referencia: 'Puerta Acceso Principal',
+      fecha: '21/11/2026',
+      linea: 'puerta-abatible',
+      anchoCm: 95,
+      altoCm: 215,
+      color: 'negro',
+      cantidad: 1,
+      total: 7965.75,
+    },
+  ]);
+
+  assert.equal(report.totalCotizaciones, 2);
+  assert.equal(report.totalPiezas, 3);
+  assert.equal(report.montoAcumulado, 18225.75);
+  assert.match(report.montoAcumuladoFormatted, /18,225\.75/);
+  assert.equal(report.rows[0].index, 1);
+  assert.equal(report.rows[0].referencia, 'Sala Residencia Norte');
+  assert.match(report.rows[0].especificacion, /150×120 cm/);
+  assert.equal(report.rows[1].index, 2);
+  assert.match(report.rows[1].especificacion, /95×215 cm/);
+  assert.match(report.rows[1].totalFormatted, /7,965\.75/);
+});
+
+test('42. Guía de activación de notificaciones Push (default, denied, granted, unsupported/iOS) y solicitud de permisos', async () => {
+  const guideDefaultPending = getPushPermissionGuide(
+    { supported: true, swSupported: true, pushSupported: true, permission: 'default' },
+    { swReady: true, pendingCount: 3 }
+  );
+  assert.equal(guideDefaultPending.status, 'default');
+  assert.equal(guideDefaultPending.needsAction, true);
+  assert.equal(guideDefaultPending.canRequestDirectly, true);
+  assert.match(guideDefaultPending.headline, /3 cotización\(es\) pendiente\(s\)/);
+  assert.equal(guideDefaultPending.steps.length, 3);
+  assert.equal(guideDefaultPending.ctaLabel, 'Activar notificaciones Push');
+
+  const guideDenied = getPushPermissionGuide(
+    { supported: true, swSupported: true, pushSupported: true, permission: 'denied' },
+    { swReady: false, pendingCount: 2 }
+  );
+  assert.equal(guideDenied.status, 'denied');
+  assert.equal(guideDenied.needsAction, true);
+  assert.equal(guideDenied.canRequestDirectly, false);
+  assert.match(guideDenied.headline, /2 seguimiento\(s\) pendiente\(s\)/);
+  assert.match(guideDenied.steps[0], /candado/i);
+  assert.equal(guideDenied.ctaLabel, 'Verificar permiso ahora');
+
+  const guideGranted = getPushPermissionGuide(
+    { supported: true, swSupported: true, pushSupported: true, permission: 'granted' },
+    { swReady: true, pendingCount: 4 }
+  );
+  assert.equal(guideGranted.status, 'granted');
+  assert.equal(guideGranted.needsAction, false);
+  assert.equal(guideGranted.badgeLabel, 'Push SW Activo ✓');
+  assert.match(guideGranted.description, /4 seguimiento\(s\) pendiente\(s\)/);
+  assert.equal(guideGranted.ctaLabel, null);
+
+  const guideIosBrowser = getPushPermissionGuide(
+    { supported: false, swSupported: false, pushSupported: false, permission: 'unsupported' },
+    { isAppleMobile: true, isStandalone: false }
+  );
+  assert.equal(guideIosBrowser.status, 'unsupported');
+  assert.equal(guideIosBrowser.needsAction, true);
+  assert.match(guideIosBrowser.headline, /iOS/);
+  assert.equal(guideIosBrowser.steps.length, 3);
+
+  const guideUnsupportedDesktop = getPushPermissionGuide(
+    { supported: false, swSupported: false, pushSupported: false, permission: 'unsupported' },
+    { isAppleMobile: false, isStandalone: false }
+  );
+  assert.equal(guideUnsupportedDesktop.needsAction, false);
+  assert.equal(guideUnsupportedDesktop.steps.length, 0);
+
+  assert.equal(await requestPushNotificationPermission(), 'unsupported');
+
+  const g = globalThis as Record<string, unknown>;
+  const prevWindow = g.window;
+  const prevNotification = g.Notification;
+  try {
+    const fakeNotification = {
+      permission: 'default' as NotificationPermission,
+      requestPermission: (cb?: (perm: NotificationPermission) => void) => {
+        fakeNotification.permission = 'granted';
+        if (cb) cb('granted');
+        return Promise.resolve('granted' as NotificationPermission);
+      },
+    };
+    g.Notification = fakeNotification;
+    g.window = { Notification: fakeNotification };
+    const requested = await requestPushNotificationPermission();
+    assert.equal(requested, 'granted');
+  } finally {
+    if (prevWindow === undefined) delete g.window;
+    else g.window = prevWindow;
+    if (prevNotification === undefined) delete g.Notification;
+    else g.Notification = prevNotification;
+  }
+});
+
+test('53. Folio de cotización COT-AAAA-NNN: peek no incrementa y solo issue avanza el contador', () => {
+  const store = new Map<string, string>();
+  const mockStorage = {
+    getItem: (k: string) => store.get(k) ?? null,
+    setItem: (k: string, v: string) => {
+      store.set(k, v);
+    },
+  };
+
+  assert.equal(formatCotizacionFolio(1, 2026), 'COT-2026-001');
+  assert.equal(peekNextCotizacionFolio(2026, mockStorage), 'COT-2026-001');
+  assert.equal(peekNextCotizacionFolio(2026, mockStorage), 'COT-2026-001');
+  assert.equal(store.get(KEYS.COT_COUNTER), undefined);
+
+  const issued1 = issueNextCotizacionFolio(2026, mockStorage);
+  assert.equal(issued1, 'COT-2026-001');
+  assert.equal(store.get(KEYS.COT_ACTUAL), 'COT-2026-001');
+  assert.equal(getSavedCurrentCotizacionFolio(2026, mockStorage), 'COT-2026-001');
+  assert.equal(peekNextCotizacionFolio(2026, mockStorage), 'COT-2026-002');
+
+  const issued2 = issueNextCotizacionFolio(2026, mockStorage);
+  assert.equal(issued2, 'COT-2026-002');
+  assert.equal(store.get(KEYS.COT_ACTUAL), 'COT-2026-002');
+});
+
+test('54. Encabezado PDF no repite Fecha junto a Tel y separa ubicacionLine', () => {
+  const spec = buildPdfHeaderSpec(
+    {
+      ...DEFAULT_TALLER,
+      nombre: 'Aluminios del Centro',
+      tel: '735-163-1532',
+      ubicacion: 'Av. Reforma #120, Col. Centro',
+    },
+    'cotizacion',
+    { dateLabel: '19/11/2026' }
+  );
+  assert.equal(spec.ubicacionLine, 'Av. Reforma #120, Col. Centro');
+  assert.ok(spec.contactPrimary.includes('Tel: 735-163-1532'));
+  assert.equal(spec.contactPrimary.toLowerCase().includes('fecha:'), false);
+});
+
+test('55. Libreta de clientes (aluminero_clientes_v1) y Historial de cotizaciones (estados + filtro)', () => {
+  const store = new Map<string, string>();
+  const mockStorage = {
+    getItem: (k: string) => store.get(k) ?? null,
+    setItem: (k: string, v: string) => {
+      store.set(k, v);
+    },
+  };
+
+  upsertCliente(
+    { nombre: 'Cliente General', telefono: '000', direccion: 'Nada' },
+    mockStorage
+  );
+  assert.equal(loadClientes(mockStorage).length, 0);
+
+  upsertCliente(
+    { nombre: 'Sr. Juan Pérez', telefono: '735-163-1532', direccion: 'Col. Centro #45' },
+    mockStorage
+  );
+  upsertCliente(
+    { nombre: 'Sr. Juan Pérez', telefono: '735-999-0000' },
+    mockStorage
+  );
+  const clients = loadClientes(mockStorage);
+  assert.equal(clients.length, 1);
+  assert.equal(clients[0].telefono, '735-999-0000');
+  assert.equal(clients[0].direccion, 'Col. Centro #45');
+
+  recordCotizacionGuardada(
+    {
+      folio: 'COT-2026-001',
+      fecha: '19/11/2026',
+      cliente: 'Sr. Juan Pérez',
+      total: 12500,
+      piezasCount: 3,
+    },
+    mockStorage
+  );
+  recordCotizacionGuardada(
+    {
+      folio: 'COT-2026-002',
+      fecha: '19/11/2026',
+      cliente: 'Arq. Laura Gómez',
+      total: 8400,
+      piezasCount: 2,
+    },
+    mockStorage
+  );
+  const saved = loadCotizacionesGuardadas(mockStorage);
+  assert.equal(saved.length, 2);
+  assert.equal(saved[0].estado, 'enviada');
+
+  const updated = updateCotizacionEstado(saved[0].id, 'aprobada', mockStorage);
+  assert.equal(filterCotizacionesByEstado(updated, 'aprobada').length, 1);
+  assert.equal(filterCotizacionesByEstado(updated, 'enviada').length, 1);
+});
+
+test('56. Levantamiento: migración ref -> direccion, fusión JSON sin duplicados y resumen WhatsApp', () => {
+  assert.equal(LEV_KEYS.activo, 'aluminero_lev_activo_v1');
+  const migrated = normalizeLevantamientoDraft({
+    id: 'lv-1',
+    cliente: 'Sr. Carlos',
+    ref: 'Av. Juárez 88',
+    fecha: '19/11/2026',
+    piezas: [{ id: 'p-1', tipo: 'Ventana Corrediza', area: 'Sala', anchoCm: 120, altoCm: 100, cant: 1, notas: '', foto: '' }],
+  });
+  assert.equal(migrated.direccion, 'Av. Juárez 88');
+
+  const merged = mergeLevantamientosBackup(
+    [migrated],
+    [
+      { ...migrated, telefono: '735-111-2233' },
+      {
+        id: 'lv-2',
+        cliente: 'Sra. Ana',
+        telefono: '555-123-4567',
+        direccion: 'Col. Norte',
+        fecha: '20/11/2026',
+        piezas: [{ id: 'p-2', tipo: 'Puerta', area: 'Entrada', anchoCm: 90, altoCm: 210, cant: 1, notas: '', foto: '' }],
+      },
+    ]
+  );
+  assert.equal(merged.merged.length, 2);
+  assert.equal(merged.addedCount, 1);
+  assert.equal(merged.updatedCount, 1);
+
+  const wa = buildLevantamientoWhatsappText({
+    ...migrated,
+    telefono: '735-111-2233',
+  });
+  assert.match(wa, /Teléfono: 735-111-2233/);
+  assert.match(wa, /Dirección: Av\. Juárez 88/);
+});
+
+test('57. Plano corredizo 2 y 3 hojas recorre 100% de leafW y ciclo rAF respeta pausas', () => {
+  const leafW = 130;
+  assert.equal(
+    computeCorredizaLeafTranslateX({ numHojas: 2, idx: 1, leafW, t: 1, invertido: false, slideOffset: -90 }),
+    -130
+  );
+  assert.equal(
+    computeCorredizaLeafTranslateX({ numHojas: 2, idx: 0, leafW, t: 1, invertido: true, slideOffset: 90 }),
+    130
+  );
+  assert.equal(
+    computeCorredizaLeafTranslateX({ numHojas: 3, idx: 1, leafW: 86, t: 1, invertido: false, slideOffset: -90 }),
+    -86
+  );
+
+  assert.equal(computeSimProgressFromElapsed(0), 0);
+  assert.equal(computeSimProgressFromElapsed(SIM_OPEN_MS + 200), 100);
+  assert.equal(computeSimProgressFromElapsed(SIM_OPEN_MS + SIM_PAUSE_OPEN_MS + SIM_CLOSE_MS + 100), 0);
+  assert.equal(computeSimProgressFromElapsed(SIM_CYCLE_MS), 0);
+});
+
+test('58. Pila LIFO de capas de historial cierra solo la capa superior (PDF sheet -> visor -> firma)', () => {
+  clearHistoryOverlayStack();
+  const closed: string[] = [];
+
+  pushHistoryOverlay('pdf-sheet', () => closed.push('sheet'));
+  const viewerTok = pushHistoryOverlay('pdf-viewer', () => closed.push('viewer'));
+  pushHistoryOverlay('signature-pad', () => closed.push('signature'));
+
+  assert.equal(getHistoryOverlayDepth(), 3);
+  assert.equal(consumeTopHistoryOverlay(), true);
+  assert.deepEqual(closed, ['signature']);
+  assert.equal(getHistoryOverlayDepth(), 2);
+
+  // Remover por token sin afectar otras capas
+  removeHistoryOverlay(viewerTok);
+  assert.equal(getHistoryOverlayDepth(), 1);
+
+  assert.equal(consumeTopHistoryOverlay(), true);
+  assert.deepEqual(closed, ['signature', 'sheet']);
+  assert.equal(consumeTopHistoryOverlay(), false);
+});

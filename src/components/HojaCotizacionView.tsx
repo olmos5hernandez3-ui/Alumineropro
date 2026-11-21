@@ -1,31 +1,45 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useState } from 'react';
 import {
   COLORES_CONFIG,
   consolidarMaterialesObra,
+  formatClientPhoneInput,
   getRellenoLabel,
   LINEAS_CONFIG,
   PartidaObra,
 } from '../utils/alumineroLogic';
-import { generarPdfClienteLimpio } from '../utils/pdfExport';
+import { CotizacionPdfBlobResult } from '../utils/pdfExport';
 import {
+  ClienteGuardado,
   ContratoClienteInfo,
+  DEFAULT_HOJA_CONDITIONS,
   formatMXN,
   getPerfilFotoUrl,
   HojaState,
+  loadClientes,
   ObraAprobadaApartado,
+  PartidaObraExtended,
+  peekNextCotizacionFolio,
   PerfilFotosMap,
+  recordCotizacionGuardada,
   SobranteItem,
   TallerConfig,
+  upsertCliente,
 } from '../utils/storageHelpers';
 import {
   CotizacionReminder,
   CotizacionReminderStatus,
 } from '../utils/pushReminders';
-import { ContratoModal } from './ContratoModal';
 import { CotizacionRemindersPanel } from './CotizacionRemindersPanel';
 import { PartidaMiniSvg } from './PartidaMiniSvg';
 import { PdfHeaderCustomizerModal, PdfHeaderPreview } from './PdfHeaderCustomizer';
 import { PerfilSectionSvg } from './PerfilSectionSvg';
+
+const LazyContratoModal = lazy(() =>
+  import('./ContratoModal').then((m) => ({ default: m.ContratoModal }))
+);
+const LazyPdfPreviewModal = lazy(() =>
+  import('./PdfPreviewModal').then((m) => ({ default: m.PdfPreviewModal }))
+);
 
 const APERTURA_PREVIEW_LABELS: Record<string, string> = {
   corrediza: 'Corrediza',
@@ -67,6 +81,7 @@ interface Props {
   onNotifyReminderNow?: (reminder: CotizacionReminder) => Promise<void>;
   onTestPushNotification?: () => Promise<void>;
   onRequestPushPermission?: () => Promise<NotificationPermission | 'unsupported'>;
+  onRecordFinalPdf?: (res: CotizacionPdfBlobResult) => void;
   onShowToast: (msg: string, topSuccess?: boolean) => void;
 }
 
@@ -100,11 +115,16 @@ export const HojaCotizacionView: React.FC<Props> = ({
   onNotifyReminderNow,
   onTestPushNotification,
   onRequestPushPermission,
+  onRecordFinalPdf,
   onShowToast,
 }) => {
   const [showDespieceObra, setShowDespieceObra] = useState(false);
   const [contratoOpen, setContratoOpen] = useState(false);
   const [pdfHeaderModalOpen, setPdfHeaderModalOpen] = useState(false);
+  const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
+  const [currentFolio, setCurrentFolio] = useState<string>(() => peekNextCotizacionFolio());
+  const [clientesGuardados, setClientesGuardados] = useState<ClienteGuardado[]>(() => loadClientes());
+  const [showClientSuggestions, setShowClientSuggestions] = useState(false);
 
   useEffect(() => {
     if (!onRegisterCloseSubModal) return;
@@ -113,6 +133,31 @@ export const HojaCotizacionView: React.FC<Props> = ({
     });
     return () => onRegisterCloseSubModal(null);
   }, [onRegisterCloseSubModal]);
+
+  useEffect(() => {
+    setClientesGuardados(loadClientes());
+  }, [hoja.proyecto]);
+
+  const dNow = new Date();
+  const todayLabel = `${String(dNow.getDate()).padStart(2, '0')}/${String(
+    dNow.getMonth() + 1
+  ).padStart(2, '0')}/${dNow.getFullYear()}`;
+
+  const handleOpenPdfPreview = () => {
+    if (hoja.partidas.length === 0) {
+      onShowToast('Agrega piezas antes de ver o generar el PDF');
+      return;
+    }
+    if ((hoja.proyecto || '').trim()) {
+      const updatedClients = upsertCliente({
+        nombre: hoja.proyecto,
+        telefono: hoja.clienteTel || contratoCliente.telefono,
+        direccion: hoja.clienteDir || contratoCliente.direccion,
+      });
+      setClientesGuardados(updatedClients);
+    }
+    setPdfPreviewOpen(true);
+  };
 
   const comprometidosMap: Record<string, number> = {};
   for (const ob of obrasAprobadas) {
@@ -139,9 +184,22 @@ export const HojaCotizacionView: React.FC<Props> = ({
       onShowToast('Agrega al menos una pieza primero');
       return;
     }
+    const vigencia =
+      typeof hoja.vigenciaDias === 'number' && hoja.vigenciaDias > 0
+        ? Math.round(hoja.vigenciaDias)
+        : DEFAULT_HOJA_CONDITIONS.vigenciaDias;
+    const anticipo =
+      typeof hoja.anticipoPct === 'number' && hoja.anticipoPct >= 0
+        ? Math.round(hoja.anticipoPct)
+        : DEFAULT_HOJA_CONDITIONS.anticipoPct;
+    const entrega =
+      (hoja.tiempoEntrega || '').trim() || DEFAULT_HOJA_CONDITIONS.tiempoEntrega;
     const lines = [
       `*${taller.nombre || 'PRESUPUESTO DE ALUMINIO Y VIDRIO'}*`,
-      `Proyecto: ${hoja.proyecto || taller.clienteDefault || 'Cliente General'}`,
+      `Folio: ${currentFolio} · Fecha: ${todayLabel}`,
+      `Proyecto: ${hoja.proyecto || 'Cliente General'}`,
+      hoja.clienteTel ? `Tel.: ${hoja.clienteTel}` : '',
+      hoja.clienteDir ? `Dir.: ${hoja.clienteDir}` : '',
       '',
       ...hoja.partidas.map((p, i) => {
         const l = LINEAS_CONFIG[p.linea];
@@ -155,7 +213,7 @@ export const HojaCotizacionView: React.FC<Props> = ({
       ivaVal > 0 ? `IVA (16%): ${formatMXN(ivaVal)}` : '',
       `*TOTAL FINAL: ${formatMXN(grandTotal)}*`,
       '',
-      'Vigencia: 8 días naturales · Garantía: 30 días en mano de obra.',
+      `Vigencia: ${vigencia} días · Anticipo: ${anticipo}% · Entrega: ${entrega}. Garantía: 30 días en mano de obra.`,
     ].filter(Boolean);
 
     try {
@@ -206,21 +264,111 @@ export const HojaCotizacionView: React.FC<Props> = ({
       </div>
 
       <div className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] p-4 sm:p-5 shadow-xl mb-4">
-        <h2 className="m-0 text-[17px] font-extrabold">Datos del Proyecto / Obra</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+          <h2 className="m-0 text-[17px] font-extrabold">Datos del Proyecto / Obra</h2>
+          <span
+            id="hoja-folio-badge"
+            className="px-2.5 py-1 rounded-lg bg-blue-50 border border-blue-200 text-blue-800 mono text-[11.5px] font-extrabold"
+          >
+            Cotización No. {currentFolio} · {todayLabel}
+          </span>
+        </div>
         <p className="m-0 text-[12px] text-slate-600 mb-3">
           Se mostrará en el encabezado de la cotización, PDF para cliente y WhatsApp
         </p>
-        <label htmlFor="inp-hoja-proyecto" className="block text-[12px] font-bold text-slate-600 mb-1.5">
-          Nombre del Cliente / Proyecto
-        </label>
-        <input
-          id="inp-hoja-proyecto"
-          type="text"
-          value={hoja.proyecto}
-          onChange={(e) => onUpdateHoja({ proyecto: e.target.value })}
-          placeholder="Ej. Casa del Sr. García o Residencial Lomas"
-          className="w-full min-h-[44px] rounded-xl border border-slate-300 px-3 text-[14px] font-semibold"
-        />
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="sm:col-span-2 relative">
+            <label htmlFor="inp-hoja-proyecto" className="block text-[12px] font-bold text-slate-600 mb-1.5">
+              Nombre del Cliente / Proyecto
+            </label>
+            <input
+              id="inp-hoja-proyecto"
+              type="text"
+              value={hoja.proyecto}
+              onFocus={() => setShowClientSuggestions(true)}
+              onBlur={() => window.setTimeout(() => setShowClientSuggestions(false), 180)}
+              onChange={(e) => {
+                onUpdateHoja({ proyecto: e.target.value });
+                setShowClientSuggestions(true);
+              }}
+              placeholder="Ej. Casa del Sr. García o Residencial Lomas"
+              className="w-full min-h-[44px] rounded-xl border border-slate-300 px-3 text-[14px] font-semibold"
+            />
+            {showClientSuggestions && clientesGuardados.length > 0 && (() => {
+              const q = (hoja.proyecto || '').trim().toLowerCase();
+              const matches = clientesGuardados
+                .filter((c) => !q || c.nombre.toLowerCase().includes(q))
+                .slice(0, 5);
+              if (matches.length === 0) return null;
+              return (
+                <div className="absolute left-0 right-0 top-full mt-1 z-30 rounded-xl border border-slate-300 bg-white shadow-xl overflow-hidden">
+                  {matches.map((cli) => (
+                    <button
+                      key={cli.id}
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        onUpdateHoja({
+                          proyecto: cli.nombre,
+                          clienteTel: cli.telefono || hoja.clienteTel || '',
+                          clienteDir: cli.direccion || hoja.clienteDir || '',
+                        });
+                        if (cli.telefono || cli.direccion) {
+                          onUpdateContratoCliente({
+                            nombre: cli.nombre,
+                            telefono: cli.telefono || contratoCliente.telefono,
+                            direccion: cli.direccion || contratoCliente.direccion,
+                          });
+                        }
+                        setShowClientSuggestions(false);
+                      }}
+                      className="w-full px-3 py-2 text-left hover:bg-blue-50 border-b border-slate-100 last:border-b-0 flex items-center justify-between gap-2 cursor-pointer"
+                    >
+                      <span className="text-[13px] font-bold text-slate-900 truncate">{cli.nombre}</span>
+                      <span className="text-[11px] text-slate-500 mono shrink-0">
+                        {cli.telefono || cli.direccion || 'Cliente guardado'}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
+
+          <div>
+            <label htmlFor="inp-hoja-cliente-tel" className="block text-[12px] font-bold text-slate-600 mb-1.5">
+              Teléfono del cliente
+            </label>
+            <input
+              id="inp-hoja-cliente-tel"
+              type="tel"
+              inputMode="tel"
+              maxLength={14}
+              value={hoja.clienteTel ?? ''}
+              onChange={(e) => {
+                const formatted = formatClientPhoneInput(e.target.value, hoja.clienteTel ?? '');
+                onUpdateHoja({ clienteTel: formatted });
+              }}
+              placeholder="Ej. 735-163-1532"
+              className="w-full min-h-[44px] rounded-xl border border-slate-300 px-3 mono text-[13.5px] font-semibold"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="inp-hoja-cliente-dir" className="block text-[12px] font-bold text-slate-600 mb-1.5">
+              Dirección del cliente
+            </label>
+            <input
+              id="inp-hoja-cliente-dir"
+              type="text"
+              value={hoja.clienteDir ?? ''}
+              onChange={(e) => onUpdateHoja({ clienteDir: e.target.value })}
+              placeholder="Calle, colonia o referencia de entrega"
+              className="w-full min-h-[44px] rounded-xl border border-slate-300 px-3 text-[13.5px] font-semibold"
+            />
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-5 items-start">
@@ -249,6 +397,7 @@ export const HojaCotizacionView: React.FC<Props> = ({
               taller={taller}
               proyectoNombre={hoja.proyecto}
               kind="cotizacion"
+              onPreviewPdf={handleOpenPdfPreview}
             />
             {onUpdateTaller && (
               <div className="flex justify-end">
@@ -349,7 +498,12 @@ export const HojaCotizacionView: React.FC<Props> = ({
         {/* Totales y Consolidado */}
         <div className="flex flex-col gap-4">
           <div className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] p-4 sm:p-5 shadow-xl">
-            <h2 className="m-0 text-[17px] font-extrabold">Resumen Económico</h2>
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <h2 className="m-0 text-[17px] font-extrabold">Resumen Económico</h2>
+              <span className="mono text-[11px] font-extrabold text-blue-700">
+                {currentFolio} · {todayLabel}
+              </span>
+            </div>
             <p className="m-0 text-[12px] text-slate-500">Ajuste por volumen de obra e impuestos</p>
 
             <div className="my-3.5">
@@ -400,10 +554,71 @@ export const HojaCotizacionView: React.FC<Props> = ({
               <span className="mono text-[25px] text-blue-600">{formatMXN(grandTotal)}</span>
             </div>
 
-            <div className="mb-3.5 p-3 rounded-[10px] bg-slate-50 border border-slate-200 text-[11.8px] text-slate-600 leading-relaxed">
-              <strong className="block text-slate-900 text-[12px] mb-1">Notas y Condiciones</strong>
-              <div>• Vigencia de esta cotización: 8 días naturales (sujeta a variación por precio de materiales)</div>
-              <div>• Garantía de 30 días en mano de obra, sellado hermético y funcionamiento de herrajes</div>
+            <div className="mb-3.5 p-3 rounded-[12px] bg-slate-50 border border-slate-200 text-[11.8px] text-slate-600 leading-relaxed flex flex-col gap-2">
+              <strong className="block text-slate-900 text-[12px]">Condiciones editables del PDF</strong>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                <div>
+                  <label htmlFor="inp-hoja-vigencia" className="block text-[10.5px] font-bold text-slate-500 mb-0.5">
+                    Vigencia (días)
+                  </label>
+                  <input
+                    id="inp-hoja-vigencia"
+                    type="number"
+                    min={1}
+                    max={90}
+                    value={hoja.vigenciaDias ?? DEFAULT_HOJA_CONDITIONS.vigenciaDias}
+                    onChange={(e) =>
+                      onUpdateHoja({
+                        vigenciaDias: Math.max(1, Math.min(90, Math.round(Number(e.target.value) || 8))),
+                      })
+                    }
+                    className="w-full min-h-[34px] rounded-lg border border-slate-300 bg-white px-2 mono text-[12.5px] font-bold"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="inp-hoja-anticipo" className="block text-[10.5px] font-bold text-slate-500 mb-0.5">
+                    Anticipo (%)
+                  </label>
+                  <input
+                    id="inp-hoja-anticipo"
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={hoja.anticipoPct ?? DEFAULT_HOJA_CONDITIONS.anticipoPct}
+                    onChange={(e) =>
+                      onUpdateHoja({
+                        anticipoPct: Math.max(0, Math.min(100, Math.round(Number(e.target.value) || 0))),
+                      })
+                    }
+                    className="w-full min-h-[34px] rounded-lg border border-slate-300 bg-white px-2 mono text-[12.5px] font-bold"
+                  />
+                </div>
+                <div className="col-span-2 sm:col-span-1">
+                  <label htmlFor="inp-hoja-entrega" className="block text-[10.5px] font-bold text-slate-500 mb-0.5">
+                    Entrega
+                  </label>
+                  <input
+                    id="inp-hoja-entrega"
+                    type="text"
+                    value={hoja.tiempoEntrega ?? DEFAULT_HOJA_CONDITIONS.tiempoEntrega}
+                    onChange={(e) => onUpdateHoja({ tiempoEntrega: e.target.value })}
+                    placeholder="5 a 7 días hábiles"
+                    className="w-full min-h-[34px] rounded-lg border border-slate-300 bg-white px-2 text-[12px] font-semibold"
+                  />
+                </div>
+              </div>
+              <label className="inline-flex items-center gap-2 cursor-pointer text-[11.5px] font-bold text-slate-700 pt-1">
+                <input
+                  id="chk-hoja-fotos-pdf"
+                  type="checkbox"
+                  checked={Boolean(hoja.incluirFotosPdf)}
+                  onChange={(e) => onUpdateHoja({ incluirFotosPdf: e.target.checked })}
+                />
+                Incluir fotos de piezas en el PDF (si existen)
+              </label>
+              <div className="text-[11px] text-slate-500">
+                • Garantía de 30 días en mano de obra, sellado hermético y funcionamiento de herrajes
+              </div>
             </div>
 
             <div className="flex flex-col gap-2.5">
@@ -444,17 +659,10 @@ export const HojaCotizacionView: React.FC<Props> = ({
               <button
                 type="button"
                 id="btn-generar-pdf-cliente"
-                onClick={() => {
-                  if (hoja.partidas.length === 0) {
-                    onShowToast('Agrega piezas antes de generar el PDF');
-                    return;
-                  }
-                  generarPdfClienteLimpio(hoja, taller);
-                  onShowToast('PDF para Cliente descargado', true);
-                }}
+                onClick={handleOpenPdfPreview}
                 className="w-full min-h-[48px] px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-[14px] cursor-pointer"
               >
-                Generar PDF para Cliente
+                📄 Vista Previa y Descargar PDF
               </button>
               <button
                 type="button"
@@ -588,10 +796,10 @@ export const HojaCotizacionView: React.FC<Props> = ({
           <div className="mt-4">
             <CotizacionRemindersPanel
               reminders={reminders}
-              defaultProyecto={hoja.proyecto || taller.clienteDefault || ''}
+              defaultProyecto={hoja.proyecto || ''}
               defaultTotal={grandTotal}
               defaultPartidasCount={hoja.partidas.length}
-              defaultTelefono={contratoCliente.telefono || ''}
+              defaultTelefono={hoja.clienteTel || contratoCliente.telefono || ''}
               tallerNombre={taller.nombre}
               highlightedReminderId={highlightedReminderId}
               onAddReminder={onAddReminder}
@@ -606,17 +814,48 @@ export const HojaCotizacionView: React.FC<Props> = ({
           </div>
         )}
 
-      <ContratoModal
-        open={contratoOpen}
-        hoja={hoja}
-        taller={taller}
-        cliente={contratoCliente}
-        onUpdateCliente={onUpdateContratoCliente}
-        onUpdateProyecto={(proyecto) => onUpdateHoja({ proyecto })}
-        onToggleIva={(incluirIva) => onUpdateHoja({ incluirIva })}
-        onClose={() => (onRequestBack ? onRequestBack() : setContratoOpen(false))}
-        onShowToast={onShowToast}
-      />
+      {contratoOpen && (
+        <Suspense fallback={null}>
+          <LazyContratoModal
+            open={contratoOpen}
+            hoja={hoja}
+            taller={taller}
+            cliente={contratoCliente}
+            onUpdateCliente={onUpdateContratoCliente}
+            onUpdateProyecto={(proyecto) => onUpdateHoja({ proyecto })}
+            onToggleIva={(incluirIva) => onUpdateHoja({ incluirIva })}
+            onClose={() => (onRequestBack ? onRequestBack() : setContratoOpen(false))}
+            onShowToast={onShowToast}
+          />
+        </Suspense>
+      )}
+
+      {pdfPreviewOpen && (
+        <Suspense fallback={null}>
+          <LazyPdfPreviewModal
+            open={pdfPreviewOpen}
+            hoja={hoja}
+            taller={taller}
+            contratoCliente={contratoCliente}
+            onClose={() => setPdfPreviewOpen(false)}
+            onFinalPdfDownloaded={(res) => {
+              recordCotizacionGuardada({
+                folio: res.folio,
+                fecha: res.dateLabel,
+                cliente: res.clienteNombre,
+                telefono: hoja.clienteTel || contratoCliente.telefono,
+                direccion: hoja.clienteDir || contratoCliente.direccion,
+                total: res.total,
+                piezasCount: hoja.partidas.length,
+              });
+              window.dispatchEvent(new CustomEvent('aluminero:cotizaciones-updated'));
+              setCurrentFolio(peekNextCotizacionFolio());
+              onRecordFinalPdf?.(res);
+            }}
+            onShowToast={onShowToast}
+          />
+        </Suspense>
+      )}
 
       {onUpdateTaller && (
         <PdfHeaderCustomizerModal
@@ -628,8 +867,8 @@ export const HojaCotizacionView: React.FC<Props> = ({
           onExportPdf={
             hoja.partidas.length > 0
               ? () => {
-                  generarPdfClienteLimpio(hoja, taller);
-                  onShowToast('PDF para Cliente descargado', true);
+                  setPdfHeaderModalOpen(false);
+                  handleOpenPdfPreview();
                 }
               : undefined
           }

@@ -8,6 +8,7 @@ import {
   TrabajoParams,
   VIDRIOS_CONFIG,
 } from '../utils/alumineroLogic';
+import { computeCorredizaLeafTranslateX } from '../utils/blueprintMotion';
 
 interface Props {
   params: TrabajoParams;
@@ -681,14 +682,29 @@ export const BlueprintSvg: React.FC<Props> = ({ params, despiece, simProgress })
           {(() => {
             const numHojas = Math.max(2, Math.min(4, params.hojas || 2));
             const leafW = innerW / numHojas;
+            const leafIndices = Array.from({ length: numHojas }, (_, i) => i);
+            const isLeafMovil = (idx: number) =>
+              (numHojas === 2 && (params.invertido ? idx === 0 : idx === 1)) ||
+              (numHojas === 3 && idx === 1) ||
+              (numHojas === 4 && (idx === 1 || idx === 2));
 
-            return Array.from({ length: numHojas }).map((_, idx) => {
+            // Dibujar hojas fijas primero para que la móvil siempre deslice por delante
+            const orderedIndices = [
+              ...leafIndices.filter((idx) => !isLeafMovil(idx)),
+              ...leafIndices.filter((idx) => isLeafMovil(idx)),
+            ];
+
+            return orderedIndices.map((idx) => {
               const x = innerX + idx * leafW;
-              const isMovil =
-                (numHojas === 2 && (params.invertido ? idx === 0 : idx === 1)) ||
-                (numHojas === 3 && idx === 1) ||
-                (numHojas === 4 && (idx === 1 || idx === 2));
-              const tx = isMovil ? slideOffset * (idx === 2 ? -0.6 : 0.6) : 0;
+              const isMovil = isLeafMovil(idx);
+              const tx = computeCorredizaLeafTranslateX({
+                numHojas,
+                idx,
+                leafW,
+                t,
+                invertido: Boolean(params.invertido),
+                slideOffset,
+              });
 
               return (
                 <g key={idx} transform={`translate(${tx}, 0)`}>

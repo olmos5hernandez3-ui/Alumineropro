@@ -11,6 +11,7 @@ import {
   TallerConfig,
 } from '../utils/storageHelpers';
 import { PartidaMiniSvg } from './PartidaMiniSvg';
+import { SignaturePadModal } from './SignaturePadModal';
 
 interface ContratoModalProps {
   open: boolean;
@@ -48,11 +49,15 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
   const [phase, setPhase] = useState<'setup' | 'preview'>('setup');
   const [folioActivo, setFolioActivo] = useState<string>(() => peekNextContratoFolio());
   const [editarClausulas, setEditarClausulas] = useState(false);
+  const [signaturePadOpen, setSignaturePadOpen] = useState(false);
+  const [clientSignatureUrl, setClientSignatureUrl] = useState<string>('');
 
   useEffect(() => {
     if (open) {
       setPhase('setup');
       setEditarClausulas(false);
+      setSignaturePadOpen(false);
+      setClientSignatureUrl('');
       setFolioActivo(peekNextContratoFolio());
     }
   }, [open]);
@@ -87,7 +92,7 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
     : 'A convenir tras verificación de medidas en obra';
 
   const cliNombreFinal =
-    cliente.nombre.trim() || hoja.proyecto.trim() || taller.clienteDefault || 'Cliente por confirmar';
+    cliente.nombre.trim() || hoja.proyecto.trim() || 'Cliente por confirmar';
 
   const clausulaAnticipoText =
     cliente.clausulaAnticipo?.trim() || DEFAULT_CONTRATO_CLAUSES.anticipo;
@@ -705,12 +710,20 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
             {/* Pie de página con dos bloques de firma */}
             <div className="contrato-signatures mt-10 pt-4 grid grid-cols-2 gap-6 text-center text-[11.5px] text-slate-700">
               <div>
-                <div className="h-12 border-b border-slate-600 mx-4 mb-1.5" />
+                <div className="h-14 border-b border-slate-600 mx-4 mb-1.5" />
                 <strong className="block text-slate-900 uppercase">El Prestador del Servicio</strong>
                 <span className="break-words">{taller.nombre || 'Taller de Aluminio y Vidrio'}</span>
               </div>
               <div>
-                <div className="h-12 border-b border-slate-600 mx-4 mb-1.5" />
+                <div className="h-14 border-b border-slate-600 mx-4 mb-1.5 flex items-end justify-center pb-1">
+                  {clientSignatureUrl ? (
+                    <img
+                      src={clientSignatureUrl}
+                      alt="Firma del cliente"
+                      className="max-h-12 max-w-[160px] object-contain"
+                    />
+                  ) : null}
+                </div>
                 <strong className="block text-slate-900 uppercase">El Cliente</strong>
                 <span className="break-words">{cliNombreFinal}</span>
               </div>
@@ -719,6 +732,14 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
 
           {/* Botones flotantes inferiores (ocultos al imprimir) */}
           <div className="contrato-no-print sticky bottom-0 z-10 -mx-3 sm:-mx-6 -mb-3 sm:-mb-6 px-3 sm:px-6 py-3 bg-white/95 backdrop-blur border-t border-slate-200 flex flex-wrap items-center justify-end gap-2">
+            <button
+              type="button"
+              id="btn-contrato-firmar"
+              onClick={() => setSignaturePadOpen(true)}
+              className="min-h-[44px] px-4 rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-950 text-[12.5px] sm:text-[13px] font-extrabold cursor-pointer"
+            >
+              {clientSignatureUrl ? '✍️ Cambiar firma' : '✍️ Firmar cliente'}
+            </button>
             <button
               type="button"
               id="btn-contrato-whatsapp"
@@ -735,8 +756,15 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
                   onShowToast('Agrega al menos una partida para generar el contrato PDF');
                   return;
                 }
-                generarPdfContratoServicio(hoja, taller, cliente, folioActivo);
-                onShowToast(`PDF Contrato ${folioActivo} descargado`, true);
+                void generarPdfContratoServicio(
+                  hoja,
+                  taller,
+                  cliente,
+                  folioActivo,
+                  clientSignatureUrl || undefined
+                ).then(() => {
+                  onShowToast(`PDF Contrato ${folioActivo} descargado`, true);
+                });
               }}
               className="min-h-[44px] px-4 rounded-xl border border-blue-300 bg-blue-50 hover:bg-blue-100 text-blue-900 text-[12.5px] sm:text-[13px] font-extrabold cursor-pointer"
             >
@@ -753,6 +781,19 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
           </div>
         </div>
       )}
+
+      <SignaturePadModal
+        open={signaturePadOpen}
+        title="Firma del Cliente en Contrato"
+        subtitle="La firma se incluirá en el documento y en el PDF del contrato."
+        initialSignature={clientSignatureUrl}
+        onApply={(croppedPng) => {
+          setClientSignatureUrl(croppedPng);
+          onShowToast('Firma agregada al contrato', true);
+        }}
+        onClose={() => setSignaturePadOpen(false)}
+        onShowToast={onShowToast}
+      />
     </div>
   );
 };

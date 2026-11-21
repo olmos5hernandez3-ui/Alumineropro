@@ -14,6 +14,7 @@ import {
   TrabajoParams,
 } from '../utils/alumineroLogic';
 import { generarPdfTecnico } from '../utils/pdfExport';
+import { computeSimProgressFromElapsed } from '../utils/blueprintMotion';
 import {
   formatMXN,
   FormulaPersonalizada,
@@ -171,20 +172,17 @@ export const TrabajoView: React.FC<Props> = ({
 
   useEffect(() => {
     if (!simPlaying) return;
-    let dir = 1;
-    let val = simProgress;
-    const id = window.setInterval(() => {
-      val += dir * 4;
-      if (val >= 100) {
-        val = 100;
-        dir = -1;
-      } else if (val <= 0) {
-        val = 0;
-        dir = 1;
-      }
-      setSimProgress(val);
-    }, 45);
-    return () => window.clearInterval(id);
+    let rafId = 0;
+    const startTs = performance.now();
+    const tick = (now: number) => {
+      const nextVal = computeSimProgressFromElapsed(now - startTs);
+      setSimProgress(nextVal);
+      rafId = window.requestAnimationFrame(tick);
+    };
+    rafId = window.requestAnimationFrame(tick);
+    return () => {
+      if (rafId) window.cancelAnimationFrame(rafId);
+    };
   }, [simPlaying]);
 
   const handleToggleSim = () => {
@@ -966,7 +964,7 @@ export const TrabajoView: React.FC<Props> = ({
               </button>
               <button
                 type="button"
-                onClick={() => generarPdfTecnico(params, despiece, cot, taller)}
+                onClick={() => void generarPdfTecnico(params, despiece, cot, taller)}
                 className="min-h-[46px] px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-900 font-bold text-[13px] cursor-pointer"
               >
                 PDF Taller
@@ -1274,7 +1272,7 @@ export const TrabajoView: React.FC<Props> = ({
               </button>
               <button
                 type="button"
-                onClick={() => generarPdfTecnico(params, despiece, cot, taller)}
+                onClick={() => void generarPdfTecnico(params, despiece, cot, taller)}
                 className="min-h-[46px] px-4 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-900 font-bold text-[13px] cursor-pointer"
               >
                 PDF Técnico Taller

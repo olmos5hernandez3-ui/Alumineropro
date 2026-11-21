@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import {
   buildColleaguePromoWhatsappUrl,
@@ -66,6 +66,7 @@ import {
   loadAccessBlocked,
   loadCloudAccountSession,
   loadContratoCliente,
+  loadCotizacionesGuardadas,
   loadCotizacionReminders,
   loadDeletedAdminKeySigs,
   loadFormulas,
@@ -88,6 +89,7 @@ import {
   NotaObra,
   ObraAprobadaApartado,
   openExternalLinkSafe,
+  PartidaObraExtended,
   PerfilFotosMap,
   sanitizeWhatsappNumber,
   saveAdminKeys,
@@ -120,7 +122,9 @@ import {
   SobranteItem,
   TallerConfig,
   TrabajoAntesDespuesItem,
+  upsertCliente,
 } from './utils/storageHelpers';
+import { consumeTopHistoryOverlay } from './utils/historyOverlayStack';
 import {
   computeReminderDueAt,
   CotizacionReminder,
@@ -128,6 +132,8 @@ import {
   createCotizacionReminder,
   dispatchQuoteReminderNotification,
   getDueCotizacionReminders,
+  getNotificationCapability,
+  getReadyServiceWorkerRegistration,
   markReminderNotified,
   partitionCotizacionReminders,
   requestPushNotificationPermission,
@@ -144,8 +150,6 @@ import { MainMenuView } from './components/MainMenuView';
 import { TrabajoView } from './components/TrabajoView';
 import { HojaCotizacionView } from './components/HojaCotizacionView';
 import { TallerView } from './components/TallerView';
-import { InventarioView } from './components/InventarioView';
-import { CatalogoView, NotasView } from './components/NotasAndCatalogoViews';
 import {
   AdminAuthModal,
   AdminModal,
@@ -163,15 +167,44 @@ import {
 import { FloatingAssistant } from './components/FloatingAssistant';
 import { FloatingInstallButton } from './components/FloatingInstallButton';
 import { CalculadoraModal } from './components/CalculadoraModal';
-import { AntesDespuesModal } from './components/AntesDespuesModal';
-import { ModulacionCortesView } from './components/ModulacionCortesView';
-import { VidrioOptimizerView } from './components/VidrioOptimizerView';
-import { AvisoPrivacidadView, TerminosCondicionesView } from './components/LegalViews';
 import { LevantamientoRapido } from './components/LevantamientoRapido';
 import {
   AlumBridgePayload,
+  LEV_MAPA,
+  LevantamientoDraft,
+  normalizeLevantamientoDraft,
   overwriteHojaProyectoInStorage,
 } from './utils/levantamientoLogic';
+
+const InventarioView = lazy(() =>
+  import('./components/InventarioView').then((m) => ({ default: m.InventarioView }))
+);
+const ModulacionCortesView = lazy(() =>
+  import('./components/ModulacionCortesView').then((m) => ({ default: m.ModulacionCortesView }))
+);
+const VidrioOptimizerView = lazy(() =>
+  import('./components/VidrioOptimizerView').then((m) => ({ default: m.VidrioOptimizerView }))
+);
+const AntesDespuesModal = lazy(() =>
+  import('./components/AntesDespuesModal').then((m) => ({ default: m.AntesDespuesModal }))
+);
+const NotasView = lazy(() =>
+  import('./components/NotasAndCatalogoViews').then((m) => ({ default: m.NotasView }))
+);
+const CatalogoView = lazy(() =>
+  import('./components/NotasAndCatalogoViews').then((m) => ({ default: m.CatalogoView }))
+);
+const TerminosCondicionesView = lazy(() =>
+  import('./components/LegalViews').then((m) => ({ default: m.TerminosCondicionesView }))
+);
+const AvisoPrivacidadView = lazy(() =>
+  import('./components/LegalViews').then((m) => ({ default: m.AvisoPrivacidadView }))
+);
+const HistorialCotizacionesView = lazy(() =>
+  import('./components/HistorialCotizacionesView').then((m) => ({
+    default: m.HistorialCotizacionesView,
+  }))
+);
 
 function createInitialParams(linea: LineaId = '3'): TrabajoParams {
   const cfg = LINEAS_CONFIG[linea];
@@ -256,7 +289,8 @@ export default function App() {
     | 'formula'
     | 'perfil'
     | 'referralWelcome'
-    | 'reminders';
+    | 'reminders'
+    | 'levBatchConfirm';
 
   type SubModalId = 'contrato' | 'zoomPerfil' | null;
 
@@ -368,6 +402,17 @@ export default function App() {
     loadCotizacionReminders()
   );
   const [highlightedReminderId, setHighlightedReminderId] = useState<string | null>(null);
+  const [pushPermission, setPushPermission] = useState<NotificationPermission | 'unsupported'>(() =>
+    getNotificationCapability().permission
+  );
+  const [cotizacionesCount, setCotizacionesCount] = useState<number>(() =>
+    loadCotizacionesGuardadas().length
+  );
+  const [pendingLevBatch, setPendingLevBatch] = useState<{
+    draft: LevantamientoDraft;
+    partidas: PartidaObraExtended[];
+    skippedProCount: number;
+  } | null>(null);
 
   const drawerOpen = globalModals.includes('drawer');
   const proModalOpen = globalModals.includes('pro');
@@ -383,6 +428,7 @@ export default function App() {
   const formulaModalOpen = globalModals.includes('formula');
   const referralWelcomeOpen = globalModals.includes('referralWelcome');
   const remindersModalOpen = globalModals.includes('reminders');
+  const levBatchConfirmOpen = globalModals.includes('levBatchConfirm');
 
   // Invitación estilo Spotify (?ref=[Nombre]&promo=[NumeroPromo])
   const [savedColleagueReferral] = useState<SavedColleagueReferral | null>(() => {
@@ -717,7 +763,7 @@ export default function App() {
       if (!active) return;
       const snap = await syncDeviceToCloud({
         deviceId,
-        cliente: taller.clienteDefault,
+        cliente: hoja.proyecto.trim() || taller.nombre || '',
         deviceLabel: label,
         eventType: 'open',
         minutesDelta: 1,
@@ -745,7 +791,7 @@ export default function App() {
       void verifyAndSyncClientStatus();
       void syncDeviceToCloud({
         deviceId,
-        cliente: taller.clienteDefault,
+        cliente: hoja.proyecto.trim() || taller.nombre || '',
         deviceLabel: label,
         eventType: 'heartbeat',
         minutesDelta: 1,
@@ -881,17 +927,20 @@ export default function App() {
       void checkDueReminders();
     }, 30_000);
 
-    const onVis = () => {
+    const refreshPermAndCheck = () => {
+      setPushPermission(getNotificationCapability().permission);
       if (document.visibilityState === 'visible') {
         void checkDueReminders();
       }
     };
-    document.addEventListener('visibilitychange', onVis);
+    window.addEventListener('focus', refreshPermAndCheck);
+    document.addEventListener('visibilitychange', refreshPermAndCheck);
 
     return () => {
       active = false;
       window.clearInterval(intervalId);
-      document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('focus', refreshPermAndCheck);
+      document.removeEventListener('visibilitychange', refreshPermAndCheck);
     };
   }, []);
 
@@ -1349,7 +1398,7 @@ export default function App() {
 
     const commitBackFrameSync = (targetFrame: NavFrame, prevFrame: NavFrame) => {
       flushSync(() => {
-        applyFrameState(targetFrame, prevFrame, 'back', true);
+        applyFrameState(targetFrame, prevFrame, 'none', true);
       });
       if (
         prevFrame.view !== targetFrame.view ||
@@ -1375,6 +1424,10 @@ export default function App() {
             // Ignorar
           }
         }
+        return;
+      }
+
+      if (consumeTopHistoryOverlay()) {
         return;
       }
 
@@ -1797,16 +1850,209 @@ export default function App() {
     );
   };
 
-  const handleSetHojaProyectoFromLev = useCallback((cliente: string) => {
-    const clean = String(cliente || '').trim();
-    if (!clean) return;
-    overwriteHojaProyectoInStorage(clean);
-    setHoja((prev) => {
-      const next = { ...prev, proyecto: clean };
-      saveHoja(next);
-      return next;
-    });
+  useEffect(() => {
+    const syncQuotesCount = () => setCotizacionesCount(loadCotizacionesGuardadas().length);
+    window.addEventListener('aluminero:cotizaciones-updated', syncQuotesCount);
+    window.addEventListener('focus', syncQuotesCount);
+    return () => {
+      window.removeEventListener('aluminero:cotizaciones-updated', syncQuotesCount);
+      window.removeEventListener('focus', syncQuotesCount);
+    };
   }, []);
+
+  const handleSetHojaProyectoFromLev = useCallback(
+    (cliente: string, telefono?: string, direccion?: string) => {
+      const clean = String(cliente || '').trim();
+      const tel = String(telefono || '').trim();
+      const dir = String(direccion || '').trim();
+      if (!clean) return;
+      overwriteHojaProyectoInStorage(clean);
+      setHoja((prev) => {
+        const next: HojaState = {
+          ...prev,
+          proyecto: clean,
+          ...(tel ? { clienteTel: tel } : {}),
+          ...(dir ? { clienteDir: dir } : {}),
+        };
+        saveHoja(next);
+        return next;
+      });
+      setContratoCliente((prev) => ({
+        ...prev,
+        nombre: clean,
+        ...(tel ? { telefono: tel } : {}),
+        ...(dir ? { direccion: dir } : {}),
+      }));
+    },
+    []
+  );
+
+  const commitBatchPartidasToHoja = useCallback(
+    (
+      mode: 'replace' | 'append',
+      draft: LevantamientoDraft,
+      partidas: PartidaObraExtended[],
+      skippedProCount: number
+    ) => {
+      const norm = normalizeLevantamientoDraft(draft);
+      const cli = norm.cliente.trim();
+      const tel = (norm.telefono || '').trim();
+      const dir = (norm.direccion || '').trim();
+      if (cli) {
+        upsertCliente({ nombre: cli, telefono: tel, direccion: dir });
+      }
+      setHoja((prev) => {
+        const next: HojaState = {
+          ...prev,
+          proyecto: cli || prev.proyecto,
+          clienteTel: tel || prev.clienteTel,
+          clienteDir: dir || prev.clienteDir,
+          partidas: mode === 'replace' ? partidas : [...prev.partidas, ...partidas],
+        };
+        saveHoja(next);
+        return next;
+      });
+      setContratoCliente((prev) => ({
+        ...prev,
+        nombre: cli || prev.nombre,
+        telefono: tel || prev.telefono,
+        direccion: dir || prev.direccion,
+      }));
+      setPendingLevBatch(null);
+      navigateTo('hoja');
+      if (skippedProCount > 0) {
+        showToast(
+          `${partidas.length} partida(s) agregada(s). ${skippedProCount} pieza(s) PRO omitida(s) en versión gratuita.`,
+          true
+        );
+      } else {
+        showToast(`${partidas.length} partida(s) enviada(s) a Hoja de Cotización`, true);
+      }
+    },
+    [navigateTo, showToast]
+  );
+
+  const handleBatchSendToHojaFromLev = useCallback(
+    (rawDraft: LevantamientoDraft) => {
+      const draft = normalizeLevantamientoDraft(rawDraft);
+      const partidas: PartidaObraExtended[] = [];
+      let skippedProCount = 0;
+
+      for (const p of draft.piezas) {
+        const dimCheck = validatePiezaDimensiones(p.anchoCm, p.altoCm);
+        if (!dimCheck.valid) continue;
+        const mapa = LEV_MAPA[p.tipo] || LEV_MAPA['Cancel / Otro'];
+        const lineaCfg = LINEAS_CONFIG[mapa.linea];
+        if (!lineaCfg) continue;
+
+        const apertura =
+          mapa.apertura || (lineaCfg.categoria === 'puertas' ? 'abatible' : 'corrediza');
+        const qty = Math.max(1, Number(p.cant) || 1);
+        if (!proActive && (lineaCfg.pro || isFeatureProRequired(mapa.linea, apertura, qty))) {
+          skippedProCount += 1;
+          continue;
+        }
+
+        const vidrio = 'claro6' as const;
+        const relleno = getDefaultRellenoFromVidrio(vidrio);
+        const pieceParams: TrabajoParams = {
+          linea: mapa.linea,
+          anchoCm: p.anchoCm,
+          altoCm: p.altoCm,
+          color: 'natural',
+          vidrio,
+          relleno,
+          hojas: 2,
+          apertura,
+          sentidoPuerta: 'izq',
+          puertaIntermedio: true,
+          puertaEconomica: false,
+          cancelEstilo: 'semilujo',
+          invertido: false,
+          cantidad: qty,
+          tolerancias: { ...lineaCfg.toleranciasDefault },
+        };
+        const pieceDespiece = calcularDespiece(pieceParams);
+        const piecePrecioInput = taller.tarifasBase[mapa.linea] ?? lineaCfg.tarifaBaseDefault;
+        const pieceCot = calcularCotizacion({
+          linea: mapa.linea,
+          anchoCm: p.anchoCm,
+          altoCm: p.altoCm,
+          color: 'natural',
+          vidrio,
+          relleno,
+          rellenoPrecioM2: getRellenoPrecioM2(relleno, taller.rellenoPreciosM2, vidrio),
+          modoPrecio: 'm2',
+          precioInput: piecePrecioInput,
+          cantidad: qty,
+          cobrarMinM2,
+          incluirIva: false,
+          extraPct: 0,
+          descDistribuidorPct: taller.descDistribuidorPct,
+          precioListaTramo: taller.precioListaTramo,
+          despiece: pieceDespiece,
+        });
+
+        partidas.push({
+          id: `p-lev-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          categoria: lineaCfg.categoria,
+          linea: mapa.linea,
+          area: p.area.trim() || 'General',
+          etiqueta: '',
+          anchoCm: p.anchoCm,
+          altoCm: p.altoCm,
+          color: 'natural',
+          vidrio,
+          relleno,
+          hojas: 2,
+          apertura,
+          sentidoPuerta: 'izq',
+          puertaIntermedio: true,
+          puertaEconomica: false,
+          cancelEstilo: 'semilujo',
+          invertido: false,
+          cantidad: qty,
+          modoPrecio: 'm2',
+          precioInput: piecePrecioInput,
+          cobrarMinM2,
+          extraPct: 0,
+          totalLinea: pieceCot.totalFinal,
+          despiece: pieceDespiece,
+          notas: p.notas.trim() || undefined,
+          fotoDataUrl: p.foto || undefined,
+        });
+      }
+
+      if (partidas.length === 0) {
+        if (skippedProCount > 0) {
+          showToast('Las piezas seleccionadas requieren Licencia PRO.');
+          openGlobalModal('pro');
+        } else {
+          showToast('No se encontraron piezas válidas para enviar a la Hoja.');
+        }
+        return;
+      }
+
+      if (hoja.partidas.length > 0) {
+        setPendingLevBatch({ draft, partidas, skippedProCount });
+        openGlobalModal('levBatchConfirm');
+      } else {
+        commitBatchPartidasToHoja('replace', draft, partidas, skippedProCount);
+      }
+    },
+    [
+      cobrarMinM2,
+      commitBatchPartidasToHoja,
+      hoja.partidas.length,
+      openGlobalModal,
+      proActive,
+      showToast,
+      taller.descDistribuidorPct,
+      taller.precioListaTramo,
+      taller.rellenoPreciosM2,
+      taller.tarifasBase,
+    ]
+  );
 
   const alumBridgeHandlerRef = useRef<{
     apply: (p: AlumBridgePayload) => void;
@@ -1939,7 +2185,9 @@ export default function App() {
 
   const handleRequestPushPermission = useCallback(async () => {
     const perm = await requestPushNotificationPermission();
+    setPushPermission(getNotificationCapability().permission);
     if (perm === 'granted') {
+      await getReadyServiceWorkerRegistration();
       await subscribeBrowserPushOptional(deviceId);
     }
     return perm;
@@ -1968,7 +2216,7 @@ export default function App() {
   const handleTestPushNotification = useCallback(async () => {
     const sampleRes = createCotizacionReminder({
       id: 'test-sw-push',
-      proyecto: hoja.proyecto.trim() || taller.clienteDefault || 'Cotización de prueba',
+      proyecto: hoja.proyecto.trim() || taller.nombre || 'Cotización de prueba',
       total: hojaTotalAprox > 0 ? hojaTotalAprox : 4850,
       partidasCount: hojaPiezasCount > 0 ? hojaPiezasCount : 2,
       nota: 'Prueba de notificación push Service Worker',
@@ -1981,7 +2229,7 @@ export default function App() {
     } else {
       showToast(res.error || 'Activa los permisos de notificación primero');
     }
-  }, [hoja.proyecto, hojaPiezasCount, hojaTotalAprox, showToast, taller.clienteDefault]);
+  }, [hoja.proyecto, hojaPiezasCount, hojaTotalAprox, showToast, taller.nombre]);
 
   const handleScheduleHistorialReminder = useCallback(
     (item: HistorialItem) => {
@@ -1997,9 +2245,19 @@ export default function App() {
         return;
       }
       handleAddReminder(created.reminder);
-      showToast(`Seguimiento en 24 h programado para "${item.referencia}"`, true);
+      const cap = getNotificationCapability();
+      setPushPermission(cap.permission);
+      if (cap.supported && cap.permission !== 'granted') {
+        setHighlightedReminderId(created.reminder.id);
+        openGlobalModal('reminders');
+        showToast(
+          `Seguimiento programado para "${item.referencia}". Activa las notificaciones Push para recibir el aviso.`
+        );
+      } else {
+        showToast(`Seguimiento en 24 h programado para "${item.referencia}"`, true);
+      }
     },
-    [handleAddReminder, showToast]
+    [handleAddReminder, openGlobalModal, showToast]
   );
 
   useEffect(() => {
@@ -2047,6 +2305,7 @@ export default function App() {
     menu: 'Aluminero Pro',
     trabajo: LINEAS_CONFIG[params.linea].nombre,
     hoja: 'Hoja de Cotización',
+    cotizaciones: 'Historial de Cotizaciones',
     taller: 'Mi Taller y Precios',
     notas: 'Notas de Obra',
     modulacion: 'Modulación y Cortes',
@@ -2107,9 +2366,11 @@ export default function App() {
             inventarioTramosTotal={inventarioTramosTotal}
             hojasVidrioCount={hojasVidrioTotalCount}
             notasCount={notas.length}
+            cotizacionesCount={cotizacionesCount}
             savedReferral={savedColleagueReferral}
             pendingRemindersCount={reminderSummary.pendingCount}
             dueRemindersCount={reminderSummary.dueCount}
+            pushPermission={pushPermission}
             onClaimColleaguePromo={handleClaimColleaguePromo}
             onEntrarTrabajo={handleEntrarTrabajo}
             onEntrarHoja={handleEntrarHoja}
@@ -2318,215 +2579,275 @@ export default function App() {
           />
         )}
 
+        {currentView === 'cotizaciones' && (
+          <Suspense
+            fallback={
+              <div className="py-12 text-center text-slate-300 font-bold text-sm">
+                Cargando historial de cotizaciones...
+              </div>
+            }
+          >
+            <HistorialCotizacionesView onGoHoja={handleEntrarHoja} onShowToast={showToast} />
+          </Suspense>
+        )}
+
         {currentView === 'inventario' && (
-          <InventarioView
-            inventario={inventario}
-            inventarioHerrajes={inventarioHerrajes}
-            sobrantes={sobrantes}
-            hojasVidrio={hojasVidrio}
-            obrasAprobadas={obrasAprobadas}
-            hojaCount={hojaPiezasCount}
-            perfilFotos={perfilFotos}
-            invTab={invTab}
-            onChangeInvTab={(tab) => {
-              if (tab !== invTab) pushNavFrame({ invTab: tab });
-            }}
-            onSetInventario={(key, tramos) =>
-              setInventario((prev) => {
-                const next = { ...prev };
-                const clean = Math.max(0, Math.round((Number(tramos) || 0) * 10000) / 10000);
-                if (clean <= 0) {
-                  delete next[key];
-                } else {
-                  next[key] = clean;
-                }
-                return next;
-              })
+          <Suspense
+            fallback={
+              <div className="py-12 text-center text-slate-300 font-bold text-sm">
+                Cargando inventario...
+              </div>
             }
-            onSetInventarioHerraje={(id, qty) =>
-              setInventarioHerrajes((prev) => ({ ...prev, [id]: qty }))
-            }
-            onAddSobrante={(item) => {
-              setSobrantes((prev) => [
-                {
-                  ...item,
-                  id: `sob-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-                  fecha: new Date().toLocaleDateString('es-MX'),
-                },
-                ...prev,
-              ]);
-              showToast(`Sobrante de ${item.largoM.toFixed(2)} m agregado`, true);
-            }}
-            onUpdateSobranteQty={(id, cantidad) =>
-              setSobrantes((prev) =>
-                prev.map((s) => (s.id === id ? { ...s, cantidad: Math.max(1, cantidad) } : s))
-              )
-            }
-            onDeleteSobrante={(id) => {
-              setSobrantes((prev) => prev.filter((s) => s.id !== id));
-              showToast('Sobrante eliminado');
-            }}
-            onAddHojaVidrio={(item) => {
-              setHojasVidrio((prev) => [
-                {
-                  ...item,
-                  id: `hv-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-                  fecha: new Date().toLocaleDateString('es-MX'),
-                },
-                ...prev,
-              ]);
-              showToast(`Hoja ${item.tipoNombre} (${item.anchoCm}×${item.altoCm} cm) agregada`, true);
-            }}
-            onUpdateHojaVidrioQty={(id, cantidad) =>
-              setHojasVidrio((prev) =>
-                prev.map((h) => (h.id === id ? { ...h, cantidad: Math.max(1, cantidad) } : h))
-              )
-            }
-            onDeleteHojaVidrio={(id) => {
-              setHojasVidrio((prev) => prev.filter((h) => h.id !== id));
-              showToast('Hoja de vidrio eliminada');
-            }}
-            onLimpiarInventario={() => {
-              setInventario({});
-              showToast('Inventario puesto en 0');
-            }}
-            onAgregarApartado={(item) => {
-              setObrasAprobadas((prev) => [
-                ...prev,
-                { ...item, id: `apr-${Date.now()}`, fecha: new Date().toLocaleDateString('es-MX') },
-              ]);
-              showToast('Tramos apartados en obra aprobada', true);
-            }}
-            onEliminarApartado={(id) => setObrasAprobadas((prev) => prev.filter((o) => o.id !== id))}
-            onGoCatalogo={() => navigateTo('catalogo')}
-            onGoHoja={handleEntrarHoja}
-            onGoVidrioOptimizer={() => navigateTo('vidrio')}
-            onOpenPerfilModal={openPerfilModal}
-            onPushSubModal={(sub) => pushNavFrame({ subModal: sub })}
-            onRequestBack={requestBack}
-            onRegisterCloseSubModal={registerCloseSubModal}
-            onReplaceSubModalWithPerfil={replaceSubModalWithPerfil}
-            onShowToast={showToast}
-          />
+          >
+            <InventarioView
+              inventario={inventario}
+              inventarioHerrajes={inventarioHerrajes}
+              sobrantes={sobrantes}
+              hojasVidrio={hojasVidrio}
+              obrasAprobadas={obrasAprobadas}
+              hojaCount={hojaPiezasCount}
+              perfilFotos={perfilFotos}
+              invTab={invTab}
+              onChangeInvTab={(tab) => {
+                if (tab !== invTab) pushNavFrame({ invTab: tab });
+              }}
+              onSetInventario={(key, tramos) =>
+                setInventario((prev) => {
+                  const next = { ...prev };
+                  const clean = Math.max(0, Math.round((Number(tramos) || 0) * 10000) / 10000);
+                  if (clean <= 0) {
+                    delete next[key];
+                  } else {
+                    next[key] = clean;
+                  }
+                  return next;
+                })
+              }
+              onSetInventarioHerraje={(id, qty) =>
+                setInventarioHerrajes((prev) => ({ ...prev, [id]: qty }))
+              }
+              onAddSobrante={(item) => {
+                setSobrantes((prev) => [
+                  {
+                    ...item,
+                    id: `sob-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                    fecha: new Date().toLocaleDateString('es-MX'),
+                  },
+                  ...prev,
+                ]);
+                showToast(`Sobrante de ${item.largoM.toFixed(2)} m agregado`, true);
+              }}
+              onUpdateSobranteQty={(id, cantidad) =>
+                setSobrantes((prev) =>
+                  prev.map((s) => (s.id === id ? { ...s, cantidad: Math.max(1, cantidad) } : s))
+                )
+              }
+              onDeleteSobrante={(id) => {
+                setSobrantes((prev) => prev.filter((s) => s.id !== id));
+                showToast('Sobrante eliminado');
+              }}
+              onAddHojaVidrio={(item) => {
+                setHojasVidrio((prev) => [
+                  {
+                    ...item,
+                    id: `hv-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                    fecha: new Date().toLocaleDateString('es-MX'),
+                  },
+                  ...prev,
+                ]);
+                showToast(`Hoja ${item.tipoNombre} (${item.anchoCm}×${item.altoCm} cm) agregada`, true);
+              }}
+              onUpdateHojaVidrioQty={(id, cantidad) =>
+                setHojasVidrio((prev) =>
+                  prev.map((h) => (h.id === id ? { ...h, cantidad: Math.max(1, cantidad) } : h))
+                )
+              }
+              onDeleteHojaVidrio={(id) => {
+                setHojasVidrio((prev) => prev.filter((h) => h.id !== id));
+                showToast('Hoja de vidrio eliminada');
+              }}
+              onLimpiarInventario={() => {
+                setInventario({});
+                showToast('Inventario puesto en 0');
+              }}
+              onAgregarApartado={(item) => {
+                setObrasAprobadas((prev) => [
+                  ...prev,
+                  { ...item, id: `apr-${Date.now()}`, fecha: new Date().toLocaleDateString('es-MX') },
+                ]);
+                showToast('Tramos apartados en obra aprobada', true);
+              }}
+              onEliminarApartado={(id) => setObrasAprobadas((prev) => prev.filter((o) => o.id !== id))}
+              onGoCatalogo={() => navigateTo('catalogo')}
+              onGoHoja={handleEntrarHoja}
+              onGoVidrioOptimizer={() => navigateTo('vidrio')}
+              onOpenPerfilModal={openPerfilModal}
+              onPushSubModal={(sub) => pushNavFrame({ subModal: sub })}
+              onRequestBack={requestBack}
+              onRegisterCloseSubModal={registerCloseSubModal}
+              onReplaceSubModalWithPerfil={replaceSubModalWithPerfil}
+              onShowToast={showToast}
+            />
+          </Suspense>
         )}
 
         {currentView === 'notas' && (
-          <NotasView
-            notas={notas}
-            onAddNota={(n) =>
-              setNotas((prev) => [
-                { ...n, id: `nota-${Date.now()}`, fecha: new Date().toLocaleString('es-MX') },
-                ...prev,
-              ])
+          <Suspense
+            fallback={
+              <div className="py-12 text-center text-slate-300 font-bold text-sm">
+                Cargando notas...
+              </div>
             }
-            onDeleteNota={(id) => setNotas((prev) => prev.filter((n) => n.id !== id))}
-            onConvertirNota={handleConvertirNota}
-            onShowToast={showToast}
-          />
+          >
+            <NotasView
+              notas={notas}
+              onAddNota={(n) =>
+                setNotas((prev) => [
+                  { ...n, id: `nota-${Date.now()}`, fecha: new Date().toLocaleString('es-MX') },
+                  ...prev,
+                ])
+              }
+              onDeleteNota={(id) => setNotas((prev) => prev.filter((n) => n.id !== id))}
+              onConvertirNota={handleConvertirNota}
+              onShowToast={showToast}
+            />
+          </Suspense>
         )}
 
         {currentView === 'modulacion' && (
-          <ModulacionCortesView
-            tarifasBase={taller.tarifasBase}
-            proActive={proActive}
-            sobrantes={sobrantes}
-            step={modStep}
-            paso5Tab={modPaso5Tab}
-            mosquiteroModalOpen={modMosqOpen}
-            onNavigateModState={(patch) =>
-              pushNavFrame({
-                ...(patch.step !== undefined ? { modStep: patch.step } : {}),
-                ...(patch.paso5Tab !== undefined ? { modPaso5Tab: patch.paso5Tab } : {}),
-                ...(patch.mosquiteroModalOpen !== undefined
-                  ? { modMosqOpen: patch.mosquiteroModalOpen }
-                  : {}),
-              })
+          <Suspense
+            fallback={
+              <div className="py-12 text-center text-slate-300 font-bold text-sm">
+                Cargando modulación...
+              </div>
             }
-            onPushSubModal={(sub) => pushNavFrame({ subModal: sub })}
-            onRequestBack={requestBack}
-            onRegisterCloseSubModal={registerCloseSubModal}
-            onAddSobrante={(item) => {
-              setSobrantes((prev) => [
-                {
-                  ...item,
-                  id: `sob-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-                  fecha: new Date().toLocaleDateString('es-MX'),
-                },
-                ...prev,
-              ]);
-            }}
-            onSendToHoja={(partida, goToHoja) => {
-              const dimCheck = validatePiezaDimensiones(partida.anchoCm, partida.altoCm);
-              if (!dimCheck.valid) {
-                showToast(
-                  dimCheck.error ||
-                    'Medidas sospechosas: el ancho y el alto deben ser mayores a 0 y menores a 600 cm.'
-                );
-                return false;
+          >
+            <ModulacionCortesView
+              tarifasBase={taller.tarifasBase}
+              proActive={proActive}
+              sobrantes={sobrantes}
+              step={modStep}
+              paso5Tab={modPaso5Tab}
+              mosquiteroModalOpen={modMosqOpen}
+              onNavigateModState={(patch) =>
+                pushNavFrame({
+                  ...(patch.step !== undefined ? { modStep: patch.step } : {}),
+                  ...(patch.paso5Tab !== undefined ? { modPaso5Tab: patch.paso5Tab } : {}),
+                  ...(patch.mosquiteroModalOpen !== undefined
+                    ? { modMosqOpen: patch.mosquiteroModalOpen }
+                    : {}),
+                })
               }
-              setHoja((prev) => ({
-                ...prev,
-                partidas: [...prev.partidas, partida],
-              }));
-              if (goToHoja) {
-                navigateTo('hoja');
-              }
-              return true;
-            }}
-            onSendVidriosToOptimizer={(vidrios) => {
-              const piezas: PiezaVidrioInput[] = vidrios
-                .filter((v) => v.tipo === 'vidrio')
-                .map((v, idx) => {
-                  const tipoFinal = v.espesorLabel || 'Claro 6 mm';
-                  return {
-                    id: `v-mod-${Date.now()}-${idx}`,
-                    etiqueta: v.nombre,
-                    tipoNombre: tipoFinal,
-                    anchoCm: v.anchoCm,
-                    altoCm: v.altoCm,
-                    cantidad: v.pzas,
-                    permitirRotacion:
-                      typeof v.permitirRotacion === 'boolean'
-                        ? v.permitirRotacion
-                        : !esMaterialDireccional(tipoFinal),
-                  };
-                });
-              if (piezas.length > 0) {
-                setVidrioPiezasDraft(piezas);
-              }
-              navigateTo('vidrio');
-            }}
-            onShowToast={showToast}
-          />
+              onPushSubModal={(sub) => pushNavFrame({ subModal: sub })}
+              onRequestBack={requestBack}
+              onRegisterCloseSubModal={registerCloseSubModal}
+              onAddSobrante={(item) => {
+                setSobrantes((prev) => [
+                  {
+                    ...item,
+                    id: `sob-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                    fecha: new Date().toLocaleDateString('es-MX'),
+                  },
+                  ...prev,
+                ]);
+              }}
+              onSendToHoja={(partida, goToHoja) => {
+                const dimCheck = validatePiezaDimensiones(partida.anchoCm, partida.altoCm);
+                if (!dimCheck.valid) {
+                  showToast(
+                    dimCheck.error ||
+                      'Medidas sospechosas: el ancho y el alto deben ser mayores a 0 y menores a 600 cm.'
+                  );
+                  return false;
+                }
+                setHoja((prev) => ({
+                  ...prev,
+                  partidas: [...prev.partidas, partida],
+                }));
+                if (goToHoja) {
+                  navigateTo('hoja');
+                }
+                return true;
+              }}
+              onSendVidriosToOptimizer={(vidrios) => {
+                const piezas: PiezaVidrioInput[] = vidrios
+                  .filter((v) => v.tipo === 'vidrio')
+                  .map((v, idx) => {
+                    const tipoFinal = v.espesorLabel || 'Claro 6 mm';
+                    return {
+                      id: `v-mod-${Date.now()}-${idx}`,
+                      etiqueta: v.nombre,
+                      tipoNombre: tipoFinal,
+                      anchoCm: v.anchoCm,
+                      altoCm: v.altoCm,
+                      cantidad: v.pzas,
+                      permitirRotacion:
+                        typeof v.permitirRotacion === 'boolean'
+                          ? v.permitirRotacion
+                          : !esMaterialDireccional(tipoFinal),
+                    };
+                  });
+                if (piezas.length > 0) {
+                  setVidrioPiezasDraft(piezas);
+                }
+                navigateTo('vidrio');
+              }}
+              onShowToast={showToast}
+            />
+          </Suspense>
         )}
 
         {currentView === 'vidrio' && (
-          <VidrioOptimizerView
-            hojasVidrio={hojasVidrio}
-            hojaPartidas={hoja.partidas}
-            piezasIniciales={vidrioPiezasDraft}
-            onGoInventarioVidrios={() => navigateTo('inventario', { invTab: 'vidrios' })}
-            onShowToast={showToast}
-          />
+          <Suspense
+            fallback={
+              <div className="py-12 text-center text-slate-300 font-bold text-sm">
+                Cargando optimizador 2D...
+              </div>
+            }
+          >
+            <VidrioOptimizerView
+              hojasVidrio={hojasVidrio}
+              hojaPartidas={hoja.partidas}
+              piezasIniciales={vidrioPiezasDraft}
+              onGoInventarioVidrios={() => navigateTo('inventario', { invTab: 'vidrios' })}
+              onShowToast={showToast}
+            />
+          </Suspense>
         )}
 
         {currentView === 'catalogo' && (
-          <CatalogoView
-            perfilFotos={perfilFotos}
-            catalogoTab={catalogoTab}
-            onChangeCatalogoTab={(tab) => {
-              if (tab !== catalogoTab) pushNavFrame({ catalogoTab: tab });
-            }}
-            onOpenPerfilModal={openPerfilModal}
-            onUploadPerfilFoto={handleUploadPerfilFoto}
-            onRemovePerfilFoto={handleRemovePerfilFoto}
-            onOpenSugerencias={() => openGlobalModal('sugerencias')}
-          />
+          <Suspense
+            fallback={
+              <div className="py-12 text-center text-slate-300 font-bold text-sm">
+                Cargando catálogo...
+              </div>
+            }
+          >
+            <CatalogoView
+              perfilFotos={perfilFotos}
+              catalogoTab={catalogoTab}
+              onChangeCatalogoTab={(tab) => {
+                if (tab !== catalogoTab) pushNavFrame({ catalogoTab: tab });
+              }}
+              onOpenPerfilModal={openPerfilModal}
+              onUploadPerfilFoto={handleUploadPerfilFoto}
+              onRemovePerfilFoto={handleRemovePerfilFoto}
+              onOpenSugerencias={() => openGlobalModal('sugerencias')}
+            />
+          </Suspense>
         )}
 
-        {currentView === 'terminos' && <TerminosCondicionesView onBack={requestBack} />}
+        {currentView === 'terminos' && (
+          <Suspense fallback={null}>
+            <TerminosCondicionesView onBack={requestBack} />
+          </Suspense>
+        )}
 
-        {currentView === 'privacidad' && <AvisoPrivacidadView onBack={requestBack} />}
+        {currentView === 'privacidad' && (
+          <Suspense fallback={null}>
+            <AvisoPrivacidadView onBack={requestBack} />
+          </Suspense>
+        )}
         </div>
       </main>
 
@@ -2551,6 +2872,7 @@ export default function App() {
         pendingRemindersCount={reminderSummary.pendingCount}
         dueRemindersCount={reminderSummary.dueCount}
         onOpenReminders={() => openModalFromDrawer('reminders')}
+        onOpenCotizaciones={() => openScreenFromDrawer('cotizaciones')}
       />
 
       <ProModal
@@ -2577,7 +2899,7 @@ export default function App() {
             planCode: lic.planCode,
             planLabel: lic.planLabel,
             expiresAt: lic.expiresAt,
-            cliente: taller.clienteDefault,
+            cliente: hoja.proyecto.trim() || taller.nombre || '',
             deviceLabel: detectDeviceLabel(),
             linkedEmail: lic.linkedEmail,
           });
@@ -2618,7 +2940,7 @@ export default function App() {
           } else {
             void syncDeviceToCloud({
               deviceId,
-              cliente: taller.clienteDefault,
+              cliente: hoja.proyecto.trim() || taller.nombre || '',
               deviceLabel: detectDeviceLabel(),
               eventType: 'license_sync',
               licencia: lic,
@@ -2631,7 +2953,7 @@ export default function App() {
           setLicencia(null);
           void syncDeviceToCloud({
             deviceId,
-            cliente: taller.clienteDefault,
+            cliente: hoja.proyecto.trim() || taller.nombre || '',
             deviceLabel: detectDeviceLabel(),
             eventType: 'license_sync',
             licencia: null,
@@ -3044,31 +3366,35 @@ export default function App() {
         onShowToast={showToast}
       />
 
-      <AntesDespuesModal
-        open={antesDespuesOpen}
-        trabajos={trabajosAntesDespues}
-        whatsappNumber={sugerenciasWhatsapp}
-        deviceId={deviceId}
-        onSavePersonalTrabajo={(item) => {
-          setTrabajosAntesDespues((prev) => [
-            {
-              ...item,
-              id: `ad-per-${Date.now()}`,
-              fecha: new Date().toLocaleDateString('es-MX'),
-              aprobado: true,
-              esPersonal: true,
-            },
-            ...prev,
-          ]);
-          showToast('Trabajo guardado en tu galería personal (sin internet)', true);
-        }}
-        onDeletePersonalTrabajo={(id) => {
-          setTrabajosAntesDespues((prev) => prev.filter((t) => t.id !== id));
-          showToast('Trabajo eliminado de tu galería');
-        }}
-        onClose={requestBack}
-        onShowToast={showToast}
-      />
+      {antesDespuesOpen && (
+        <Suspense fallback={null}>
+          <AntesDespuesModal
+            open={antesDespuesOpen}
+            trabajos={trabajosAntesDespues}
+            whatsappNumber={sugerenciasWhatsapp}
+            deviceId={deviceId}
+            onSavePersonalTrabajo={(item) => {
+              setTrabajosAntesDespues((prev) => [
+                {
+                  ...item,
+                  id: `ad-per-${Date.now()}`,
+                  fecha: new Date().toLocaleDateString('es-MX'),
+                  aprobado: true,
+                  esPersonal: true,
+                },
+                ...prev,
+              ]);
+              showToast('Trabajo guardado en tu galería personal (sin internet)', true);
+            }}
+            onDeletePersonalTrabajo={(id) => {
+              setTrabajosAntesDespues((prev) => prev.filter((t) => t.id !== id));
+              showToast('Trabajo eliminado de tu galería');
+            }}
+            onClose={requestBack}
+            onShowToast={showToast}
+          />
+        </Suspense>
+      )}
 
       <TutorialModal open={tutorialOpen} onClose={requestBack} />
 
@@ -3272,10 +3598,10 @@ export default function App() {
         open={remindersModalOpen}
         onClose={requestBack}
         reminders={cotizacionReminders}
-        defaultProyecto={hoja.proyecto || taller.clienteDefault || ''}
+        defaultProyecto={hoja.proyecto || ''}
         defaultTotal={hojaTotalAprox}
         defaultPartidasCount={hoja.partidas.length}
-        defaultTelefono={contratoCliente.telefono || ''}
+        defaultTelefono={hoja.clienteTel || contratoCliente.telefono || ''}
         tallerNombre={taller.nombre}
         highlightedReminderId={highlightedReminderId}
         onAddReminder={handleAddReminder}
@@ -3302,8 +3628,79 @@ export default function App() {
 
       <LevantamientoRapido
         onSetHojaProyecto={handleSetHojaProyectoFromLev}
+        onBatchSendToHoja={handleBatchSendToHojaFromLev}
+        onOpenModulacion={() => navigateTo('modulacion', { modStep: 1 })}
         onShowToast={showToast}
       />
+
+      {levBatchConfirmOpen && pendingLevBatch && (
+        <div
+          id="modal-lev-batch-confirm"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Confirmar envío de levantamiento a Hoja de Cotización"
+          className="fixed inset-0 z-[9980] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4"
+        >
+          <div className="w-full max-w-[420px] rounded-2xl bg-white text-slate-900 p-5 shadow-2xl border border-slate-200">
+            <h2 className="m-0 text-[18px] font-extrabold text-slate-900">
+              Ya hay partidas en tu Hoja
+            </h2>
+            <p className="m-0 mt-2 text-[13px] text-slate-600 leading-relaxed">
+              Tu Hoja de Cotización tiene actualmente{' '}
+              <strong>{hoja.partidas.length} partida(s)</strong>. Se enviarán{' '}
+              <strong>{pendingLevBatch.partidas.length} nueva(s)</strong> desde el levantamiento de{' '}
+              <strong>{pendingLevBatch.draft.cliente || 'Cliente General'}</strong>.
+            </p>
+            <div className="mt-4 flex flex-col gap-2">
+              <button
+                type="button"
+                id="btn-lev-batch-replace"
+                onClick={() => {
+                  const batch = pendingLevBatch;
+                  requestBack();
+                  commitBatchPartidasToHoja(
+                    'replace',
+                    batch.draft,
+                    batch.partidas,
+                    batch.skippedProCount
+                  );
+                }}
+                className="w-full min-h-[44px] rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-[13.5px] cursor-pointer"
+              >
+                Reemplazar partidas actuales
+              </button>
+              <button
+                type="button"
+                id="btn-lev-batch-append"
+                onClick={() => {
+                  const batch = pendingLevBatch;
+                  requestBack();
+                  commitBatchPartidasToHoja(
+                    'append',
+                    batch.draft,
+                    batch.partidas,
+                    batch.skippedProCount
+                  );
+                }}
+                className="w-full min-h-[44px] rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[13.5px] cursor-pointer"
+              >
+                Agregar a las existentes
+              </button>
+              <button
+                type="button"
+                id="btn-lev-batch-cancel"
+                onClick={() => {
+                  setPendingLevBatch(null);
+                  requestBack();
+                }}
+                className="w-full min-h-[42px] rounded-xl border border-slate-300 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[13px] cursor-pointer"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {accessBlocked && !adminModalOpen && !adminAuthOpen && (
         <div

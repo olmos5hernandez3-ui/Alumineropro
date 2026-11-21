@@ -10,9 +10,11 @@ interface Props {
   inventarioTramosTotal: number;
   hojasVidrioCount: number;
   notasCount: number;
+  cotizacionesCount?: number;
   savedReferral?: SavedColleagueReferral | null;
   pendingRemindersCount?: number;
   dueRemindersCount?: number;
+  pushPermission?: NotificationPermission | 'unsupported';
   onClaimColleaguePromo?: () => void;
   onEntrarTrabajo: (cat: 'ventanas' | 'puertas') => void;
   onEntrarHoja: () => void;
@@ -30,9 +32,11 @@ export const MainMenuView: React.FC<Props> = ({
   inventarioTramosTotal,
   hojasVidrioCount,
   notasCount,
+  cotizacionesCount = 0,
   savedReferral = null,
   pendingRemindersCount = 0,
   dueRemindersCount = 0,
+  pushPermission = 'default',
   onClaimColleaguePromo,
   onEntrarTrabajo,
   onEntrarHoja,
@@ -48,10 +52,16 @@ export const MainMenuView: React.FC<Props> = ({
       data-pro-active={proActive ? 'true' : 'false'}
       className="screen-animate"
     >
-      <div className="mb-4 sm:mb-5">
+      <div className="mb-4 sm:mb-5 flex items-baseline gap-2.5 flex-wrap">
         <h1 className="m-0 text-[clamp(1.45rem,3.6vw,2.1rem)] font-extrabold text-white leading-[1.15] tracking-tight [text-wrap:balance]">
           ¿Qué vamos a trabajar?
         </h1>
+        <span
+          id="menu-version-label"
+          className="mono text-[11px] font-semibold text-slate-400/80 bg-slate-800/50 border border-slate-700/60 rounded-md px-1.5 py-0.5 leading-none select-none"
+        >
+          v2.1
+        </span>
       </div>
 
       {/* Acceso directo a Levantamiento Rápido */}
@@ -74,32 +84,47 @@ export const MainMenuView: React.FC<Props> = ({
       </button>
 
       {/* Aviso de seguimiento de cotizaciones pendientes */}
-      {onOpenReminders && pendingRemindersCount > 0 && (
-        <button
-          type="button"
-          id="btn-menu-pending-reminders"
-          onClick={onOpenReminders}
-          className={`mb-3.5 w-full rounded-2xl px-4 py-3 text-left cursor-pointer border transition-all active:scale-[0.98] flex items-center justify-between gap-3 shadow-lg ${
-            dueRemindersCount > 0
-              ? 'border-amber-400/70 bg-amber-500/20 hover:bg-amber-500/30 text-white'
-              : 'border-sky-400/50 bg-sky-500/15 hover:bg-sky-500/25 text-white'
-          }`}
-        >
-          <div className="min-w-0">
-            <span className="block text-[10.5px] font-extrabold uppercase tracking-wider text-amber-200 truncate">
-              {dueRemindersCount > 0
-                ? `🔔 ${dueRemindersCount} seguimiento(s) vencido(s)`
-                : '🔔 Recordatorios de Cotizaciones'}
+      {onOpenReminders && pendingRemindersCount > 0 && (() => {
+        const needsPushActivation = pushPermission === 'default' || pushPermission === 'denied';
+        const ctaText =
+          pushPermission === 'denied'
+            ? 'Desbloquear Push →'
+            : pushPermission === 'default'
+              ? 'Activar Push →'
+              : 'Ver';
+        return (
+          <button
+            type="button"
+            id="btn-menu-pending-reminders"
+            data-push-permission={pushPermission}
+            onClick={onOpenReminders}
+            className={`mb-3.5 w-full rounded-2xl px-4 py-3 text-left cursor-pointer border transition-all active:scale-[0.98] flex items-center justify-between gap-3 shadow-lg ${
+              dueRemindersCount > 0 || pushPermission === 'denied'
+                ? 'border-amber-400/70 bg-amber-500/20 hover:bg-amber-500/30 text-white'
+                : 'border-sky-400/50 bg-sky-500/15 hover:bg-sky-500/25 text-white'
+            }`}
+          >
+            <div className="min-w-0">
+              <span className="block text-[10.5px] font-extrabold uppercase tracking-wider text-amber-200 truncate">
+                {dueRemindersCount > 0
+                  ? `🔔 ${dueRemindersCount} seguimiento(s) vencido(s)`
+                  : '🔔 Recordatorios de Cotizaciones'}
+                {needsPushActivation ? ' · Falta activar avisos Push' : ''}
+              </span>
+              <span className="block text-[13.5px] font-extrabold text-white leading-snug mt-0.5">
+                {pushPermission === 'denied'
+                  ? `Las notificaciones están bloqueadas: desbloquéalas para tus ${pendingRemindersCount} cotización(es) pendiente(s)`
+                  : pushPermission === 'default'
+                    ? `Activa las notificaciones del navegador para recibir aviso de tus ${pendingRemindersCount} cotización(es) pendiente(s)`
+                    : `Tienes ${pendingRemindersCount} cotización(es) pendiente(s) por dar seguimiento`}
+              </span>
+            </div>
+            <span className="shrink-0 px-3 py-1.5 rounded-xl bg-amber-400 text-slate-950 font-extrabold text-[11.5px] whitespace-nowrap">
+              {ctaText}
             </span>
-            <span className="block text-[13.5px] font-extrabold text-white leading-snug mt-0.5">
-              Tienes {pendingRemindersCount} cotización(es) pendiente(s) por dar seguimiento
-            </span>
-          </div>
-          <span className="shrink-0 px-3 py-1.5 rounded-xl bg-amber-400 text-slate-950 font-extrabold text-[11.5px] whitespace-nowrap">
-            Ver
-          </span>
-        </button>
-      )}
+          </button>
+        );
+      })()}
 
       {/* Acceso discreto para canjear los 3 días gratis enviados por un colega */}
       {!proActive && savedReferral && onClaimColleaguePromo && (
@@ -425,9 +450,9 @@ export const MainMenuView: React.FC<Props> = ({
           type="button"
           id="btn-menu-vidrio"
           onClick={() => onGoToView('vidrio')}
-          className="menu-grid-card col-span-2 flex items-center justify-between gap-3 w-full min-h-[86px] p-3.5 sm:p-4 rounded-[20px] border text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-95"
+          className="menu-grid-card flex flex-col justify-between gap-3 w-full min-h-[126px] sm:min-h-[134px] p-3.5 sm:p-4 rounded-[20px] border text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-95"
         >
-          <div className="flex items-center gap-3 min-w-0">
+          <div className="flex items-center justify-between gap-2 w-full min-h-[40px]">
             <div className="menu-icon-box menu-icon-cyan w-10 h-10 rounded-2xl flex items-center justify-center shrink-0">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <rect x="3" y="3" width="18" height="18" rx="2" />
@@ -435,18 +460,48 @@ export const MainMenuView: React.FC<Props> = ({
                 <line x1="11" y1="12" x2="21" y2="12" />
               </svg>
             </div>
-            <div className="min-w-0">
-              <span className="block text-[14.5px] sm:text-[15.5px] font-extrabold leading-tight">
-                Optimizador de Vidrio (2D)
-              </span>
-              <span className="menu-card-sub block text-[11px] sm:text-[12px] mt-0.5 leading-snug">
-                Cortes guillotina, rotación 90°, kerf y % de merma con tus hojas de taller
-              </span>
-            </div>
+            <span className="menu-badge-cyan mono inline-flex items-center justify-center min-h-[22px] px-2 py-0.5 rounded-lg text-[10px] sm:text-[10.5px] font-extrabold leading-none whitespace-nowrap shrink-0">
+              {hojasVidrioCount > 0 ? `${hojasVidrioCount} hojas` : 'Corte 2D'}
+            </span>
           </div>
-          <span className="menu-badge-cyan mono inline-flex items-center justify-center min-h-[22px] px-2.5 py-0.5 rounded-lg text-[10px] sm:text-[10.5px] font-extrabold leading-none whitespace-nowrap shrink-0">
-            {hojasVidrioCount > 0 ? `${hojasVidrioCount} hojas` : 'Corte 2D'}
-          </span>
+          <div>
+            <span className="block text-[14.5px] sm:text-[15.5px] font-extrabold leading-tight">
+              Optimizador de Vidrio (2D)
+            </span>
+            <span className="menu-card-sub block text-[11px] sm:text-[12px] mt-1 leading-snug">
+              Cortes guillotina y % de merma
+            </span>
+          </div>
+        </button>
+
+        {/* 10. HISTORIAL DE COTIZACIONES */}
+        <button
+          type="button"
+          id="btn-menu-cotizaciones"
+          onClick={() => onGoToView('cotizaciones')}
+          className="menu-grid-card flex flex-col justify-between gap-3 w-full min-h-[126px] sm:min-h-[134px] p-3.5 sm:p-4 rounded-[20px] border text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-95"
+        >
+          <div className="flex items-center justify-between gap-2 w-full min-h-[40px]">
+            <div className="menu-icon-box menu-icon-indigo w-10 h-10 rounded-2xl flex items-center justify-center shrink-0">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" />
+                <rect x="9" y="3" width="6" height="4" rx="1" />
+                <path d="M9 12h6" />
+                <path d="M9 16h4" />
+              </svg>
+            </div>
+            <span className="menu-badge-info mono inline-flex items-center justify-center min-h-[22px] px-2 py-0.5 rounded-lg text-[10px] sm:text-[10.5px] font-extrabold leading-none whitespace-nowrap shrink-0">
+              {cotizacionesCount > 0 ? `${cotizacionesCount} folios` : 'Folios'}
+            </span>
+          </div>
+          <div>
+            <span className="block text-[14.5px] sm:text-[15.5px] font-extrabold leading-tight">
+              Historial de Cotizaciones
+            </span>
+            <span className="menu-card-sub block text-[11px] sm:text-[12px] mt-1 leading-snug">
+              Enviadas, aprobadas y seguimiento
+            </span>
+          </div>
         </button>
       </div>
     </section>
