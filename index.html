@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="es">
+<html lang="es" class="w-full max-w-[100vw] overflow-x-hidden">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
@@ -9,14 +9,17 @@
     <meta property="og:description" content="Cotizador de taller para aluminio y vidrio: cortes, pijas, plano animado y presupuestos en PDF." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="theme-color" content="#0B2545" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#090d16" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Aluminero" />
-    <link rel="manifest" href="/manifest.json" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <meta name="app-version" content="aluminero-pro-v16-20261120" />
+    <link rel="manifest" href="./manifest.json?v=16" />
+    <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="./pwa-192x192.png" />
+    <link rel="icon" type="image/svg+xml" href="./icon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -31,13 +34,302 @@
           document.documentElement.setAttribute('data-theme', 'dark');
           document.documentElement.classList.add('dark');
         }
+        window.__alumineroDeferredInstallPrompt = null;
+        window.__alumineroPwaInstalled = false;
+        window.addEventListener('beforeinstallprompt', function (e) {
+          e.preventDefault();
+          window.__alumineroDeferredInstallPrompt = e;
+          window.__alumineroPwaInstalled = false;
+        });
+        window.addEventListener('appinstalled', function () {
+          window.__alumineroPwaInstalled = true;
+          window.__alumineroDeferredInstallPrompt = null;
+        });
       })();
     </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <style>
+      :root, html, body {
+        overscroll-behavior-x: none !important;
+        background-color: #090d16 !important;
+        color-scheme: dark;
+      }
+      @keyframes apViewSlideBack {
+        from { transform: translateX(-10px); }
+        to { transform: none; }
+      }
+      @keyframes apViewSlideForward {
+        from { transform: translateX(10px); }
+        to { transform: none; }
+      }
+      .ap-view-back {
+        animation: apViewSlideBack 0.14s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+      }
+      .ap-view-forward {
+        animation: apViewSlideForward 0.14s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .ap-view-back,
+        .ap-view-forward {
+          animation: none;
+        }
+      }
+      #app-loader {
+        position: fixed;
+        inset: 0;
+        z-index: 99999;
+        background: #090d16;
+        background-image: radial-gradient(circle at 50% 38%, rgba(37, 99, 235, 0.22) 0%, rgba(249, 115, 22, 0.08) 38%, rgba(9, 13, 22, 1) 75%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        padding: 24px;
+        opacity: 1;
+        visibility: visible;
+        transition: opacity 0.45s ease, visibility 0.45s ease;
+        font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      }
+      #app-loader.ap-loader--hidden {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+      }
+      .ap-loader-logo {
+        width: 88px;
+        height: 88px;
+        border-radius: 22px;
+        animation: apLoaderFloatGlow 2.4s ease-in-out infinite;
+      }
+      .ap-loader-title {
+        margin: 0;
+        color: #f8fafc;
+        font-size: 18px;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+      }
+      .ap-loader-sub {
+        margin: -10px 0 0;
+        color: #94a3b8;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .ap-loader-bar-track {
+        width: min(220px, 68vw);
+        height: 5px;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, 0.18);
+        overflow: hidden;
+        position: relative;
+      }
+      .ap-loader-bar-fill {
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 48%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #2563eb 0%, #38bdf8 45%, #f97316 100%);
+        box-shadow: 0 0 12px rgba(56, 189, 248, 0.55);
+        animation: apLoaderBarSlide 1.35s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+      }
+      @keyframes apLoaderFloatGlow {
+        0%, 100% {
+          transform: translateY(0px) scale(1);
+          filter: drop-shadow(0 0 14px rgba(37, 99, 235, 0.45)) drop-shadow(0 0 6px rgba(249, 115, 22, 0.2));
+        }
+        50% {
+          transform: translateY(-6px) scale(1.03);
+          filter: drop-shadow(0 8px 24px rgba(56, 189, 248, 0.65)) drop-shadow(0 0 14px rgba(249, 115, 22, 0.4));
+        }
+      }
+      @keyframes apLoaderBarSlide {
+        0% {
+          transform: translateX(-110%);
+        }
+        100% {
+          transform: translateX(230%);
+        }
+      }
+    </style>
   </head>
-  <body>
-    <div id="root"></div>
+  <body class="w-full max-w-[100vw] overflow-x-hidden">
+    <div id="app-loader" role="status" aria-live="polite" aria-label="Cargando Aluminero Pro">
+      <svg class="ap-loader-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="88" height="88" aria-hidden="true">
+        <rect width="512" height="512" rx="112" fill="#1D4ED8"/>
+        <rect x="22" y="22" width="468" height="468" rx="94" fill="#1E40AF" stroke="#60A5FA" stroke-opacity="0.45" stroke-width="4"/>
+        <rect x="92" y="84" width="328" height="222" rx="18" fill="#0F172A" fill-opacity="0.25" stroke="#FFFFFF" stroke-width="24"/>
+        <rect x="114" y="106" width="130" height="178" rx="4" fill="#60A5FA" fill-opacity="0.55" stroke="#FFFFFF" stroke-width="6"/>
+        <rect x="268" y="106" width="130" height="178" rx="4" fill="#DBEAFE" fill-opacity="0.92" stroke="#FFFFFF" stroke-width="6"/>
+        <rect x="245" y="96" width="22" height="198" rx="4" fill="#FFFFFF"/>
+        <rect x="148" y="328" width="216" height="102" rx="22" fill="#FFFFFF"/>
+        <text x="256" y="405" text-anchor="middle" fill="#1D4ED8" font-family="Arial, Helvetica, sans-serif" font-weight="900" font-size="82" letter-spacing="6">AP</text>
+      </svg>
+      <p class="ap-loader-title">Aluminero Pro</p>
+      <p class="ap-loader-sub">Preparando taller y herramientas...</p>
+      <div class="ap-loader-bar-track" aria-hidden="true">
+        <div class="ap-loader-bar-fill"></div>
+      </div>
+    </div>
+    <script>
+      (function () {
+        var loader = document.getElementById('app-loader');
+        if (!loader) return;
+        var dismissed = false;
+        function hideLoader() {
+          if (dismissed) return;
+          dismissed = true;
+          loader.classList.add('ap-loader--hidden');
+          window.setTimeout(function () {
+            if (loader && loader.parentNode) {
+              loader.parentNode.removeChild(loader);
+            }
+          }, 480);
+        }
+        function scheduleHide() {
+          window.setTimeout(hideLoader, 500);
+        }
+        if (document.readyState === 'complete') {
+          scheduleHide();
+        } else {
+          window.addEventListener('load', scheduleHide, { once: true });
+        }
+        window.setTimeout(hideLoader, 5500);
+      })();
+    </script>
+    <div id="root" class="w-full max-w-[100vw] overflow-x-hidden"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      (function () {
+        if (
+          typeof window === 'undefined' ||
+          !('serviceWorker' in navigator) ||
+          !/^https?:$/i.test(window.location.protocol)
+        ) {
+          return;
+        }
+
+        var swRegistration = null;
+        var waitingWorker = null;
+        var reloadingForUpdate = false;
+        var userClickedUpdate = false;
+        var hadController = Boolean(navigator.serviceWorker.controller);
+
+        function ensureUpdateBanner(worker) {
+          if (!worker) return;
+          waitingWorker = worker;
+
+          var existing = document.getElementById('pwa-update-banner');
+          if (existing) {
+            existing.style.display = 'flex';
+            return;
+          }
+
+          var banner = document.createElement('div');
+          banner.id = 'pwa-update-banner';
+          banner.setAttribute('role', 'alert');
+          banner.setAttribute('aria-live', 'polite');
+          banner.style.cssText =
+            'position:fixed;top:66px;left:50%;transform:translateX(-50%);z-index:10050;' +
+            'width:min(420px,calc(100vw - 24px));display:flex;align-items:center;' +
+            'justify-content:space-between;gap:12px;padding:10px 14px;border-radius:14px;' +
+            'background:linear-gradient(135deg,#facc15 0%,#f59e0b 100%);color:#0f172a;' +
+            'border:1.5px solid #fef08a;box-shadow:0 12px 30px rgba(0,0,0,0.35);' +
+            'font-family:"Plus Jakarta Sans",system-ui,-apple-system,sans-serif;';
+
+          var msg = document.createElement('div');
+          msg.style.cssText = 'font-size:13px;font-weight:800;line-height:1.25;min-width:0;flex:1;';
+          msg.textContent = '✨ Nueva actualización disponible';
+
+          var btn = document.createElement('button');
+          btn.id = 'btn-pwa-update-now';
+          btn.type = 'button';
+          btn.textContent = 'Actualizar';
+          btn.style.cssText =
+            'flex-shrink:0;min-height:36px;padding:0 14px;border-radius:10px;border:none;' +
+            'background:#0f172a;color:#fef08a;font-size:12.5px;font-weight:800;cursor:pointer;' +
+            'white-space:nowrap;box-shadow:0 2px 8px rgba(15,23,42,0.25);';
+
+          btn.addEventListener('click', function () {
+            userClickedUpdate = true;
+            btn.disabled = true;
+            btn.textContent = 'Actualizando...';
+            btn.style.opacity = '0.8';
+            var target = (swRegistration && swRegistration.waiting) || waitingWorker;
+            if (target) {
+              try {
+                target.postMessage({ type: 'SKIP_WAITING' });
+              } catch (e) {
+                window.location.reload();
+              }
+              window.setTimeout(function () {
+                if (!reloadingForUpdate && target.state === 'activated') {
+                  reloadingForUpdate = true;
+                  window.location.reload();
+                }
+              }, 2500);
+            } else {
+              window.location.reload();
+            }
+          });
+
+          banner.appendChild(msg);
+          banner.appendChild(btn);
+          document.body.appendChild(banner);
+        }
+
+        function attachRegistrationListeners(reg) {
+          swRegistration = reg;
+
+          if (reg.waiting) {
+            ensureUpdateBanner(reg.waiting);
+          }
+
+          reg.addEventListener('updatefound', function () {
+            var newWorker = reg.installing;
+            if (!newWorker) return;
+            newWorker.addEventListener('statechange', function () {
+              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                ensureUpdateBanner(reg.waiting || newWorker);
+              }
+            });
+          });
+        }
+
+        function triggerUpdateCheck() {
+          if (!swRegistration) return;
+          if (swRegistration.waiting) {
+            ensureUpdateBanner(swRegistration.waiting);
+          }
+          swRegistration.update().catch(function () {});
+        }
+
+        navigator.serviceWorker.addEventListener('controllerchange', function () {
+          if (reloadingForUpdate) return;
+          if (!hadController && !userClickedUpdate) return;
+          reloadingForUpdate = true;
+          window.location.reload();
+        });
+
+        document.addEventListener('visibilitychange', function () {
+          if (document.visibilityState === 'visible') {
+            triggerUpdateCheck();
+          }
+        });
+
+        window.addEventListener('online', function () {
+          triggerUpdateCheck();
+        });
+
+        window.addEventListener('load', function () {
+          navigator.serviceWorker
+            .register('./sw.js', { scope: './', updateViaCache: 'none' })
+            .then(function (reg) {
+              attachRegistrationListeners(reg);
+              reg.update().catch(function () {});
+            })
+            .catch(function () {});
+        });
+      })();
+    </script>
   </body>
 </html>
-

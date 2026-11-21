@@ -1,0 +1,369 @@
+{
+  "entities": {
+    "Device": {
+      "title": "Device",
+      "description": "Dispositivo registrado de Aluminero Pro con su estado de licencia, plan actual y métricas de uso.",
+      "type": "object",
+      "properties": {
+        "deviceId": {
+          "type": "string",
+          "description": "Identificador único normalizado del equipo (ej. ALM-9X2K).",
+          "minLength": 3,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "cliente": {
+          "type": "string",
+          "description": "Nombre o teléfono del cliente asociado al dispositivo.",
+          "maxLength": 120
+        },
+        "deviceLabel": {
+          "type": "string",
+          "description": "Etiqueta del tipo de dispositivo o navegador.",
+          "maxLength": 80
+        },
+        "firstSeenAt": {
+          "type": "number",
+          "description": "Marca de tiempo en milisegundos del primer registro."
+        },
+        "lastSeenAt": {
+          "type": "number",
+          "description": "Marca de tiempo en milisegundos de la última conexión."
+        },
+        "totalSessions": {
+          "type": "number",
+          "description": "Total de sesiones registradas."
+        },
+        "totalMinutes": {
+          "type": "number",
+          "description": "Total de minutos acumulados de uso."
+        },
+        "activeDays": {
+          "type": "array",
+          "description": "Lista acotada de días activos (YYYY-MM-DD, máximo 60 entradas)."
+        },
+        "proActive": {
+          "type": "boolean",
+          "description": "Indica si la licencia PRO o promoción está activa."
+        },
+        "planCode": {
+          "type": "string",
+          "description": "Código del plan actual (FREE, G, M, Q, A, DXX, BLOCKED, REVOKED, SESSION_MOVED).",
+          "maxLength": 24
+        },
+        "planLabel": {
+          "type": "string",
+          "description": "Nombre legible del plan o estado actual.",
+          "maxLength": 120
+        },
+        "status": {
+          "type": "string",
+          "description": "Estado normalizado del dispositivo (free, pro, blocked).",
+          "maxLength": 24
+        },
+        "expiresAt": {
+          "type": "number",
+          "description": "Fecha de vencimiento en milisegundos o null."
+        },
+        "lastKey": {
+          "type": "string",
+          "description": "Última clave de activación asignada o ingresada.",
+          "maxLength": 40
+        },
+        "updatedAt": {
+          "type": "number",
+          "description": "Última actualización de licencia en milisegundos."
+        },
+        "revoked": {
+          "type": "boolean",
+          "description": "Indica si la licencia fue revocada manualmente."
+        },
+        "revokedAt": {
+          "type": "number",
+          "description": "Fecha de revocación en milisegundos o null."
+        },
+        "blocked": {
+          "type": "boolean",
+          "description": "Indica si el acceso del equipo está bloqueado."
+        },
+        "blockedAt": {
+          "type": "number",
+          "description": "Fecha de bloqueo en milisegundos o null."
+        },
+        "trialActive": {
+          "type": "boolean",
+          "description": "Indica si tiene activa una promoción de regalo."
+        },
+        "adminAssigned": {
+          "type": "boolean",
+          "description": "Indica si el plan fue asignado directamente por el administrador."
+        },
+        "linkedEmail": {
+          "type": "string",
+          "description": "Correo de respaldo en la nube vinculado al equipo.",
+          "maxLength": 160
+        }
+      },
+      "required": [
+        "deviceId",
+        "cliente",
+        "deviceLabel",
+        "firstSeenAt",
+        "lastSeenAt",
+        "totalSessions",
+        "totalMinutes",
+        "activeDays",
+        "proActive",
+        "planCode",
+        "planLabel",
+        "lastKey",
+        "updatedAt",
+        "revoked",
+        "blocked",
+        "trialActive",
+        "adminAssigned"
+      ]
+    },
+    "AdminKey": {
+      "title": "AdminKey",
+      "description": "Registro histórico de clave o plan generado desde el Panel de Administrador.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Identificador único del registro en el historial.",
+          "minLength": 3,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "cliente": {
+          "type": "string",
+          "description": "Nombre o teléfono del cliente.",
+          "maxLength": 120
+        },
+        "deviceId": {
+          "type": "string",
+          "description": "ID del equipo destino.",
+          "minLength": 3,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "planLabel": {
+          "type": "string",
+          "description": "Descripción del plan otorgado.",
+          "maxLength": 120
+        },
+        "dias": {
+          "type": "number",
+          "description": "Duración en días o null."
+        },
+        "key": {
+          "type": "string",
+          "description": "Código de activación generado.",
+          "maxLength": 40
+        },
+        "createdAt": {
+          "type": "number",
+          "description": "Marca de tiempo de creación en milisegundos."
+        },
+        "expiresAt": {
+          "type": "number",
+          "description": "Marca de tiempo de expiración en milisegundos o null."
+        },
+        "revoked": {
+          "type": "boolean",
+          "description": "Indica si la clave fue revocada."
+        },
+        "revokedAt": {
+          "type": "number",
+          "description": "Marca de tiempo de revocación en milisegundos o null."
+        },
+        "linkedEmail": {
+          "type": "string",
+          "description": "Correo vinculado al dispositivo.",
+          "maxLength": 160
+        }
+      },
+      "required": [
+        "id",
+        "cliente",
+        "deviceId",
+        "planLabel",
+        "key",
+        "createdAt"
+      ]
+    },
+    "RevokedKey": {
+      "title": "RevokedKey",
+      "description": "Clave de activación revocada permanentemente para impedir su reutilización.",
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "description": "Código de activación revocado.",
+          "minLength": 4,
+          "maxLength": 40,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "deviceId": {
+          "type": "string",
+          "description": "ID del dispositivo asociado.",
+          "maxLength": 64
+        },
+        "revokedAt": {
+          "type": "number",
+          "description": "Marca de tiempo en milisegundos de la revocación."
+        }
+      },
+      "required": ["key", "revokedAt"]
+    },
+    "BlockedDevice": {
+      "title": "BlockedDevice",
+      "description": "Registro persistente de dispositivos bloqueados o suspendidos.",
+      "type": "object",
+      "properties": {
+        "deviceId": {
+          "type": "string",
+          "description": "ID del equipo bloqueado.",
+          "minLength": 3,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "blockedAt": {
+          "type": "number",
+          "description": "Marca de tiempo del bloqueo en milisegundos."
+        }
+      },
+      "required": ["deviceId", "blockedAt"]
+    },
+    "CloudAccount": {
+      "title": "CloudAccount",
+      "description": "Cuenta de respaldo y recuperación en la nube para planes PRO de 90 días y 1 año.",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Correo electrónico normalizado de la cuenta.",
+          "maxLength": 160
+        },
+        "passwordSalt": {
+          "type": "string",
+          "description": "Salt criptográfico aleatorio en hexadecimal.",
+          "maxLength": 128
+        },
+        "passwordHash": {
+          "type": "string",
+          "description": "Hash SHA-256 de la contraseña con salt.",
+          "maxLength": 128
+        },
+        "activeDeviceId": {
+          "type": "string",
+          "description": "ID del dispositivo con la sesión única activa.",
+          "maxLength": 64
+        },
+        "activeSessionToken": {
+          "type": "string",
+          "description": "Token de sesión activo o null.",
+          "maxLength": 128
+        },
+        "licencia": {
+          "type": "object",
+          "description": "Estado de licencia vinculado a la cuenta."
+        },
+        "backup": {
+          "type": "object",
+          "description": "Respaldo de cotizaciones, inventario, notas y configuración."
+        },
+        "createdAt": {
+          "type": "number",
+          "description": "Fecha de creación en milisegundos."
+        },
+        "updatedAt": {
+          "type": "number",
+          "description": "Fecha de actualización en milisegundos."
+        },
+        "lastBackedUpAt": {
+          "type": "number",
+          "description": "Último respaldo en milisegundos o null."
+        }
+      },
+      "required": [
+        "email",
+        "passwordSalt",
+        "passwordHash",
+        "activeDeviceId",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "AppConfig": {
+      "title": "AppConfig",
+      "description": "Configuración compartida del panel de administrador (hash de contraseña personalizada).",
+      "type": "object",
+      "properties": {
+        "adminPasswordSalt": {
+          "type": "string",
+          "description": "Salt de la contraseña del panel administrador.",
+          "maxLength": 128
+        },
+        "adminPasswordHash": {
+          "type": "string",
+          "description": "Hash SHA-256 de la contraseña del panel administrador.",
+          "maxLength": 128
+        },
+        "updatedAt": {
+          "type": "number",
+          "description": "Marca de tiempo de actualización en milisegundos."
+        }
+      },
+      "required": ["updatedAt"]
+    },
+    "PromoStats": {
+      "title": "PromoStats",
+      "description": "Contador global de promociones de invitación compartidas por la comunidad (stats/promociones_enviadas).",
+      "type": "object",
+      "properties": {
+        "total": {
+          "type": "number",
+          "description": "Total acumulado de promociones compartidas (inicia en 1)."
+        },
+        "updatedAt": {
+          "type": "number",
+          "description": "Marca de tiempo de la última actualización en milisegundos."
+        }
+      },
+      "required": ["total", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/devices/{deviceId}": {
+      "schema": { "$ref": "#/entities/Device" },
+      "description": "Registro de cada dispositivo cliente y su estado de licencia en la nube."
+    },
+    "/adminKeys/{keyId}": {
+      "schema": { "$ref": "#/entities/AdminKey" },
+      "description": "Historial de claves y promociones emitidas desde el Panel de Administrador."
+    },
+    "/revokedKeys/{keyCode}": {
+      "schema": { "$ref": "#/entities/RevokedKey" },
+      "description": "Lista persistente de códigos revocados que no pueden reactivarse."
+    },
+    "/blockedDevices/{deviceId}": {
+      "schema": { "$ref": "#/entities/BlockedDevice" },
+      "description": "Dispositivos suspendidos o bloqueados por el administrador."
+    },
+    "/accounts/{accountId}": {
+      "schema": { "$ref": "#/entities/CloudAccount" },
+      "description": "Cuentas de respaldo y recuperación para usuarios PRO de 90 días y 1 año."
+    },
+    "/config/{configId}": {
+      "schema": { "$ref": "#/entities/AppConfig" },
+      "description": "Configuración segura del Panel de Administrador."
+    },
+    "/stats/{statId}": {
+      "schema": { "$ref": "#/entities/PromoStats" },
+      "description": "Contadores globales públicos de promociones compartidas por la comunidad."
+    }
+  }
+}

@@ -1,0 +1,360 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Red de seguridad global (Denegar todo por defecto)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ==================== PRIMITIVAS GLOBALES ====================
+    function isValidId(id) {
+      return id is string && id.size() >= 3 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidEpochMs(val) {
+      return (val is int || val is float) && val >= 1577836800000 && val <= request.time.toMillis() + 86400000;
+    }
+
+    function isNullableEpochMs(val) {
+      return val == null || isValidEpochMs(val);
+    }
+
+    function isNullableExpiryMs(val) {
+      return val == null || ((val is int || val is float) && val >= 1577836800000 && val <= 4102444800000);
+    }
+
+    function isBoundedString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    function isNonNegNumber(val, maxVal) {
+      return (val is int || val is float) && val >= 0 && val <= maxVal;
+    }
+
+    // ==================== VALIDACIÓN: DEVICE ====================
+    function isValidDevice(data) {
+      return data.keys().hasAll([
+        'deviceId',
+        'cliente',
+        'deviceLabel',
+        'firstSeenAt',
+        'lastSeenAt',
+        'totalSessions',
+        'totalMinutes',
+        'activeDays',
+        'proActive',
+        'planCode',
+        'planLabel',
+        'lastKey',
+        'updatedAt',
+        'revoked',
+        'blocked',
+        'trialActive',
+        'adminAssigned'
+      ])
+      && data.keys().hasOnly([
+        'deviceId',
+        'cliente',
+        'deviceLabel',
+        'firstSeenAt',
+        'lastSeenAt',
+        'totalSessions',
+        'totalMinutes',
+        'activeDays',
+        'proActive',
+        'planCode',
+        'planLabel',
+        'expiresAt',
+        'lastKey',
+        'updatedAt',
+        'revoked',
+        'revokedAt',
+        'blocked',
+        'blockedAt',
+        'trialActive',
+        'adminAssigned',
+        'linkedEmail',
+        'status'
+      ])
+      && isValidId(data.deviceId)
+      && data.deviceId.size() <= 64
+      && isBoundedString(data.cliente, 0, 120)
+      && isBoundedString(data.deviceLabel, 0, 80)
+      && isValidEpochMs(data.firstSeenAt)
+      && isValidEpochMs(data.lastSeenAt)
+      && isNonNegNumber(data.totalSessions, 1000000)
+      && isNonNegNumber(data.totalMinutes, 100000000)
+      && data.activeDays is list
+      && data.activeDays.size() <= 60
+      && (data.activeDays.size() == 0 || (data.activeDays[0] is string && data.activeDays[0].size() <= 16))
+      && data.proActive is bool
+      && isBoundedString(data.planCode, 1, 24)
+      && isBoundedString(data.planLabel, 1, 120)
+      && (!('status' in data) || isBoundedString(data.status, 1, 24))
+      && (!('expiresAt' in data) || isNullableExpiryMs(data.expiresAt))
+      && isBoundedString(data.lastKey, 0, 40)
+      && isValidEpochMs(data.updatedAt)
+      && data.revoked is bool
+      && (!('revokedAt' in data) || isNullableEpochMs(data.revokedAt))
+      && data.blocked is bool
+      && (!('blockedAt' in data) || isNullableEpochMs(data.blockedAt))
+      && data.trialActive is bool
+      && data.adminAssigned is bool
+      && (!('linkedEmail' in data) || data.linkedEmail == null || isBoundedString(data.linkedEmail, 0, 160));
+    }
+
+    // ==================== VALIDACIÓN: ADMIN KEY ====================
+    function isValidAdminKey(data) {
+      return data.keys().hasAll(['id', 'cliente', 'deviceId', 'planLabel', 'key', 'createdAt'])
+      && data.keys().hasOnly([
+        'id',
+        'cliente',
+        'deviceId',
+        'planLabel',
+        'dias',
+        'key',
+        'createdAt',
+        'expiresAt',
+        'revoked',
+        'revokedAt',
+        'linkedEmail'
+      ])
+      && isValidId(data.id)
+      && isBoundedString(data.cliente, 0, 120)
+      && isValidId(data.deviceId)
+      && data.deviceId.size() <= 64
+      && isBoundedString(data.planLabel, 1, 120)
+      && (!('dias' in data) || data.dias == null || isNonNegNumber(data.dias, 3650))
+      && isBoundedString(data.key, 0, 40)
+      && isValidEpochMs(data.createdAt)
+      && (!('expiresAt' in data) || isNullableExpiryMs(data.expiresAt))
+      && (!('revoked' in data) || data.revoked is bool)
+      && (!('revokedAt' in data) || isNullableEpochMs(data.revokedAt))
+      && (!('linkedEmail' in data) || data.linkedEmail == null || isBoundedString(data.linkedEmail, 0, 160));
+    }
+
+    // ==================== VALIDACIÓN: REVOKED KEY ====================
+    function isValidRevokedKey(data) {
+      return data.keys().hasAll(['key', 'revokedAt'])
+      && data.keys().hasOnly(['key', 'deviceId', 'revokedAt'])
+      && isValidId(data.key)
+      && data.key.size() >= 4
+      && data.key.size() <= 40
+      && (!('deviceId' in data) || isBoundedString(data.deviceId, 0, 64))
+      && isValidEpochMs(data.revokedAt);
+    }
+
+    // ==================== VALIDACIÓN: BLOCKED DEVICE ====================
+    function isValidBlockedDevice(data) {
+      return data.keys().hasAll(['deviceId', 'blockedAt'])
+      && data.keys().hasOnly(['deviceId', 'blockedAt'])
+      && isValidId(data.deviceId)
+      && data.deviceId.size() <= 64
+      && isValidEpochMs(data.blockedAt);
+    }
+
+    // ==================== VALIDACIÓN: CLOUD ACCOUNT ====================
+    function isValidCloudAccount(data) {
+      return data.keys().hasAll([
+        'email',
+        'passwordSalt',
+        'passwordHash',
+        'activeDeviceId',
+        'createdAt',
+        'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'email',
+        'passwordSalt',
+        'passwordHash',
+        'activeDeviceId',
+        'activeSessionToken',
+        'licencia',
+        'backup',
+        'createdAt',
+        'updatedAt',
+        'lastBackedUpAt'
+      ])
+      && isBoundedString(data.email, 5, 160)
+      && isBoundedString(data.passwordSalt, 8, 128)
+      && isBoundedString(data.passwordHash, 16, 128)
+      && isValidId(data.activeDeviceId)
+      && data.activeDeviceId.size() <= 64
+      && (!('activeSessionToken' in data) || data.activeSessionToken == null || isBoundedString(data.activeSessionToken, 8, 128))
+      && (!('licencia' in data) || data.licencia == null || data.licencia is map)
+      && (!('backup' in data) || data.backup == null || data.backup is map)
+      && isValidEpochMs(data.createdAt)
+      && isValidEpochMs(data.updatedAt)
+      && (!('lastBackedUpAt' in data) || isNullableEpochMs(data.lastBackedUpAt));
+    }
+
+    // ==================== VALIDACIÓN: CONFIG ====================
+    function isValidAppConfig(data) {
+      return data.keys().hasAll(['updatedAt'])
+      && data.keys().hasOnly(['adminPasswordSalt', 'adminPasswordHash', 'updatedAt'])
+      && (!('adminPasswordSalt' in data) || isBoundedString(data.adminPasswordSalt, 8, 128))
+      && (!('adminPasswordHash' in data) || isBoundedString(data.adminPasswordHash, 16, 128))
+      && isValidEpochMs(data.updatedAt);
+    }
+
+    // ==================== VALIDACIÓN: PROMO STATS ====================
+    function isValidPromoStats(data) {
+      return data.keys().hasAll(['total', 'updatedAt'])
+      && data.keys().hasOnly(['total', 'updatedAt'])
+      && data.total is int
+      && data.total >= 1
+      && data.total <= 100000000
+      && isValidEpochMs(data.updatedAt);
+    }
+
+    // ==================== COLECCIÓN DE VERIFICACIÓN DE CONEXIÓN ====================
+    match /test/connection {
+      allow get: if resource == null || resource.data is map;
+    }
+
+    // ==================== COLECCIONES DE APLICACIÓN ====================
+    match /devices/{deviceId} {
+      allow get: if isValidId(deviceId);
+      allow list: if request.query.limit <= 500;
+      allow create: if isValidId(deviceId)
+        && isValidDevice(incoming())
+        && incoming().deviceId == deviceId;
+      allow update: if isValidId(deviceId)
+        && isValidDevice(incoming())
+        && incoming().deviceId == existing().deviceId
+        && incoming().firstSeenAt == existing().firstSeenAt
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'cliente',
+          'deviceLabel',
+          'lastSeenAt',
+          'totalSessions',
+          'totalMinutes',
+          'activeDays',
+          'proActive',
+          'planCode',
+          'planLabel',
+          'expiresAt',
+          'lastKey',
+          'updatedAt',
+          'revoked',
+          'revokedAt',
+          'blocked',
+          'blockedAt',
+          'trialActive',
+          'adminAssigned',
+          'linkedEmail',
+          'status'
+        ]);
+      allow delete: if isValidId(deviceId) && (resource == null || existing().deviceId == deviceId);
+    }
+
+    match /adminKeys/{keyId} {
+      allow get: if isValidId(keyId);
+      allow list: if request.query.limit <= 500;
+      allow create: if isValidId(keyId)
+        && isValidAdminKey(incoming())
+        && incoming().id == keyId;
+      allow update: if isValidId(keyId)
+        && isValidAdminKey(incoming())
+        && incoming().id == existing().id
+        && incoming().createdAt == existing().createdAt
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'cliente',
+          'deviceId',
+          'planLabel',
+          'dias',
+          'key',
+          'expiresAt',
+          'revoked',
+          'revokedAt',
+          'linkedEmail'
+        ]);
+      allow delete: if isValidId(keyId) && (resource == null || existing().id == keyId);
+    }
+
+    match /revokedKeys/{keyCode} {
+      allow get: if isValidId(keyCode);
+      allow list: if request.query.limit <= 500;
+      allow create: if isValidId(keyCode)
+        && isValidRevokedKey(incoming())
+        && incoming().key == keyCode;
+      allow update: if isValidId(keyCode)
+        && isValidRevokedKey(incoming())
+        && incoming().key == existing().key
+        && incoming().diff(existing()).affectedKeys().hasOnly(['deviceId', 'revokedAt']);
+      allow delete: if isValidId(keyCode) && (resource == null || existing().key == keyCode);
+    }
+
+    match /blockedDevices/{deviceId} {
+      allow get: if isValidId(deviceId);
+      allow list: if request.query.limit <= 500;
+      allow create: if isValidId(deviceId)
+        && isValidBlockedDevice(incoming())
+        && incoming().deviceId == deviceId;
+      allow update: if isValidId(deviceId)
+        && isValidBlockedDevice(incoming())
+        && incoming().deviceId == existing().deviceId
+        && incoming().diff(existing()).affectedKeys().hasOnly(['blockedAt']);
+      allow delete: if isValidId(deviceId) && (resource == null || existing().deviceId == deviceId);
+    }
+
+    match /accounts/{accountId} {
+      allow get: if isValidId(accountId);
+      allow list: if false;
+      allow create: if isValidId(accountId) && isValidCloudAccount(incoming());
+      allow update: if isValidId(accountId)
+        && isValidCloudAccount(incoming())
+        && incoming().email == existing().email
+        && incoming().createdAt == existing().createdAt
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'passwordSalt',
+          'passwordHash',
+          'activeDeviceId',
+          'activeSessionToken',
+          'licencia',
+          'backup',
+          'updatedAt',
+          'lastBackedUpAt'
+        ]);
+      allow delete: if isValidId(accountId) && (resource == null || existing().email is string);
+    }
+
+    match /config/{configId} {
+      allow get: if isValidId(configId);
+      allow create: if isValidId(configId) && isValidAppConfig(incoming());
+      allow update: if isValidId(configId)
+        && isValidAppConfig(incoming())
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'adminPasswordSalt',
+          'adminPasswordHash',
+          'updatedAt'
+        ]);
+      allow delete: if false;
+    }
+
+    match /stats/{statId} {
+      allow get: if isValidId(statId) && statId == 'promociones_enviadas';
+      allow list: if false;
+      allow create: if isValidId(statId)
+        && statId == 'promociones_enviadas'
+        && isValidPromoStats(incoming())
+        && incoming().total >= 1
+        && incoming().total <= 2;
+      allow update: if isValidId(statId)
+        && statId == 'promociones_enviadas'
+        && isValidPromoStats(incoming())
+        && incoming().total == existing().total + 1
+        && incoming().diff(existing()).affectedKeys().hasOnly(['total', 'updatedAt']);
+      allow delete: if false;
+    }
+  }
+}
