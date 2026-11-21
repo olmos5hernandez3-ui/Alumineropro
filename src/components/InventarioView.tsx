@@ -1150,22 +1150,45 @@ export const InventarioView: React.FC<Props> = ({
                       ))}
                     </select>
                   </div>
-                  <div>
-                    <label htmlFor="sel-sobrante-color" className="block text-[11px] font-bold text-slate-600 mb-1">
-                      Color / Acabado *
-                    </label>
-                    <select
+                  <div className="sm:col-span-2">
+                    <span className="block text-[11px] font-bold text-slate-600 mb-1.5">
+                      Color de Aluminio *
+                    </span>
+                    <div
                       id="sel-sobrante-color"
-                      value={sobColor}
-                      onChange={(e) => handleSelectColor(e.target.value as ColorId)}
-                      className="w-full min-h-[40px] rounded-xl border border-slate-200 px-2.5 text-[12.5px] font-semibold bg-white"
+                      role="group"
+                      aria-label="Color de aluminio para sobrante"
+                      className="grid grid-cols-2 sm:grid-cols-3 gap-1.5"
                     >
-                      {Object.values(COLORES_CONFIG).map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.nombre}
-                        </option>
-                      ))}
-                    </select>
+                      {Object.values(COLORES_CONFIG).map((c) => {
+                        const active = sobColor === c.id;
+                        return (
+                          <button
+                            key={c.id}
+                            type="button"
+                            aria-pressed={active}
+                            onClick={() => handleSelectColor(c.id as ColorId)}
+                            className={`flex items-center gap-2 min-h-[40px] px-2.5 py-1.5 rounded-xl border text-left text-[12px] font-bold cursor-pointer transition-all active:scale-95 ${
+                              active
+                                ? 'border-blue-600 bg-blue-50 text-blue-800 ring-2 ring-blue-500/40 shadow-sm'
+                                : 'border-slate-200 bg-white text-slate-800 hover:bg-slate-50'
+                            }`}
+                          >
+                            <span
+                              className="w-5 h-5 rounded-full border border-slate-300 shadow-inner shrink-0"
+                              style={{ background: c.swatch }}
+                              aria-hidden="true"
+                            />
+                            <span className="truncate flex-1">{c.nombre}</span>
+                            {active && (
+                              <span className="text-blue-600 text-[11px] font-extrabold shrink-0" aria-hidden="true">
+                                ✓
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
 

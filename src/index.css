@@ -1470,6 +1470,61 @@ html[data-theme="light"] #calc-display {
   background: #2563eb;
   color: #fff;
 }
+#lev-root .swatch-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 2px;
+}
+#lev-root .swatch-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 6px 10px;
+  border-radius: 12px;
+  border: 1.5px solid rgba(148, 163, 184, 0.35);
+  background: #081223;
+  color: #e2e8f0;
+  font-size: 12.5px;
+  font-weight: 700;
+  text-align: left;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+#lev-root .swatch-btn.on {
+  border-color: #38bdf8;
+  background: rgba(37, 99, 235, 0.28);
+  color: #ffffff;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.35);
+}
+#lev-root .swatch-dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 9999px;
+  border: 1.5px solid rgba(255, 255, 255, 0.45);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+  flex-shrink: 0;
+}
+#lev-root .swatch-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#lev-root .swatch-check {
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  background: #38bdf8;
+  color: #081223;
+  font-size: 11px;
+  font-weight: 900;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
 #lev-root .qty {
   display: flex;
   align-items: center;

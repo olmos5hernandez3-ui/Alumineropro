@@ -24,6 +24,7 @@ interface TopBarProps {
   trialExpiresAt: number | null;
   theme: AppTheme;
   onBack: () => void;
+  onExitTap: () => void;
   onGoHome: () => void;
   onLogoClick: () => void;
   onOpenPro: () => void;
@@ -38,6 +39,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   trialExpiresAt,
   theme,
   onBack,
+  onExitTap,
   onGoHome,
   onLogoClick,
   onOpenPro,
@@ -62,27 +64,33 @@ export const TopBar: React.FC<TopBarProps> = ({
       if (cur >= effectiveExpiresAt) {
         window.clearInterval(intervalId);
       }
-    }, 1000);
+    }, 30_000);
     return () => window.clearInterval(intervalId);
   }, [effectiveExpiresAt]);
 
   const licenseActiveNow = Boolean(licencia && licencia.active && isProActive(licencia, nowTs));
-  const activeCountdown =
-    effectiveExpiresAt !== null ? getTrialCountdown(effectiveExpiresAt, nowTs) : null;
+  const trialCountdown =
+    trialExpiresAt !== null ? getTrialCountdown(trialExpiresAt, nowTs) : null;
+  const isFreeTrial = Boolean(trialCountdown && trialCountdown.active);
 
-  const chipIsGreen = licenseActiveNow || Boolean(activeCountdown?.active);
-  const countdownSuffix =
-    activeCountdown && activeCountdown.active
-      ? activeCountdown.days > 0 || activeCountdown.hours > 0
-        ? `${activeCountdown.days}d ${activeCountdown.hours}h`
-        : `${Math.max(1, Math.ceil(activeCountdown.remainingMs / 60000))}m`
-      : null;
+  const chipIsGreen = licenseActiveNow || isFreeTrial || proActive;
 
-  const licChipText = chipIsGreen
-    ? countdownSuffix
-      ? `Promo PRO · ${countdownSuffix}`
-      : 'Promo PRO'
-    : 'Versión Gratuita';
+  let licChipText = 'Versión Gratuita';
+  if (isFreeTrial && trialCountdown) {
+    licChipText = `Prueba PRO · ${trialCountdown.days}d ${trialCountdown.hours}h`;
+  } else if (licenseActiveNow && licencia) {
+    if (licencia.expiresAt === null) {
+      licChipText = 'PRO · Vitalicia';
+    } else {
+      const licCountdown = getTrialCountdown(licencia.expiresAt, nowTs);
+      licChipText =
+        licCountdown.active && licCountdown.remainingMs > 0
+          ? `PRO · ${licCountdown.days}d ${licCountdown.hours}h`
+          : 'PRO · Activo';
+    }
+  } else if (proActive) {
+    licChipText = 'PRO · Activo';
+  }
 
   return (
     <header
@@ -93,28 +101,30 @@ export const TopBar: React.FC<TopBarProps> = ({
       }`}
     >
       <div className="w-full max-w-full lg:max-w-[1120px] mx-auto h-full px-2.5 sm:px-3 flex items-center justify-between gap-2 box-border">
-        {/* Lado izquierdo: Botón regresar (←) en extremo izquierdo junto al logo AP */}
+        {/* Lado izquierdo: Botón flecha izquierda (←) SIEMPRE visible junto al logo AP */}
         <div className="min-w-0 flex-1 flex items-center gap-1.5 sm:gap-2 overflow-hidden">
-          {currentView !== 'menu' && (
-            <button
-              type="button"
-              id="btn-top-back"
-              onClick={onBack}
-              aria-label="Volver un paso atrás"
-              title="Regresar"
-              className={`inline-flex items-center justify-center gap-1 min-w-[34px] min-h-[34px] sm:min-h-[36px] px-2 sm:px-2.5 py-1 rounded-[10px] border text-[12px] font-bold cursor-pointer whitespace-nowrap shrink-0 transition-transform active:scale-95 ${
-                isDark
-                  ? 'border-white/20 bg-white/10 hover:bg-white/20 text-white'
-                  : 'border-slate-300 bg-slate-100 hover:bg-slate-200 text-slate-800'
-              }`}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <line x1="19" y1="12" x2="5" y2="12" />
-                <polyline points="12 19 5 12 12 5" />
-              </svg>
-              <span className="hidden md:inline">Volver</span>
-            </button>
-          )}
+          <button
+            type="button"
+            id="btn-top-back"
+            onClick={currentView === 'menu' ? onExitTap : onBack}
+            aria-label={
+              currentView === 'menu'
+                ? 'Salir de la aplicación (toca dos veces)'
+                : 'Volver un paso atrás'
+            }
+            title={currentView === 'menu' ? 'Salir' : 'Regresar'}
+            className={`inline-flex items-center justify-center gap-1 min-w-[34px] min-h-[34px] sm:min-h-[36px] px-2 sm:px-2.5 py-1 rounded-[10px] border text-[12px] font-bold cursor-pointer whitespace-nowrap shrink-0 transition-transform active:scale-95 ${
+              isDark
+                ? 'border-white/20 bg-white/10 hover:bg-white/20 text-white'
+                : 'border-slate-300 bg-slate-100 hover:bg-slate-200 text-slate-800'
+            }`}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <line x1="19" y1="12" x2="5" y2="12" />
+              <polyline points="12 19 5 12 12 5" />
+            </svg>
+            {currentView !== 'menu' && <span className="hidden md:inline">Volver</span>}
+          </button>
           <button
             type="button"
             id="logo-ap"

@@ -1,15 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import {
-  canUseBrowserHistory,
-  canUseServiceWorker,
-  safeAddPopStateListener,
-  safeGetHistoryState,
-  safeHistoryBack,
-  safeHistoryPushState,
-  safeHistoryReplaceState,
-} from './utils/runtimeEnv';
-import {
   buildColleaguePromoWhatsappUrl,
   calcularCotizacion,
   calcularDespiece,
@@ -18,6 +9,7 @@ import {
   computeUsageStats30d,
   descontarInventarioPorPerfilColor,
   getDefaultRellenoFromVidrio,
+  getRellenoItem,
   getRellenoLabel,
   getRellenoPrecioM2,
   getRellenoPriceKey,
@@ -27,6 +19,7 @@ import {
   isUnassignedAutoTrialDevice,
   LINEAS_CONFIG,
   LineaId,
+  normalizeColorId,
   normalizeDeviceIdInput,
   normalizeLineaId,
   parseNotaACotizacion,
@@ -135,6 +128,17 @@ import {
 } from './utils/storageHelpers';
 import { consumeTopHistoryOverlay } from './utils/historyOverlayStack';
 import {
+  cancelPendingExitGuardRepush,
+  consumeProgrammaticExitBack,
+  exitTap,
+  handleRootExitPopState,
+  hasGuardState,
+  installExitGuard,
+  isExitGuardSuppressed,
+  pushExitGuardState,
+  resetExitGuardArmed,
+} from './utils/exitGuard';
+import {
   computeReminderDueAt,
   CotizacionReminder,
   CotizacionReminderStatus,
@@ -175,19 +179,15 @@ import {
 } from './components/Modals';
 import { FloatingAssistant } from './components/FloatingAssistant';
 import { FloatingInstallButton } from './components/FloatingInstallButton';
-import { PwaUpdateBanner } from './components/PwaUpdateBanner';
 import { CalculadoraModal } from './components/CalculadoraModal';
 import { LevantamientoRapido } from './components/LevantamientoRapido';
 import {
   AlumBridgePayload,
-  buildPiezaSpecNotes,
+  LEV_KEYS,
   LEV_MAPA,
   LevantamientoDraft,
   normalizeLevantamientoDraft,
   overwriteHojaProyectoInStorage,
-  resolvePiezaColorAluminio,
-  resolvePiezaLineaId,
-  resolvePiezaVidrioSpec,
 } from './utils/levantamientoLogic';
 
 const InventarioView = lazy(() =>
@@ -352,6 +352,18 @@ export default function App() {
   const closeSubModalRef = useRef<(() => void) | null>(null);
   const historyInitializedRef = useRef<boolean>(false);
 
+  const [swUpdateAvailable, setSwUpdateAvailable] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    const win = window as Window & { __alumineroWaitingSW?: ServiceWorker | null };
+    return Boolean(win.__alumineroWaitingSW);
+  });
+  const [swUpdating, setSwUpdating] = useState<boolean>(false);
+  const waitingSwRef = useRef<ServiceWorker | null>(
+    typeof window !== 'undefined'
+      ? ((window as Window & { __alumineroWaitingSW?: ServiceWorker | null }).__alumineroWaitingSW ?? null)
+      : null
+  );
+
   const currentViewRef = useRef<ScreenId>(currentView);
   currentViewRef.current = currentView;
 
@@ -514,10 +526,10 @@ export default function App() {
   const [cloudRefreshing, setCloudRefreshing] = useState(false);
   const [cloudLastSyncAt, setCloudLastSyncAt] = useState<number | null>(null);
 
-  const showToast = useCallback((msg: string, topSuccess = false) => {
+  const showToast = useCallback((msg: string, topSuccess = false, durationMs = 2800) => {
     setToast({ msg, topSuccess });
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = window.setTimeout(() => setToast(null), 2800);
+    toastTimerRef.current = window.setTimeout(() => setToast(null), durationMs);
   }, []);
 
   const showToastRef = useRef(showToast);
@@ -1136,8 +1148,131 @@ export default function App() {
     return frame.view;
   };
 
+  const disarmExitConfirm = useCallback((restoreGuardIfNeeded: boolean) => {
+    resetExitGuardArmed();
+    if (restoreGuardIfNeeded && navFramesRef.current.length <= 1 && !isExitGuardSuppressed()) {
+      pushExitGuardState();
+    }
+  }, []);
+
+  // Instalar la protección de salida una sola vez al montar App (empuja guard:1 en la primera interacción del usuario)
+  useEffect(() => {
+    return installExitGuard({
+      showToast: (msg, topSuccess = false, durationMs = 2200) => {
+        if (!accessBlockedRef.current) {
+          showToastRef.current(msg, topSuccess, durationMs);
+        }
+      },
+      isAtRoot: () => navFramesRef.current.length <= 1,
+    });
+  }, []);
+
+  // Conectar barra/botón "Hay una actualización" al Service Worker (registration.waiting + updatefound)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
+    let active = true;
+
+    const markUpdateReady = (worker: ServiceWorker | null | undefined) => {
+      if (!active || !worker) return;
+      waitingSwRef.current = worker;
+      setSwUpdateAvailable(true);
+    };
+
+    const win = window as Window & {
+      __alumineroWaitingSW?: ServiceWorker | null;
+      __alumineroSwRegistration?: ServiceWorkerRegistration | null;
+    };
+    if (win.__alumineroWaitingSW) {
+      markUpdateReady(win.__alumineroWaitingSW);
+    }
+
+    const onCustomSwUpdate = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ worker?: ServiceWorker | null }>).detail;
+      markUpdateReady(detail?.worker || win.__alumineroWaitingSW || win.__alumineroSwRegistration?.waiting);
+    };
+    window.addEventListener('aluminero-sw-update-available', onCustomSwUpdate);
+
+    let cleanupReg: (() => void) | null = null;
+    const attachRegistration = (reg: ServiceWorkerRegistration | undefined) => {
+      if (!active || !reg) return;
+      if (reg.waiting) {
+        markUpdateReady(reg.waiting);
+      }
+      const watchWorker = (worker: ServiceWorker | null) => {
+        if (!worker) return;
+        worker.addEventListener('statechange', () => {
+          if (worker.state === 'installed' && navigator.serviceWorker.controller) {
+            markUpdateReady(reg.waiting || worker);
+          }
+        });
+      };
+      if (reg.installing) {
+        watchWorker(reg.installing);
+      }
+      const onUpdateFound = () => {
+        watchWorker(reg.installing);
+      };
+      reg.addEventListener('updatefound', onUpdateFound);
+      cleanupReg = () => {
+        reg.removeEventListener('updatefound', onUpdateFound);
+      };
+    };
+
+    navigator.serviceWorker
+      .getRegistration('./')
+      .then((reg) => reg || navigator.serviceWorker.getRegistration())
+      .then((reg) => {
+        attachRegistration(reg);
+      })
+      .catch(() => {});
+
+    return () => {
+      active = false;
+      window.removeEventListener('aluminero-sw-update-available', onCustomSwUpdate);
+      if (cleanupReg) cleanupReg();
+    };
+  }, []);
+
+  const handleApplySwUpdate = useCallback(async () => {
+    if (swUpdating) return;
+    setSwUpdating(true);
+    const win = window as Window & {
+      __alumineroWaitingSW?: ServiceWorker | null;
+      __alumineroSwRegistration?: ServiceWorkerRegistration | null;
+      __alumineroUserTriggeredSwReload?: boolean;
+    };
+    win.__alumineroUserTriggeredSwReload = true;
+
+    let target: ServiceWorker | null =
+      waitingSwRef.current || win.__alumineroWaitingSW || win.__alumineroSwRegistration?.waiting || null;
+
+    if (!target && 'serviceWorker' in navigator) {
+      try {
+        const reg =
+          (await navigator.serviceWorker.getRegistration('./')) ||
+          (await navigator.serviceWorker.getRegistration());
+        target = reg?.waiting || null;
+      } catch {
+        // Ignorar
+      }
+    }
+
+    if (target) {
+      try {
+        target.postMessage({ type: 'SKIP_WAITING' });
+      } catch {
+        // Ignorar
+      }
+    }
+
+    window.setTimeout(() => {
+      window.location.reload();
+    }, 350);
+  }, [swUpdating]);
+
   const pushNavFrame = useCallback(
     (patch: Partial<NavFrame>) => {
+      disarmExitConfirm(true);
       const cur = navFramesRef.current[navFramesRef.current.length - 1] || BASE_FRAME;
       const next: NavFrame = {
         ...cur,
@@ -1146,19 +1281,25 @@ export default function App() {
       };
       navFramesRef.current = [...navFramesRef.current, next];
       applyFrameState(next, cur, 'forward');
-      safeHistoryPushState(
-        {
-          internalStep: true,
-          view: getHistoryViewName(next),
-          app: 'aluminero-pro',
-          depth: next.depth,
-          subModal: next.subModal,
-          modal: next.globalModals[next.globalModals.length - 1] || null,
-        },
-        ''
-      );
+      if (typeof window !== 'undefined' && window.history?.pushState) {
+        try {
+          window.history.pushState(
+            {
+              internalStep: true,
+              view: getHistoryViewName(next),
+              app: 'aluminero-pro',
+              depth: next.depth,
+              subModal: next.subModal,
+              modal: next.globalModals[next.globalModals.length - 1] || null,
+            },
+            ''
+          );
+        } catch {
+          // Ignorar si history.pushState está restringido en el navegador
+        }
+      }
     },
-    [applyFrameState]
+    [applyFrameState, disarmExitConfirm]
   );
 
   const replaceNavFrame = useCallback(
@@ -1174,23 +1315,32 @@ export default function App() {
       updated[updated.length - 1] = next;
       navFramesRef.current = updated;
       applyFrameState(next, cur);
-      safeHistoryReplaceState(
-        {
-          internalStep: next.depth > 0,
-          view: getHistoryViewName(next),
-          app: 'aluminero-pro',
-          depth: next.depth,
-          subModal: next.subModal,
-          modal: next.globalModals[next.globalModals.length - 1] || null,
-        },
-        ''
-      );
+      if (typeof window !== 'undefined' && window.history?.replaceState) {
+        try {
+          const prevHadGuard = hasGuardState(window.history.state);
+          window.history.replaceState(
+            {
+              ...(next.depth === 0 && prevHadGuard ? { guard: 1 } : {}),
+              internalStep: next.depth > 0,
+              view: getHistoryViewName(next),
+              app: 'aluminero-pro',
+              depth: next.depth,
+              subModal: next.subModal,
+              modal: next.globalModals[next.globalModals.length - 1] || null,
+            },
+            ''
+          );
+        } catch {
+          // Ignorar
+        }
+      }
     },
     [applyFrameState]
   );
 
   const requestBack = useCallback(() => {
     if (navFramesRef.current.length <= 1) {
+      exitTap();
       return;
     }
     const prev = navFramesRef.current[navFramesRef.current.length - 1];
@@ -1199,10 +1349,15 @@ export default function App() {
     navFramesRef.current = nextFrames;
     applyFrameState(next, prev, 'back');
 
-    const currentHistoryState = safeGetHistoryState<{ internalStep?: boolean }>();
-    if (canUseBrowserHistory() && currentHistoryState?.internalStep === true) {
-      pendingInternalBackSyncRef.current += 1;
-      if (!safeHistoryBack()) {
+    if (
+      typeof window !== 'undefined' &&
+      window.history?.back &&
+      window.history.state?.internalStep === true
+    ) {
+      try {
+        pendingInternalBackSyncRef.current += 1;
+        window.history.back();
+      } catch {
         pendingInternalBackSyncRef.current = Math.max(0, pendingInternalBackSyncRef.current - 1);
       }
     }
@@ -1223,17 +1378,25 @@ export default function App() {
         ) {
           return;
         }
+        const stepsToPop = Math.max(0, navFramesRef.current.length - 1);
+        disarmExitConfirm(false);
         navFramesRef.current = [BASE_FRAME];
         applyFrameState(BASE_FRAME, cur, 'back');
-        safeHistoryReplaceState(
-          {
-            internalStep: false,
-            view: 'root',
-            app: 'aluminero-pro',
-            depth: 0,
-          },
-          ''
-        );
+        if (
+          stepsToPop > 0 &&
+          typeof window !== 'undefined' &&
+          window.history?.go &&
+          window.history.state?.internalStep === true
+        ) {
+          try {
+            pendingInternalBackSyncRef.current += 1;
+            window.history.go(-stepsToPop);
+          } catch {
+            pendingInternalBackSyncRef.current = Math.max(0, pendingInternalBackSyncRef.current - 1);
+          }
+        } else if (!hasGuardState(window.history.state) && !isExitGuardSuppressed()) {
+          pushExitGuardState();
+        }
         return;
       }
       pushNavFrame({
@@ -1250,23 +1413,31 @@ export default function App() {
         ...extraPatch,
       });
     },
-    [applyFrameState, pushNavFrame]
+    [applyFrameState, disarmExitConfirm, pushNavFrame]
   );
 
   const goHome = useCallback(() => {
     const cur = navFramesRef.current[navFramesRef.current.length - 1] || BASE_FRAME;
+    const stepsToPop = Math.max(0, navFramesRef.current.length - 1);
+    disarmExitConfirm(false);
     navFramesRef.current = [BASE_FRAME];
     applyFrameState(BASE_FRAME, cur, 'back');
-    safeHistoryReplaceState(
-      {
-        internalStep: false,
-        view: 'root',
-        app: 'aluminero-pro',
-        depth: 0,
-      },
-      ''
-    );
-  }, [applyFrameState]);
+    if (
+      stepsToPop > 0 &&
+      typeof window !== 'undefined' &&
+      window.history?.go &&
+      window.history.state?.internalStep === true
+    ) {
+      try {
+        pendingInternalBackSyncRef.current += 1;
+        window.history.go(-stepsToPop);
+      } catch {
+        pendingInternalBackSyncRef.current = Math.max(0, pendingInternalBackSyncRef.current - 1);
+      }
+    } else if (!hasGuardState(window.history.state) && !isExitGuardSuppressed()) {
+      pushExitGuardState();
+    }
+  }, [applyFrameState, disarmExitConfirm]);
 
   const openGlobalModal = useCallback(
     (modalId: GlobalModalId) => {
@@ -1354,67 +1525,60 @@ export default function App() {
   }, [openGlobalModal, replaceGlobalModal]);
 
   useEffect(() => {
+    if (typeof window === 'undefined' || !window.history?.pushState) return;
     if (!historyInitializedRef.current) {
       historyInitializedRef.current = true;
-      safeHistoryReplaceState(
-        {
-          internalStep: false,
-          view: 'root',
-          app: 'aluminero-pro',
-          depth: 0,
-        },
-        ''
-      );
-      if (initialReferralActive) {
-        const refFrame: NavFrame = {
-          ...BASE_FRAME,
-          depth: 1,
-          globalModals: ['referralWelcome'],
-        };
-        navFramesRef.current = [BASE_FRAME, refFrame];
-        applyFrameState(refFrame, BASE_FRAME);
+      try {
+        if (initialReferralActive) {
+          const refFrame: NavFrame = {
+            ...BASE_FRAME,
+            depth: 1,
+            globalModals: ['referralWelcome'],
+          };
+          navFramesRef.current = [BASE_FRAME, refFrame];
+          applyFrameState(refFrame, BASE_FRAME);
+          window.history.pushState(
+            {
+              internalStep: true,
+              view: getHistoryViewName(refFrame),
+              app: 'aluminero-pro',
+              depth: 1,
+              subModal: null,
+              modal: 'referralWelcome',
+            },
+            ''
+          );
+        }
+      } catch {
+        // Ignorar si history API está restringida
       }
-    }
-
-    if (!canUseBrowserHistory()) {
-      return;
     }
 
     const commitBackFrameSync = (targetFrame: NavFrame, prevFrame: NavFrame) => {
-      try {
-        flushSync(() => {
-          applyFrameState(targetFrame, prevFrame, 'none', true);
-        });
-      } catch {
+      flushSync(() => {
         applyFrameState(targetFrame, prevFrame, 'none', true);
-      }
+      });
       if (
         prevFrame.view !== targetFrame.view ||
         prevFrame.modStep !== targetFrame.modStep
       ) {
-        try {
-          window.scrollTo({ top: 0, behavior: 'instant' });
-        } catch {
-          try {
-            window.scrollTo(0, 0);
-          } catch {
-            // Ignorar
-          }
-        }
+        window.scrollTo({ top: 0, behavior: 'instant' });
       }
     };
 
     const handlePopState = (event: PopStateEvent) => {
+      if (consumeProgrammaticExitBack()) {
+        return;
+      }
+
       if (pendingInternalBackSyncRef.current > 0) {
         pendingInternalBackSyncRef.current -= 1;
         if (
           navFramesRef.current.length <= 1 &&
-          (!event.state || event.state.view === 'root' || event.state.internalStep === false)
+          !isExitGuardSuppressed() &&
+          !hasGuardState(event.state)
         ) {
-          safeHistoryPushState(
-            { internalStep: false, view: 'root', app: 'aluminero-pro', depth: 0 },
-            ''
-          );
+          pushExitGuardState();
         }
         return;
       }
@@ -1426,6 +1590,7 @@ export default function App() {
       const prevFrame = navFramesRef.current[navFramesRef.current.length - 1] || BASE_FRAME;
 
       if (navFramesRef.current.length > 1) {
+        cancelPendingExitGuardRepush();
         const targetDepth =
           event.state &&
           typeof event.state.depth === 'number' &&
@@ -1437,26 +1602,26 @@ export default function App() {
         commitBackFrameSync(targetFrame, prevFrame);
 
         if (navFramesRef.current.length === 1) {
-          safeHistoryPushState(
-            { internalStep: false, view: 'root', app: 'aluminero-pro', depth: 0 },
-            ''
-          );
+          // Si aterrizó en una entrada que ya trae guard, NO empujar otra;
+          // si aterrizó en la entrada original sin guard, re-empujar guard:1.
+          if (!hasGuardState(event.state) && !isExitGuardSuppressed()) {
+            pushExitGuardState();
+          }
         }
         return;
       }
 
+      // Ya está en la raíz (menu) sin vistas abiertas: doble gesto con exitGuard.ts
       navFramesRef.current = [BASE_FRAME];
       commitBackFrameSync(BASE_FRAME, prevFrame);
-      safeHistoryPushState(
-        { internalStep: false, view: 'root', app: 'aluminero-pro', depth: 0 },
-        ''
-      );
-      if (!accessBlockedRef.current) {
-        showToastRef.current('Ya estás en el inicio · Presiona de nuevo para salir');
-      }
+      handleRootExitPopState(event.state);
     };
 
-    return safeAddPopStateListener(handlePopState);
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      cancelPendingExitGuardRepush();
+    };
   }, [applyFrameState, initialReferralActive]);
 
   const handleSelectLinea = (lineaId: LineaId) => {
@@ -1578,6 +1743,7 @@ export default function App() {
       anchoCm: params.anchoCm,
       altoCm: params.altoCm,
       color: params.color,
+      colorCustom: params.color === 'otro' ? (params.colorCustom?.trim() || undefined) : undefined,
       vidrio: params.vidrio,
       relleno: params.relleno,
       hojas: params.hojas,
@@ -1624,6 +1790,7 @@ export default function App() {
       anchoCm: p.anchoCm,
       altoCm: p.altoCm,
       color: p.color,
+      colorCustom: p.colorCustom || '',
       vidrio: p.vidrio,
       relleno: p.relleno || getDefaultRellenoFromVidrio(p.vidrio),
       hojas: p.hojas,
@@ -1923,30 +2090,37 @@ export default function App() {
         const dimCheck = validatePiezaDimensiones(p.anchoCm, p.altoCm);
         if (!dimCheck.valid) continue;
         const mapa = LEV_MAPA[p.tipo] || LEV_MAPA['Cancel / Otro'];
-        const resolvedLinea = resolvePiezaLineaId(p);
-        const lineaCfg = LINEAS_CONFIG[resolvedLinea];
+        const lineaCfg = LINEAS_CONFIG[mapa.linea];
         if (!lineaCfg) continue;
 
         const apertura =
-          p.lineaAluminio === 'batiente-alumer'
-            ? 'abatible'
-            : mapa.apertura || (lineaCfg.categoria === 'puertas' ? 'abatible' : 'corrediza');
+          mapa.apertura || (lineaCfg.categoria === 'puertas' ? 'abatible' : 'corrediza');
         const qty = Math.max(1, Number(p.cant) || 1);
-        if (!proActive && (lineaCfg.pro || isFeatureProRequired(resolvedLinea, apertura, qty))) {
+        if (!proActive && (lineaCfg.pro || isFeatureProRequired(mapa.linea, apertura, qty))) {
           skippedProCount += 1;
           continue;
         }
 
-        const colorSpec = resolvePiezaColorAluminio(p);
-        const vidrioSpec = resolvePiezaVidrioSpec(p);
-        const combinedNotas = buildPiezaSpecNotes(p);
+        const pieceColor = normalizeColorId(p.colorAluminio);
+        const pieceColorCustom =
+          pieceColor === 'otro' ? (p.colorAluminioCustom?.trim() || undefined) : undefined;
+        const vidItem = getRellenoItem(p.colorVidrio || 'flot-claro', 'claro6');
+        const vidrio = vidItem.vidrioCompatId;
+        const relleno = {
+          categoria: vidItem.categoria,
+          materialId: vidItem.id,
+          espesorMm: vidItem.defaultEspesorMm,
+          customLabel:
+            vidItem.id === 'flot-otro' ? (p.colorVidrioCustom?.trim() || undefined) : undefined,
+        };
         const pieceParams: TrabajoParams = {
-          linea: resolvedLinea,
+          linea: mapa.linea,
           anchoCm: p.anchoCm,
           altoCm: p.altoCm,
-          color: colorSpec.colorId,
-          vidrio: vidrioSpec.vidrio,
-          relleno: vidrioSpec.relleno,
+          color: pieceColor,
+          colorCustom: pieceColorCustom,
+          vidrio,
+          relleno,
           hojas: 2,
           apertura,
           sentidoPuerta: 'izq',
@@ -1958,19 +2132,15 @@ export default function App() {
           tolerancias: { ...lineaCfg.toleranciasDefault },
         };
         const pieceDespiece = calcularDespiece(pieceParams);
-        const piecePrecioInput = taller.tarifasBase[resolvedLinea] ?? lineaCfg.tarifaBaseDefault;
+        const piecePrecioInput = taller.tarifasBase[mapa.linea] ?? lineaCfg.tarifaBaseDefault;
         const pieceCot = calcularCotizacion({
-          linea: resolvedLinea,
+          linea: mapa.linea,
           anchoCm: p.anchoCm,
           altoCm: p.altoCm,
-          color: colorSpec.colorId,
-          vidrio: vidrioSpec.vidrio,
-          relleno: vidrioSpec.relleno,
-          rellenoPrecioM2: getRellenoPrecioM2(
-            vidrioSpec.relleno,
-            taller.rellenoPreciosM2,
-            vidrioSpec.vidrio
-          ),
+          color: pieceColor,
+          vidrio,
+          relleno,
+          rellenoPrecioM2: getRellenoPrecioM2(relleno, taller.rellenoPreciosM2, vidrio),
           modoPrecio: 'm2',
           precioInput: piecePrecioInput,
           cantidad: qty,
@@ -1985,14 +2155,15 @@ export default function App() {
         partidas.push({
           id: `p-lev-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           categoria: lineaCfg.categoria,
-          linea: resolvedLinea,
+          linea: mapa.linea,
           area: p.area.trim() || 'General',
           etiqueta: '',
           anchoCm: p.anchoCm,
           altoCm: p.altoCm,
-          color: colorSpec.colorId,
-          vidrio: vidrioSpec.vidrio,
-          relleno: vidrioSpec.relleno,
+          color: pieceColor,
+          colorCustom: pieceColorCustom,
+          vidrio,
+          relleno,
           hojas: 2,
           apertura,
           sentidoPuerta: 'izq',
@@ -2007,7 +2178,7 @@ export default function App() {
           extraPct: 0,
           totalLinea: pieceCot.totalFinal,
           despiece: pieceDespiece,
-          notas: combinedNotas || undefined,
+          notas: p.notas.trim() || undefined,
           fotoDataUrl: p.foto || undefined,
         });
       }
@@ -2083,15 +2254,27 @@ export default function App() {
         return;
       }
       handleSelectLinea(p.linea);
+      const bridgeVidItem = p.colorVidrio ? getRellenoItem(p.colorVidrio, 'claro6') : null;
       setParams((prev) => ({
         ...prev,
         anchoCm: p.ancho,
         altoCm: p.alto,
         cantidad: p.cant,
         ...(p.apertura ? { apertura: p.apertura } : {}),
-        ...(p.color ? { color: p.color } : {}),
-        ...(p.vidrio ? { vidrio: p.vidrio } : {}),
-        ...(p.relleno ? { relleno: p.relleno } : {}),
+        ...(p.color ? { color: normalizeColorId(p.color) } : {}),
+        ...(typeof p.colorCustom === 'string' ? { colorCustom: p.colorCustom } : {}),
+        ...(bridgeVidItem
+          ? {
+              vidrio: bridgeVidItem.vidrioCompatId,
+              relleno: {
+                categoria: bridgeVidItem.categoria,
+                materialId: bridgeVidItem.id,
+                espesorMm: bridgeVidItem.defaultEspesorMm,
+                customLabel:
+                  bridgeVidItem.id === 'flot-otro' ? (p.colorVidrioCustom?.trim() || undefined) : undefined,
+              },
+            }
+          : {}),
       }));
       const targetWorkTab = p.destino === 'cotizacion' ? 'cotizacion' : 'descuentos';
       if (currentViewRef.current === 'trabajo') {
@@ -2270,41 +2453,27 @@ export default function App() {
       }
     }
 
-    if (!canUseServiceWorker()) return;
+    if (!('serviceWorker' in navigator)) return;
     const onSwMessage = (event: MessageEvent) => {
-      try {
-        const data = event.data as { type?: string; action?: string; reminderId?: string } | null;
-        if (!data || data.type !== 'SW_REMINDER_ACTION') return;
-        if (data.action === 'snooze-1d' && data.reminderId) {
-          handleSnoozeReminder(data.reminderId);
-          return;
-        }
-        if (data.reminderId) {
-          setHighlightedReminderId(data.reminderId);
-        }
-        if (proActive) {
-          navigateTo('hoja');
-        } else {
-          openGlobalModal('reminders');
-        }
-        showToast('Abriendo seguimiento de cotización pendiente', true);
-      } catch {
-        // Ignorar errores en mensajes de Service Worker
+      const data = event.data as { type?: string; action?: string; reminderId?: string } | null;
+      if (!data || data.type !== 'SW_REMINDER_ACTION') return;
+      if (data.action === 'snooze-1d' && data.reminderId) {
+        handleSnoozeReminder(data.reminderId);
+        return;
       }
+      if (data.reminderId) {
+        setHighlightedReminderId(data.reminderId);
+      }
+      if (proActive) {
+        navigateTo('hoja');
+      } else {
+        openGlobalModal('reminders');
+      }
+      showToast('Abriendo seguimiento de cotización pendiente', true);
     };
 
-    try {
-      navigator.serviceWorker.addEventListener('message', onSwMessage);
-    } catch {
-      return;
-    }
-    return () => {
-      try {
-        navigator.serviceWorker.removeEventListener('message', onSwMessage);
-      } catch {
-        // Ignorar
-      }
-    };
+    navigator.serviceWorker.addEventListener('message', onSwMessage);
+    return () => navigator.serviceWorker.removeEventListener('message', onSwMessage);
   }, [handleSnoozeReminder, navigateTo, openGlobalModal, proActive, showToast]);
 
   const screenTitleMap: Record<ScreenId, string> = {
@@ -2336,12 +2505,37 @@ export default function App() {
         trialExpiresAt={trialExpiresAt}
         theme={theme}
         onBack={requestBack}
+        onExitTap={exitTap}
         onGoHome={goHome}
         onLogoClick={handleLogoClick}
         onOpenPro={() => openGlobalModal('pro')}
         onOpenDrawer={() => openGlobalModal('drawer')}
         onOpenCalculadora={() => openGlobalModal('calculadora')}
       />
+
+      {swUpdateAvailable && (
+        <div
+          id="pwa-update-banner"
+          role="alert"
+          aria-live="polite"
+          className="sticky top-[62px] z-30 w-full border-b border-amber-300/80 bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 text-slate-950 shadow-md"
+        >
+          <div className="w-full max-w-[1120px] mx-auto px-3 sm:px-4 py-2 flex items-center justify-between gap-2.5">
+            <span className="text-[12.5px] sm:text-[13px] font-extrabold leading-tight">
+              ✨ Nueva versión lista para tu taller
+            </span>
+            <button
+              id="btn-pwa-update-now"
+              type="button"
+              disabled={swUpdating}
+              onClick={() => void handleApplySwUpdate()}
+              className="shrink-0 min-h-[34px] px-3.5 py-1 rounded-xl border-0 bg-slate-950 text-amber-200 hover:bg-slate-800 text-[12px] font-extrabold cursor-pointer whitespace-nowrap shadow-sm transition-transform active:scale-95 disabled:opacity-75"
+            >
+              {swUpdating ? 'Actualizando...' : 'Hay una actualización'}
+            </button>
+          </div>
+        </div>
+      )}
 
       <main className="w-full max-w-[1120px] mx-auto px-3 sm:px-4 pt-5 pb-24 box-border overflow-x-hidden">
         {!isOnline && (
@@ -2383,7 +2577,10 @@ export default function App() {
             onEntrarInventario={() => handleEntrarInventario()}
             onGoToView={(view) => navigateTo(view)}
             onOpenAntesDespues={() => openGlobalModal('antesDespues')}
-            onOpenLevantamiento={() => window.__alumLev?.open()}
+            onOpenLevantamiento={() => {
+              disarmExitConfirm(true);
+              window.__alumLev?.open();
+            }}
             onOpenReminders={() => openGlobalModal('reminders')}
           />
         )}
@@ -2776,17 +2973,42 @@ export default function App() {
                 return true;
               }}
               onSendVidriosToOptimizer={(vidrios) => {
+                let lq = 1;
+                let areaPrefix = '';
+                try {
+                  const rawActivo = window.localStorage.getItem(LEV_KEYS.activo);
+                  if (rawActivo) {
+                    const parsed = JSON.parse(rawActivo) as {
+                      piezas?: Array<{ cant?: unknown; area?: unknown }>;
+                      idx?: unknown;
+                    };
+                    const idx =
+                      typeof parsed?.idx === 'number' && Number.isFinite(parsed.idx)
+                        ? Math.round(parsed.idx)
+                        : 0;
+                    const activePieza = Array.isArray(parsed?.piezas) ? parsed.piezas[idx] : undefined;
+                    if (activePieza) {
+                      const cantNum = Number(activePieza.cant);
+                      lq = Math.max(1, Number.isFinite(cantNum) ? Math.round(cantNum) : 1);
+                      areaPrefix =
+                        typeof activePieza.area === 'string' ? activePieza.area.trim() : '';
+                    }
+                  }
+                } catch {
+                  // Mantener comportamiento por defecto (LQ = 1, sin prefijo de área)
+                }
+
                 const piezas: PiezaVidrioInput[] = vidrios
                   .filter((v) => v.tipo === 'vidrio')
                   .map((v, idx) => {
                     const tipoFinal = v.espesorLabel || 'Claro 6 mm';
                     return {
                       id: `v-mod-${Date.now()}-${idx}`,
-                      etiqueta: v.nombre,
+                      etiqueta: `${areaPrefix ? `${areaPrefix} · ` : ''}${v.nombre}`,
                       tipoNombre: tipoFinal,
                       anchoCm: v.anchoCm,
                       altoCm: v.altoCm,
-                      cantidad: v.pzas,
+                      cantidad: Math.max(1, v.pzas * lq),
                       permitirRotacion:
                         typeof v.permitirRotacion === 'boolean'
                           ? v.permitirRotacion
@@ -3342,12 +3564,16 @@ export default function App() {
           requestBack();
           if (typeof window !== 'undefined' && window.location.search.includes('ref=')) {
             window.setTimeout(() => {
-              const cleanUrl = `${window.location.pathname}${window.location.hash || ''}`;
-              safeHistoryReplaceState(
-                safeGetHistoryState() || { app: 'aluminero-pro', depth: 0, view: 'menu' },
-                document.title,
-                cleanUrl
-              );
+              try {
+                const cleanUrl = `${window.location.pathname}${window.location.hash || ''}`;
+                window.history.replaceState(
+                  window.history.state || { app: 'aluminero-pro', depth: 0, view: 'menu' },
+                  document.title,
+                  cleanUrl
+                );
+              } catch {
+                // ignorar si history.replaceState no está permitido
+              }
             }, 80);
           }
         }}
@@ -3615,8 +3841,6 @@ export default function App() {
         onRequestPermission={handleRequestPushPermission}
         onShowToast={showToast}
       />
-
-      <PwaUpdateBanner />
 
       <FloatingInstallButton
         visible={currentView === 'menu' && !pwa.isInstalled && !installFabDismissed && !accessBlocked}

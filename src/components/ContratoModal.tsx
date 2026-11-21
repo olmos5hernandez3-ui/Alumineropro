@@ -1,5 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { COLORES_CONFIG, getRellenoLabel, LINEAS_CONFIG, round2 } from '../utils/alumineroLogic';
+import {
+  getColorCorto,
+  getColorNombre,
+  getRellenoLabel,
+  LINEAS_CONFIG,
+  round2,
+} from '../utils/alumineroLogic';
 import { generarPdfContratoServicio } from '../utils/pdfExport';
 import {
   ContratoClienteInfo,
@@ -125,9 +131,9 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
       '*Trabajos contratados:*',
       ...hoja.partidas.map((item, idx) => {
         const l = LINEAS_CONFIG[item.linea];
-        const c = COLORES_CONFIG[item.color];
+        const colorTxt = getColorCorto(item.color, item.colorCustom);
         const rel = l.esMosquitero ? 'Malla mosquitera' : getRellenoLabel(item.relleno, item.vidrio);
-        return `${idx + 1}. ${item.etiqueta ? `${item.etiqueta} - ` : ''}${l.nombre} (${item.anchoCm}×${item.altoCm} cm, ${c.corto}, ${rel}) ×${item.cantidad} = ${formatMXN(item.totalLinea)}`;
+        return `${idx + 1}. ${item.etiqueta ? `${item.etiqueta} - ` : ''}${l.nombre} (${item.anchoCm}×${item.altoCm} cm, ${colorTxt}, ${rel}) ×${item.cantidad} = ${formatMXN(item.totalLinea)}`;
       }),
       '',
       `Subtotal: ${formatMXN(subtotal)}`,
@@ -603,7 +609,7 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
                 <tbody>
                   {hoja.partidas.map((item, idx) => {
                     const linea = LINEAS_CONFIG[item.linea];
-                    const color = COLORES_CONFIG[item.color];
+                    const colorNombre = getColorNombre(item.color, item.colorCustom);
                     const panelDesc = getRellenoLabel(item.relleno, item.vidrio);
                     const apTxt =
                       linea.categoria === 'ventanas' && !linea.esMosquitero && !linea.esCancelBano
@@ -626,7 +632,7 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
                             {item.area ? ` · Área: ${item.area}` : ''}
                           </div>
                           <div className="text-[11.5px] text-slate-600">
-                            Color: <strong>{color.nombre}</strong> ·{' '}
+                            Color: <strong>{colorNombre}</strong> ·{' '}
                             {linea.esMosquitero ? 'Malla mosquitera' : `Vidrio / Panel: ${panelDesc}`}
                           </div>
                         </td>

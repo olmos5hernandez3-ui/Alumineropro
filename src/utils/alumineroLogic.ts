@@ -11,7 +11,7 @@ export type LineaId =
   | 'puerta-abatible'
   | 'puerta-europea';
 
-export type ColorId = 'natural' | 'blanco' | 'negro' | 'madera';
+export type ColorId = 'natural' | 'blanco' | 'negro' | 'bronce' | 'madera' | 'otro';
 export type VidrioId = 'claro4' | 'claro6' | 'filtrasol6' | 'tintex6';
 export type AperturaVentanaId =
   | 'corrediza'
@@ -256,16 +256,16 @@ export interface ColorConfig {
 export const COLORES_CONFIG: Record<ColorId, ColorConfig> = {
   natural: {
     id: 'natural',
-    nombre: 'Anodizado Natural',
+    nombre: 'Natural / Anodizado',
     corto: 'Natural',
     extraM2: 0,
-    swatch: '#CBD5E1',
+    swatch: '#C0C5CE',
     frameStroke: '#64748B',
     frameFill: 'url(#alum-nat)',
   },
   blanco: {
     id: 'blanco',
-    nombre: 'Blanco Texturizado',
+    nombre: 'Blanco',
     corto: 'Blanco',
     extraM2: 180,
     swatch: '#F8FAFC',
@@ -274,23 +274,58 @@ export const COLORES_CONFIG: Record<ColorId, ColorConfig> = {
   },
   negro: {
     id: 'negro',
-    nombre: 'Negro Texturizado',
+    nombre: 'Negro',
     corto: 'Negro',
     extraM2: 260,
     swatch: '#1E293B',
     frameStroke: '#0F172A',
     frameFill: '#334155',
   },
+  bronce: {
+    id: 'bronce',
+    nombre: 'Bronce / Champagne',
+    corto: 'Bronce',
+    extraM2: 320,
+    swatch: '#8C6D46',
+    frameStroke: '#5C4426',
+    frameFill: '#8C6D46',
+  },
   madera: {
     id: 'madera',
-    nombre: 'Electroestático Madera',
+    nombre: 'Madera',
     corto: 'Madera',
     extraM2: 780,
-    swatch: '#8B5A2B',
+    swatch: '#7C4A27',
     frameStroke: '#5C3A1B',
     frameFill: 'url(#alum-mad)',
   },
+  otro: {
+    id: 'otro',
+    nombre: 'Otro',
+    corto: 'Otro',
+    extraM2: 260,
+    swatch:
+      'conic-gradient(from 45deg, #C0C5CE 0deg, #F8FAFC 72deg, #1E293B 144deg, #8C6D46 216deg, #7C4A27 288deg, #C0C5CE 360deg)',
+    frameStroke: '#475569',
+    frameFill: '#94A3B8',
+  },
 };
+
+export function getColorNombre(color: ColorId, colorCustom?: string): string {
+  const cfg = COLORES_CONFIG[color] || COLORES_CONFIG.natural;
+  if (color === 'otro' && colorCustom && colorCustom.trim()) {
+    return colorCustom.trim();
+  }
+  return cfg.nombre;
+}
+
+export function getColorCorto(color: ColorId, colorCustom?: string): string {
+  const cfg = COLORES_CONFIG[color] || COLORES_CONFIG.natural;
+  if (color === 'otro' && colorCustom && colorCustom.trim()) {
+    return colorCustom.trim();
+  }
+  return cfg.corto;
+}
 
 export interface VidrioConfig {
   id: VidrioId;
@@ -328,7 +363,59 @@ export interface PanelRellenoSelection {
   categoria: RellenoCategoriaId;
   materialId: string;
   espesorMm: number;
+  customLabel?: string;
 }
+
+export const VIDRIO_COLOR_PRESETS: Array<{
+  id: string;
+  nombre: string;
+  hex: string;
+  swatch: string;
+  vidrioCompatId: VidrioId;
+}> = [
+  {
+    id: 'flot-claro',
+    nombre: 'Claro / Transparente',
+    hex: '#E0F2FE',
+    swatch: 'linear-gradient(135deg, rgba(255,255,255,0.92) 0%, rgba(224,242,254,0.9) 55%, rgba(186,230,253,0.75) 100%)',
+    vidrioCompatId: 'claro6',
+  },
+  {
+    id: 'flot-filtrasol',
+    nombre: 'Filtrasol / Gris',
+    hex: '#64748B',
+    swatch: 'linear-gradient(135deg, rgba(148,163,184,0.82) 0%, rgba(100,116,139,0.92) 55%, rgba(51,65,85,0.92) 100%)',
+    vidrioCompatId: 'filtrasol6',
+  },
+  {
+    id: 'flot-tintex',
+    nombre: 'Tintex / Verde',
+    hex: '#34D399',
+    swatch: 'linear-gradient(135deg, rgba(167,243,208,0.88) 0%, rgba(52,211,153,0.9) 55%, rgba(5,150,105,0.85) 100%)',
+    vidrioCompatId: 'tintex6',
+  },
+  {
+    id: 'flot-esmerilado',
+    nombre: 'Esmerilado',
+    hex: '#CBD5E1',
+    swatch: 'linear-gradient(135deg, rgba(248,250,252,0.95) 0%, rgba(203,213,225,0.92) 55%, rgba(148,163,184,0.75) 100%)',
+    vidrioCompatId: 'claro6',
+  },
+  {
+    id: 'flot-reflecta',
+    nombre: 'Reflecta',
+    hex: '#38BDF8',
+    swatch: 'linear-gradient(135deg, rgba(224,242,254,0.95) 0%, rgba(56,189,248,0.92) 48%, rgba(2,132,199,0.9) 100%)',
+    vidrioCompatId: 'claro6',
+  },
+  {
+    id: 'flot-otro',
+    nombre: 'Otro',
+    hex: '#BAE6FD',
+    swatch: 'conic-gradient(from 45deg, #E0F2FE 0deg, #64748B 72deg, #34D399 144deg, #CBD5E1 216deg, #38BDF8 288deg, #E0F2FE 360deg)',
+    vidrioCompatId: 'claro6',
+  },
+];
 
 export const RELLENO_CATEGORIAS_META: Array<{
   id: RellenoCategoriaId;
@@ -336,7 +423,7 @@ export const RELLENO_CATEGORIAS_META: Array<{
   corto: string;
   badge: string;
 }> = [
-  { id: 'flotado', nombre: 'Vidrio Flotado y Control Solar', corto: 'Flotado / Solar', badge: '7 tonos' },
+  { id: 'flotado', nombre: 'Vidrio Flotado y Control Solar', corto: 'Flotado / Solar', badge: '10 tonos' },
   { id: 'templado', nombre: 'Vidrio Templado', corto: 'Templado', badge: 'Seguridad' },
   { id: 'espejo', nombre: 'Espejos', corto: 'Espejos', badge: 'Reflejante' },
   { id: 'plastico', nombre: 'Plástico / Acrílico Baño', corto: 'Plástico Baño', badge: 'Cancel / Domo' },
@@ -348,41 +435,80 @@ export const PANEL_RELLENO_CATALOGO: PanelRellenoItem[] = [
   {
     id: 'flot-claro',
     categoria: 'flotado',
-    nombre: 'Claro',
+    nombre: 'Claro / Transparente',
     descripcion: 'Cristal flotado transparente de alta claridad para ventana o puerta.',
     espesoresMm: [3, 4, 6, 9, 12],
     defaultEspesorMm: 6,
     precioBaseM2: 440,
     espesorPreciosM2: { 3: 240, 4: 290, 6: 440, 9: 680, 12: 960 },
-    swatch: 'linear-gradient(135deg, #E0F2FE 0%, #BAE6FD 60%, #7DD3FC 100%)',
-    fill: '#BAE6FD',
+    swatch: 'linear-gradient(135deg, rgba(255,255,255,0.92) 0%, #E0F2FE 55%, rgba(186,230,253,0.85) 100%)',
+    fill: '#E0F2FE',
     vidrioCompatId: 'claro6',
   },
   {
     id: 'flot-filtrasol',
     categoria: 'flotado',
-    nombre: 'Filtrasol',
-    descripcion: 'Control solar tono humo/bronce grisáceo que reduce el calor interior.',
+    nombre: 'Filtrasol / Gris',
+    descripcion: 'Control solar tono humo/gris que reduce el calor interior.',
     espesoresMm: [3, 6],
     defaultEspesorMm: 6,
     precioBaseM2: 720,
     espesorPreciosM2: { 3: 520, 6: 720 },
-    swatch: 'linear-gradient(135deg, #94A3B8 0%, #64748B 55%, #334155 100%)',
+    swatch: 'linear-gradient(135deg, rgba(148,163,184,0.85) 0%, #64748B 55%, rgba(51,65,85,0.92) 100%)',
     fill: '#64748B',
     vidrioCompatId: 'filtrasol6',
   },
   {
     id: 'flot-tintex',
     categoria: 'flotado',
-    nombre: 'Tintex Verde',
+    nombre: 'Tintex / Verde',
     descripcion: 'Cristal tintado verde arquitectónico con filtración UV y fresca apariencia.',
     espesoresMm: [3, 6],
     defaultEspesorMm: 6,
     precioBaseM2: 760,
     espesorPreciosM2: { 3: 560, 6: 760 },
-    swatch: 'linear-gradient(135deg, #A7F3D0 0%, #34D399 55%, #059669 100%)',
-    fill: '#6EE7B7',
+    swatch: 'linear-gradient(135deg, rgba(167,243,208,0.88) 0%, #34D399 55%, rgba(5,150,105,0.88) 100%)',
+    fill: '#34D399',
     vidrioCompatId: 'tintex6',
+  },
+  {
+    id: 'flot-esmerilado',
+    categoria: 'flotado',
+    nombre: 'Esmerilado',
+    descripcion: 'Cristal translúcido esmerilado ideal para privacidad y paso suave de luz.',
+    espesoresMm: [4, 6, 9],
+    defaultEspesorMm: 6,
+    precioBaseM2: 780,
+    espesorPreciosM2: { 4: 620, 6: 780, 9: 1120 },
+    swatch: 'linear-gradient(135deg, rgba(248,250,252,0.96) 0%, #CBD5E1 55%, rgba(148,163,184,0.82) 100%)',
+    fill: '#CBD5E1',
+    vidrioCompatId: 'claro6',
+  },
+  {
+    id: 'flot-reflecta',
+    categoria: 'flotado',
+    nombre: 'Reflecta',
+    descripcion: 'Vidrio reflectivo tipo espejo de día para control solar y privacidad en fachada.',
+    espesoresMm: [6],
+    defaultEspesorMm: 6,
+    precioBaseM2: 1150,
+    espesorPreciosM2: { 6: 1150 },
+    swatch: 'linear-gradient(135deg, rgba(224,242,254,0.94) 0%, #38BDF8 48%, rgba(2,132,199,0.9) 100%)',
+    fill: '#38BDF8',
+    vidrioCompatId: 'claro6',
+  },
+  {
+    id: 'flot-otro',
+    categoria: 'flotado',
+    nombre: 'Otro',
+    descripcion: 'Tono o cristal especial especificado manualmente por el taller.',
+    espesoresMm: [4, 6, 9, 12],
+    defaultEspesorMm: 6,
+    precioBaseM2: 650,
+    espesorPreciosM2: { 4: 480, 6: 650, 9: 920, 12: 1250 },
+    swatch: 'conic-gradient(from 45deg, #E0F2FE 0deg, #64748B 72deg, #34D399 144deg, #CBD5E1 216deg, #38BDF8 288deg, #E0F2FE 360deg)',
+    fill: '#BAE6FD',
+    vidrioCompatId: 'claro6',
   },
   {
     id: 'flot-sollite',
@@ -678,6 +804,9 @@ export function getRellenoLabel(
   }
   const item = getRellenoItem(sel.materialId, vidrioFallback);
   const esp = sel.espesorMm || item.defaultEspesorMm;
+  if (sel.materialId === 'flot-otro' && sel.customLabel && sel.customLabel.trim()) {
+    return `${sel.customLabel.trim()} ${esp} mm`;
+  }
   return `${item.nombre} ${esp} mm`;
 }
 
@@ -1238,6 +1367,7 @@ export interface TrabajoParams {
   anchoCm: number;
   altoCm: number;
   color: ColorId;
+  colorCustom?: string;
   vidrio: VidrioId;
   relleno?: PanelRellenoSelection;
   hojas: number;
@@ -2795,6 +2925,7 @@ export interface PartidaObra {
   anchoCm: number;
   altoCm: number;
   color: ColorId;
+  colorCustom?: string;
   vidrio: VidrioId;
   relleno?: PanelRellenoSelection;
   rellenoPrecioM2?: number;

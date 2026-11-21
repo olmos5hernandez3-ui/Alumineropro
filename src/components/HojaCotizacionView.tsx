@@ -3,6 +3,7 @@ import {
   COLORES_CONFIG,
   consolidarMaterialesObra,
   formatClientPhoneInput,
+  getColorCorto,
   getRellenoLabel,
   LINEAS_CONFIG,
   PartidaObra,
@@ -203,9 +204,9 @@ export const HojaCotizacionView: React.FC<Props> = ({
       '',
       ...hoja.partidas.map((p, i) => {
         const l = LINEAS_CONFIG[p.linea];
-        const c = COLORES_CONFIG[p.color];
+        const colorTxt = getColorCorto(p.color, p.colorCustom);
         const rel = l.esMosquitero ? 'Tela Mosquitera' : getRellenoLabel(p.relleno, p.vidrio);
-        return `${i + 1}. [${p.area || 'General'}] ${p.etiqueta ? `${p.etiqueta} - ` : ''}${l.nombre} (${p.anchoCm}×${p.altoCm} cm, ${c.corto}, ${rel}) ×${p.cantidad} = ${formatMXN(p.totalLinea)}`;
+        return `${i + 1}. [${p.area || 'General'}] ${p.etiqueta ? `${p.etiqueta} - ` : ''}${l.nombre} (${p.anchoCm}×${p.altoCm} cm, ${colorTxt}, ${rel}) ×${p.cantidad} = ${formatMXN(p.totalLinea)}`;
       }),
       '',
       `Subtotal: ${formatMXN(subtotal)}`,
@@ -234,7 +235,7 @@ export const HojaCotizacionView: React.FC<Props> = ({
       `*PEDIDO DE MATERIAL — ${hoja.proyecto || 'Obra'}*`,
       ...faltantes.map(
         (r) =>
-          `• ${r.tramosFaltantes} tramo(s) 6.10 m — ${r.perfilNombre} (${LINEAS_CONFIG[r.linea].nombre}, ${COLORES_CONFIG[r.color].corto})`
+          `• ${r.tramosFaltantes} tramo(s) 6.10 m — ${r.perfilNombre} (${LINEAS_CONFIG[r.linea].nombre}, ${(COLORES_CONFIG[r.color] || COLORES_CONFIG.natural).corto})`
       ),
     ];
     try {
@@ -458,7 +459,7 @@ export const HojaCotizacionView: React.FC<Props> = ({
                                 : ''}
                             </span>
                             <span className="block text-[12px] text-slate-500 mt-0.5">
-                              {p.anchoCm} × {p.altoCm} cm · {COLORES_CONFIG[p.color].corto} ·{' '}
+                              {p.anchoCm} × {p.altoCm} cm · {getColorCorto(p.color, p.colorCustom)} ·{' '}
                               {lineaCfg.esMosquitero
                                 ? 'Malla'
                                 : getRellenoLabel(p.relleno, p.vidrio)}{' '}
@@ -723,7 +724,7 @@ export const HojaCotizacionView: React.FC<Props> = ({
                                 <div className="min-w-0">
                                   <strong className="block text-slate-900 break-words">{row.perfilNombre}</strong>
                                   <span className="text-[11px] text-slate-500 break-words">
-                                    {LINEAS_CONFIG[row.linea].nombre} · {COLORES_CONFIG[row.color].corto}
+                                    {LINEAS_CONFIG[row.linea].nombre} · {(COLORES_CONFIG[row.color] || COLORES_CONFIG.natural).corto}
                                   </span>
                                 </div>
                               </div>
