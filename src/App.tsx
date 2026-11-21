@@ -337,6 +337,8 @@ export default function App() {
   const pendingInternalBackSyncRef = useRef<number>(0);
   const closeSubModalRef = useRef<(() => void) | null>(null);
   const historyInitializedRef = useRef<boolean>(false);
+  const exitArmedUntilRef = useRef<number>(0);
+  const exitRearmTimerRef = useRef<number | null>(null);
 
   const currentViewRef = useRef<ScreenId>(currentView);
   currentViewRef.current = currentView;
@@ -500,10 +502,10 @@ export default function App() {
   const [cloudRefreshing, setCloudRefreshing] = useState(false);
   const [cloudLastSyncAt, setCloudLastSyncAt] = useState<number | null>(null);
 
-  const showToast = useCallback((msg: string, topSuccess = false) => {
+  const showToast = useCallback((msg: string, topSuccess = false, durationMs = 2800) => {
     setToast({ msg, topSuccess });
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = window.setTimeout(() => setToast(null), 2800);
+    toastTimerRef.current = window.setTimeout(() => setToast(null), durationMs);
   }, []);
 
   const showToastRef = useRef(showToast);
@@ -1122,8 +1124,93 @@ export default function App() {
     return frame.view;
   };
 
+  const EXIT_CONFIRM_WINDOW_MS = 2500;
+  const EXIT_CONFIRM_TOAST_MSG = 'Desliza o presiona atrás otra vez para salir';
+
+  const makeRootGuardState = () => ({
+    internalStep: false,
+    view: 'root',
+    exitGuard: true,
+    app: 'aluminero-pro',
+    depth: 0,
+  });
+
+  const makeExitSentinelState = () => ({
+    internalStep: false,
+    view: 'exit-sentinel',
+    exitSentinel: true,
+    app: 'aluminero-pro',
+    depth: -1,
+  });
+
+  const disarmExitConfirm = useCallback((restoreGuardIfNeeded: boolean) => {
+    if (exitRearmTimerRef.current !== null) {
+      window.clearTimeout(exitRearmTimerRef.current);
+      exitRearmTimerRef.current = null;
+    }
+    const wasArmed = exitArmedUntilRef.current > Date.now();
+    exitArmedUntilRef.current = 0;
+    if (wasArmed) {
+      setToast((prev) => (prev?.msg === EXIT_CONFIRM_TOAST_MSG ? null : prev));
+    }
+    if (
+      restoreGuardIfNeeded &&
+      typeof window !== 'undefined' &&
+      window.history?.pushState &&
+      navFramesRef.current.length <= 1 &&
+      window.history.state?.exitGuard !== true
+    ) {
+      try {
+        window.history.pushState(makeRootGuardState(), '');
+      } catch {
+        // Ignorar si history.pushState está restringido en el navegador
+      }
+    }
+  }, []);
+
+  const armExitConfirm = useCallback((popGuardEntry: boolean) => {
+    if (exitRearmTimerRef.current !== null) {
+      window.clearTimeout(exitRearmTimerRef.current);
+      exitRearmTimerRef.current = null;
+    }
+    exitArmedUntilRef.current = Date.now() + EXIT_CONFIRM_WINDOW_MS;
+    if (!accessBlockedRef.current) {
+      showToastRef.current(EXIT_CONFIRM_TOAST_MSG, false, EXIT_CONFIRM_WINDOW_MS);
+    }
+    if (
+      popGuardEntry &&
+      typeof window !== 'undefined' &&
+      window.history?.back &&
+      window.history.state?.exitGuard === true
+    ) {
+      try {
+        pendingInternalBackSyncRef.current += 1;
+        window.history.back();
+      } catch {
+        pendingInternalBackSyncRef.current = Math.max(0, pendingInternalBackSyncRef.current - 1);
+      }
+    }
+    exitRearmTimerRef.current = window.setTimeout(() => {
+      exitRearmTimerRef.current = null;
+      exitArmedUntilRef.current = 0;
+      if (
+        navFramesRef.current.length <= 1 &&
+        typeof window !== 'undefined' &&
+        window.history?.pushState &&
+        window.history.state?.exitGuard !== true
+      ) {
+        try {
+          window.history.pushState(makeRootGuardState(), '');
+        } catch {
+          // Ignorar si history.pushState está restringido en el navegador
+        }
+      }
+    }, EXIT_CONFIRM_WINDOW_MS);
+  }, []);
+
   const pushNavFrame = useCallback(
     (patch: Partial<NavFrame>) => {
+      disarmExitConfirm(true);
       const cur = navFramesRef.current[navFramesRef.current.length - 1] || BASE_FRAME;
       const next: NavFrame = {
         ...cur,
@@ -1150,7 +1237,7 @@ export default function App() {
         }
       }
     },
-    [applyFrameState]
+    [applyFrameState, disarmExitConfirm]
   );
 
   const replaceNavFrame = useCallback(
@@ -1172,6 +1259,7 @@ export default function App() {
             {
               internalStep: next.depth > 0,
               view: getHistoryViewName(next),
+              exitGuard: next.depth === 0,
               app: 'aluminero-pro',
               depth: next.depth,
               subModal: next.subModal,
@@ -1189,6 +1277,16 @@ export default function App() {
 
   const requestBack = useCallback(() => {
     if (navFramesRef.current.length <= 1) {
+      if (Date.now() < exitArmedUntilRef.current) {
+        disarmExitConfirm(false);
+        try {
+          window.history.back();
+        } catch {
+          // Ignorar
+        }
+        return;
+      }
+      armExitConfirm(true);
       return;
     }
     const prev = navFramesRef.current[navFramesRef.current.length - 1];
@@ -1209,7 +1307,7 @@ export default function App() {
         pendingInternalBackSyncRef.current = Math.max(0, pendingInternalBackSyncRef.current - 1);
       }
     }
-  }, [applyFrameState]);
+  }, [applyFrameState, armExitConfirm, disarmExitConfirm]);
 
   const navigateTo = useCallback(
     (view: ScreenId, extraPatch?: Partial<NavFrame>) => {
@@ -1226,19 +1324,25 @@ export default function App() {
         ) {
           return;
         }
+        const stepsToPop = Math.max(0, navFramesRef.current.length - 1);
+        disarmExitConfirm(false);
         navFramesRef.current = [BASE_FRAME];
         applyFrameState(BASE_FRAME, cur, 'back');
-        if (typeof window !== 'undefined' && window.history?.replaceState) {
+        if (
+          stepsToPop > 0 &&
+          typeof window !== 'undefined' &&
+          window.history?.go &&
+          window.history.state?.internalStep === true
+        ) {
           try {
-            window.history.replaceState(
-              {
-                internalStep: false,
-                view: 'root',
-                app: 'aluminero-pro',
-                depth: 0,
-              },
-              ''
-            );
+            pendingInternalBackSyncRef.current += 1;
+            window.history.go(-stepsToPop);
+          } catch {
+            pendingInternalBackSyncRef.current = Math.max(0, pendingInternalBackSyncRef.current - 1);
+          }
+        } else if (typeof window !== 'undefined' && window.history?.replaceState) {
+          try {
+            window.history.replaceState(makeRootGuardState(), '');
           } catch {
             // Ignorar
           }
@@ -1259,29 +1363,35 @@ export default function App() {
         ...extraPatch,
       });
     },
-    [applyFrameState, pushNavFrame]
+    [applyFrameState, disarmExitConfirm, pushNavFrame]
   );
 
   const goHome = useCallback(() => {
     const cur = navFramesRef.current[navFramesRef.current.length - 1] || BASE_FRAME;
+    const stepsToPop = Math.max(0, navFramesRef.current.length - 1);
+    disarmExitConfirm(false);
     navFramesRef.current = [BASE_FRAME];
     applyFrameState(BASE_FRAME, cur, 'back');
-    if (typeof window !== 'undefined' && window.history?.replaceState) {
+    if (
+      stepsToPop > 0 &&
+      typeof window !== 'undefined' &&
+      window.history?.go &&
+      window.history.state?.internalStep === true
+    ) {
       try {
-        window.history.replaceState(
-          {
-            internalStep: false,
-            view: 'root',
-            app: 'aluminero-pro',
-            depth: 0,
-          },
-          ''
-        );
+        pendingInternalBackSyncRef.current += 1;
+        window.history.go(-stepsToPop);
+      } catch {
+        pendingInternalBackSyncRef.current = Math.max(0, pendingInternalBackSyncRef.current - 1);
+      }
+    } else if (typeof window !== 'undefined' && window.history?.replaceState) {
+      try {
+        window.history.replaceState(makeRootGuardState(), '');
       } catch {
         // Ignorar
       }
     }
-  }, [applyFrameState]);
+  }, [applyFrameState, disarmExitConfirm]);
 
   const openGlobalModal = useCallback(
     (modalId: GlobalModalId) => {
@@ -1373,15 +1483,8 @@ export default function App() {
     if (!historyInitializedRef.current) {
       historyInitializedRef.current = true;
       try {
-        window.history.replaceState(
-          {
-            internalStep: false,
-            view: 'root',
-            app: 'aluminero-pro',
-            depth: 0,
-          },
-          ''
-        );
+        window.history.replaceState(makeExitSentinelState(), '');
+        window.history.pushState(makeRootGuardState(), '');
         if (initialReferralActive) {
           const refFrame: NavFrame = {
             ...BASE_FRAME,
@@ -1390,6 +1493,17 @@ export default function App() {
           };
           navFramesRef.current = [BASE_FRAME, refFrame];
           applyFrameState(refFrame, BASE_FRAME);
+          window.history.pushState(
+            {
+              internalStep: true,
+              view: getHistoryViewName(refFrame),
+              app: 'aluminero-pro',
+              depth: 1,
+              subModal: null,
+              modal: 'referralWelcome',
+            },
+            ''
+          );
         }
       } catch {
         // Ignorar si history API está restringida
@@ -1413,13 +1527,11 @@ export default function App() {
         pendingInternalBackSyncRef.current -= 1;
         if (
           navFramesRef.current.length <= 1 &&
-          (!event.state || event.state.view === 'root' || event.state.internalStep === false)
+          Date.now() >= exitArmedUntilRef.current &&
+          event.state?.exitGuard !== true
         ) {
           try {
-            window.history.pushState(
-              { internalStep: false, view: 'root', app: 'aluminero-pro', depth: 0 },
-              ''
-            );
+            window.history.pushState(makeRootGuardState(), '');
           } catch {
             // Ignorar
           }
@@ -1444,12 +1556,9 @@ export default function App() {
         navFramesRef.current = navFramesRef.current.slice(0, targetDepth + 1);
         commitBackFrameSync(targetFrame, prevFrame);
 
-        if (navFramesRef.current.length === 1) {
+        if (navFramesRef.current.length === 1 && event.state?.exitGuard !== true) {
           try {
-            window.history.pushState(
-              { internalStep: false, view: 'root', app: 'aluminero-pro', depth: 0 },
-              ''
-            );
+            window.history.pushState(makeRootGuardState(), '');
           } catch {
             // Ignorar
           }
@@ -1457,26 +1566,31 @@ export default function App() {
         return;
       }
 
+      // El usuario está en la pantalla principal (Inicio): protección de doble intento para salir
+      if (Date.now() < exitArmedUntilRef.current) {
+        disarmExitConfirm(false);
+        try {
+          window.history.back();
+        } catch {
+          // Ignorar
+        }
+        return;
+      }
+
       navFramesRef.current = [BASE_FRAME];
       commitBackFrameSync(BASE_FRAME, prevFrame);
-      try {
-        window.history.pushState(
-          { internalStep: false, view: 'root', app: 'aluminero-pro', depth: 0 },
-          ''
-        );
-      } catch {
-        // Ignorar
-      }
-      if (!accessBlockedRef.current) {
-        showToastRef.current('Ya estás en el inicio · Presiona de nuevo para salir');
-      }
+      armExitConfirm(false);
     };
 
     window.addEventListener('popstate', handlePopState);
     return () => {
       window.removeEventListener('popstate', handlePopState);
+      if (exitRearmTimerRef.current !== null) {
+        window.clearTimeout(exitRearmTimerRef.current);
+        exitRearmTimerRef.current = null;
+      }
     };
-  }, [applyFrameState, initialReferralActive]);
+  }, [applyFrameState, armExitConfirm, disarmExitConfirm, initialReferralActive]);
 
   const handleSelectLinea = (lineaId: LineaId) => {
     const cfg = LINEAS_CONFIG[lineaId];
@@ -2377,7 +2491,10 @@ export default function App() {
             onEntrarInventario={() => handleEntrarInventario()}
             onGoToView={(view) => navigateTo(view)}
             onOpenAntesDespues={() => openGlobalModal('antesDespues')}
-            onOpenLevantamiento={() => window.__alumLev?.open()}
+            onOpenLevantamiento={() => {
+              disarmExitConfirm(true);
+              window.__alumLev?.open();
+            }}
             onOpenReminders={() => openGlobalModal('reminders')}
           />
         )}
