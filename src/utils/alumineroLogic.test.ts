@@ -389,7 +389,7 @@ test('5. Planes G/M/Q/A, claves de reposición por días exactos y enlace oficia
   assert.equal(expiredTrial.active, false);
   assert.equal(expiredTrial.label, 'Activar PRO');
 
-  assert.equal(getOfficialShareUrl(), 'https://alumineropro1.pages.dev');
+  assert.equal(getOfficialShareUrl(), 'https://alumineropro.pages.dev');
 });
 
 test('6. Conversión de Nota de Obra en 1 clic e inventario de 6 carretillas + consolidado', () => {
@@ -1307,7 +1307,7 @@ test('25. Invitación estilo Spotify: URL con ?ref y &promo, parser y mensaje de
   } = await import('./alumineroLogic.ts');
 
   const url = buildReferralInviteUrl('Taller Olmos', 17);
-  assert.equal(url, 'https://alumineropro1.pages.dev/?ref=Taller+Olmos&promo=17');
+  assert.equal(url, 'https://alumineropro.pages.dev/?ref=Taller+Olmos&promo=17');
 
   const parsed = parseReferralFromSearch('?ref=Taller%20Olmos&promo=17');
   assert.deepEqual(parsed, { refName: 'Taller Olmos', promoNumber: 17 });

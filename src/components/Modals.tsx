@@ -1099,7 +1099,7 @@ const FALLBACK_MANIFEST_JSON = JSON.stringify(
   2
 );
 
-const FALLBACK_SW_JS = `const CACHE_NAME = 'aluminero-pro-v17-20261121';
+const FALLBACK_SW_JS = `const CACHE_NAME = 'aluminero-pro-v35-20261121';
 const APP_SHELL_ASSETS = [
   './',
   './index.html',

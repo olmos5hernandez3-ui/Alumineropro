@@ -1265,10 +1265,58 @@ export function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-export const APP_SHARE_URL = 'https://alumineropro1.pages.dev';
+export const APP_SHARE_URL = 'https://alumineropro.pages.dev';
+
+function isLocalOrPreviewHost(hostname: string): boolean {
+  const host = hostname.trim().toLowerCase();
+  if (!host) return true;
+  if (
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host === '0.0.0.0' ||
+    host === '::1' ||
+    host === '[::1]' ||
+    host.endsWith('.local') ||
+    host.endsWith('.run.app') ||
+    host.includes('aistudio') ||
+    host.includes('googleusercontent.com') ||
+    host.includes('webcontainer') ||
+    host.includes('stackblitz')
+  ) {
+    return true;
+  }
+  if (/^alumineropro\d+\.pages\.dev$/i.test(host)) {
+    return true;
+  }
+  if (/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[0-1])\.)/.test(host)) {
+    return true;
+  }
+  return false;
+}
 
 export function getOfficialShareUrl(): string {
-  return APP_SHARE_URL;
+  if (typeof window === 'undefined' || !window.location) {
+    return APP_SHARE_URL;
+  }
+  try {
+    if (window.self !== window.top) {
+      return APP_SHARE_URL;
+    }
+  } catch {
+    return APP_SHARE_URL;
+  }
+  try {
+    const { protocol, hostname, origin } = window.location;
+    if (!/^https?:$/i.test(protocol) || !origin || origin === 'null') {
+      return APP_SHARE_URL;
+    }
+    if (isLocalOrPreviewHost(hostname)) {
+      return APP_SHARE_URL;
+    }
+    return origin.replace(/\/+$/, '');
+  } catch {
+    return APP_SHARE_URL;
+  }
 }
 
 export function isFeatureProRequired(linea: LineaId, apertura: AperturaVentanaId, cantidad = 1): boolean {
@@ -3453,7 +3501,7 @@ export interface ParsedColleagueReferral {
   promoNumber: number;
 }
 
-export const OFFICIAL_ALUMINERO_URL = 'https://alumineropro1.pages.dev';
+export const OFFICIAL_ALUMINERO_URL = APP_SHARE_URL;
 
 export function sanitizeReferralSenderName(raw: string): string {
   return String(raw || '')
@@ -3468,7 +3516,7 @@ export function buildReferralInviteUrl(senderName: string, promoNumber: number):
   const params = new URLSearchParams();
   params.set('ref', cleanName);
   params.set('promo', String(safePromo));
-  return `${OFFICIAL_ALUMINERO_URL}/?${params.toString()}`;
+  return `${getOfficialShareUrl()}/?${params.toString()}`;
 }
 
 export function parseReferralFromSearch(search: string): ParsedColleagueReferral | null {
