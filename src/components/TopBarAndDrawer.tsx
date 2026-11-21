@@ -268,6 +268,9 @@ interface SideDrawerProps {
   onOpenLegal: (doc: 'terminos' | 'privacidad') => void;
   showInstallApp?: boolean;
   onInstallApp?: () => void;
+  pendingRemindersCount?: number;
+  dueRemindersCount?: number;
+  onOpenReminders?: () => void;
 }
 
 export const SideDrawer: React.FC<SideDrawerProps> = ({
@@ -288,6 +291,9 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
   onOpenLegal,
   showInstallApp = false,
   onInstallApp,
+  pendingRemindersCount = 0,
+  dueRemindersCount = 0,
+  onOpenReminders,
 }) => {
   if (!open) return null;
 
@@ -420,6 +426,32 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
             <span>💬 Sugerir Línea o Perfil</span>
             <span>›</span>
           </button>
+
+          {/* 5.5 Recordatorios Push de Cotizaciones */}
+          {onOpenReminders && (
+            <button
+              type="button"
+              id="btn-drawer-reminders"
+              onClick={onOpenReminders}
+              className="flex items-center justify-between w-full min-h-[46px] px-3.5 py-2.5 rounded-xl border border-sky-400/45 bg-sky-500/20 hover:bg-sky-500/30 text-sky-100 text-[13.5px] font-extrabold text-left cursor-pointer"
+            >
+              <span>🔔 Recordatorios de Cotizaciones</span>
+              <span className="inline-flex items-center gap-1.5 shrink-0">
+                {pendingRemindersCount > 0 && (
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-[10.5px] font-extrabold ${
+                      dueRemindersCount > 0
+                        ? 'bg-amber-400 text-slate-950'
+                        : 'bg-sky-400/30 text-white border border-sky-300/40'
+                    }`}
+                  >
+                    {pendingRemindersCount}
+                  </span>
+                )}
+                <span>›</span>
+              </span>
+            </button>
+          )}
 
           {/* 6. Tutorial */}
           <button

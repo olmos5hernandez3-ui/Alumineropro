@@ -11,6 +11,8 @@ interface Props {
   hojasVidrioCount: number;
   notasCount: number;
   savedReferral?: SavedColleagueReferral | null;
+  pendingRemindersCount?: number;
+  dueRemindersCount?: number;
   onClaimColleaguePromo?: () => void;
   onEntrarTrabajo: (cat: 'ventanas' | 'puertas') => void;
   onEntrarHoja: () => void;
@@ -18,6 +20,7 @@ interface Props {
   onGoToView: (view: ScreenId) => void;
   onOpenAntesDespues: () => void;
   onOpenLevantamiento?: () => void;
+  onOpenReminders?: () => void;
 }
 
 export const MainMenuView: React.FC<Props> = ({
@@ -28,6 +31,8 @@ export const MainMenuView: React.FC<Props> = ({
   hojasVidrioCount,
   notasCount,
   savedReferral = null,
+  pendingRemindersCount = 0,
+  dueRemindersCount = 0,
   onClaimColleaguePromo,
   onEntrarTrabajo,
   onEntrarHoja,
@@ -35,6 +40,7 @@ export const MainMenuView: React.FC<Props> = ({
   onGoToView,
   onOpenAntesDespues,
   onOpenLevantamiento,
+  onOpenReminders,
 }) => {
   return (
     <section
@@ -66,6 +72,34 @@ export const MainMenuView: React.FC<Props> = ({
           <small>Toma medidas en obra y manda directo a cotizar o modular →</small>
         </span>
       </button>
+
+      {/* Aviso de seguimiento de cotizaciones pendientes */}
+      {onOpenReminders && pendingRemindersCount > 0 && (
+        <button
+          type="button"
+          id="btn-menu-pending-reminders"
+          onClick={onOpenReminders}
+          className={`mb-3.5 w-full rounded-2xl px-4 py-3 text-left cursor-pointer border transition-all active:scale-[0.98] flex items-center justify-between gap-3 shadow-lg ${
+            dueRemindersCount > 0
+              ? 'border-amber-400/70 bg-amber-500/20 hover:bg-amber-500/30 text-white'
+              : 'border-sky-400/50 bg-sky-500/15 hover:bg-sky-500/25 text-white'
+          }`}
+        >
+          <div className="min-w-0">
+            <span className="block text-[10.5px] font-extrabold uppercase tracking-wider text-amber-200 truncate">
+              {dueRemindersCount > 0
+                ? `🔔 ${dueRemindersCount} seguimiento(s) vencido(s)`
+                : '🔔 Recordatorios de Cotizaciones'}
+            </span>
+            <span className="block text-[13.5px] font-extrabold text-white leading-snug mt-0.5">
+              Tienes {pendingRemindersCount} cotización(es) pendiente(s) por dar seguimiento
+            </span>
+          </div>
+          <span className="shrink-0 px-3 py-1.5 rounded-xl bg-amber-400 text-slate-950 font-extrabold text-[11.5px] whitespace-nowrap">
+            Ver
+          </span>
+        </button>
+      )}
 
       {/* Acceso discreto para canjear los 3 días gratis enviados por un colega */}
       {!proActive && savedReferral && onClaimColleaguePromo && (

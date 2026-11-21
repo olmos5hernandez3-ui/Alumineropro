@@ -27,6 +27,7 @@ import {
   round2,
   TrabajoParams,
   UsageStats30d,
+  validatePiezaDimensiones,
 } from './utils/alumineroLogic';
 import {
   activateKeyInCloud,
@@ -65,6 +66,7 @@ import {
   loadAccessBlocked,
   loadCloudAccountSession,
   loadContratoCliente,
+  loadCotizacionReminders,
   loadDeletedAdminKeySigs,
   loadFormulas,
   loadHistorial,
@@ -92,10 +94,11 @@ import {
   saveAccessBlocked,
   saveCloudAccountSession,
   saveColleagueReferral,
+  saveContratoCliente,
+  saveCotizacionReminders,
   saveDeletedAdminKeySigs,
   SavedColleagueReferral,
   AppTheme,
-  saveContratoCliente,
   saveFormulas,
   saveHistorial,
   saveHoja,
@@ -118,6 +121,22 @@ import {
   TallerConfig,
   TrabajoAntesDespuesItem,
 } from './utils/storageHelpers';
+import {
+  computeReminderDueAt,
+  CotizacionReminder,
+  CotizacionReminderStatus,
+  createCotizacionReminder,
+  dispatchQuoteReminderNotification,
+  getDueCotizacionReminders,
+  markReminderNotified,
+  partitionCotizacionReminders,
+  requestPushNotificationPermission,
+  snoozeCotizacionReminder,
+  subscribeBrowserPushOptional,
+  syncRemindersToServer,
+  updateCotizacionReminderStatus,
+} from './utils/pushReminders';
+import { RemindersModal } from './components/CotizacionRemindersPanel';
 import { esMaterialDireccional, PiezaVidrioInput } from './utils/glassOptimizer2D';
 import { useOnlineStatus, usePWAInstall } from './utils/usePWAInstall';
 import { ScreenId, SideDrawer, TopBar } from './components/TopBarAndDrawer';
@@ -236,7 +255,8 @@ export default function App() {
     | 'installGuide'
     | 'formula'
     | 'perfil'
-    | 'referralWelcome';
+    | 'referralWelcome'
+    | 'reminders';
 
   type SubModalId = 'contrato' | 'zoomPerfil' | null;
 
@@ -344,6 +364,10 @@ export default function App() {
     loadCloudAccountSession()
   );
   const [cloudAccountSyncing, setCloudAccountSyncing] = useState(false);
+  const [cotizacionReminders, setCotizacionReminders] = useState<CotizacionReminder[]>(() =>
+    loadCotizacionReminders()
+  );
+  const [highlightedReminderId, setHighlightedReminderId] = useState<string | null>(null);
 
   const drawerOpen = globalModals.includes('drawer');
   const proModalOpen = globalModals.includes('pro');
@@ -358,6 +382,7 @@ export default function App() {
   const installGuideOpen = globalModals.includes('installGuide');
   const formulaModalOpen = globalModals.includes('formula');
   const referralWelcomeOpen = globalModals.includes('referralWelcome');
+  const remindersModalOpen = globalModals.includes('reminders');
 
   // Invitación estilo Spotify (?ref=[Nombre]&promo=[NumeroPromo])
   const [savedColleagueReferral] = useState<SavedColleagueReferral | null>(() => {
@@ -818,6 +843,57 @@ export default function App() {
   useEffect(() => {
     saveCloudAccountSession(cloudAccountSession);
   }, [cloudAccountSession]);
+
+  useEffect(() => {
+    saveCotizacionReminders(cotizacionReminders);
+    void syncRemindersToServer(deviceId, cotizacionReminders);
+  }, [cotizacionReminders, deviceId]);
+
+  const cotizacionRemindersRef = useRef<CotizacionReminder[]>(cotizacionReminders);
+  cotizacionRemindersRef.current = cotizacionReminders;
+
+  useEffect(() => {
+    let active = true;
+    const checkDueReminders = async () => {
+      if (typeof window === 'undefined' || !('Notification' in window)) return;
+      if (Notification.permission !== 'granted') return;
+      const now = Date.now();
+      const due = getDueCotizacionReminders(cotizacionRemindersRef.current, now);
+      if (due.length === 0) return;
+
+      const notifiedIds = new Set<string>();
+      for (const rem of due.slice(0, 3)) {
+        const res = await dispatchQuoteReminderNotification(rem);
+        if (res.ok) {
+          notifiedIds.add(rem.id);
+        }
+      }
+      if (active && notifiedIds.size > 0) {
+        const ts = Date.now();
+        setCotizacionReminders((prev) =>
+          prev.map((item) => (notifiedIds.has(item.id) ? markReminderNotified(item, ts) : item))
+        );
+      }
+    };
+
+    void checkDueReminders();
+    const intervalId = window.setInterval(() => {
+      void checkDueReminders();
+    }, 30_000);
+
+    const onVis = () => {
+      if (document.visibilityState === 'visible') {
+        void checkDueReminders();
+      }
+    };
+    document.addEventListener('visibilitychange', onVis);
+
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, []);
 
   // Verificación periódica de candado de 1 dispositivo cuando existe cuenta vinculada
   useEffect(() => {
@@ -1448,6 +1524,15 @@ export default function App() {
   };
 
   const handleAgregarObra = () => {
+    const dimCheck = validatePiezaDimensiones(params.anchoCm, params.altoCm);
+    if (!dimCheck.valid) {
+      showToast(
+        dimCheck.error ||
+          'Medidas sospechosas: el ancho y el alto deben ser mayores a 0 y menores a 600 cm.'
+      );
+      return;
+    }
+
     const nuevaPartida: PartidaObra = {
       id:
         editingPartidaId ||
@@ -1695,6 +1780,16 @@ export default function App() {
       });
     }
 
+    if (Array.isArray(payload.recordatorios) && payload.recordatorios.length > 0) {
+      setCotizacionReminders((prev) => {
+        const byId = new Map(prev.map((r) => [r.id, r]));
+        for (const r of payload.recordatorios!) {
+          if (r && r.id) byId.set(r.id, r);
+        }
+        return Array.from(byId.values());
+      });
+    }
+
     const notasRestored = payload.notas?.length || 0;
     showToast(
       `Respaldo importado: ${importedPhotosCount} fotos de perfiles y ${notasRestored} notas restauradas`,
@@ -1795,6 +1890,159 @@ export default function App() {
     0
   );
 
+  const reminderSummary = useMemo(() => {
+    const part = partitionCotizacionReminders(cotizacionReminders);
+    return {
+      dueCount: part.due.length,
+      pendingCount: part.due.length + part.upcoming.length,
+    };
+  }, [cotizacionReminders]);
+
+  const handleAddReminder = useCallback((rem: CotizacionReminder) => {
+    setCotizacionReminders((prev) => [rem, ...prev.filter((r) => r.id !== rem.id)].slice(0, 100));
+  }, []);
+
+  const handleUpdateReminderStatus = useCallback(
+    (id: string, status: CotizacionReminderStatus) => {
+      setCotizacionReminders((prev) =>
+        prev.map((r) => (r.id === id ? updateCotizacionReminderStatus(r, status) : r))
+      );
+      showToast(
+        status === 'aprobada'
+          ? 'Cotización marcada como aprobada'
+          : status === 'seguimiento'
+            ? 'Seguimiento marcado como atendido'
+            : 'Recordatorio actualizado',
+        true
+      );
+    },
+    [showToast]
+  );
+
+  const handleSnoozeReminder = useCallback(
+    (id: string) => {
+      setCotizacionReminders((prev) =>
+        prev.map((r) => (r.id === id ? snoozeCotizacionReminder(r) : r))
+      );
+      showToast('Recordatorio pospuesto 1 día', true);
+    },
+    [showToast]
+  );
+
+  const handleDeleteReminder = useCallback(
+    (id: string) => {
+      setCotizacionReminders((prev) => prev.filter((r) => r.id !== id));
+      showToast('Recordatorio eliminado');
+    },
+    [showToast]
+  );
+
+  const handleRequestPushPermission = useCallback(async () => {
+    const perm = await requestPushNotificationPermission();
+    if (perm === 'granted') {
+      await subscribeBrowserPushOptional(deviceId);
+    }
+    return perm;
+  }, [deviceId]);
+
+  const handleNotifyReminderNow = useCallback(
+    async (rem: CotizacionReminder) => {
+      const res = await dispatchQuoteReminderNotification(rem);
+      if (res.ok) {
+        setCotizacionReminders((prev) =>
+          prev.map((r) => (r.id === rem.id ? markReminderNotified(r) : r))
+        );
+        showToast(
+          res.via === 'service-worker'
+            ? `Notificación enviada vía Service Worker para "${rem.proyecto}"`
+            : `Notificación enviada para "${rem.proyecto}"`,
+          true
+        );
+      } else {
+        showToast(res.error || 'No se pudo enviar la notificación');
+      }
+    },
+    [showToast]
+  );
+
+  const handleTestPushNotification = useCallback(async () => {
+    const sampleRes = createCotizacionReminder({
+      id: 'test-sw-push',
+      proyecto: hoja.proyecto.trim() || taller.clienteDefault || 'Cotización de prueba',
+      total: hojaTotalAprox > 0 ? hojaTotalAprox : 4850,
+      partidasCount: hojaPiezasCount > 0 ? hojaPiezasCount : 2,
+      nota: 'Prueba de notificación push Service Worker',
+      dueAt: Date.now(),
+    });
+    if (!sampleRes.ok) return;
+    const res = await dispatchQuoteReminderNotification(sampleRes.reminder);
+    if (res.ok) {
+      showToast('Notificación de prueba enviada por Service Worker', true);
+    } else {
+      showToast(res.error || 'Activa los permisos de notificación primero');
+    }
+  }, [hoja.proyecto, hojaPiezasCount, hojaTotalAprox, showToast, taller.clienteDefault]);
+
+  const handleScheduleHistorialReminder = useCallback(
+    (item: HistorialItem) => {
+      const created = createCotizacionReminder({
+        proyecto: item.referencia,
+        total: item.total,
+        partidasCount: item.cantidad,
+        nota: `${LINEAS_CONFIG[item.linea]?.nombre || item.linea} · ${item.anchoCm}×${item.altoCm} cm`,
+        dueAt: computeReminderDueAt('24h'),
+      });
+      if (!created.ok) {
+        showToast(created.error);
+        return;
+      }
+      handleAddReminder(created.reminder);
+      showToast(`Seguimiento en 24 h programado para "${item.referencia}"`, true);
+    },
+    [handleAddReminder, showToast]
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const paramsUrl = new URLSearchParams(window.location.search);
+    const remId = paramsUrl.get('reminderId');
+    const remAction = paramsUrl.get('reminderAction');
+    const viewParam = paramsUrl.get('view');
+
+    if (remAction === 'snooze-1d' && remId) {
+      handleSnoozeReminder(remId);
+    } else if (viewParam === 'hoja' || remId) {
+      if (remId) setHighlightedReminderId(remId);
+      if (proActive) {
+        navigateTo('hoja');
+      } else {
+        openGlobalModal('reminders');
+      }
+    }
+
+    if (!('serviceWorker' in navigator)) return;
+    const onSwMessage = (event: MessageEvent) => {
+      const data = event.data as { type?: string; action?: string; reminderId?: string } | null;
+      if (!data || data.type !== 'SW_REMINDER_ACTION') return;
+      if (data.action === 'snooze-1d' && data.reminderId) {
+        handleSnoozeReminder(data.reminderId);
+        return;
+      }
+      if (data.reminderId) {
+        setHighlightedReminderId(data.reminderId);
+      }
+      if (proActive) {
+        navigateTo('hoja');
+      } else {
+        openGlobalModal('reminders');
+      }
+      showToast('Abriendo seguimiento de cotización pendiente', true);
+    };
+
+    navigator.serviceWorker.addEventListener('message', onSwMessage);
+    return () => navigator.serviceWorker.removeEventListener('message', onSwMessage);
+  }, [handleSnoozeReminder, navigateTo, openGlobalModal, proActive, showToast]);
+
   const screenTitleMap: Record<ScreenId, string> = {
     menu: 'Aluminero Pro',
     trabajo: LINEAS_CONFIG[params.linea].nombre,
@@ -1860,6 +2108,8 @@ export default function App() {
             hojasVidrioCount={hojasVidrioTotalCount}
             notasCount={notas.length}
             savedReferral={savedColleagueReferral}
+            pendingRemindersCount={reminderSummary.pendingCount}
+            dueRemindersCount={reminderSummary.dueCount}
             onClaimColleaguePromo={handleClaimColleaguePromo}
             onEntrarTrabajo={handleEntrarTrabajo}
             onEntrarHoja={handleEntrarHoja}
@@ -1867,6 +2117,7 @@ export default function App() {
             onGoToView={(view) => navigateTo(view)}
             onOpenAntesDespues={() => openGlobalModal('antesDespues')}
             onOpenLevantamiento={() => window.__alumLev?.open()}
+            onOpenReminders={() => openGlobalModal('reminders')}
           />
         )}
 
@@ -1957,6 +2208,7 @@ export default function App() {
             obrasAprobadas={obrasAprobadas}
             perfilFotos={perfilFotos}
             onUpdateHoja={(patch) => setHoja((prev) => ({ ...prev, ...patch }))}
+            onUpdateTaller={(patch) => setTaller((prev) => ({ ...prev, ...patch }))}
             onUpdateContratoCliente={(patch) =>
               setContratoCliente((prev) => ({ ...prev, ...patch }))
             }
@@ -2029,6 +2281,15 @@ export default function App() {
             onPushSubModal={(sub) => pushNavFrame({ subModal: sub })}
             onRequestBack={requestBack}
             onRegisterCloseSubModal={registerCloseSubModal}
+            reminders={cotizacionReminders}
+            highlightedReminderId={highlightedReminderId}
+            onAddReminder={handleAddReminder}
+            onUpdateReminderStatus={handleUpdateReminderStatus}
+            onSnoozeReminder={handleSnoozeReminder}
+            onDeleteReminder={handleDeleteReminder}
+            onNotifyReminderNow={handleNotifyReminderNow}
+            onTestPushNotification={handleTestPushNotification}
+            onRequestPushPermission={handleRequestPushPermission}
             onShowToast={showToast}
           />
         )}
@@ -2050,6 +2311,9 @@ export default function App() {
             onEliminarFormula={(id) => setFormulas((prev) => prev.filter((f) => f.id !== id))}
             onEliminarHistorial={(id) => setHistorial((prev) => prev.filter((h) => h.id !== id))}
             onLimpiarHistorial={() => setHistorial([])}
+            onScheduleHistorialReminder={handleScheduleHistorialReminder}
+            onOpenReminders={() => openGlobalModal('reminders')}
+            pendingRemindersCount={reminderSummary.pendingCount}
             onShowToast={showToast}
           />
         )}
@@ -2192,6 +2456,14 @@ export default function App() {
               ]);
             }}
             onSendToHoja={(partida, goToHoja) => {
+              const dimCheck = validatePiezaDimensiones(partida.anchoCm, partida.altoCm);
+              if (!dimCheck.valid) {
+                showToast(
+                  dimCheck.error ||
+                    'Medidas sospechosas: el ancho y el alto deben ser mayores a 0 y menores a 600 cm.'
+                );
+                return false;
+              }
               setHoja((prev) => ({
                 ...prev,
                 partidas: [...prev.partidas, partida],
@@ -2199,6 +2471,7 @@ export default function App() {
               if (goToHoja) {
                 navigateTo('hoja');
               }
+              return true;
             }}
             onSendVidriosToOptimizer={(vidrios) => {
               const piezas: PiezaVidrioInput[] = vidrios
@@ -2275,6 +2548,9 @@ export default function App() {
         onOpenLegal={(doc) => openScreenFromDrawer(doc)}
         showInstallApp={!pwa.isInstalled}
         onInstallApp={() => void handleInstallApp(true)}
+        pendingRemindersCount={reminderSummary.pendingCount}
+        dueRemindersCount={reminderSummary.dueCount}
+        onOpenReminders={() => openModalFromDrawer('reminders')}
       />
 
       <ProModal
@@ -2399,6 +2675,7 @@ export default function App() {
           historial,
           sugerenciasWhatsapp,
           trabajosAntesDespues,
+          recordatorios: cotizacionReminders,
         }}
         cloudDevices={cloudDevices}
         cloudStats={cloudStats}
@@ -2694,6 +2971,11 @@ export default function App() {
         onImportBackup={handleImportBackup}
         sugerenciasWhatsapp={sugerenciasWhatsapp}
         onSaveSugerenciasWhatsapp={(phone) => {
+          if (!phone.trim()) {
+            const clean = saveSugerenciasWhatsapp('');
+            setSugerenciasWhatsapp(clean);
+            return;
+          }
           const clean = saveSugerenciasWhatsapp(phone);
           setSugerenciasWhatsapp(clean);
         }}
@@ -2984,6 +3266,26 @@ export default function App() {
         onClose={requestBack}
         onUploadFoto={handleUploadPerfilFoto}
         onRemoveFoto={handleRemovePerfilFoto}
+      />
+
+      <RemindersModal
+        open={remindersModalOpen}
+        onClose={requestBack}
+        reminders={cotizacionReminders}
+        defaultProyecto={hoja.proyecto || taller.clienteDefault || ''}
+        defaultTotal={hojaTotalAprox}
+        defaultPartidasCount={hoja.partidas.length}
+        defaultTelefono={contratoCliente.telefono || ''}
+        tallerNombre={taller.nombre}
+        highlightedReminderId={highlightedReminderId}
+        onAddReminder={handleAddReminder}
+        onUpdateStatus={handleUpdateReminderStatus}
+        onSnoozeReminder={handleSnoozeReminder}
+        onDeleteReminder={handleDeleteReminder}
+        onNotifyNow={handleNotifyReminderNow}
+        onTestPushNotification={handleTestPushNotification}
+        onRequestPermission={handleRequestPushPermission}
+        onShowToast={showToast}
       />
 
       <FloatingInstallButton

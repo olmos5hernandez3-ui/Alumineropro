@@ -30,7 +30,7 @@ interface ModulacionCortesViewProps {
   proActive: boolean;
   sobrantes: SobranteItem[];
   onAddSobrante: (item: Omit<SobranteItem, 'id' | 'fecha'>) => void;
-  onSendToHoja: (partida: PartidaObra, goToHoja: boolean) => void;
+  onSendToHoja: (partida: PartidaObra, goToHoja: boolean) => boolean | void;
   onSendVidriosToOptimizer?: (vidrios: CorteVidrio[]) => void;
   step?: 1 | 2 | 3 | 4 | 5;
   paso5Tab?: 'cortes' | 'tramos';
@@ -393,7 +393,8 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
 
   const handleSendToHoja = () => {
     const partida = buildPartidaFromModulacion(calculoCortes, tarifasBase);
-    onSendToHoja(partida, proActive);
+    const ok = onSendToHoja(partida, proActive);
+    if (ok === false) return;
     onShowToast(
       proActive
         ? 'Tramos enviados a Hoja de Cotización'

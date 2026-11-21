@@ -49,6 +49,19 @@ interface CloudAccountRecord {
   lastBackedUpAt: number | null;
 }
 
+interface PushSubscriptionRecord {
+  deviceId: string;
+  subscription: {
+    endpoint: string;
+    expirationTime?: number | null;
+    keys?: {
+      p256dh?: string;
+      auth?: string;
+    };
+  };
+  updatedAt: number;
+}
+
 interface CloudDbShape {
   devices: Record<string, CloudDeviceRecord>;
   adminKeys: AdminKeyCloudRecord[];
@@ -56,6 +69,12 @@ interface CloudDbShape {
   revokedKeys: Record<string, number>;
   blockedDevices: Record<string, number>;
   adminPasswordOverride?: string;
+  pushVapidKeys?: {
+    publicKey: string;
+    privateKeyPem: string;
+  };
+  pushSubscriptions?: Record<string, PushSubscriptionRecord>;
+  quoteReminders?: Record<string, unknown[]>;
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -117,6 +136,11 @@ function loadDb(): CloudDbShape {
         revokedKeys,
         blockedDevices,
         ...(cleanOverride ? { adminPasswordOverride: cleanOverride } : {}),
+        ...(parsed.pushVapidKeys && parsed.pushVapidKeys.publicKey ? { pushVapidKeys: parsed.pushVapidKeys } : {}),
+        pushSubscriptions:
+          parsed.pushSubscriptions && typeof parsed.pushSubscriptions === 'object' ? parsed.pushSubscriptions : {},
+        quoteReminders:
+          parsed.quoteReminders && typeof parsed.quoteReminders === 'object' ? parsed.quoteReminders : {},
       };
       if (cleanedAutoTrials) {
         try {
@@ -130,7 +154,15 @@ function loadDb(): CloudDbShape {
   } catch {
     // fallback to clean initial store if corrupted
   }
-  return { devices: {}, adminKeys: [], accounts: {}, revokedKeys: {}, blockedDevices: {} };
+  return {
+    devices: {},
+    adminKeys: [],
+    accounts: {},
+    revokedKeys: {},
+    blockedDevices: {},
+    pushSubscriptions: {},
+    quoteReminders: {},
+  };
 }
 
 let dbFileExisted = fs.existsSync(DB_FILE);
@@ -286,6 +318,83 @@ async function startServer(): Promise<void> {
   app.get('/api/health', (_req: Request, res: Response) => {
     setNoCacheHeaders(res);
     res.json({ ok: true, serverTime: Date.now(), connectedListeners: sseClients.size });
+  });
+
+  function ensureVapidPublicKey(): string {
+    if (db.pushVapidKeys?.publicKey && db.pushVapidKeys?.privateKeyPem) {
+      return db.pushVapidKeys.publicKey;
+    }
+    const { publicKey, privateKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+    const jwk = publicKey.export({ format: 'jwk' }) as { x?: string; y?: string };
+    const xBuf = Buffer.from(String(jwk.x || ''), 'base64url');
+    const yBuf = Buffer.from(String(jwk.y || ''), 'base64url');
+    const rawUncompressed = Buffer.concat([Buffer.from([0x04]), xBuf, yBuf]);
+    const publicKeyBase64Url = rawUncompressed.toString('base64url');
+    const privateKeyPem = privateKey.export({ type: 'pkcs8', format: 'pem' }) as string;
+    db.pushVapidKeys = { publicKey: publicKeyBase64Url, privateKeyPem };
+    saveDb(db);
+    return publicKeyBase64Url;
+  }
+
+  app.get('/api/push/vapid-public-key', (_req: Request, res: Response) => {
+    setNoCacheHeaders(res);
+    syncExternalDbDeletion();
+    const publicKey = ensureVapidPublicKey();
+    res.json({ ok: true, publicKey });
+  });
+
+  app.post('/api/push/subscribe', (req: Request, res: Response) => {
+    setNoCacheHeaders(res);
+    syncExternalDbDeletion();
+    const body = (req.body || {}) as {
+      deviceId?: string;
+      subscription?: PushSubscriptionRecord['subscription'];
+    };
+    const deviceId = normalizeDeviceIdInput(String(body.deviceId || ''));
+    const endpoint = String(body.subscription?.endpoint || '').trim();
+    if (!deviceId || !endpoint) {
+      res.status(400).json({ ok: false, error: 'deviceId y subscription.endpoint requeridos' });
+      return;
+    }
+    if (!db.pushSubscriptions) db.pushSubscriptions = {};
+    db.pushSubscriptions[deviceId] = {
+      deviceId,
+      subscription: {
+        endpoint,
+        expirationTime: body.subscription?.expirationTime ?? null,
+        keys: body.subscription?.keys,
+      },
+      updatedAt: Date.now(),
+    };
+    saveDb(db);
+    res.json({ ok: true });
+  });
+
+  app.post('/api/push/unsubscribe', (req: Request, res: Response) => {
+    setNoCacheHeaders(res);
+    syncExternalDbDeletion();
+    const body = (req.body || {}) as { deviceId?: string };
+    const deviceId = normalizeDeviceIdInput(String(body.deviceId || ''));
+    if (deviceId && db.pushSubscriptions && deviceId in db.pushSubscriptions) {
+      delete db.pushSubscriptions[deviceId];
+      saveDb(db);
+    }
+    res.json({ ok: true });
+  });
+
+  app.post('/api/push/reminders', (req: Request, res: Response) => {
+    setNoCacheHeaders(res);
+    syncExternalDbDeletion();
+    const body = (req.body || {}) as { deviceId?: string; reminders?: unknown[] };
+    const deviceId = normalizeDeviceIdInput(String(body.deviceId || ''));
+    if (!deviceId || !Array.isArray(body.reminders)) {
+      res.status(400).json({ ok: false, error: 'deviceId y reminders requeridos' });
+      return;
+    }
+    if (!db.quoteReminders) db.quoteReminders = {};
+    db.quoteReminders[deviceId] = body.reminders.slice(0, 100);
+    saveDb(db);
+    res.json({ ok: true, count: db.quoteReminders[deviceId].length });
   });
 
   app.get('/api/devices/stream', (req: Request, res: Response) => {

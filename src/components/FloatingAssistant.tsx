@@ -6,6 +6,7 @@ import {
 } from '../utils/alumineroLogic';
 import {
   compressImageToDataUrl,
+  formatWhatsappUrlDigits,
   sanitizeWhatsappNumber,
 } from '../utils/storageHelpers';
 import { PhotoPickerButtons } from './PhotoPickerButtons';
@@ -89,6 +90,7 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
   const [errorB, setErrorB] = useState('');
 
   const cleanWa = sanitizeWhatsappNumber(whatsappNumber);
+  const waUrlDigits = formatWhatsappUrlDigits(whatsappNumber);
 
   const perfilesByFamilia = useMemo(() => {
     const grouped: Record<PerfilFamilia, PerfilCatalogoItem[]> = {
@@ -145,8 +147,8 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
       `• Equipo origen: ${deviceId}`,
     ];
     const message = messageLines.join('\n');
-    const waUrl = cleanWa
-      ? `https://wa.me/${cleanWa}?text=${encodeURIComponent(message)}`
+    const waUrl = waUrlDigits
+      ? `https://wa.me/${waUrlDigits}?text=${encodeURIComponent(message)}`
       : `https://wa.me/?text=${encodeURIComponent(message)}`;
 
     try {
@@ -204,7 +206,7 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
       ...(selectedPerfil && cleanCustom ? [`• Nombre/nota adicional: ${cleanCustom}`] : []),
       ...(selectedPerfil ? [`• Medidas catálogo: ${selectedPerfil.dimensiones}`] : []),
       `• Equipo origen: ${deviceId}`,
-      ...(cleanWa ? [`• WhatsApp Admin: +${cleanWa}`] : []),
+      ...(cleanWa ? [`• WhatsApp Admin: +52 ${cleanWa}`] : []),
       '• Solicitud: Revisar y aprobar foto para el catálogo oficial.',
     ];
     const message = messageLines.join('\n');
@@ -257,8 +259,8 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
 
       // Respaldo universal: descarga la foto JPEG optimizada y abre WhatsApp del Admin con los datos del perfil
       triggerFileDownload(photoFile);
-      const waUrl = cleanWa
-        ? `https://wa.me/${cleanWa}?text=${encodeURIComponent(message)}`
+      const waUrl = waUrlDigits
+        ? `https://wa.me/${waUrlDigits}?text=${encodeURIComponent(message)}`
         : `https://wa.me/?text=${encodeURIComponent(message)}`;
       openExternalLinkSafe(waUrl);
       onShowToast(

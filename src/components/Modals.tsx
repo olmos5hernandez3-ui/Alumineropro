@@ -71,6 +71,7 @@ import {
   CloudAccountSession,
   compressImageToDataUrl,
   dataUrlToJpegFile,
+  formatWhatsappUrlDigits,
   FormulaPersonalizada,
   LicenciaState,
   loadAdminPasswordOverride,
@@ -84,6 +85,7 @@ import {
   saveReferralSenderName,
   TrabajoAntesDespuesItem,
   triggerFileDownload,
+  validateWhatsappNumber,
 } from '../utils/storageHelpers';
 import { PerfilSectionSvg } from './PerfilSectionSvg';
 import { PhotoPickerButtons } from './PhotoPickerButtons';
@@ -1097,7 +1099,7 @@ const FALLBACK_MANIFEST_JSON = JSON.stringify(
   2
 );
 
-const FALLBACK_SW_JS = `const CACHE_NAME = 'aluminero-pro-v16-20261120';
+const FALLBACK_SW_JS = `const CACHE_NAME = 'aluminero-pro-v17-20261121';
 const APP_SHELL_ASSETS = [
   './',
   './index.html',
@@ -1109,6 +1111,41 @@ const APP_SHELL_ASSETS = [
   './pwa-maskable-512x512.png',
   './apple-touch-icon.png',
 ];
+
+function normalizePushPayload(raw) {
+  const fallback = {
+    title: 'Recordatorio de Cotización · Aluminero Pro',
+    body: 'Tienes una cotización pendiente por dar seguimiento al cliente.',
+    tag: 'aluminero-quote-push',
+    renotify: true,
+    icon: './pwa-192x192.png',
+    badge: './pwa-192x192.png',
+    requireInteraction: true,
+    actions: [
+      { action: 'open-quote', title: 'Abrir cotización' },
+      { action: 'snooze-1d', title: 'Posponer 1 día' },
+    ],
+    data: { type: 'quote-followup', reminderId: '', url: './?view=hoja' },
+  };
+  if (!raw || typeof raw !== 'object') return fallback;
+  const data = raw.data && typeof raw.data === 'object' ? raw.data : {};
+  const reminderId = String(raw.reminderId || data.reminderId || '').trim();
+  return {
+    title: typeof raw.title === 'string' && raw.title.trim() ? raw.title.trim() : fallback.title,
+    body: typeof raw.body === 'string' && raw.body.trim() ? raw.body.trim() : fallback.body,
+    tag: typeof raw.tag === 'string' && raw.tag.trim() ? raw.tag.trim() : fallback.tag,
+    renotify: raw.renotify !== false,
+    icon: typeof raw.icon === 'string' && raw.icon.trim() ? raw.icon : fallback.icon,
+    badge: typeof raw.badge === 'string' && raw.badge.trim() ? raw.badge : fallback.badge,
+    requireInteraction: raw.requireInteraction !== false,
+    actions: Array.isArray(raw.actions) && raw.actions.length > 0 ? raw.actions : fallback.actions,
+    data: {
+      type: 'quote-followup',
+      reminderId,
+      url: typeof data.url === 'string' && data.url.trim() ? data.url : (reminderId ? './?view=hoja&reminderId=' + encodeURIComponent(reminderId) : fallback.data.url),
+    },
+  };
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -1123,9 +1160,73 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'SKIP_WAITING') {
+  const msg = event.data;
+  if (!msg || typeof msg !== 'object') return;
+  if (msg.type === 'SKIP_WAITING') {
     self.skipWaiting();
+    return;
   }
+  if (msg.type === 'SHOW_QUOTE_REMINDER') {
+    const payload = normalizePushPayload(msg.payload || {});
+    event.waitUntil(
+      self.registration.showNotification(payload.title, {
+        body: payload.body,
+        tag: payload.tag,
+        renotify: payload.renotify,
+        icon: payload.icon,
+        badge: payload.badge,
+        requireInteraction: payload.requireInteraction,
+        actions: payload.actions,
+        data: payload.data,
+      })
+    );
+  }
+});
+
+self.addEventListener('push', (event) => {
+  let raw = {};
+  if (event.data) {
+    try { raw = event.data.json(); } catch {
+      try { const text = event.data.text(); raw = text ? { body: text } : {}; } catch { raw = {}; }
+    }
+  }
+  const payload = normalizePushPayload(raw);
+  event.waitUntil(
+    self.registration.showNotification(payload.title, {
+      body: payload.body,
+      tag: payload.tag,
+      renotify: payload.renotify,
+      icon: payload.icon,
+      badge: payload.badge,
+      requireInteraction: payload.requireInteraction,
+      actions: payload.actions,
+      data: payload.data,
+    })
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  const notification = event.notification;
+  const action = event.action || 'open-quote';
+  const data = (notification && notification.data) || {};
+  const reminderId = typeof data.reminderId === 'string' ? data.reminderId : '';
+  notification.close();
+  const targetUrl = action === 'snooze-1d'
+    ? './?reminderAction=snooze-1d&reminderId=' + encodeURIComponent(reminderId)
+    : (typeof data.url === 'string' && data.url.trim() ? data.url : './?view=hoja&reminderId=' + encodeURIComponent(reminderId));
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if ('focus' in client) {
+          client.focus().catch(() => {});
+          client.postMessage({ type: 'SW_REMINDER_ACTION', action, reminderId });
+          return;
+        }
+      }
+      if (self.clients.openWindow) return self.clients.openWindow(targetUrl);
+      return undefined;
+    })
+  );
 });
 
 self.addEventListener('activate', (event) => {
@@ -1452,6 +1553,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   const [downloadingHtml, setDownloadingHtml] = useState(false);
   const [downloadingZip, setDownloadingZip] = useState(false);
   const [waSugerenciasInput, setWaSugerenciasInput] = useState(sugerenciasWhatsapp);
+  const [waSugerenciasError, setWaSugerenciasError] = useState('');
   const [nowTick, setNowTick] = useState<number>(() => Date.now());
   const [pendingDeleteKeyRec, setPendingDeleteKeyRec] = useState<AdminKeyRecord | null>(null);
   const [pendingRevokePromo, setPendingRevokePromo] = useState<{
@@ -1787,6 +1889,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
         hasNameNow && hasPhoneNow ? generateActivationKey(deviceId, planIdx, parsedCustomDays) : ''
       );
       setWaSugerenciasInput(sugerenciasWhatsapp);
+      setWaSugerenciasError('');
       setPendingDeleteKeyRec(null);
       setPendingRevokePromo(null);
       setPendingRevokeFree(null);
@@ -3368,37 +3471,73 @@ export const AdminModal: React.FC<AdminModalProps> = ({
               WhatsApp receptor de Sugerencias (Líneas / Perfiles)
             </label>
             <p className="m-0 text-[11.5px] opacity-85 mb-2 leading-snug">
-              Incluye código de país sin símbolos (ej. <span className="mono font-bold">5215512345678</span>). Las sugerencias enviadas desde el buzón abrirán este número.
+              Ingresa exactamente <strong>10 dígitos obligatorios</strong> sin lada internacional ni símbolos (ej. <span className="mono font-bold">5512345678</span>). Las sugerencias enviadas desde el buzón abrirán este número.
             </p>
             <div className="flex flex-wrap gap-2">
               <input
                 id="inp-admin-wa-sugerencias"
                 type="tel"
                 inputMode="numeric"
+                maxLength={24}
                 value={waSugerenciasInput}
-                onChange={(e) => setWaSugerenciasInput(e.target.value)}
-                placeholder="Ej. 5215512345678"
-                className="flex-1 min-w-[180px] min-h-[42px] rounded-xl border border-slate-300 px-3 mono text-[13.5px] font-bold bg-white text-slate-900"
+                aria-invalid={Boolean(waSugerenciasError)}
+                aria-describedby={waSugerenciasError ? 'err-admin-wa-sugerencias' : undefined}
+                onChange={(e) => {
+                  setWaSugerenciasInput(e.target.value);
+                  if (waSugerenciasError) setWaSugerenciasError('');
+                }}
+                placeholder="Ej. 5512345678"
+                className={`flex-1 min-w-[180px] min-h-[42px] rounded-xl border px-3 mono text-[13.5px] font-bold bg-white text-slate-900 ${
+                  waSugerenciasError ? 'border-red-500 ring-2 ring-red-400/30' : 'border-slate-300'
+                }`}
               />
               <button
                 type="button"
                 id="btn-admin-save-wa-sugerencias"
                 onClick={() => {
-                  const clean = sanitizeWhatsappNumber(waSugerenciasInput);
-                  setWaSugerenciasInput(clean);
-                  onSaveSugerenciasWhatsapp(clean);
-                  onShowToast(
-                    clean
-                      ? `WhatsApp receptor guardado: ${clean}`
-                      : 'Número receptor limpiado (abrirá selector de WhatsApp)',
-                    true
-                  );
+                  const validation = validateWhatsappNumber(waSugerenciasInput);
+                  if (!validation.valid) {
+                    const errMsg =
+                      validation.error ||
+                      'Formato inválido. Ingresa exactamente 10 dígitos numéricos.';
+                    setWaSugerenciasError(errMsg);
+                    onShowToast(errMsg, false);
+                    return;
+                  }
+                  setWaSugerenciasError('');
+                  setWaSugerenciasInput(validation.digits);
+                  onSaveSugerenciasWhatsapp(validation.digits);
+                  onShowToast(`WhatsApp receptor guardado: ${validation.digits}`, true);
                 }}
                 className="min-h-[42px] px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[12.5px] font-extrabold cursor-pointer shrink-0"
               >
                 Guardar WhatsApp
               </button>
+              {(sugerenciasWhatsapp || waSugerenciasInput.trim()) && (
+                <button
+                  type="button"
+                  id="btn-admin-clear-wa-sugerencias"
+                  onClick={() => {
+                    setWaSugerenciasError('');
+                    setWaSugerenciasInput('');
+                    onSaveSugerenciasWhatsapp('');
+                    onShowToast('Número receptor limpiado (abrirá selector de WhatsApp)', true);
+                  }}
+                  className="min-h-[42px] px-3 rounded-xl border border-slate-300 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[12px] font-bold cursor-pointer shrink-0"
+                >
+                  Limpiar
+                </button>
+              )}
             </div>
+            {waSugerenciasError && (
+              <p
+                id="err-admin-wa-sugerencias"
+                role="alert"
+                className="m-0 mt-2 text-[12px] font-bold text-red-600 dark:text-red-400"
+              >
+                {waSugerenciasError}
+              </p>
+            )}
           </div>
 
           {onPublishTrabajoAprobado && (
@@ -4422,6 +4561,7 @@ export const SugerenciasModal: React.FC<SugerenciasModalProps> = ({
   if (!open) return null;
 
   const cleanWa = sanitizeWhatsappNumber(whatsappNumber);
+  const waUrlDigits = formatWhatsappUrlDigits(whatsappNumber);
 
   const handleSelectPhoto = async (file: File) => {
     setErrorMsg('');
@@ -4454,12 +4594,12 @@ export const SugerenciasModal: React.FC<SugerenciasModalProps> = ({
       `• Solicitud: ${cleanDetalle}`,
       ...(nombreTaller.trim() ? [`• Taller / Maestro: ${nombreTaller.trim()}`] : []),
       `• Equipo: ${deviceId}`,
-      ...(cleanWa ? [`• WhatsApp Admin: +${cleanWa}`] : []),
+      ...(cleanWa ? [`• WhatsApp Admin: +52 ${cleanWa}`] : []),
     ];
     const message = lines.join('\n');
     const encoded = encodeURIComponent(message);
-    const waUrl = cleanWa
-      ? `https://wa.me/${cleanWa}?text=${encoded}`
+    const waUrl = waUrlDigits
+      ? `https://wa.me/${waUrlDigits}?text=${encoded}`
       : `https://wa.me/?text=${encoded}`;
 
     try {

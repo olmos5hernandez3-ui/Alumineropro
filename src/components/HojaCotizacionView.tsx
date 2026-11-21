@@ -17,8 +17,14 @@ import {
   SobranteItem,
   TallerConfig,
 } from '../utils/storageHelpers';
+import {
+  CotizacionReminder,
+  CotizacionReminderStatus,
+} from '../utils/pushReminders';
 import { ContratoModal } from './ContratoModal';
+import { CotizacionRemindersPanel } from './CotizacionRemindersPanel';
 import { PartidaMiniSvg } from './PartidaMiniSvg';
+import { PdfHeaderCustomizerModal, PdfHeaderPreview } from './PdfHeaderCustomizer';
 import { PerfilSectionSvg } from './PerfilSectionSvg';
 
 const APERTURA_PREVIEW_LABELS: Record<string, string> = {
@@ -40,6 +46,7 @@ interface Props {
   obrasAprobadas: ObraAprobadaApartado[];
   perfilFotos: PerfilFotosMap;
   onUpdateHoja: (patch: Partial<HojaState>) => void;
+  onUpdateTaller?: (patch: Partial<TallerConfig>) => void;
   onUpdateContratoCliente: (patch: Partial<ContratoClienteInfo>) => void;
   onEditarPartida: (p: PartidaObra) => void;
   onEliminarPartida: (id: string) => void;
@@ -51,6 +58,15 @@ interface Props {
   onPushSubModal?: (sub: 'contrato') => void;
   onRequestBack?: () => void;
   onRegisterCloseSubModal?: (fn: (() => void) | null) => void;
+  reminders?: CotizacionReminder[];
+  highlightedReminderId?: string | null;
+  onAddReminder?: (reminder: CotizacionReminder) => void;
+  onUpdateReminderStatus?: (id: string, status: CotizacionReminderStatus) => void;
+  onSnoozeReminder?: (id: string) => void;
+  onDeleteReminder?: (id: string) => void;
+  onNotifyReminderNow?: (reminder: CotizacionReminder) => Promise<void>;
+  onTestPushNotification?: () => Promise<void>;
+  onRequestPushPermission?: () => Promise<NotificationPermission | 'unsupported'>;
   onShowToast: (msg: string, topSuccess?: boolean) => void;
 }
 
@@ -63,6 +79,7 @@ export const HojaCotizacionView: React.FC<Props> = ({
   obrasAprobadas,
   perfilFotos,
   onUpdateHoja,
+  onUpdateTaller,
   onUpdateContratoCliente,
   onEditarPartida,
   onEliminarPartida,
@@ -74,10 +91,20 @@ export const HojaCotizacionView: React.FC<Props> = ({
   onPushSubModal,
   onRequestBack,
   onRegisterCloseSubModal,
+  reminders = [],
+  highlightedReminderId = null,
+  onAddReminder,
+  onUpdateReminderStatus,
+  onSnoozeReminder,
+  onDeleteReminder,
+  onNotifyReminderNow,
+  onTestPushNotification,
+  onRequestPushPermission,
   onShowToast,
 }) => {
   const [showDespieceObra, setShowDespieceObra] = useState(false);
   const [contratoOpen, setContratoOpen] = useState(false);
+  const [pdfHeaderModalOpen, setPdfHeaderModalOpen] = useState(false);
 
   useEffect(() => {
     if (!onRegisterCloseSubModal) return;
@@ -217,31 +244,25 @@ export const HojaCotizacionView: React.FC<Props> = ({
             )}
           </div>
 
-          {(taller.logoDataUrl || taller.nombre || hoja.proyecto) && (
-            <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5 min-w-0">
-                {taller.logoDataUrl && (
-                  <img
-                    src={taller.logoDataUrl}
-                    alt="Logo del taller"
-                    className="w-10 h-10 rounded-lg object-contain bg-white border border-slate-200 shrink-0"
-                  />
-                )}
-                <div className="min-w-0">
-                  <strong className="block text-[13px] font-extrabold text-slate-900 truncate">
-                    {taller.nombre || 'Presupuesto de Aluminio y Vidrio'}
-                  </strong>
-                  <span className="block text-[11px] text-slate-500 truncate">
-                    {hoja.proyecto || taller.clienteDefault || 'Cliente General'}
-                    {taller.tel ? ` · Tel: ${taller.tel}` : ''}
-                  </span>
-                </div>
+          <div className="mb-3 flex flex-col gap-2">
+            <PdfHeaderPreview
+              taller={taller}
+              proyectoNombre={hoja.proyecto}
+              kind="cotizacion"
+            />
+            {onUpdateTaller && (
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  id="btn-hoja-editar-encabezado-inline"
+                  onClick={() => setPdfHeaderModalOpen(true)}
+                  className="text-[11.5px] font-bold text-blue-700 hover:underline cursor-pointer"
+                >
+                  Personalizar logo, color y contacto del encabezado PDF
+                </button>
               </div>
-              <span className="text-[10.5px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-md px-2 py-1 shrink-0">
-                Vista Previa
-              </span>
-            </div>
-          )}
+            )}
+          </div>
 
           {hoja.partidas.length === 0 ? (
             <p className="text-[12.5px] text-slate-500 p-5 text-center border border-dashed border-slate-200 rounded-xl">
@@ -410,8 +431,19 @@ export const HojaCotizacionView: React.FC<Props> = ({
               >
                 📝 Convertir en Contrato
               </button>
+              {onUpdateTaller && (
+                <button
+                  type="button"
+                  id="btn-personalizar-encabezado-pdf"
+                  onClick={() => setPdfHeaderModalOpen(true)}
+                  className="w-full min-h-[44px] px-4 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-800 font-bold text-[13px] cursor-pointer"
+                >
+                  Personalizar Encabezado PDF (Logo y Contacto)
+                </button>
+              )}
               <button
                 type="button"
+                id="btn-generar-pdf-cliente"
                 onClick={() => {
                   if (hoja.partidas.length === 0) {
                     onShowToast('Agrega piezas antes de generar el PDF');
@@ -545,6 +577,35 @@ export const HojaCotizacionView: React.FC<Props> = ({
           )}
         </div>
       </div>
+
+      {onAddReminder &&
+        onUpdateReminderStatus &&
+        onSnoozeReminder &&
+        onDeleteReminder &&
+        onNotifyReminderNow &&
+        onTestPushNotification &&
+        onRequestPushPermission && (
+          <div className="mt-4">
+            <CotizacionRemindersPanel
+              reminders={reminders}
+              defaultProyecto={hoja.proyecto || taller.clienteDefault || ''}
+              defaultTotal={grandTotal}
+              defaultPartidasCount={hoja.partidas.length}
+              defaultTelefono={contratoCliente.telefono || ''}
+              tallerNombre={taller.nombre}
+              highlightedReminderId={highlightedReminderId}
+              onAddReminder={onAddReminder}
+              onUpdateStatus={onUpdateReminderStatus}
+              onSnoozeReminder={onSnoozeReminder}
+              onDeleteReminder={onDeleteReminder}
+              onNotifyNow={onNotifyReminderNow}
+              onTestPushNotification={onTestPushNotification}
+              onRequestPermission={onRequestPushPermission}
+              onShowToast={onShowToast}
+            />
+          </div>
+        )}
+
       <ContratoModal
         open={contratoOpen}
         hoja={hoja}
@@ -556,6 +617,25 @@ export const HojaCotizacionView: React.FC<Props> = ({
         onClose={() => (onRequestBack ? onRequestBack() : setContratoOpen(false))}
         onShowToast={onShowToast}
       />
+
+      {onUpdateTaller && (
+        <PdfHeaderCustomizerModal
+          open={pdfHeaderModalOpen}
+          taller={taller}
+          proyectoNombre={hoja.proyecto}
+          onUpdateTaller={onUpdateTaller}
+          onClose={() => setPdfHeaderModalOpen(false)}
+          onExportPdf={
+            hoja.partidas.length > 0
+              ? () => {
+                  generarPdfClienteLimpio(hoja, taller);
+                  onShowToast('PDF para Cliente descargado', true);
+                }
+              : undefined
+          }
+          onShowToast={onShowToast}
+        />
+      )}
     </section>
   );
 };

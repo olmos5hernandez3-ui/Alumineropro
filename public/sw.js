@@ -1,4 +1,4 @@
-const CACHE_NAME = 'aluminero-pro-v1';
+const CACHE_NAME = 'aluminero-pro-v17';
 const APP_SHELL_ASSETS = [
   '/',
   '/index.html',
@@ -9,6 +9,51 @@ const APP_SHELL_ASSETS = [
   '/pwa-maskable-512x512.png',
   '/apple-touch-icon.png',
 ];
+
+function normalizePushPayload(raw) {
+  const fallback = {
+    title: 'Recordatorio de Cotización · Aluminero Pro',
+    body: 'Tienes una cotización pendiente por dar seguimiento al cliente.',
+    tag: 'aluminero-quote-push',
+    renotify: true,
+    icon: './pwa-192x192.png',
+    badge: './pwa-192x192.png',
+    requireInteraction: true,
+    actions: [
+      { action: 'open-quote', title: 'Abrir cotización' },
+      { action: 'snooze-1d', title: 'Posponer 1 día' },
+    ],
+    data: {
+      type: 'quote-followup',
+      reminderId: '',
+      url: './?view=hoja',
+    },
+  };
+
+  if (!raw || typeof raw !== 'object') return fallback;
+  const data = raw.data && typeof raw.data === 'object' ? raw.data : {};
+  const reminderId = String(raw.reminderId || data.reminderId || '').trim();
+  return {
+    title: typeof raw.title === 'string' && raw.title.trim() ? raw.title.trim() : fallback.title,
+    body: typeof raw.body === 'string' && raw.body.trim() ? raw.body.trim() : fallback.body,
+    tag: typeof raw.tag === 'string' && raw.tag.trim() ? raw.tag.trim() : fallback.tag,
+    renotify: raw.renotify !== false,
+    icon: typeof raw.icon === 'string' && raw.icon.trim() ? raw.icon : fallback.icon,
+    badge: typeof raw.badge === 'string' && raw.badge.trim() ? raw.badge : fallback.badge,
+    requireInteraction: raw.requireInteraction !== false,
+    actions: Array.isArray(raw.actions) && raw.actions.length > 0 ? raw.actions : fallback.actions,
+    data: {
+      type: 'quote-followup',
+      reminderId,
+      url:
+        typeof data.url === 'string' && data.url.trim()
+          ? data.url
+          : reminderId
+            ? `./?view=hoja&reminderId=${encodeURIComponent(reminderId)}`
+            : fallback.data.url,
+    },
+  };
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -27,6 +72,94 @@ self.addEventListener('activate', (event) => {
         Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))
       )
       .then(() => self.clients.claim())
+  );
+});
+
+self.addEventListener('message', (event) => {
+  const msg = event.data;
+  if (!msg || typeof msg !== 'object') return;
+  if (msg.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+    return;
+  }
+  if (msg.type === 'SHOW_QUOTE_REMINDER') {
+    const payload = normalizePushPayload(msg.payload || {});
+    event.waitUntil(
+      self.registration.showNotification(payload.title, {
+        body: payload.body,
+        tag: payload.tag,
+        renotify: payload.renotify,
+        icon: payload.icon,
+        badge: payload.badge,
+        requireInteraction: payload.requireInteraction,
+        actions: payload.actions,
+        data: payload.data,
+      })
+    );
+  }
+});
+
+self.addEventListener('push', (event) => {
+  let raw = {};
+  if (event.data) {
+    try {
+      raw = event.data.json();
+    } catch {
+      try {
+        const text = event.data.text();
+        raw = text ? { body: text } : {};
+      } catch {
+        raw = {};
+      }
+    }
+  }
+  const payload = normalizePushPayload(raw);
+  event.waitUntil(
+    self.registration.showNotification(payload.title, {
+      body: payload.body,
+      tag: payload.tag,
+      renotify: payload.renotify,
+      icon: payload.icon,
+      badge: payload.badge,
+      requireInteraction: payload.requireInteraction,
+      actions: payload.actions,
+      data: payload.data,
+    })
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  const notification = event.notification;
+  const action = event.action || 'open-quote';
+  const data = (notification && notification.data) || {};
+  const reminderId = typeof data.reminderId === 'string' ? data.reminderId : '';
+  notification.close();
+
+  const targetUrl =
+    action === 'snooze-1d'
+      ? `./?reminderAction=snooze-1d&reminderId=${encodeURIComponent(reminderId)}`
+      : typeof data.url === 'string' && data.url.trim()
+        ? data.url
+        : `./?view=hoja&reminderId=${encodeURIComponent(reminderId)}`;
+
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if ('focus' in client) {
+          client.focus().catch(() => {});
+          client.postMessage({
+            type: 'SW_REMINDER_ACTION',
+            action,
+            reminderId,
+          });
+          return;
+        }
+      }
+      if (self.clients.openWindow) {
+        return self.clients.openWindow(targetUrl);
+      }
+      return undefined;
+    })
   );
 });
 

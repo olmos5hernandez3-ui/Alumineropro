@@ -10,6 +10,7 @@ import {
   TrabajoParams,
 } from './alumineroLogic';
 import { ContratoClienteInfo, formatMXN, HojaState, TallerConfig } from './storageHelpers';
+import { buildPdfHeaderSpec, PdfHeaderSpec } from './pdfHeaderUtils';
 
 const APERTURA_LABELS: Record<string, string> = {
   corrediza: 'Corrediza',
@@ -20,6 +21,82 @@ const APERTURA_LABELS: Record<string, string> = {
   oscilobatiente: 'Oscilobatiente',
   plegable: 'Plegable (libro)',
 };
+
+function drawWorkshopLogoInHeader(doc: jsPDF, logoDataUrl: string, x: number, y: number, size: number): void {
+  if (!logoDataUrl) return;
+  try {
+    const fmt = logoDataUrl.startsWith('data:image/png') ? 'PNG' : 'JPEG';
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(x, y, size, size, 2, 2, 'F');
+    doc.addImage(logoDataUrl, fmt, x + 1, y + 1, size - 2, size - 2);
+  } catch {
+    // ignore invalid image
+  }
+}
+
+function drawStandardWorkshopHeader(
+  doc: jsPDF,
+  spec: PdfHeaderSpec,
+  dateLabel: string
+): void {
+  const h = spec.headerHeightMm;
+  doc.setFillColor(...spec.theme.bgRgb);
+  doc.rect(0, 0, 216, h, 'F');
+  doc.setFillColor(...spec.theme.accentRgb);
+  doc.rect(0, h - 1.5, 216, 1.5, 'F');
+
+  const logoSize = h >= 34 ? 22 : 19;
+  const logoY = Math.max(4.5, (h - 1.5 - logoSize) / 2);
+  if (spec.showLogo) {
+    drawWorkshopLogoInHeader(doc, spec.logoDataUrl, 14, logoY, logoSize);
+  }
+
+  const textX = spec.showLogo ? 14 + logoSize + 5 : 14;
+  const maxFullW = 202 - textX;
+  const maxHeadlineW = Math.max(70, maxFullW - 40);
+
+  doc.setTextColor(...spec.theme.mutedRgb);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.text(`Fecha: ${dateLabel}`, 202, 10.5, { align: 'right' });
+
+  doc.setTextColor(...spec.theme.textRgb);
+  doc.setFont('helvetica', 'bold');
+  const headlineSize = spec.headline.length > 34 ? 12.5 : 14.5;
+  doc.setFontSize(headlineSize);
+  const headlineLines = doc.splitTextToSize(spec.headline, maxHeadlineW) as string[];
+  doc.text(headlineLines[0] || spec.headline, textX, 11.5);
+
+  let cursorY = 17.5;
+  if (spec.workshopName) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.8);
+    doc.setTextColor(...spec.theme.accentRgb);
+    const subParts = [spec.documentLabel, spec.eslogan].filter(Boolean).join(' · ');
+    const subLines = doc.splitTextToSize(subParts, maxFullW) as string[];
+    doc.text(subLines[0] || '', textX, cursorY);
+    cursorY += 5.2;
+  } else if (spec.eslogan) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.8);
+    doc.setTextColor(...spec.theme.mutedRgb);
+    const esloganLines = doc.splitTextToSize(spec.eslogan, maxFullW) as string[];
+    doc.text(esloganLines[0] || '', textX, cursorY);
+    cursorY += 5.2;
+  }
+
+  if (spec.contactParts.length > 0) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(...spec.theme.mutedRgb);
+    const contactText = spec.contactParts.join(' · ');
+    const contactLines = doc.splitTextToSize(contactText, maxFullW) as string[];
+    doc.text(contactLines[0] || '', textX, cursorY);
+    if (contactLines[1]) {
+      doc.text(contactLines[1], textX, cursorY + 4.3);
+    }
+  }
+}
 
 export function generarPdfTecnico(
   params: TrabajoParams,
@@ -36,37 +113,28 @@ export function generarPdfTecnico(
       ? ` · ${APERTURA_LABELS[params.apertura] || params.apertura}`
       : '';
 
-  doc.setFillColor(11, 37, 69);
-  doc.rect(0, 0, 216, 26, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16);
-  doc.text('ALUMINERO PRO — ORDEN TÉCNICA DE CORTE', 14, 12);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9.5);
-  doc.text(
-    `${taller.nombre || 'Taller de Aluminio'} · Fecha: ${new Date().toLocaleDateString('es-MX')}`,
-    14,
-    19
-  );
+  const dateLabel = new Date().toLocaleDateString('es-MX');
+  const headerSpec = buildPdfHeaderSpec(taller, 'tecnico', { dateLabel });
+  drawStandardWorkshopHeader(doc, headerSpec, dateLabel);
 
+  const infoY = headerSpec.bodyStartY - 1;
   doc.setTextColor(15, 23, 42);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11.5);
   doc.text(
     `${linea.nombre}${aperturaLabel} (${params.anchoCm} × ${params.altoCm} cm) · ${params.cantidad} pza(s)`,
     14,
-    36
+    infoY
   );
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9.5);
   doc.text(
     `Acabado: ${color.nombre} · ${linea.esMosquitero ? 'Tela Mosquitera' : `Panel: ${panelDesc}`} · Área: ${cot.areaRealM2.toFixed(2)} m²`,
     14,
-    43
+    infoY + 7
   );
 
-  let y = 53;
+  let y = infoY + 17;
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
   doc.text('1. Lista de Cortes de Aluminio', 14, y);
@@ -303,34 +371,16 @@ function drawPartidaCroquisPdf(
 
 export function generarPdfClienteLimpio(hoja: HojaState, taller: TallerConfig): void {
   const doc = new jsPDF({ unit: 'mm', format: 'letter' });
+  const dateLabel = new Date().toLocaleDateString('es-MX');
+  const headerSpec = buildPdfHeaderSpec(taller, 'cotizacion', { dateLabel });
 
-  doc.setFillColor(11, 37, 69);
-  doc.rect(0, 0, 216, 30, 'F');
-  if (taller.logoDataUrl) {
-    try {
-      const fmt = taller.logoDataUrl.startsWith('data:image/png') ? 'PNG' : 'JPEG';
-      doc.addImage(taller.logoDataUrl, fmt, 14, 5, 20, 20);
-    } catch {
-      // ignore invalid image
-    }
-  }
-  const textX = taller.logoDataUrl ? 38 : 14;
-  doc.setTextColor(255, 255, 255);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(15);
-  doc.text(taller.nombre || 'COTIZACIÓN DE ALUMINIO Y VIDRIO', textX, 13);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9.5);
-  doc.text(
-    `Tel: ${taller.tel || 'Sin especificar'} · Fecha: ${new Date().toLocaleDateString('es-MX')}`,
-    textX,
-    20
-  );
+  drawStandardWorkshopHeader(doc, headerSpec, dateLabel);
 
+  const clientY = headerSpec.bodyStartY - 1;
   doc.setTextColor(15, 23, 42);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(12);
-  doc.text(`Proyecto / Cliente: ${hoja.proyecto || taller.clienteDefault || 'Cliente General'}`, 14, 40);
+  doc.text(`Proyecto / Cliente: ${hoja.proyecto || taller.clienteDefault || 'Cliente General'}`, 14, clientY);
 
   const drawTableHeader = (headerY: number) => {
     doc.setFillColor(241, 245, 249);
@@ -345,7 +395,7 @@ export function generarPdfClienteLimpio(hoja: HojaState, taller: TallerConfig): 
     doc.text('Importe', 200, headerY, { align: 'right' });
   };
 
-  let y = 50;
+  let y = clientY + 10;
   drawTableHeader(y);
   y += 6.5;
 
@@ -452,57 +502,68 @@ export function generarPdfContratoServicio(
       })
     : 'A convenir con el cliente';
 
+  const headerSpec = buildPdfHeaderSpec(taller, 'contrato', { dateLabel: fechaHoy });
+  const h = headerSpec.headerHeightMm;
+
   // Encabezado ejecutivo del taller
-  doc.setFillColor(11, 37, 69);
-  doc.rect(0, 0, 216, 35, 'F');
-  if (taller.logoDataUrl) {
-    try {
-      const fmt = taller.logoDataUrl.startsWith('data:image/png') ? 'PNG' : 'JPEG';
-      doc.addImage(taller.logoDataUrl, fmt, 14, 6, 22, 22);
-    } catch {
-      // ignora logo inválido
-    }
+  doc.setFillColor(...headerSpec.theme.bgRgb);
+  doc.rect(0, 0, 216, h, 'F');
+  doc.setFillColor(...headerSpec.theme.accentRgb);
+  doc.rect(0, h - 1.5, 216, 1.5, 'F');
+  if (headerSpec.showLogo) {
+    drawWorkshopLogoInHeader(doc, headerSpec.logoDataUrl, 14, 6.5, 22);
   }
-  const headX = taller.logoDataUrl ? 40 : 14;
-  doc.setTextColor(255, 255, 255);
+  const headX = headerSpec.showLogo ? 41 : 14;
+  doc.setTextColor(...headerSpec.theme.textRgb);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(13);
-  doc.text('CONTRATO DE PRESTACIÓN DE SERVICIOS', headX, 11.5);
+  doc.setFontSize(12.5);
+  doc.text(headerSpec.documentLabel, headX, 11);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
-  doc.text(taller.nombre || 'Taller de Aluminio y Vidrio', headX, 18);
+  doc.text(headerSpec.workshopName || 'Taller de Aluminio y Vidrio', headX, 17);
+  let infoY = 22;
+  if (headerSpec.eslogan) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.2);
+    doc.setTextColor(...headerSpec.theme.accentRgb);
+    const esloganLines = doc.splitTextToSize(headerSpec.eslogan, 108) as string[];
+    doc.text(esloganLines[0] || '', headX, infoY);
+    infoY += 4.5;
+  }
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
-  const tallerInfoLine = [
-    `Tel: ${taller.tel || 'Sin especificar'}`,
-    taller.ubicacion ? `Ubicación: ${taller.ubicacion}` : '',
-  ]
-    .filter(Boolean)
-    .join(' · ');
-  const wrappedTallerInfo = doc.splitTextToSize(tallerInfoLine, 112) as string[];
-  doc.text(wrappedTallerInfo[0] || '', headX, 23.5);
+  doc.setFontSize(8.3);
+  doc.setTextColor(...headerSpec.theme.mutedRgb);
+  const tallerInfoLine =
+    headerSpec.contactParts.length > 0
+      ? headerSpec.contactParts.join(' · ')
+      : `Tel: ${taller.tel || 'Sin especificar'}`;
+  const wrappedTallerInfo = doc.splitTextToSize(tallerInfoLine, 108) as string[];
+  doc.text(wrappedTallerInfo[0] || '', headX, infoY);
   if (wrappedTallerInfo[1]) {
-    doc.text(wrappedTallerInfo[1], headX, 28);
+    doc.text(wrappedTallerInfo[1], headX, infoY + 4.2);
   }
 
   // Recuadro derecho de Folio y Fecha
+  doc.setTextColor(...headerSpec.theme.textRgb);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9.5);
   doc.text(`FOLIO: ${folio}`, 202, 12, { align: 'right' });
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.3);
+  doc.setTextColor(...headerSpec.theme.mutedRgb);
   doc.text(`Fecha: ${fechaHoy}`, 202, 18, { align: 'right' });
   doc.text(`Entrega est.: ${fechaEntregaTexto}`, 202, 23.5, { align: 'right' });
 
   // Recuadro de Datos del Cliente y Obra
+  const boxY = h + 4;
   doc.setDrawColor(148, 163, 184);
   doc.setFillColor(248, 250, 252);
-  doc.roundedRect(14, 40, 188, 25, 2, 2, 'FD');
+  doc.roundedRect(14, boxY, 188, 25, 2, 2, 'FD');
 
   doc.setTextColor(15, 23, 42);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
-  doc.text('DATOS DEL CLIENTE Y LUGAR DE OBRA', 18, 46);
+  doc.text('DATOS DEL CLIENTE Y LUGAR DE OBRA', 18, boxY + 6);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.8);
@@ -511,15 +572,15 @@ export function generarPdfContratoServicio(
   const cliDir = cliente.direccion.trim() || 'Por confirmar en obra';
   const cliProy = hoja.proyecto.trim() || 'Suministro e instalación de cancelería';
 
-  doc.text(`Cliente: ${cliNombre}`, 18, 52);
-  doc.text(`Teléfono: ${cliTel}`, 126, 52);
-  doc.text(`Proyecto: ${cliProy}`, 18, 57.2);
+  doc.text(`Cliente: ${cliNombre}`, 18, boxY + 12);
+  doc.text(`Teléfono: ${cliTel}`, 126, boxY + 12);
+  doc.text(`Proyecto: ${cliProy}`, 18, boxY + 17.2);
   const dirLines = doc.splitTextToSize(`Dirección de obra: ${cliDir}`, 178) as string[];
-  doc.text(dirLines[0] || '', 18, 62.2);
+  doc.text(dirLines[0] || '', 18, boxY + 22.2);
 
   // Tabla de trabajos contratados con croquis técnico acotado
-  let y = 72;
-  doc.setFillColor(15, 30, 52);
+  let y = boxY + 32;
+  doc.setFillColor(...headerSpec.theme.bgRgb);
   doc.rect(14, y - 4.5, 188, 7, 'F');
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');

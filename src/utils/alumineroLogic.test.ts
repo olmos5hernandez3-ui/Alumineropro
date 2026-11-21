@@ -27,6 +27,7 @@ import {
   isEligibleForCloudBackup,
   normalizeDeviceIdInput,
   formatActivationKeyInput,
+  validatePiezaDimensiones,
   type AperturaVentanaId,
 } from './alumineroLogic';
 import {
@@ -41,9 +42,37 @@ import { optimizarVidrio2D } from './glassOptimizer2D';
 import {
   DEFAULT_CONTRATO_CLAUSES,
   DEFAULT_CONTRATO_CLIENTE,
+  DEFAULT_PDF_HEADER,
   DEFAULT_TALLER,
   formatContratoFolio,
+  formatWhatsappUrlDigits,
+  loadCotizacionReminders,
+  loadSugerenciasWhatsapp,
+  loadTaller,
+  sanitizeWhatsappNumber,
+  saveCotizacionReminders,
+  saveSugerenciasWhatsapp,
+  saveSugerenciasWhatsappValidated,
+  saveTaller,
+  validateWhatsappNumber,
 } from './storageHelpers';
+import {
+  buildPdfHeaderSpec,
+  PDF_HEADER_THEMES,
+  resolvePdfHeaderConfig,
+} from './pdfHeaderUtils';
+import {
+  buildQuoteReminderNotificationPayload,
+  computeReminderDueAt,
+  createCotizacionReminder,
+  formatReminderRelativeTime,
+  getDueCotizacionReminders,
+  markReminderNotified,
+  parseSwPushPayload,
+  partitionCotizacionReminders,
+  snoozeCotizacionReminder,
+  updateCotizacionReminderStatus,
+} from './pushReminders';
 
 test('1. Puerta Línea Europea solicita exactamente 6 escuadras por puerta (4 hoja 45° + 2 marco sup.)', () => {
   const despiece1 = calcularDespiece({
@@ -1349,4 +1378,384 @@ test('26. Levantamiento Rápido: sobrescribe aluminero_hoja_v1.proyecto y propag
   assert.equal(pUnsupported.unsupportedInModulacion, true);
   assert.equal(pUnsupported.payload, null);
 });
+
+test('34. sanitizeWhatsappNumber y validateWhatsappNumber exigen exactamente 10 dígitos obligatorios y rechazan formatos inválidos', () => {
+  // Formatos válidos con o sin separadores -> normalizados a exactamente 10 dígitos
+  assert.equal(sanitizeWhatsappNumber('5512345678'), '5512345678');
+  assert.equal(sanitizeWhatsappNumber('55 1234 5678'), '5512345678');
+  assert.equal(sanitizeWhatsappNumber('555-123-4567'), '5551234567');
+  assert.equal(sanitizeWhatsappNumber('(555) 123-4567'), '5551234567');
+  assert.equal(sanitizeWhatsappNumber('  55.1234.5678  '), '5512345678');
+  assert.equal(formatWhatsappUrlDigits('55-1234-5678'), '525512345678');
+
+  // Formatos inválidos -> sanitizeWhatsappNumber devuelve '' y validateWhatsappNumber entrega error descriptivo
+  for (const invalidInput of [
+    '',
+    '   ',
+    '12345',
+    '551234567',
+    '12345678901',
+    '5215512345678',
+    '+52 55 1234 5678',
+    '55abc12345',
+    '5512345678a',
+  ]) {
+    assert.equal(sanitizeWhatsappNumber(invalidInput), '');
+    const res = validateWhatsappNumber(invalidInput);
+    assert.equal(res.valid, false);
+    assert.equal(res.digits, '');
+    assert.ok(res.error && res.error.length > 10);
+  }
+
+  // Simular localStorage para validar que no se guarda ni sobreescribe con formatos inválidos
+  const store = new Map<string, string>();
+  const prevLocalStorage = (globalThis as { localStorage?: unknown }).localStorage;
+  (globalThis as { localStorage?: unknown }).localStorage = {
+    getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+    setItem: (k: string, v: string) => {
+      store.set(k, String(v));
+    },
+    removeItem: (k: string) => {
+      store.delete(k);
+    },
+  };
+
+  try {
+    const okSave = saveSugerenciasWhatsappValidated('(55) 1234-5678');
+    assert.equal(okSave.ok, true);
+    assert.equal(okSave.digits, '5512345678');
+    assert.equal(loadSugerenciasWhatsapp(), '5512345678');
+
+    // Intento inválido no debe sobreescribir ni borrar el número válido almacenado
+    const badSaveShort = saveSugerenciasWhatsappValidated('12345');
+    assert.equal(badSaveShort.ok, false);
+    assert.match(badSaveShort.error || '', /10 dígitos/);
+    assert.equal(loadSugerenciasWhatsapp(), '5512345678');
+
+    const badSaveLada = saveSugerenciasWhatsapp('5215512345678');
+    assert.equal(badSaveLada, '5512345678');
+    assert.equal(loadSugerenciasWhatsapp(), '5512345678');
+
+    // Limpieza explícita con cadena vacía sí limpia
+    assert.equal(saveSugerenciasWhatsapp(''), '');
+    assert.equal(loadSugerenciasWhatsapp(), '');
+  } finally {
+    if (prevLocalStorage === undefined) {
+      delete (globalThis as { localStorage?: unknown }).localStorage;
+    } else {
+      (globalThis as { localStorage?: unknown }).localStorage = prevLocalStorage;
+    }
+  }
+});
+
+test('35. validatePiezaDimensiones exige ancho y alto mayores a 0 cm y menores a 600 cm', () => {
+  // Valores válidos físicamente posibles (> 0 y < 600)
+  assert.equal(validatePiezaDimensiones(120, 100).valid, true);
+  assert.equal(validatePiezaDimensiones(0.5, 599.5).valid, true);
+  assert.equal(validatePiezaDimensiones(20, 210).valid, true);
+
+  // Valores <= 0 son sospechosos
+  for (const [w, h] of [
+    [0, 100],
+    [120, 0],
+    [-10, 100],
+    [120, -5],
+    [0, 0],
+  ]) {
+    const res = validatePiezaDimensiones(w, h);
+    assert.equal(res.valid, false);
+    assert.match(res.error || '', /mayores a 0 cm/);
+  }
+
+  // Valores >= 600 son sospechosos
+  for (const [w, h] of [
+    [600, 100],
+    [120, 600],
+    [750, 100],
+    [120, 900],
+  ]) {
+    const res = validatePiezaDimensiones(w, h);
+    assert.equal(res.valid, false);
+    assert.match(res.error || '', /menores a 600 cm/);
+  }
+
+  // Valores no finitos
+  assert.equal(validatePiezaDimensiones(Number.NaN, 100).valid, false);
+  assert.equal(validatePiezaDimensiones(120, Number.POSITIVE_INFINITY).valid, false);
+});
+
+test('36. Recordatorios Push de cotizaciones pendientes: creación, vencimiento, cooldown, posponer y estados', () => {
+  const baseNow = 1_700_000_000_000;
+
+  // Rechaza proyecto vacío o teléfono inválido
+  const emptyProj = createCotizacionReminder({
+    proyecto: '   ',
+    total: 5000,
+    partidasCount: 2,
+    dueAt: baseNow + 60_000,
+    now: baseNow,
+  });
+  assert.equal(emptyProj.ok, false);
+
+  const badPhone = createCotizacionReminder({
+    proyecto: 'Casa López',
+    total: 5000,
+    partidasCount: 2,
+    telefonoCliente: '12345',
+    dueAt: baseNow + 60_000,
+    now: baseNow,
+  });
+  assert.equal(badPhone.ok, false);
+
+  // Crea recordatorio válido normalizando teléfono a 10 dígitos
+  const r1Res = createCotizacionReminder({
+    id: 'rem-due',
+    proyecto: 'Casa Sr. Ramírez',
+    total: 12500.5,
+    partidasCount: 3,
+    telefonoCliente: '(55) 1234-5678',
+    nota: 'Confirmar anticipo 50%',
+    dueAt: baseNow - 5 * 60_000,
+    now: baseNow - 60 * 60_000,
+  });
+  assert.equal(r1Res.ok, true);
+  if (!r1Res.ok) return;
+  assert.equal(r1Res.reminder.telefonoCliente, '5512345678');
+  assert.equal(r1Res.reminder.status, 'pendiente');
+
+  const due24h = computeReminderDueAt('24h', baseNow);
+  assert.equal(due24h, baseNow + 24 * 60 * 60 * 1000);
+  const r2Res = createCotizacionReminder({
+    id: 'rem-future',
+    proyecto: 'Residencia Lomas',
+    total: 24000,
+    partidasCount: 5,
+    dueAt: due24h,
+    now: baseNow,
+  });
+  assert.equal(r2Res.ok, true);
+  if (!r2Res.ok) return;
+
+  // Solo el vencido pendiente debe aparecer en getDueCotizacionReminders
+  const dueList = getDueCotizacionReminders([r1Res.reminder, r2Res.reminder], baseNow);
+  assert.equal(dueList.length, 1);
+  assert.equal(dueList[0].id, 'rem-due');
+
+  // Después de notificar, respeta cooldown
+  const notified = markReminderNotified(r1Res.reminder, baseNow);
+  assert.equal(getDueCotizacionReminders([notified, r2Res.reminder], baseNow + 60_000).length, 0);
+  // Al vencer el cooldown (4 h), vuelve a considerarse pendiente por notificar
+  assert.equal(
+    getDueCotizacionReminders([notified, r2Res.reminder], baseNow + 4 * 60 * 60 * 1000 + 1).length,
+    1
+  );
+
+  // Posponer 1 día mueve dueAt al futuro y reinicia lastNotifiedAt
+  const snoozed = snoozeCotizacionReminder(notified, undefined, baseNow);
+  assert.equal(snoozed.snoozeCount, 1);
+  assert.equal(snoozed.lastNotifiedAt, null);
+  assert.ok(snoozed.dueAt >= baseNow + 24 * 60 * 60 * 1000);
+  assert.equal(getDueCotizacionReminders([snoozed], baseNow + 1000).length, 0);
+
+  // Cambio de estado a aprobada lo mueve a completed
+  const approved = updateCotizacionReminderStatus(snoozed, 'aprobada');
+  const part = partitionCotizacionReminders([approved, r2Res.reminder], baseNow);
+  assert.equal(part.due.length, 0);
+  assert.equal(part.upcoming.length, 1);
+  assert.equal(part.completed.length, 1);
+  assert.equal(part.completed[0].status, 'aprobada');
+
+  const relOverdue = formatReminderRelativeTime(baseNow - 15 * 60_000, baseNow);
+  assert.equal(relOverdue.isOverdue, true);
+  assert.match(relOverdue.label, /Vencido hace 15 min/);
+});
+
+test('37. Payloads de Service Worker Push, parser SW y persistencia de recordatorios en localStorage', () => {
+  const created = createCotizacionReminder({
+    id: 'rem-sw-1',
+    proyecto: 'Local Comercial Centro',
+    total: 8900,
+    partidasCount: 2,
+    nota: 'Cotización con IVA',
+    dueAt: 1_700_000_000_000,
+    now: 1_699_990_000_000,
+  });
+  assert.equal(created.ok, true);
+  if (!created.ok) return;
+
+  const swPayload = buildQuoteReminderNotificationPayload(created.reminder);
+  assert.equal(swPayload.title, 'Seguimiento pendiente: Local Comercial Centro');
+  assert.match(swPayload.body, /8,900\.00/);
+  assert.match(swPayload.body, /2 partidas/);
+  assert.equal(swPayload.tag, 'aluminero-quote-rem-sw-1');
+  assert.equal(swPayload.data.reminderId, 'rem-sw-1');
+  assert.equal(swPayload.actions.length, 2);
+  assert.equal(swPayload.actions[0].action, 'open-quote');
+  assert.equal(swPayload.actions[1].action, 'snooze-1d');
+
+  // Parser SW tolera JSON serializado, texto plano o estructura vacía
+  const parsedJson = parseSwPushPayload(JSON.stringify(swPayload));
+  assert.equal(parsedJson.title, swPayload.title);
+  assert.equal(parsedJson.data.reminderId, 'rem-sw-1');
+
+  const parsedText = parseSwPushPayload('Revisar cotización de Sr. Pérez');
+  assert.equal(parsedText.body, 'Revisar cotización de Sr. Pérez');
+  assert.equal(parsedText.data.type, 'quote-followup');
+
+  // Persistencia simulada en localStorage
+  const store = new Map<string, string>();
+  const prevLocalStorage = (globalThis as { localStorage?: unknown }).localStorage;
+  (globalThis as { localStorage?: unknown }).localStorage = {
+    getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+    setItem: (k: string, v: string) => {
+      store.set(k, String(v));
+    },
+    removeItem: (k: string) => {
+      store.delete(k);
+    },
+  };
+  try {
+    saveCotizacionReminders([created.reminder]);
+    const loaded = loadCotizacionReminders();
+    assert.equal(loaded.length, 1);
+    assert.equal(loaded[0].id, 'rem-sw-1');
+    assert.equal(loaded[0].proyecto, 'Local Comercial Centro');
+  } finally {
+    if (prevLocalStorage === undefined) {
+      delete (globalThis as { localStorage?: unknown }).localStorage;
+    } else {
+      (globalThis as { localStorage?: unknown }).localStorage = prevLocalStorage;
+    }
+  }
+});
+
+test('38. Personalización de encabezado PDF: temas, logo, contacto, eslogan y modos cotización/técnico/contrato', () => {
+  const defaultSpec = buildPdfHeaderSpec(DEFAULT_TALLER, 'cotizacion', { dateLabel: '21/11/2026' });
+  assert.equal(defaultSpec.theme.id, 'navy');
+  assert.equal(defaultSpec.showLogo, false);
+  assert.equal(defaultSpec.headline, 'COTIZACIÓN DE ALUMINIO Y VIDRIO');
+  assert.equal(defaultSpec.contactParts.length, 0);
+  assert.equal(defaultSpec.headerHeightMm, 30);
+
+  const customTaller = {
+    ...DEFAULT_TALLER,
+    nombre: 'Aluminios del Valle',
+    tel: '55 8899 1122',
+    ubicacion: 'Av. Reforma 120, Puebla',
+    logoDataUrl: 'data:image/png;base64,iVBORw0KGgo=',
+    pdfHeader: {
+      mostrarLogo: true,
+      mostrarContacto: true,
+      eslogan: 'Cancelería Residencial y Vidrio Templado',
+      email: 'ventas@aluminiosdelvalle.mx',
+      sitioWeb: '@aluminiosdelvalle',
+      rfc: 'alva900101abc',
+      colorTema: 'emerald' as const,
+      tituloCotizacion: 'Presupuesto Formal',
+    },
+  };
+
+  const quoteSpec = buildPdfHeaderSpec(customTaller, 'cotizacion', { dateLabel: '21/11/2026' });
+  assert.equal(quoteSpec.theme.id, 'emerald');
+  assert.deepEqual(quoteSpec.theme.bgRgb, PDF_HEADER_THEMES.emerald.bgRgb);
+  assert.equal(quoteSpec.showLogo, true);
+  assert.equal(quoteSpec.headline, 'Aluminios del Valle');
+  assert.equal(quoteSpec.documentLabel, 'PRESUPUESTO FORMAL');
+  assert.equal(quoteSpec.eslogan, 'Cancelería Residencial y Vidrio Templado');
+  assert.deepEqual(quoteSpec.contactParts, [
+    'Tel: 55 8899 1122',
+    'ventas@aluminiosdelvalle.mx',
+    'Av. Reforma 120, Puebla',
+    '@aluminiosdelvalle',
+    'RFC: ALVA900101ABC',
+  ]);
+  assert.equal(quoteSpec.headerHeightMm, 36);
+  assert.equal(quoteSpec.bodyStartY, 45);
+
+  const techSpec = buildPdfHeaderSpec(customTaller, 'tecnico', { dateLabel: '21/11/2026' });
+  assert.equal(techSpec.headline, 'Aluminios del Valle');
+  assert.equal(techSpec.documentLabel, 'ORDEN TÉCNICA DE CORTE');
+
+  const contractSpec = buildPdfHeaderSpec(customTaller, 'contrato', { dateLabel: '21/11/2026' });
+  assert.equal(contractSpec.headline, 'CONTRATO DE PRESTACIÓN DE SERVICIOS');
+  assert.equal(contractSpec.workshopName, 'Aluminios del Valle');
+  assert.equal(contractSpec.headerHeightMm, 38);
+
+  // Al ocultar logo y contacto en toggles, el logo/contacto dejan de mostrarse sin borrar los datos
+  const hiddenSpec = buildPdfHeaderSpec(
+    {
+      ...customTaller,
+      pdfHeader: {
+        ...customTaller.pdfHeader,
+        mostrarLogo: false,
+        mostrarContacto: false,
+      },
+    },
+    'cotizacion'
+  );
+  assert.equal(hiddenSpec.showLogo, false);
+  assert.equal(hiddenSpec.contactParts.length, 0);
+
+  // Color desconocido cae limpiamente a navy
+  const normalized = resolvePdfHeaderConfig({
+    ...DEFAULT_TALLER,
+    pdfHeader: { colorTema: 'invalid-theme' as never },
+  });
+  assert.equal(normalized.colorTema, DEFAULT_PDF_HEADER.colorTema);
+});
+
+test('39. loadTaller mantiene compatibilidad retroactiva al cargar talleres sin pdfHeader en localStorage', () => {
+  const store = new Map<string, string>();
+  const prevLocalStorage = (globalThis as { localStorage?: unknown }).localStorage;
+  (globalThis as { localStorage?: unknown }).localStorage = {
+    getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+    setItem: (k: string, v: string) => {
+      store.set(k, String(v));
+    },
+    removeItem: (k: string) => {
+      store.delete(k);
+    },
+  };
+
+  try {
+    // Caso 1: registro antiguo guardado sin propiedad pdfHeader
+    store.set(
+      'aluminero_taller_v1',
+      JSON.stringify({
+        nombre: 'Taller Clásico',
+        tel: '2223334455',
+        ubicacion: 'Puebla',
+      })
+    );
+    const legacyLoaded = loadTaller();
+    assert.equal(legacyLoaded.nombre, 'Taller Clásico');
+    assert.equal(legacyLoaded.pdfHeader?.mostrarLogo, true);
+    assert.equal(legacyLoaded.pdfHeader?.mostrarContacto, true);
+    assert.equal(legacyLoaded.pdfHeader?.colorTema, 'navy');
+
+    // Caso 2: guardado y lectura con personalización parcial
+    saveTaller({
+      ...legacyLoaded,
+      pdfHeader: {
+        ...legacyLoaded.pdfHeader,
+        colorTema: 'blue',
+        email: 'contacto@clasico.mx',
+      },
+    });
+    const updatedLoaded = loadTaller();
+    assert.equal(updatedLoaded.pdfHeader?.colorTema, 'blue');
+    assert.equal(updatedLoaded.pdfHeader?.email, 'contacto@clasico.mx');
+    assert.equal(updatedLoaded.pdfHeader?.mostrarLogo, true);
+  } finally {
+    if (prevLocalStorage === undefined) {
+      delete (globalThis as { localStorage?: unknown }).localStorage;
+    } else {
+      (globalThis as { localStorage?: unknown }).localStorage = prevLocalStorage;
+    }
+  }
+});
+
+
+
+
 

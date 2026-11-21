@@ -1,12 +1,12 @@
-import React, { useRef } from 'react';
+import React from 'react';
 import { COLORES_CONFIG, LINEAS_CONFIG, LineaId } from '../utils/alumineroLogic';
 import {
-  compressImageToDataUrl,
   formatMXN,
   FormulaPersonalizada,
   HistorialItem,
   TallerConfig,
 } from '../utils/storageHelpers';
+import { PdfHeaderCustomizer } from './PdfHeaderCustomizer';
 
 interface Props {
   taller: TallerConfig;
@@ -21,6 +21,9 @@ interface Props {
   onEliminarFormula: (id: string) => void;
   onEliminarHistorial: (id: string) => void;
   onLimpiarHistorial: () => void;
+  onScheduleHistorialReminder?: (item: HistorialItem) => void;
+  onOpenReminders?: () => void;
+  pendingRemindersCount?: number;
   onShowToast: (msg: string, topSuccess?: boolean) => void;
 }
 
@@ -37,133 +40,37 @@ export const TallerView: React.FC<Props> = ({
   onEliminarFormula,
   onEliminarHistorial,
   onLimpiarHistorial,
+  onScheduleHistorialReminder,
+  onOpenReminders,
+  pendingRemindersCount = 0,
   onShowToast,
 }) => {
-  const logoInputRef = useRef<HTMLInputElement>(null);
-
-  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try {
-      const dataUrl = await compressImageToDataUrl(file, 600, 0.8);
-      onUpdateTaller({ logoDataUrl: dataUrl });
-      onShowToast('Logotipo guardado en el taller (máx. 600 px JPEG)', true);
-    } catch {
-      onShowToast('No se pudo procesar el logotipo');
-    } finally {
-      e.target.value = '';
-    }
-  };
-
   return (
     <section id="view-taller" className="screen-animate">
       <div className="mb-4">
         <h1 className="m-0 text-[21px] font-extrabold text-white">Mi Taller y Precios</h1>
         <p className="m-0 text-[12.5px] text-slate-300">
-          Personaliza tu encabezado para PDF y tarifas base por m²
+          Personaliza el encabezado de tus PDF exportados, logotipo, contacto y tarifas base por m²
         </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-5 items-start">
         <div className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] p-4 sm:p-5 shadow-xl">
-          <h2 className="m-0 text-[17px] font-extrabold">
-            Datos de mi Taller {!proActive && <span className="text-amber-700 text-[12px]">🔒 PRO</span>}
-          </h2>
-          <p className="m-0 text-[12px] text-slate-500">
-            Aparece en el encabezado del PDF limpio para clientes
-          </p>
-
-          <div className="flex items-center gap-3 my-3.5">
-            <div className="w-[68px] h-[68px] rounded-[14px] border border-dashed border-slate-300 bg-slate-50 flex items-center justify-center overflow-hidden shrink-0">
-              {taller.logoDataUrl ? (
-                <img src={taller.logoDataUrl} alt="Logo del taller" className="w-full h-full object-cover" />
-              ) : (
-                <span className="text-[10px] text-slate-500 text-center p-1">Sin logo</span>
-              )}
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => logoInputRef.current?.click()}
-                className="min-h-[40px] px-3.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-[12.5px] font-bold cursor-pointer"
-              >
-                Subir logotipo
-              </button>
-              {taller.logoDataUrl && (
-                <button
-                  type="button"
-                  onClick={() => onUpdateTaller({ logoDataUrl: '' })}
-                  className="min-h-[40px] px-3.5 rounded-xl border border-slate-200 bg-white text-[12.5px] font-bold text-red-600 cursor-pointer"
-                >
-                  Quitar logo
-                </button>
-              )}
-              <input
-                ref={logoInputRef}
-                type="file"
-                accept="image/*"
-                onChange={handleLogoUpload}
-                className="hidden"
-              />
-            </div>
+          <div className="mb-3.5">
+            <h2 className="m-0 text-[17px] font-extrabold">
+              Encabezado PDF y Datos de mi Taller{' '}
+              {!proActive && <span className="text-amber-700 text-[12px]">🔒 PRO</span>}
+            </h2>
+            <p className="m-0 text-[12px] text-slate-500">
+              Se aplica en cotizaciones para cliente, órdenes técnicas de taller y contratos PDF
+            </p>
           </div>
 
-          <div className="flex flex-col gap-3">
-            <div>
-              <label htmlFor="inp-taller-nombre" className="block text-[12px] font-bold text-slate-500 mb-1">
-                Nombre de la Empresa / Taller
-              </label>
-              <input
-                id="inp-taller-nombre"
-                type="text"
-                value={taller.nombre}
-                onChange={(e) => onUpdateTaller({ nombre: e.target.value })}
-                placeholder="Ej. Aluminios y Vidrios del Centro"
-                className="w-full min-h-[44px] rounded-xl border border-slate-200 px-3 text-[14px] font-semibold"
-              />
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label htmlFor="inp-taller-tel" className="block text-[12px] font-bold text-slate-500 mb-1">
-                  Teléfono / WhatsApp
-                </label>
-                <input
-                  id="inp-taller-tel"
-                  type="text"
-                  value={taller.tel}
-                  onChange={(e) => onUpdateTaller({ tel: e.target.value })}
-                  placeholder="Ej. 55 1234 5678"
-                  className="w-full min-h-[44px] rounded-xl border border-slate-200 px-3 mono text-[14px] font-semibold"
-                />
-              </div>
-              <div>
-                <label htmlFor="inp-taller-cliente" className="block text-[12px] font-bold text-slate-500 mb-1">
-                  Cliente predeterminado
-                </label>
-                <input
-                  id="inp-taller-cliente"
-                  type="text"
-                  value={taller.clienteDefault}
-                  onChange={(e) => onUpdateTaller({ clienteDefault: e.target.value })}
-                  placeholder="Ej. Arq. Ramírez"
-                  className="w-full min-h-[44px] rounded-xl border border-slate-200 px-3 text-[14px] font-semibold"
-                />
-              </div>
-            </div>
-            <div>
-              <label htmlFor="inp-taller-ubicacion" className="block text-[12px] font-bold text-slate-500 mb-1">
-                Ubicación / Dirección del Taller
-              </label>
-              <input
-                id="inp-taller-ubicacion"
-                type="text"
-                value={taller.ubicacion || ''}
-                onChange={(e) => onUpdateTaller({ ubicacion: e.target.value })}
-                placeholder="Ej. Av. Hidalgo #420, Col. Centro, Puebla"
-                className="w-full min-h-[44px] rounded-xl border border-slate-200 px-3 text-[14px] font-semibold"
-              />
-            </div>
-          </div>
+          <PdfHeaderCustomizer
+            taller={taller}
+            onUpdateTaller={onUpdateTaller}
+            onShowToast={onShowToast}
+          />
         </div>
 
         <div className="flex flex-col gap-4">
@@ -328,20 +235,32 @@ export const TallerView: React.FC<Props> = ({
 
       {/* Historial */}
       <div className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] p-4 sm:p-5 shadow-xl mt-4">
-        <div className="flex items-center justify-between gap-2 mb-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
           <div>
             <h2 className="m-0 text-[17px] font-extrabold">Historial de Cotizaciones Guardadas</h2>
             <p className="m-0 text-[12px] text-slate-500">Guardado en este equipo ({historial.length})</p>
           </div>
-          {historial.length > 0 && (
-            <button
-              type="button"
-              onClick={onLimpiarHistorial}
-              className="px-3 py-1.5 rounded-lg border border-slate-200 text-[12px] font-bold text-slate-600 cursor-pointer"
-            >
-              Limpiar todo
-            </button>
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            {onOpenReminders && (
+              <button
+                type="button"
+                id="btn-taller-open-reminders"
+                onClick={onOpenReminders}
+                className="px-3 py-1.5 rounded-lg border border-blue-300 bg-blue-50 hover:bg-blue-100 text-[12px] font-extrabold text-blue-800 cursor-pointer"
+              >
+                🔔 Seguimientos{pendingRemindersCount > 0 ? ` (${pendingRemindersCount})` : ''}
+              </button>
+            )}
+            {historial.length > 0 && (
+              <button
+                type="button"
+                onClick={onLimpiarHistorial}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 text-[12px] font-bold text-slate-600 cursor-pointer"
+              >
+                Limpiar todo
+              </button>
+            )}
+          </div>
         </div>
         {historial.length === 0 ? (
           <p className="text-[12.5px] text-slate-500 p-4 text-center border border-dashed border-slate-200 rounded-xl">
@@ -350,15 +269,25 @@ export const TallerView: React.FC<Props> = ({
         ) : (
           <div className="flex flex-col gap-2">
             {historial.map((h) => (
-              <div key={h.id} className="p-3 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between gap-2">
-                <div>
-                  <strong className="block text-[13.5px]">{h.referencia}</strong>
+              <div key={h.id} className="p-3 rounded-xl border border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <strong className="block text-[13.5px] truncate">{h.referencia}</strong>
                   <span className="text-[12px] text-slate-500">
                     {LINEAS_CONFIG[h.linea]?.nombre} · {h.anchoCm}×{h.altoCm} cm · {COLORES_CONFIG[h.color]?.corto} · {h.fecha}
                   </span>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 shrink-0">
                   <strong className="mono text-blue-600">{formatMXN(h.total)}</strong>
+                  {onScheduleHistorialReminder && (
+                    <button
+                      type="button"
+                      onClick={() => onScheduleHistorialReminder(h)}
+                      className="px-2.5 py-1 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 text-[11.5px] font-bold cursor-pointer"
+                      title="Programar recordatorio de seguimiento en 24 h"
+                    >
+                      🔔 Recordar
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => onEliminarHistorial(h.id)}

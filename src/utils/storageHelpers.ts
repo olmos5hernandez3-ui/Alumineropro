@@ -6,6 +6,7 @@ import {
   PartidaObra,
   PerfilCatalogoId,
 } from './alumineroLogic';
+import type { CotizacionReminder } from './pushReminders';
 
 const KEYS = {
   DEVICE_ID: 'aluminero_device_id_v1',
@@ -38,6 +39,7 @@ const KEYS = {
   REFERRAL_SENDER_NAME: 'aluminero_ref_sender_v1',
   SAVED_COLLEAGUE_REFERRAL: 'aluminero_saved_referral_v1',
   PROMO_COUNT_CACHE: 'aluminero_promo_count_cache_v1',
+  RECORDATORIOS: 'aluminero_recordatorios_cotizacion_v1',
 };
 
 export type AppTheme = 'light' | 'dark';
@@ -89,6 +91,19 @@ export interface CloudAccountBackupPayload {
   updatedAt: number;
 }
 
+export type PdfHeaderColorId = 'navy' | 'blue' | 'slate' | 'emerald' | 'charcoal';
+
+export interface PdfHeaderConfig {
+  mostrarLogo?: boolean;
+  mostrarContacto?: boolean;
+  eslogan?: string;
+  email?: string;
+  sitioWeb?: string;
+  rfc?: string;
+  colorTema?: PdfHeaderColorId;
+  tituloCotizacion?: string;
+}
+
 export interface TallerConfig {
   nombre: string;
   tel: string;
@@ -99,6 +114,7 @@ export interface TallerConfig {
   precioListaTramo: number;
   tarifasBase: Partial<Record<LineaId, number>>;
   rellenoPreciosM2?: Record<string, number>;
+  pdfHeader?: PdfHeaderConfig;
 }
 
 export interface HojaState {
@@ -231,6 +247,7 @@ export interface AlumineroBackupPayload {
   historial?: HistorialItem[];
   sugerenciasWhatsapp?: string;
   trabajosAntesDespues?: TrabajoAntesDespuesItem[];
+  recordatorios?: CotizacionReminder[];
 }
 
 export function makePerfilFotoKey(perfilId: PerfilCatalogoId, lineaId?: LineaId | 'all'): string {
@@ -299,6 +316,17 @@ export function clearTrialStart(): void {
   }
 }
 
+export const DEFAULT_PDF_HEADER: Required<PdfHeaderConfig> = {
+  mostrarLogo: true,
+  mostrarContacto: true,
+  eslogan: '',
+  email: '',
+  sitioWeb: '',
+  rfc: '',
+  colorTema: 'navy',
+  tituloCotizacion: '',
+};
+
 export const DEFAULT_TALLER: TallerConfig = {
   nombre: '',
   tel: '',
@@ -309,10 +337,19 @@ export const DEFAULT_TALLER: TallerConfig = {
   precioListaTramo: 850,
   tarifasBase: {},
   rellenoPreciosM2: {},
+  pdfHeader: { ...DEFAULT_PDF_HEADER },
 };
 
 export function loadTaller(): TallerConfig {
-  return { ...DEFAULT_TALLER, ...safeJsonParse<Partial<TallerConfig>>(localStorage.getItem(KEYS.TALLER), {}) };
+  const saved = safeJsonParse<Partial<TallerConfig>>(localStorage.getItem(KEYS.TALLER), {});
+  return {
+    ...DEFAULT_TALLER,
+    ...saved,
+    pdfHeader: {
+      ...DEFAULT_PDF_HEADER,
+      ...(saved.pdfHeader && typeof saved.pdfHeader === 'object' ? saved.pdfHeader : {}),
+    },
+  };
 }
 
 export function saveTaller(t: TallerConfig): void {
@@ -460,6 +497,29 @@ export function saveHistorial(hist: HistorialItem[]): void {
   localStorage.setItem(KEYS.HISTORIAL, JSON.stringify(hist));
 }
 
+export function loadCotizacionReminders(): CotizacionReminder[] {
+  if (typeof localStorage === 'undefined') return [];
+  const raw = safeJsonParse<unknown>(localStorage.getItem(KEYS.RECORDATORIOS), []);
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(
+    (item): item is CotizacionReminder =>
+      Boolean(item) &&
+      typeof item === 'object' &&
+      typeof (item as CotizacionReminder).id === 'string' &&
+      typeof (item as CotizacionReminder).proyecto === 'string' &&
+      Number.isFinite(Number((item as CotizacionReminder).dueAt))
+  );
+}
+
+export function saveCotizacionReminders(list: CotizacionReminder[]): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(KEYS.RECORDATORIOS, JSON.stringify(list.slice(0, 100)));
+  } catch {
+    // ignorar si localStorage está lleno
+  }
+}
+
 export function loadFormulas(): FormulaPersonalizada[] {
   return safeJsonParse<FormulaPersonalizada[]>(localStorage.getItem(KEYS.FORMULAS), []);
 }
@@ -557,7 +617,12 @@ export function saveCloudAccountSession(session: CloudAccountSession | null): vo
   }
 }
 
-export function compressImageToDataUrl(file: File, maxDim = 600, quality = 0.78): Promise<string> {
+export function compressImageToDataUrl(
+  file: File,
+  maxDim = 600,
+  quality = 0.78,
+  preservePngAlpha = false
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error('No se pudo leer el archivo de imagen.'));
@@ -577,10 +642,13 @@ export function compressImageToDataUrl(file: File, maxDim = 600, quality = 0.78)
           reject(new Error('No se pudo inicializar el compresor de imagen.'));
           return;
         }
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fillRect(0, 0, w, h);
+        const keepPng = preservePngAlpha && file.type === 'image/png';
+        if (!keepPng) {
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(0, 0, w, h);
+        }
         ctx.drawImage(img, 0, 0, w, h);
-        resolve(canvas.toDataURL('image/jpeg', quality));
+        resolve(keepPng ? canvas.toDataURL('image/png') : canvas.toDataURL('image/jpeg', quality));
       };
       img.src = String(reader.result || '');
     };
@@ -615,7 +683,8 @@ export function parseBackupPayload(rawText: string): AlumineroBackupPayload | nu
       'hojasVidrio' in obj ||
       'obrasAprobadas' in obj ||
       'historial' in obj ||
-      'trabajosAntesDespues' in obj;
+      'trabajosAntesDespues' in obj ||
+      'recordatorios' in obj;
 
     if (!hasAnyBackupField) return null;
 
@@ -644,9 +713,14 @@ export function parseBackupPayload(rawText: string): AlumineroBackupPayload | nu
         : undefined,
       historial: Array.isArray(obj.historial) ? (obj.historial as HistorialItem[]) : undefined,
       sugerenciasWhatsapp:
-        typeof obj.sugerenciasWhatsapp === 'string' ? obj.sugerenciasWhatsapp : undefined,
+        typeof obj.sugerenciasWhatsapp === 'string'
+          ? sanitizeWhatsappNumber(obj.sugerenciasWhatsapp) || undefined
+          : undefined,
       trabajosAntesDespues: Array.isArray(obj.trabajosAntesDespues)
         ? (obj.trabajosAntesDespues as TrabajoAntesDespuesItem[])
+        : undefined,
+      recordatorios: Array.isArray(obj.recordatorios)
+        ? (obj.recordatorios as CotizacionReminder[])
         : undefined,
     };
   } catch {
@@ -726,25 +800,102 @@ export function saveAdminPasswordOverride(newPassword: string | null): void {
   }
 }
 
+export interface WhatsappValidationResult {
+  valid: boolean;
+  digits: string;
+  error?: string;
+}
+
+export function validateWhatsappNumber(raw: string): WhatsappValidationResult {
+  const trimmed = String(raw ?? '').trim();
+  if (!trimmed) {
+    return {
+      valid: false,
+      digits: '',
+      error: 'Ingresa un número de WhatsApp obligatorio de 10 dígitos (ej. 5512345678).',
+    };
+  }
+  if (/[^\d\s().-]/.test(trimmed)) {
+    return {
+      valid: false,
+      digits: '',
+      error: 'Formato inválido: usa solo 10 dígitos sin letras, símbolo + ni lada internacional.',
+    };
+  }
+  const digits = trimmed.replace(/\D+/g, '');
+  if (digits.length < 10) {
+    return {
+      valid: false,
+      digits: '',
+      error: `Faltan dígitos: ingresaste ${digits.length} y deben ser exactamente 10 dígitos.`,
+    };
+  }
+  if (digits.length > 10) {
+    return {
+      valid: false,
+      digits: '',
+      error: `Sobran dígitos: ingresaste ${digits.length}. Ingresa solo los 10 dígitos locales (sin 52 ni 521).`,
+    };
+  }
+  return {
+    valid: true,
+    digits,
+  };
+}
+
 export function sanitizeWhatsappNumber(raw: string): string {
-  return String(raw || '').replace(/\D+/g, '');
+  const res = validateWhatsappNumber(raw);
+  return res.valid ? res.digits : '';
+}
+
+export function formatWhatsappUrlDigits(raw: string): string {
+  const digits = sanitizeWhatsappNumber(raw);
+  return digits ? `52${digits}` : '';
 }
 
 export function loadSugerenciasWhatsapp(): string {
   if (typeof localStorage === 'undefined') return '';
-  return (localStorage.getItem(KEYS.SUGERENCIAS_WA) || '').trim();
+  return sanitizeWhatsappNumber(localStorage.getItem(KEYS.SUGERENCIAS_WA) || '');
+}
+
+export interface SaveWhatsappResult {
+  ok: boolean;
+  digits: string;
+  error?: string;
+}
+
+export function saveSugerenciasWhatsappValidated(phone: string): SaveWhatsappResult {
+  const validation = validateWhatsappNumber(phone);
+  if (!validation.valid) {
+    return {
+      ok: false,
+      digits: loadSugerenciasWhatsapp(),
+      error: validation.error,
+    };
+  }
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(KEYS.SUGERENCIAS_WA, validation.digits);
+  }
+  return {
+    ok: true,
+    digits: validation.digits,
+  };
+}
+
+export function clearSugerenciasWhatsapp(): string {
+  if (typeof localStorage !== 'undefined') {
+    localStorage.removeItem(KEYS.SUGERENCIAS_WA);
+  }
+  return '';
 }
 
 export function saveSugerenciasWhatsapp(phone: string): string {
-  const clean = sanitizeWhatsappNumber(phone);
-  if (typeof localStorage !== 'undefined') {
-    if (!clean) {
-      localStorage.removeItem(KEYS.SUGERENCIAS_WA);
-    } else {
-      localStorage.setItem(KEYS.SUGERENCIAS_WA, clean);
-    }
+  const trimmed = String(phone ?? '').trim();
+  if (!trimmed) {
+    return clearSugerenciasWhatsapp();
   }
-  return clean;
+  const result = saveSugerenciasWhatsappValidated(trimmed);
+  return result.digits;
 }
 
 export const DEFAULT_TRABAJOS_ANTES_DESPUES: TrabajoAntesDespuesItem[] = [

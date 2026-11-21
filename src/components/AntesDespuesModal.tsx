@@ -3,6 +3,7 @@ import {
   buildBeforeAfterCollageFile,
   compressImageToDataUrl,
   dataUrlToJpegFile,
+  formatWhatsappUrlDigits,
   openExternalLinkSafe,
   sanitizeWhatsappNumber,
   TrabajoAntesDespuesItem,
@@ -126,6 +127,7 @@ export const AntesDespuesModal: React.FC<AntesDespuesModalProps> = ({
 
   const approvedList = trabajos.filter((t) => t.aprobado);
   const cleanWa = sanitizeWhatsappNumber(whatsappNumber);
+  const waUrlDigits = formatWhatsappUrlDigits(whatsappNumber);
 
   const handlePickPhoto = async (slot: 'antes' | 'despues', file: File) => {
     setErrorMsg('');
@@ -155,11 +157,11 @@ export const AntesDespuesModal: React.FC<AntesDespuesModalProps> = ({
       ...(payload.lineaNombre ? [`• Línea / Acabado: ${payload.lineaNombre}`] : []),
       ...(payload.descripcion ? [`• Descripción: ${payload.descripcion}`] : []),
       `• Equipo origen: ${deviceId}`,
-      ...(cleanWa ? [`• WhatsApp Admin: +${cleanWa}`] : []),
+      ...(cleanWa ? [`• WhatsApp Admin: +52 ${cleanWa}`] : []),
     ];
     const message = lines.join('\n');
-    const waUrl = cleanWa
-      ? `https://wa.me/${cleanWa}?text=${encodeURIComponent(message)}`
+    const waUrl = waUrlDigits
+      ? `https://wa.me/${waUrlDigits}?text=${encodeURIComponent(message)}`
       : `https://wa.me/?text=${encodeURIComponent(message)}`;
 
     try {

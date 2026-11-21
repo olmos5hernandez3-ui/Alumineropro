@@ -3518,3 +3518,36 @@ export function buildColleaguePromoWhatsappUrl(
     ? `https://wa.me/${fullNumber}?text=${encodeURIComponent(msg)}`
     : `https://wa.me/?text=${encodeURIComponent(msg)}`;
 }
+
+export interface DimensionValidationResult {
+  valid: boolean;
+  error?: string;
+}
+
+export function validatePiezaDimensiones(
+  anchoCm: number,
+  altoCm: number
+): DimensionValidationResult {
+  const ancho = Number(anchoCm);
+  const alto = Number(altoCm);
+  if (!Number.isFinite(ancho) || !Number.isFinite(alto)) {
+    return {
+      valid: false,
+      error: 'Medidas sospechosas: el ancho y el alto deben ser valores numéricos válidos.',
+    };
+  }
+  if (ancho <= 0 || alto <= 0) {
+    return {
+      valid: false,
+      error: `Medidas sospechosas (${ancho} × ${alto} cm): el ancho y el alto deben ser mayores a 0 cm.`,
+    };
+  }
+  if (ancho >= 600 || alto >= 600) {
+    return {
+      valid: false,
+      error: `Medidas sospechosas (${ancho} × ${alto} cm): el ancho y el alto deben ser menores a 600 cm.`,
+    };
+  }
+  return { valid: true };
+}
+

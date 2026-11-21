@@ -567,11 +567,15 @@ export const TrabajoView: React.FC<Props> = ({
                     <input
                       id="inp-ancho"
                       type="number"
-                      min={20}
-                      max={600}
+                      min={1}
+                      max={599.5}
                       step={0.5}
                       value={params.anchoCm}
-                      onChange={(e) => onChangeParams({ anchoCm: Math.max(20, Number(e.target.value) || 20) })}
+                      onChange={(e) =>
+                        onChangeParams({
+                          anchoCm: e.target.value === '' ? 0 : Number(e.target.value),
+                        })
+                      }
                       className="w-full min-h-[44px] rounded-xl border border-slate-200 px-2 text-center mono text-[14.5px] font-semibold"
                     />
                     <button
@@ -613,11 +617,15 @@ export const TrabajoView: React.FC<Props> = ({
                     <input
                       id="inp-alto"
                       type="number"
-                      min={20}
-                      max={400}
+                      min={1}
+                      max={599.5}
                       step={0.5}
                       value={params.altoCm}
-                      onChange={(e) => onChangeParams({ altoCm: Math.max(20, Number(e.target.value) || 20) })}
+                      onChange={(e) =>
+                        onChangeParams({
+                          altoCm: e.target.value === '' ? 0 : Number(e.target.value),
+                        })
+                      }
                       className="w-full min-h-[44px] rounded-xl border border-slate-200 px-2 text-center mono text-[14.5px] font-semibold"
                     />
                     <button
