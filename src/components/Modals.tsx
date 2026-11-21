@@ -167,6 +167,10 @@ export const ProModal: React.FC<ProModalProps> = ({
     : keyNeedsCloudEmail || selectedPlanKey !== '30d';
   const isActivateDisabled =
     activating || (emailRequiredBeforeActivate && emailCheck.status !== 'confirmed');
+  const isOxxoPlaceholder =
+    !PRO_PAYMENT_CONFIG.oxxoCard ||
+    PRO_PAYMENT_CONFIG.oxxoCard.includes('[') ||
+    PRO_PAYMENT_CONFIG.oxxoCard.toUpperCase().includes('PONER');
 
   const handleCopyPaymentField = async (fieldId: string, rawValue: string, toastMsg: string) => {
     const trimmed = rawValue.trim();
@@ -452,28 +456,43 @@ export const ProModal: React.FC<ProModalProps> = ({
                   <span className="block text-[10.5px] font-bold text-slate-500">
                     Depósito en tiendas OXXO (Tarjeta Mercado Pago)
                   </span>
-                  <strong
-                    id="pro-oxxo-card-number"
-                    className="mono block whitespace-nowrap tracking-tight text-[10.5px] min-[360px]:text-[11.5px] sm:text-[12.5px] text-slate-900 overflow-x-auto"
-                  >
-                    {PRO_PAYMENT_CONFIG.oxxoCard}
-                  </strong>
+                  {isOxxoPlaceholder ? (
+                    <span
+                      id="pro-oxxo-card-number"
+                      className="block text-[11.5px] font-semibold text-slate-500 italic mt-0.5"
+                    >
+                      Disponible al solicitar datos por WhatsApp
+                    </span>
+                  ) : (
+                    <strong
+                      id="pro-oxxo-card-number"
+                      className="mono block whitespace-nowrap tracking-tight text-[10.5px] min-[360px]:text-[11.5px] sm:text-[12.5px] text-slate-900 overflow-x-auto"
+                    >
+                      {PRO_PAYMENT_CONFIG.oxxoCard}
+                    </strong>
+                  )}
                 </div>
-                <button
-                  type="button"
-                  id="btn-copy-oxxo-card"
-                  onClick={() =>
-                    void handleCopyPaymentField(
-                      'oxxo',
-                      PRO_PAYMENT_CONFIG.oxxoCard,
-                      'Tarjeta Mercado Pago copiada'
-                    )
-                  }
-                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11.5px] font-bold cursor-pointer shrink-0"
-                >
-                  <Copy className="w-3.5 h-3.5" aria-hidden="true" />
-                  {copiedField === 'oxxo' ? 'Copiado' : 'Copiar'}
-                </button>
+                {isOxxoPlaceholder ? (
+                  <span className="inline-flex items-center px-2.5 py-1.5 rounded-lg bg-slate-200/80 text-slate-600 text-[11px] font-bold shrink-0">
+                    Por WhatsApp
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    id="btn-copy-oxxo-card"
+                    onClick={() =>
+                      void handleCopyPaymentField(
+                        'oxxo',
+                        PRO_PAYMENT_CONFIG.oxxoCard,
+                        'Tarjeta Mercado Pago copiada'
+                      )
+                    }
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11.5px] font-bold cursor-pointer shrink-0"
+                  >
+                    <Copy className="w-3.5 h-3.5" aria-hidden="true" />
+                    {copiedField === 'oxxo' ? 'Copiado' : 'Copiar'}
+                  </button>
+                )}
               </div>
               <p className="m-0 text-[10.5px] leading-snug text-slate-400">
                 Indica en caja que es depósito a tarjeta Mercado Pago (OXXO cobra comisión en caja).
@@ -494,7 +513,7 @@ export const ProModal: React.FC<ProModalProps> = ({
 
           <div className="flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl bg-blue-50 border border-blue-200 text-[12px]">
             <span className="text-slate-700 font-semibold">Tu ID de Equipo actual:</span>
-            <strong className="mono text-[13.5px] font-extrabold text-blue-700">{deviceId}</strong>
+            <strong className="mono text-[13.5px] font-extrabold text-blue-700">{safeDeviceId}</strong>
           </div>
 
           <a
@@ -509,9 +528,21 @@ export const ProModal: React.FC<ProModalProps> = ({
           </a>
         </div>
 
-        <div className="mt-4 p-3.5 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col gap-2.5">
+        {/* Separador visual claro entre Pagos / Comprobante y Canje de Clave / PIN */}
+        <div className="my-5 flex items-center gap-3" aria-hidden="true">
+          <div className="h-[1.5px] flex-1 bg-gradient-to-r from-transparent via-slate-300 to-slate-300" />
+          <span className="px-2.5 py-0.5 rounded-full bg-slate-100 border border-slate-300 text-[10.5px] font-extrabold uppercase tracking-wider text-slate-600 whitespace-nowrap">
+            Canje de Clave / PIN
+          </span>
+          <div className="h-[1.5px] flex-1 bg-gradient-to-l from-transparent via-slate-300 to-slate-300" />
+        </div>
+
+        <div
+          id="pro-pin-redemption-section"
+          className="p-4 rounded-2xl bg-blue-50/70 border-2 border-blue-200 shadow-sm flex flex-col gap-3"
+        >
           <div>
-            <label htmlFor="inp-lic-key" className="block text-[12.5px] font-extrabold text-slate-800 mb-1">
+            <label htmlFor="inp-lic-key" className="block text-[13px] font-extrabold text-slate-900 mb-1">
               ¿Ya tienes tu clave / PIN de activación?
             </label>
             <input
@@ -623,11 +654,11 @@ export const ProModal: React.FC<ProModalProps> = ({
           ) : (
             <div
               id="pro-short-key-no-email-note"
-              className="text-[11.5px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl px-2.5 py-2 flex items-center gap-1.5"
+              className="text-[11.5px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl px-2.5 py-2 flex items-start gap-1.5 leading-snug"
             >
-              <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" aria-hidden="true" />
+              <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 mt-0.5" aria-hidden="true" />
               <span>
-                Plan 30 Días (Promo): activación inmediata con PIN sin correo electrónico.
+                Válido para cualquier PIN o código de prueba (3 días, 30 días o vitalicio): activación inmediata sin correo electrónico.
               </span>
             </div>
           )}
@@ -1104,7 +1135,7 @@ const FALLBACK_MANIFEST_JSON = JSON.stringify(
   2
 );
 
-const FALLBACK_SW_JS = `const CACHE_NAME = 'aluminero-pro-v38-20261121';
+const FALLBACK_SW_JS = `const CACHE_NAME = 'aluminero-pro-v39-20261121';
 const APP_SHELL_ASSETS = [
   './',
   './index.html',
