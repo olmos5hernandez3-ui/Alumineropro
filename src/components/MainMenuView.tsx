@@ -2,6 +2,14 @@ import React from 'react';
 import { CATALOGO_PERFILES } from '../utils/alumineroLogic';
 import { formatMXN, SavedColleagueReferral } from '../utils/storageHelpers';
 import { ScreenId } from './TopBarAndDrawer';
+import {
+  MetallicSetSquareIcon,
+  MetallicQuoteDocIcon,
+  MetallicWindowIcon,
+  MetallicDoorIcon,
+  MetallicProfilesIcon,
+  MetallicInventoryBoxIcon,
+} from './MetallicIcons';
 
 interface Props {
   proActive: boolean;
@@ -18,6 +26,7 @@ interface Props {
   dueRemindersCount?: number;
   pushPermission?: NotificationPermission | 'unsupported';
   onClaimColleaguePromo?: () => void;
+  onOpenColleagueInvite?: () => void;
   onOpenPro?: () => void;
   onEntrarTrabajo: (cat: 'ventanas' | 'puertas') => void;
   onEntrarHoja: () => void;
@@ -27,6 +36,21 @@ interface Props {
   onOpenLevantamiento?: () => void;
   onOpenReminders?: () => void;
 }
+
+const SteelCornerAccent: React.FC<{ gold?: boolean }> = ({ gold = false }) => (
+  <span
+    aria-hidden="true"
+    className="pointer-events-none absolute top-0 right-5 w-16 h-[5px] rounded-b-md opacity-90"
+    style={{
+      background: gold
+        ? 'linear-gradient(90deg, rgba(164,132,76,0.2) 0%, #E7CE98 48%, rgba(164,132,76,0.25) 100%)'
+        : 'linear-gradient(90deg, rgba(96,124,146,0.18) 0%, #C8DCEB 50%, rgba(96,124,146,0.22) 100%)',
+      boxShadow: gold
+        ? '0 1px 6px rgba(212, 175, 55, 0.4)'
+        : '0 1px 6px rgba(148, 197, 232, 0.35)',
+    }}
+  />
+);
 
 export const MainMenuView: React.FC<Props> = ({
   proActive,
@@ -43,6 +67,7 @@ export const MainMenuView: React.FC<Props> = ({
   dueRemindersCount = 0,
   pushPermission = 'default',
   onClaimColleaguePromo,
+  onOpenColleagueInvite,
   onOpenPro,
   onEntrarTrabajo,
   onEntrarHoja,
@@ -52,20 +77,37 @@ export const MainMenuView: React.FC<Props> = ({
   onOpenLevantamiento,
   onOpenReminders,
 }) => {
+  const handlePedirPinClick = () => {
+    if (promoColegaUsed) {
+      onOpenPro?.();
+      return;
+    }
+    if (savedReferral && onClaimColleaguePromo) {
+      onClaimColleaguePromo();
+      return;
+    }
+    if (onOpenPro) {
+      onOpenPro();
+    } else if (onOpenColleagueInvite) {
+      onOpenColleagueInvite();
+    }
+  };
+
   return (
     <section
       id="view-menu"
       data-pro-active={proActive ? 'true' : 'false'}
-      className="screen-animate"
+      className="screen-animate pb-20 sm:pb-10"
     >
-      <div className="mb-4 sm:mb-5 flex items-center justify-between gap-2.5 flex-wrap">
-        <h1 className="m-0 text-[clamp(1.45rem,3.6vw,2.1rem)] font-extrabold text-white leading-[1.15] tracking-tight [text-wrap:balance]">
+      {/* Título principal centrado */}
+      <div className="mb-2.5 sm:mb-4 flex flex-col items-center justify-center text-center gap-1.5">
+        <h1 className="m-0 text-[clamp(1.5rem,4.9vw,2.15rem)] font-extrabold text-white leading-[1.1] tracking-[-0.02em] drop-shadow-[0_2px_10px_rgba(0,0,0,0.45)] [text-wrap:balance]">
           ¿Qué vamos a trabajar?
         </h1>
         {referredById && (
           <span
             id="badge-menu-referred-by"
-            className="mono inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-300/95 bg-emerald-500/10 border border-emerald-400/30 rounded-lg px-2.5 py-1 leading-none"
+            className="mono inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-300/95 bg-emerald-500/12 border border-emerald-400/35 rounded-full px-3 py-1 leading-none"
           >
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" aria-hidden="true" />
             Invitado por colega: {referredById}
@@ -73,7 +115,7 @@ export const MainMenuView: React.FC<Props> = ({
         )}
       </div>
 
-      {/* Acceso directo a Levantamiento Rápido */}
+      {/* 1. Tarjeta destacada principal: Levantamiento Rápido con escuadra metálica 3D */}
       <button
         type="button"
         id="lev-entry"
@@ -84,15 +126,18 @@ export const MainMenuView: React.FC<Props> = ({
             window.__alumLev?.open();
           }
         }}
+        className="group"
       >
-        <span style={{ fontSize: '26px', lineHeight: 1 }}>📐</span>
-        <span style={{ flex: 1 }}>
-          Levantamiento Rápido
-          <small>Toma medidas en obra y manda directo a cotizar o modular →</small>
+        <MetallicSetSquareIcon size={46} className="shrink-0 transition-transform duration-200 group-hover:scale-105" />
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <span className="block text-[17.5px] sm:text-[19px] font-extrabold text-white tracking-[-0.015em] leading-tight">
+            Levantamiento Rápido
+          </span>
+          <small>Toma medidas en obra y manda directo a cotizar o modular</small>
         </span>
       </button>
 
-      {/* Aviso de seguimiento de cotizaciones pendientes */}
+      {/* Aviso de seguimiento de cotizaciones pendientes (si existen) */}
       {onOpenReminders && pendingRemindersCount > 0 && (() => {
         const needsPushActivation = pushPermission === 'default' || pushPermission === 'denied';
         const ctaText =
@@ -109,8 +154,8 @@ export const MainMenuView: React.FC<Props> = ({
             onClick={onOpenReminders}
             className={`mb-3.5 w-full rounded-2xl px-4 py-3 text-left cursor-pointer border transition-all active:scale-[0.98] flex items-center justify-between gap-3 shadow-lg ${
               dueRemindersCount > 0 || pushPermission === 'denied'
-                ? 'border-amber-400/70 bg-amber-500/20 hover:bg-amber-500/30 text-white'
-                : 'border-sky-400/50 bg-sky-500/15 hover:bg-sky-500/25 text-white'
+                ? 'border-amber-400/70 bg-amber-500/18 hover:bg-amber-500/26 text-white'
+                : 'border-sky-400/50 bg-sky-500/15 hover:bg-sky-500/24 text-white'
             }`}
           >
             <div className="min-w-0">
@@ -120,7 +165,7 @@ export const MainMenuView: React.FC<Props> = ({
                   : '🔔 Recordatorios de Cotizaciones'}
                 {needsPushActivation ? ' · Falta activar avisos Push' : ''}
               </span>
-              <span className="block text-[13.5px] font-extrabold text-white leading-snug mt-0.5">
+              <span className="block text-[13px] font-extrabold text-white leading-snug mt-0.5">
                 {pushPermission === 'denied'
                   ? `Las notificaciones están bloqueadas: desbloquéalas para tus ${pendingRemindersCount} cotización(es) pendiente(s)`
                   : pushPermission === 'default'
@@ -135,159 +180,165 @@ export const MainMenuView: React.FC<Props> = ({
         );
       })()}
 
-      {/* Acceso para canjear los 3 días gratis enviados por un colega (o Actualizar a PRO si ya fue utilizada) */}
-      {!proActive && savedReferral && (
+      {/* 2. Banner horizontal verde esmeralda: Invitación de un colega + Pedir PIN */}
+      {!proActive && (
         <div
           id="card-menu-colleague-promo"
-          className={`mb-3.5 w-full rounded-2xl p-3.5 sm:p-4 text-left border shadow-lg ${
+          className={`mb-2.5 sm:mb-3.5 w-full rounded-[16px] px-3.5 py-2.5 text-left transition-all ${
             promoColegaUsed
-              ? 'border-amber-400/50 bg-[#0b101d] bg-[radial-gradient(circle_at_15%_50%,rgba(245,158,11,0.22)_0%,rgba(11,16,29,0.96)_72%)]'
-              : 'border-emerald-400/50 bg-[#060b14] bg-[radial-gradient(circle_at_15%_50%,rgba(16,185,129,0.28)_0%,rgba(6,11,20,0.96)_72%)]'
+              ? 'border border-amber-400/50 bg-gradient-to-r from-[#1a1812]/90 via-[#111b24]/95 to-[#161c24]/95 shadow-lg'
+              : 'metal-colleague-banner'
           }`}
         >
-          <div className="min-w-0 mb-2.5">
-            <span
-              className={`block text-[10.5px] font-extrabold uppercase tracking-wider leading-snug ${
-                promoColegaUsed ? 'text-amber-300' : 'text-emerald-300'
-              }`}
-            >
-              INVITACIÓN DE UN COLEGA · {savedReferral.refName} · Promo #{savedReferral.promoNumber}
-            </span>
-            <span className="block text-[14px] sm:text-[15px] font-extrabold text-white leading-snug mt-0.5">
-              {promoColegaUsed
-                ? 'Tu prueba Colega de 3 días concluyó en este equipo'
-                : 'Canjear mis 3 días gratis de colega'}
-            </span>
-            {promoColegaUsed && (
-              <p className="m-0 mt-1 text-[11.5px] text-amber-100/90 leading-snug">
-                Este ID ya utilizó su promoción Colega de 3 días anteriormente. Adquiere un plan de 30 días, 90 días o 1 Año para continuar con todos los beneficios PRO.
-              </p>
-            )}
-          </div>
           {promoColegaUsed ? (
-            <div className="flex flex-col sm:flex-row gap-2">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <span className="block text-[13.5px] sm:text-[14.5px] font-extrabold text-amber-200 leading-tight">
+                  Prueba Colega de 3 días concluida
+                </span>
+                <p className="m-0 mt-0.5 text-[11px] text-[#B0C4D4] leading-snug">
+                  Adquiere un plan de 30, 90 días o 1 Año para continuar con PRO.
+                </p>
+              </div>
               {onOpenPro && (
                 <button
                   type="button"
                   id="btn-menu-upgrade-pro-after-colleague"
                   onClick={onOpenPro}
-                  className="flex-1 min-h-[44px] px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 active:scale-[0.98] text-slate-950 font-extrabold text-[13px] leading-tight cursor-pointer shadow-sm transition-all text-center"
+                  className="shrink-0 min-h-[38px] px-4 py-1.5 rounded-full bg-amber-400 hover:bg-amber-300 active:scale-[0.97] text-slate-950 font-extrabold text-[12.5px] cursor-pointer shadow-md whitespace-nowrap"
                 >
                   Actualizar a PRO
                 </button>
               )}
             </div>
           ) : (
-            <div className="flex flex-col sm:flex-row gap-2">
-              {onClaimColleaguePromo && (
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-3">
+                <div
+                  className="min-w-0 flex-1 cursor-pointer"
+                  onClick={() => {
+                    if (savedReferral && onClaimColleaguePromo) {
+                      onClaimColleaguePromo();
+                    } else if (onOpenColleagueInvite) {
+                      onOpenColleagueInvite();
+                    } else {
+                      onOpenPro?.();
+                    }
+                  }}
+                >
+                  <span className="block text-[15.5px] sm:text-[17px] font-extrabold text-[#78F5BA] tracking-[-0.01em] leading-tight drop-shadow-[0_1px_2px_rgba(0,0,0,0.45)]">
+                    Invitación de un colega
+                  </span>
+                  {savedReferral && (
+                    <span className="block text-[11px] font-semibold text-emerald-100/90 mt-0.5 truncate">
+                      {savedReferral.refName} · Promo #{savedReferral.promoNumber} · 3 días gratis
+                    </span>
+                  )}
+                </div>
                 <button
                   type="button"
                   id="btn-menu-claim-colleague-promo"
-                  onClick={onClaimColleaguePromo}
-                  className="flex-1 min-h-[42px] px-3.5 py-2 rounded-xl bg-emerald-400 hover:bg-emerald-300 active:scale-[0.98] text-slate-950 font-extrabold text-[12px] sm:text-[12.5px] leading-tight cursor-pointer shadow-sm transition-all text-center"
+                  onClick={handlePedirPinClick}
+                  className="metal-colleague-pin-btn shrink-0 min-h-[38px] px-4 sm:px-5 py-1.5 rounded-full font-extrabold text-[13.5px] sm:text-[14px] tracking-tight cursor-pointer transition-all active:scale-95 whitespace-nowrap"
                 >
-                  Solicitar PIN de promoción colega al Administrador
+                  Pedir PIN
                 </button>
-              )}
-              {onOpenPro && (
-                <button
-                  type="button"
-                  id="btn-menu-enter-colleague-pin"
-                  onClick={onOpenPro}
-                  className="sm:w-auto min-h-[40px] px-3.5 py-2 rounded-xl border border-emerald-300/45 bg-emerald-500/15 hover:bg-emerald-500/25 active:scale-[0.98] text-emerald-100 font-bold text-[12px] cursor-pointer transition-all whitespace-nowrap text-center"
-                >
-                  Ya tengo mi PIN
-                </button>
+              </div>
+
+              {savedReferral && onOpenPro && (
+                <div className="flex items-center justify-end pt-1 border-t border-emerald-300/20">
+                  <button
+                    type="button"
+                    id="btn-menu-enter-colleague-pin"
+                    onClick={onOpenPro}
+                    className="text-[11.5px] font-bold text-emerald-100 hover:text-white underline underline-offset-2 cursor-pointer bg-transparent border-0 p-0"
+                  >
+                    Ya tengo mi PIN →
+                  </button>
+                </div>
               )}
             </div>
           )}
         </div>
       )}
 
-      {/* Tarjeta principal destacada: Hoja de Cotización */}
+      {/* 3. Tarjeta ancha destacada: Hoja de Cotización */}
       <button
         type="button"
         id="btn-menu-hoja"
         onClick={onEntrarHoja}
-        className="menu-hero-card mb-3.5 sm:mb-4 w-full rounded-[22px] p-4 sm:p-5 text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-95 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3.5 shadow-xl"
+        className="menu-hero-card metal-hero-card mb-3 sm:mb-4 w-full rounded-[18px] p-3.5 sm:p-4 text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-[0.985] flex flex-col gap-2.5"
       >
-        <div className="flex items-center gap-3.5 min-w-0">
-          <div className="w-12 h-12 rounded-2xl bg-white/15 border border-white/25 text-white flex items-center justify-center shrink-0 backdrop-blur-sm shadow-inner">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-              <polyline points="14 2 14 8 20 8" />
-              <line x1="8" y1="13" x2="16" y2="13" />
-              <line x1="8" y1="17" x2="13" y2="17" />
-            </svg>
-          </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="text-[16.5px] sm:text-[18px] font-extrabold text-white tracking-tight">
+        <SteelCornerAccent gold={!proActive} />
+        <div className="flex items-start gap-3 min-w-0 w-full">
+          <MetallicQuoteDocIcon size={48} className="shrink-0 mt-0.5" />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-start justify-between gap-2">
+              <span className="text-[17.5px] sm:text-[19px] font-extrabold text-white tracking-[-0.015em] leading-tight">
                 Hoja de Cotización
               </span>
-              {!proActive && (
-                <span className="px-2 py-0.5 rounded-lg bg-amber-400/20 border border-amber-300/40 text-amber-200 text-[10px] font-extrabold whitespace-nowrap">
-                  🔒 PRO
+              {!proActive ? (
+                <span className="metal-gold-pro-badge inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-extrabold leading-none whitespace-nowrap shrink-0">
+                  <span aria-hidden="true">🔒</span>
+                  <span>PRO</span>
+                </span>
+              ) : (
+                <span className="metal-emerald-pill inline-flex items-center px-2.5 py-1 rounded-full text-[10.5px] font-extrabold leading-none whitespace-nowrap shrink-0">
+                  PRO Activo
                 </span>
               )}
             </div>
-            <p className="m-0 text-[12px] sm:text-[12.5px] text-blue-100/90 mt-0.5">
+            <p className="m-0 text-[12.5px] sm:text-[13px] text-[#B0C4D4] mt-1 leading-snug">
               Partidas de obra, optimización de tramos 6.10 m y PDF
             </p>
           </div>
         </div>
 
-        <div className="flex items-center justify-between sm:justify-end gap-3 pt-2.5 sm:pt-0 border-t sm:border-t-0 border-white/15 shrink-0">
-          <div className="flex items-center gap-2.5">
-            <div className="px-3 py-1.5 rounded-xl bg-white/15 border border-white/20 text-white">
-              <span className="block text-[9.5px] uppercase tracking-wider text-blue-100 font-bold">
-                Piezas
-              </span>
-              <strong className="mono text-[13.5px] font-extrabold">
-                {hojaPiezasCount} pzas
-              </strong>
-            </div>
-            <div className="px-3 py-1.5 rounded-xl bg-white/15 border border-white/20 text-white">
-              <span className="block text-[9.5px] uppercase tracking-wider text-blue-100 font-bold">
-                Total rápido
-              </span>
-              <strong className="mono text-[13.5px] font-extrabold">
-                {formatMXN(hojaTotal)}
-              </strong>
-            </div>
+        {/* Resumen rápido tabular (Piezas y Total) */}
+        <div className="flex items-center justify-between gap-2 pt-2 border-t border-[#4A6072]/40 w-full">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-[#07131B]/75 border border-[#4A6072]/55 text-[11px] font-semibold text-[#B0C4D4]">
+              <span className="text-[9.5px] uppercase tracking-wider opacity-80">Piezas</span>
+              <strong className="mono text-white font-extrabold">{hojaPiezasCount} pzas</strong>
+            </span>
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-[#07131B]/75 border border-[#4A6072]/55 text-[11px] font-semibold text-[#B0C4D4]">
+              <span className="text-[9.5px] uppercase tracking-wider opacity-80">Total</span>
+              <strong className="mono text-emerald-300 font-extrabold">{formatMXN(hojaTotal)}</strong>
+            </span>
           </div>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" className="text-white/90 hidden sm:block" aria-hidden="true">
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.3"
+            className="text-[#8CA6BA] shrink-0"
+            aria-hidden="true"
+          >
             <polyline points="9 18 15 12 9 6" />
           </svg>
         </div>
       </button>
 
-      {/* Cuadrícula moderna de 2 columnas */}
-      <div className="grid grid-cols-2 gap-3 sm:gap-4">
+      {/* 4. Cuadrícula principal 2x2 metálica (Ventanas, Puertas, Catálogo Perfiles, Mi Inventario) */}
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 mb-7">
         {/* 1. VENTANAS */}
         <button
           type="button"
           id="btn-menu-ventanas"
           onClick={() => onEntrarTrabajo('ventanas')}
-          className="menu-grid-card flex flex-col justify-between gap-3 w-full min-h-[126px] sm:min-h-[134px] p-3.5 sm:p-4 rounded-[20px] border text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-95"
+          className="menu-grid-card metal-grid-card flex flex-col justify-between gap-2 w-full min-h-[126px] sm:min-h-[144px] p-3 sm:p-4 rounded-[18px] text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-[0.97]"
         >
-          <div className="flex items-center justify-between gap-2 w-full min-h-[40px]">
-            <div className="menu-icon-box menu-icon-blue w-10 h-10 rounded-2xl flex items-center justify-center shrink-0">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <rect x="3" y="4" width="18" height="16" rx="2" />
-                <line x1="12" y1="4" x2="12" y2="20" />
-                <path d="M16 12h2m-1-1 2 1-2 1" />
-              </svg>
-            </div>
-            <span className="menu-badge-free inline-flex items-center justify-center min-h-[22px] px-2 py-0.5 rounded-lg text-[10px] sm:text-[10.5px] font-extrabold leading-none whitespace-nowrap shrink-0">
-              3" Gratis
-            </span>
+          <SteelCornerAccent />
+          <div className="flex items-start justify-between gap-1.5 w-full">
+            <MetallicWindowIcon size={40} className="shrink-0" />
           </div>
-          <div>
-            <span className="block text-[14.5px] sm:text-[15.5px] font-extrabold leading-tight">
+          <div className="mt-1">
+            <span className="block text-[16px] sm:text-[17px] font-extrabold text-white leading-tight tracking-[-0.01em]">
               Ventanas
             </span>
-            <span className="menu-card-sub block text-[11px] sm:text-[12px] mt-1 leading-snug">
+            <span className="menu-card-sub block text-[11.5px] sm:text-[12.5px] mt-1 leading-snug">
               3", 2", Europea, Cancel y Mosq.
             </span>
           </div>
@@ -298,61 +349,55 @@ export const MainMenuView: React.FC<Props> = ({
           type="button"
           id="btn-menu-puertas"
           onClick={() => onEntrarTrabajo('puertas')}
-          className="menu-grid-card flex flex-col justify-between gap-3 w-full min-h-[126px] sm:min-h-[134px] p-3.5 sm:p-4 rounded-[20px] border text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-95"
+          className="menu-grid-card metal-grid-card flex flex-col justify-between gap-2 w-full min-h-[126px] sm:min-h-[144px] p-3 sm:p-4 rounded-[18px] text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-[0.97]"
         >
-          <div className="flex items-center justify-between gap-2 w-full min-h-[40px]">
-            <div className="menu-icon-box menu-icon-indigo w-10 h-10 rounded-2xl flex items-center justify-center shrink-0">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M6 21V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v17" />
-                <path d="M4 21h16" />
-                <circle cx="15" cy="12" r="1" />
-              </svg>
-            </div>
+          <SteelCornerAccent />
+          <div className="flex items-start justify-between gap-1.5 w-full">
+            <MetallicDoorIcon size={40} className="shrink-0" />
             <span
               className={`${
-                proActive ? 'menu-badge-info' : 'menu-badge-pro-pill'
-              } inline-flex items-center justify-center min-h-[22px] px-2 py-0.5 rounded-lg text-[10px] sm:text-[10.5px] font-extrabold leading-none whitespace-nowrap shrink-0`}
+                proActive ? 'metal-emerald-pill' : 'metal-gold-pro-badge'
+              } inline-flex items-center justify-center gap-1 px-2.5 py-1 rounded-full text-[10.5px] font-extrabold leading-none whitespace-nowrap shrink-0 mt-0.5`}
             >
               {proActive ? 'PRO Activo' : '🔒 PRO'}
             </span>
           </div>
-          <div>
-            <span className="block text-[14.5px] sm:text-[15.5px] font-extrabold leading-tight">
+          <div className="mt-1">
+            <span className="block text-[15.5px] sm:text-[17px] font-extrabold text-white leading-tight tracking-[-0.01em]">
               Puertas
             </span>
-            <span className="menu-card-sub block text-[11px] sm:text-[12px] mt-1 leading-snug">
+            <span className="menu-card-sub block text-[11px] sm:text-[12.5px] mt-0.5 leading-snug">
               Batiente Alumer, 2" y Europea
             </span>
           </div>
         </button>
 
-        {/* 3. CATÁLOGO PERFILES */}
+        {/* 3. CATÁLOGO PERFILES (con "3\" Gratis" arriba y píldora esmeralda "41 perf." abajo) */}
         <button
           type="button"
           id="btn-menu-catalogo"
           onClick={() => onGoToView('catalogo')}
-          className="menu-grid-card flex flex-col justify-between gap-3 w-full min-h-[126px] sm:min-h-[134px] p-3.5 sm:p-4 rounded-[20px] border text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-95"
+          className="menu-grid-card metal-grid-card !overflow-visible flex flex-col justify-between gap-2 w-full min-h-[132px] sm:min-h-[150px] p-3 sm:p-4 pb-5 rounded-[18px] text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-[0.97]"
         >
-          <div className="flex items-center justify-between gap-2 w-full min-h-[40px]">
-            <div className="menu-icon-box menu-icon-emerald w-10 h-10 rounded-2xl flex items-center justify-center shrink-0">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M4 4h6v16H4z" />
-                <path d="M10 10h10v10H10z" />
-                <path d="M14 4h6v3h-6z" />
-              </svg>
-            </div>
-            <span className="menu-badge-free mono inline-flex items-center justify-center min-h-[22px] px-2 py-0.5 rounded-lg text-[10px] sm:text-[10.5px] font-extrabold leading-none whitespace-nowrap shrink-0">
-              {CATALOGO_PERFILES.length} perf.
+          <SteelCornerAccent />
+          <div className="flex items-start justify-between gap-1.5 w-full">
+            <MetallicProfilesIcon size={40} className="shrink-0" />
+            <span className="metal-bronze-free-badge inline-flex items-center justify-center px-2.5 py-1 rounded-full text-[10.5px] font-extrabold leading-none whitespace-nowrap shrink-0 mt-0.5">
+              3" Gratis
             </span>
           </div>
-          <div>
-            <span className="block text-[14.5px] sm:text-[15.5px] font-extrabold leading-tight">
+          <div className="mt-1">
+            <span className="block text-[15px] sm:text-[16.5px] font-extrabold text-white leading-tight tracking-[-0.01em]">
               Catálogo Perfiles
             </span>
-            <span className="menu-card-sub block text-[11px] sm:text-[12px] mt-1 leading-snug">
+            <span className="menu-card-sub block text-[11px] sm:text-[12.5px] mt-0.5 leading-snug">
               Secciones Alumer y fotos reales
             </span>
           </div>
+          {/* Píldora verde esmeralda centrada en borde inferior */}
+          <span className="metal-cat-bottom-pill mono pointer-events-none absolute -bottom-3.5 left-1/2 -translate-x-1/2 inline-flex items-center justify-center px-3.5 py-1 rounded-full text-[11.5px] font-extrabold leading-none whitespace-nowrap z-10">
+            {CATALOGO_PERFILES.length} perf.
+          </span>
         </button>
 
         {/* 4. MI INVENTARIO */}
@@ -360,51 +405,60 @@ export const MainMenuView: React.FC<Props> = ({
           type="button"
           id="btn-menu-inventario"
           onClick={onEntrarInventario}
-          className="menu-grid-card flex flex-col justify-between gap-3 w-full min-h-[126px] sm:min-h-[134px] p-3.5 sm:p-4 rounded-[20px] border text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-95"
+          className="menu-grid-card metal-grid-card flex flex-col justify-between gap-2 w-full min-h-[132px] sm:min-h-[150px] p-3 sm:p-4 pb-5 rounded-[18px] text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-[0.97]"
         >
-          <div className="flex items-center justify-between gap-2 w-full min-h-[40px]">
-            <div className="menu-icon-box menu-icon-amber w-10 h-10 rounded-2xl flex items-center justify-center shrink-0">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
-                <path d="m3.3 7 8.7 5 8.7-5" />
-                <path d="M12 22V12" />
-              </svg>
-            </div>
-            <span className="menu-badge-info mono inline-flex items-center justify-center gap-1 min-h-[22px] px-2 py-0.5 rounded-lg text-[10px] sm:text-[10.5px] font-extrabold leading-none whitespace-nowrap shrink-0">
-              {!proActive && <span aria-hidden="true">🔒</span>}
-              <span>{inventarioTramosTotal} tr.</span>
+          <SteelCornerAccent />
+          <div className="flex items-start justify-between gap-1.5 w-full">
+            <MetallicInventoryBoxIcon size={40} className="shrink-0" />
+            <span
+              className={`${
+                proActive ? 'metal-emerald-pill' : 'metal-gold-pro-badge'
+              } mono inline-flex items-center justify-center gap-1 px-2.5 py-1 rounded-full text-[10.5px] font-extrabold leading-none whitespace-nowrap shrink-0 mt-0.5`}
+            >
+              {!proActive ? '🔒 PRO' : `${inventarioTramosTotal} tr.`}
             </span>
           </div>
-          <div>
-            <span className="block text-[14.5px] sm:text-[15.5px] font-extrabold leading-tight">
+          <div className="mt-1">
+            <span className="block text-[15px] sm:text-[16.5px] font-extrabold text-white leading-tight tracking-[-0.01em]">
               Mi Inventario
             </span>
-            <span className="menu-card-sub block text-[11px] sm:text-[12px] mt-1 leading-snug">
+            <span className="menu-card-sub block text-[11px] sm:text-[12.5px] mt-0.5 leading-snug">
               Tramos, sobrantes y herrajes
             </span>
           </div>
         </button>
+      </div>
 
+      {/* 5. Herramientas adicionales del taller (mismo acabado metálico cristal oscuro) */}
+      <div className="mb-2.5 flex items-center gap-2.5">
+        <span className="h-[1px] flex-1 bg-gradient-to-r from-transparent via-[#4A6072]/60 to-transparent" aria-hidden="true" />
+        <span className="text-[10.5px] font-bold uppercase tracking-[0.14em] text-[#8CA6BA]">
+          Herramientas del Taller
+        </span>
+        <span className="h-[1px] flex-1 bg-gradient-to-r from-transparent via-[#4A6072]/60 to-transparent" aria-hidden="true" />
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 sm:gap-4">
         {/* 5. NOTAS DE OBRA */}
         <button
           type="button"
           id="btn-menu-notas"
           onClick={() => onGoToView('notas')}
-          className="menu-grid-card flex flex-col justify-between gap-3 w-full min-h-[126px] sm:min-h-[134px] p-3.5 sm:p-4 rounded-[20px] border text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-95"
+          className="menu-grid-card metal-grid-card flex flex-col justify-between gap-3 w-full min-h-[124px] sm:min-h-[132px] p-3.5 sm:p-4 rounded-[18px] text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-[0.97]"
         >
-          <div className="flex items-center justify-between gap-2 w-full min-h-[40px]">
-            <div className="menu-icon-box menu-icon-teal w-10 h-10 rounded-2xl flex items-center justify-center shrink-0">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <div className="flex items-center justify-between gap-2 w-full">
+            <div className="metal-icon-btn w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-[#D8E6F2]">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M12 20h9" />
                 <path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4Z" />
               </svg>
             </div>
-            <span className="menu-badge-free mono inline-flex items-center justify-center min-h-[22px] px-2 py-0.5 rounded-lg text-[10px] sm:text-[10.5px] font-extrabold leading-none whitespace-nowrap shrink-0">
+            <span className="metal-emerald-pill mono inline-flex items-center justify-center px-2.5 py-1 rounded-full text-[10px] font-extrabold leading-none whitespace-nowrap shrink-0">
               {notasCount > 0 ? `${notasCount} notas` : 'Gratis'}
             </span>
           </div>
           <div>
-            <span className="block text-[14.5px] sm:text-[15.5px] font-extrabold leading-tight">
+            <span className="block text-[14.5px] sm:text-[15.5px] font-extrabold text-white leading-tight">
               Notas de Obra
             </span>
             <span className="menu-card-sub block text-[11px] sm:text-[12px] mt-1 leading-snug">
@@ -418,23 +472,23 @@ export const MainMenuView: React.FC<Props> = ({
           type="button"
           id="btn-menu-modulacion"
           onClick={() => onGoToView('modulacion')}
-          className="menu-grid-card flex flex-col justify-between gap-3 w-full min-h-[126px] sm:min-h-[134px] p-3.5 sm:p-4 rounded-[20px] border text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-95"
+          className="menu-grid-card metal-grid-card flex flex-col justify-between gap-3 w-full min-h-[124px] sm:min-h-[132px] p-3.5 sm:p-4 rounded-[18px] text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-[0.97]"
         >
-          <div className="flex items-center justify-between gap-2 w-full min-h-[40px]">
-            <div className="menu-icon-box menu-icon-orange w-10 h-10 rounded-2xl flex items-center justify-center shrink-0">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <div className="flex items-center justify-between gap-2 w-full">
+            <div className="metal-icon-btn w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-[#D8E6F2]">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M21 6H3" />
                 <path d="M10 12H3" />
                 <path d="M10 18H3" />
                 <path d="m14 15 3 3 5-5" />
               </svg>
             </div>
-            <span className="menu-badge-free inline-flex items-center justify-center min-h-[22px] px-2 py-0.5 rounded-lg text-[10px] sm:text-[10.5px] font-extrabold leading-none whitespace-nowrap shrink-0">
+            <span className="metal-emerald-pill inline-flex items-center justify-center px-2.5 py-1 rounded-full text-[10px] font-extrabold leading-none whitespace-nowrap shrink-0">
               Gratis
             </span>
           </div>
           <div>
-            <span className="block text-[14.5px] sm:text-[15.5px] font-extrabold leading-tight">
+            <span className="block text-[14.5px] sm:text-[15.5px] font-extrabold text-white leading-tight">
               Modulación y Cortes
             </span>
             <span className="menu-card-sub block text-[11px] sm:text-[12px] mt-1 leading-snug">
@@ -448,21 +502,21 @@ export const MainMenuView: React.FC<Props> = ({
           type="button"
           id="btn-menu-taller"
           onClick={() => onGoToView('taller')}
-          className="menu-grid-card flex flex-col justify-between gap-3 w-full min-h-[126px] sm:min-h-[134px] p-3.5 sm:p-4 rounded-[20px] border text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-95"
+          className="menu-grid-card metal-grid-card flex flex-col justify-between gap-3 w-full min-h-[124px] sm:min-h-[132px] p-3.5 sm:p-4 rounded-[18px] text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-[0.97]"
         >
-          <div className="flex items-center justify-between gap-2 w-full min-h-[40px]">
-            <div className="menu-icon-box menu-icon-violet w-10 h-10 rounded-2xl flex items-center justify-center shrink-0">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <div className="flex items-center justify-between gap-2 w-full">
+            <div className="metal-icon-btn w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-[#D8E6F2]">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M3 9l9-6 9 6v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
                 <path d="M9 22V12h6v10" />
               </svg>
             </div>
-            <span className="menu-badge-violet inline-flex items-center justify-center min-h-[22px] px-2 py-0.5 rounded-lg text-[10px] sm:text-[10.5px] font-extrabold leading-none whitespace-nowrap shrink-0">
+            <span className="metal-bronze-free-badge inline-flex items-center justify-center px-2.5 py-1 rounded-full text-[10px] font-extrabold leading-none whitespace-nowrap shrink-0">
               Tarifas
             </span>
           </div>
           <div>
-            <span className="block text-[14.5px] sm:text-[15.5px] font-extrabold leading-tight">
+            <span className="block text-[14.5px] sm:text-[15.5px] font-extrabold text-white leading-tight">
               Mi Taller y Precios
             </span>
             <span className="menu-card-sub block text-[11px] sm:text-[12px] mt-1 leading-snug">
@@ -476,23 +530,23 @@ export const MainMenuView: React.FC<Props> = ({
           type="button"
           id="btn-menu-antes-despues"
           onClick={onOpenAntesDespues}
-          className="menu-grid-card flex flex-col justify-between gap-3 w-full min-h-[126px] sm:min-h-[134px] p-3.5 sm:p-4 rounded-[20px] border text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-95"
+          className="menu-grid-card metal-grid-card flex flex-col justify-between gap-3 w-full min-h-[124px] sm:min-h-[132px] p-3.5 sm:p-4 rounded-[18px] text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-[0.97]"
         >
-          <div className="flex items-center justify-between gap-2 w-full min-h-[40px]">
-            <div className="menu-icon-box menu-icon-cyan w-10 h-10 rounded-2xl flex items-center justify-center shrink-0">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <div className="flex items-center justify-between gap-2 w-full">
+            <div className="metal-icon-btn w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-[#D8E6F2]">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <rect x="3" y="4" width="18" height="16" rx="2" />
                 <line x1="12" y1="4" x2="12" y2="20" />
                 <path d="M6.5 14l2-2 2 2" />
                 <path d="M14.5 12l2-2 2 2" />
               </svg>
             </div>
-            <span className="menu-badge-cyan inline-flex items-center justify-center min-h-[22px] px-2 py-0.5 rounded-lg text-[10px] sm:text-[10.5px] font-extrabold leading-none whitespace-nowrap shrink-0">
+            <span className="metal-bronze-free-badge inline-flex items-center justify-center px-2.5 py-1 rounded-full text-[10px] font-extrabold leading-none whitespace-nowrap shrink-0">
               Clientes
             </span>
           </div>
           <div>
-            <span className="block text-[14.5px] sm:text-[15.5px] font-extrabold leading-tight">
+            <span className="block text-[14.5px] sm:text-[15.5px] font-extrabold text-white leading-tight">
               Galería (Antes y Después)
             </span>
             <span className="menu-card-sub block text-[11px] sm:text-[12px] mt-1 leading-snug">
@@ -506,22 +560,22 @@ export const MainMenuView: React.FC<Props> = ({
           type="button"
           id="btn-menu-vidrio"
           onClick={() => onGoToView('vidrio')}
-          className="menu-grid-card flex flex-col justify-between gap-3 w-full min-h-[126px] sm:min-h-[134px] p-3.5 sm:p-4 rounded-[20px] border text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-95"
+          className="menu-grid-card metal-grid-card flex flex-col justify-between gap-3 w-full min-h-[124px] sm:min-h-[132px] p-3.5 sm:p-4 rounded-[18px] text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-[0.97]"
         >
-          <div className="flex items-center justify-between gap-2 w-full min-h-[40px]">
-            <div className="menu-icon-box menu-icon-cyan w-10 h-10 rounded-2xl flex items-center justify-center shrink-0">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <div className="flex items-center justify-between gap-2 w-full">
+            <div className="metal-icon-btn w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-[#D8E6F2]">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <rect x="3" y="3" width="18" height="18" rx="2" />
                 <line x1="11" y1="3" x2="11" y2="21" />
                 <line x1="11" y1="12" x2="21" y2="12" />
               </svg>
             </div>
-            <span className="menu-badge-cyan mono inline-flex items-center justify-center min-h-[22px] px-2 py-0.5 rounded-lg text-[10px] sm:text-[10.5px] font-extrabold leading-none whitespace-nowrap shrink-0">
+            <span className="metal-bronze-free-badge mono inline-flex items-center justify-center px-2.5 py-1 rounded-full text-[10px] font-extrabold leading-none whitespace-nowrap shrink-0">
               {hojasVidrioCount > 0 ? `${hojasVidrioCount} hojas` : 'Corte 2D'}
             </span>
           </div>
           <div>
-            <span className="block text-[14.5px] sm:text-[15.5px] font-extrabold leading-tight">
+            <span className="block text-[14.5px] sm:text-[15.5px] font-extrabold text-white leading-tight">
               Optimizador de Vidrio (2D)
             </span>
             <span className="menu-card-sub block text-[11px] sm:text-[12px] mt-1 leading-snug">
@@ -535,23 +589,23 @@ export const MainMenuView: React.FC<Props> = ({
           type="button"
           id="btn-menu-cotizaciones"
           onClick={() => onGoToView('cotizaciones')}
-          className="menu-grid-card flex flex-col justify-between gap-3 w-full min-h-[126px] sm:min-h-[134px] p-3.5 sm:p-4 rounded-[20px] border text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-95"
+          className="menu-grid-card metal-grid-card flex flex-col justify-between gap-3 w-full min-h-[124px] sm:min-h-[132px] p-3.5 sm:p-4 rounded-[18px] text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-[0.97]"
         >
-          <div className="flex items-center justify-between gap-2 w-full min-h-[40px]">
-            <div className="menu-icon-box menu-icon-indigo w-10 h-10 rounded-2xl flex items-center justify-center shrink-0">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <div className="flex items-center justify-between gap-2 w-full">
+            <div className="metal-icon-btn w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-[#D8E6F2]">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" />
                 <rect x="9" y="3" width="6" height="4" rx="1" />
                 <path d="M9 12h6" />
                 <path d="M9 16h4" />
               </svg>
             </div>
-            <span className="menu-badge-info mono inline-flex items-center justify-center min-h-[22px] px-2 py-0.5 rounded-lg text-[10px] sm:text-[10.5px] font-extrabold leading-none whitespace-nowrap shrink-0">
+            <span className="metal-bronze-free-badge mono inline-flex items-center justify-center px-2.5 py-1 rounded-full text-[10px] font-extrabold leading-none whitespace-nowrap shrink-0">
               {cotizacionesCount > 0 ? `${cotizacionesCount} folios` : 'Folios'}
             </span>
           </div>
           <div>
-            <span className="block text-[14.5px] sm:text-[15.5px] font-extrabold leading-tight">
+            <span className="block text-[14.5px] sm:text-[15.5px] font-extrabold text-white leading-tight">
               Historial de Cotizaciones
             </span>
             <span className="menu-card-sub block text-[11px] sm:text-[12px] mt-1 leading-snug">

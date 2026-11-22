@@ -17,22 +17,22 @@ export const FloatingInstallButton: React.FC<FloatingInstallButtonProps> = ({
   return (
     <div
       id="floating-install-wrap"
-      className="fixed bottom-4 left-4 sm:bottom-5 sm:left-5 z-40 max-w-[calc(100vw-6rem)]"
+      className="fixed bottom-3 left-3 sm:bottom-5 sm:left-5 z-40 max-w-[calc(100vw-6.5rem)]"
     >
-      <div className="install-fab-float install-fab-glow inline-flex items-center rounded-2xl border border-emerald-300/70 bg-gradient-to-r from-emerald-600 via-teal-600 to-blue-600 text-white shadow-2xl overflow-hidden backdrop-blur-sm">
+      <div className="inline-flex items-center rounded-full border border-[#45C98E]/80 bg-gradient-to-r from-[#0B2A24]/95 via-[#0E362E]/95 to-[#0D2535]/95 text-white shadow-[0_10px_24px_rgba(0,0,0,0.6),inset_0_1px_0_rgba(176,252,218,0.3)] overflow-hidden backdrop-blur-md">
         <button
           type="button"
           id="btn-floating-install-app"
           onClick={onInstall}
-          className="inline-flex items-center gap-2 min-h-[46px] pl-3.5 pr-3 py-2 text-[13px] sm:text-[13.5px] font-extrabold tracking-tight text-white hover:bg-white/10 active:scale-[0.98] transition-all cursor-pointer whitespace-nowrap"
+          className="inline-flex items-center gap-1.5 min-h-[38px] pl-2.5 pr-2.5 py-1 text-[12px] sm:text-[12.5px] font-extrabold tracking-tight text-[#E8FFF4] hover:bg-emerald-400/15 active:scale-[0.97] transition-all cursor-pointer whitespace-nowrap"
         >
-          <span className="w-7 h-7 rounded-xl bg-white/20 border border-white/25 flex items-center justify-center shrink-0">
-            <Download size={15} strokeWidth={2.5} aria-hidden="true" />
+          <span className="w-6 h-6 rounded-full bg-emerald-400/20 border border-emerald-300/50 text-[#76F2B6] flex items-center justify-center shrink-0">
+            <Download size={13} strokeWidth={2.5} aria-hidden="true" />
           </span>
           <span>Instalar App</span>
         </button>
 
-        <span className="w-px h-6 bg-white/25 shrink-0" aria-hidden="true" />
+        <span className="w-px h-5 bg-[#4A6072]/60 shrink-0" aria-hidden="true" />
 
         <button
           type="button"
@@ -40,9 +40,9 @@ export const FloatingInstallButton: React.FC<FloatingInstallButtonProps> = ({
           onClick={onDismiss}
           aria-label="Cerrar botón de instalar por esta sesión"
           title="Ocultar por esta sesión"
-          className="inline-flex items-center justify-center min-w-[36px] min-h-[46px] px-2 text-white/85 hover:text-white hover:bg-white/15 active:scale-95 transition-colors cursor-pointer shrink-0"
+          className="inline-flex items-center justify-center min-w-[32px] min-h-[38px] px-2 text-[#B0C4D4] hover:text-white hover:bg-white/10 active:scale-95 transition-colors cursor-pointer shrink-0"
         >
-          <X size={14} strokeWidth={2.6} aria-hidden="true" />
+          <X size={13} strokeWidth={2.5} aria-hidden="true" />
         </button>
       </div>
     </div>

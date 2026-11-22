@@ -2510,6 +2510,7 @@ export default function App() {
             dueRemindersCount={reminderSummary.dueCount}
             pushPermission={pushPermission}
             onClaimColleaguePromo={handleClaimColleaguePromo}
+            onOpenColleagueInvite={() => openGlobalModal('recomendar')}
             onOpenPro={() => openGlobalModal('pro')}
             onEntrarTrabajo={handleEntrarTrabajo}
             onEntrarHoja={handleEntrarHoja}

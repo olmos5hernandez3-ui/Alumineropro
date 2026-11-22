@@ -11,6 +11,7 @@ import {
   sanitizeWhatsappNumber,
 } from '../utils/storageHelpers';
 import { PhotoPickerButtons } from './PhotoPickerButtons';
+import { MetallicRobot3D } from './MetallicIcons';
 
 interface FloatingAssistantProps {
   whatsappNumber: string;
@@ -81,7 +82,6 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
   const [morphedAtCenter, setMorphedAtCenter] = useState(false);
   const travelTimerRef = useRef<number | null>(null);
   const [activeOption, setActiveOption] = useState<'A' | 'B'>('A');
-  const isIndustrial1Yr = skin === 'industrial';
 
   useEffect(() => {
     return () => {
@@ -106,19 +106,15 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
       handleCloseAssistant();
       return;
     }
-    if (isIndustrial1Yr) {
-      setTravelingToCenter(true);
-      setMorphedAtCenter(false);
-      travelTimerRef.current = window.setTimeout(() => {
-        travelTimerRef.current = null;
-        setTravelingToCenter(false);
-        setMorphedAtCenter(true);
-        setOpen(true);
-      }, 560);
-    } else {
-      setMorphedAtCenter(false);
+    // Animación universal del robot 3D metálico: desplazamiento fluido desde la esquina inferior derecha hacia el centro
+    setTravelingToCenter(true);
+    setMorphedAtCenter(false);
+    travelTimerRef.current = window.setTimeout(() => {
+      travelTimerRef.current = null;
+      setTravelingToCenter(false);
+      setMorphedAtCenter(true);
       setOpen(true);
-    }
+    }, 480);
   };
 
   // Opción A — Sugerir línea o perfil
@@ -220,7 +216,7 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
       }
 
       setSugerenciaTexto('');
-      setOpen(false);
+      handleCloseAssistant();
     } finally {
       setSending(false);
     }
@@ -291,7 +287,7 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
           setCustomPerfilNombre('');
           setFotoDataUrl('');
           setFotoFileName('');
-          setOpen(false);
+          handleCloseAssistant();
           return;
         } catch (err) {
           if (err instanceof Error && err.name === 'AbortError') {
@@ -318,36 +314,30 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
       setCustomPerfilNombre('');
       setFotoDataUrl('');
       setFotoFileName('');
-      setOpen(false);
+      handleCloseAssistant();
     } finally {
       setSending(false);
     }
   };
 
   return (
-    <div id="floating-assistant-root" className="fixed bottom-4 right-4 sm:bottom-5 sm:right-5 z-40">
-      {/* Animación de recorrido de izquierda a derecha hasta el centro en carátula de 1 año */}
+    <div
+      id="floating-assistant-root"
+      data-skin={skin}
+      className="fixed bottom-3 right-3 sm:bottom-5 sm:right-5 z-40"
+    >
+      {/* Escenario de desplazamiento del robot 3D metálico desde la esquina hacia el centro */}
       {travelingToCenter && (
         <div
           id="assistant-travel-stage"
           aria-hidden="true"
-          className="fixed inset-0 z-50 pointer-events-none bg-slate-950/35 backdrop-blur-[1px]"
+          className="fixed inset-0 z-50 pointer-events-none bg-[#040c12]/45 backdrop-blur-[1.5px]"
         >
           <div
             id="assistant-traveling-robot"
-            className="assistant-robot-travel-center fixed w-[68px] h-[68px] rounded-full flex items-center justify-center bg-gradient-to-br from-amber-500 via-emerald-600 to-slate-900 border-2 border-amber-300 shadow-[0_18px_40px_rgba(0,0,0,0.7),0_0_24px_rgba(251,191,36,0.5)]"
+            className="robot-3d-glide-center flex items-center justify-center"
           >
-            <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
-              <line x1="20" y1="4.5" x2="20" y2="9.5" stroke="#FDE68A" strokeWidth="2.6" strokeLinecap="round" />
-              <circle cx="20" cy="4" r="2.6" fill="#34D399" />
-              <rect x="4" y="16" width="4" height="9" rx="2" fill="#FCD34D" />
-              <rect x="32" y="16" width="4" height="9" rx="2" fill="#FCD34D" />
-              <rect x="8" y="9.5" width="24" height="22" rx="9" fill="#FFFFFF" />
-              <rect x="11.5" y="14.5" width="17" height="9.5" rx="4.75" fill="#0F172A" />
-              <circle cx="16.2" cy="19.2" r="2.1" fill="#34D399" />
-              <circle cx="23.8" cy="19.2" r="2.1" fill="#34D399" />
-              <path d="M15.5 26.8C17.2 28.4 22.8 28.4 24.5 26.8" stroke="#D97706" strokeWidth="2.2" strokeLinecap="round" />
-            </svg>
+            <MetallicRobot3D size={86} />
           </div>
         </div>
       )}
@@ -356,7 +346,7 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
         <div
           aria-hidden="true"
           onClick={handleCloseAssistant}
-          className="fixed inset-0 z-40 bg-slate-950/55 backdrop-blur-[2px]"
+          className="fixed inset-0 z-40 bg-[#040c12]/65 backdrop-blur-[3px]"
         />
       )}
 
@@ -368,29 +358,15 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
           data-centered-morph={morphedAtCenter ? 'true' : 'false'}
           className={`${
             morphedAtCenter
-              ? 'assistant-card-morph-center z-50 w-[calc(100vw-2rem)] max-w-[400px] max-h-[calc(100vh-5rem)]'
-              : 'assistant-card-enter fixed bottom-[86px] right-4 sm:right-5 w-[calc(100vw-2rem)] max-w-[388px] max-h-[calc(100vh-7rem)]'
+              ? 'assistant-card-morph-center z-50 w-[calc(100vw-2rem)] max-w-[404px] max-h-[calc(100vh-5rem)]'
+              : 'assistant-card-enter fixed bottom-[92px] right-4 sm:right-5 w-[calc(100vw-2rem)] max-w-[388px] max-h-[calc(100vh-7rem)]'
           } overflow-y-auto rounded-[22px] border-[1.5px] shadow-2xl p-4`}
         >
           {/* Encabezado */}
-          <div className="flex items-center justify-between gap-2.5 pb-3 mb-3 border-b border-slate-200/80 assistant-card-divider">
+          <div className="flex items-center justify-between gap-2.5 pb-3 mb-3 border-b border-[#4A6072]/45 assistant-card-divider">
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center shrink-0 shadow-md">
-                <svg
-                  width="24"
-                  height="24"
-                  viewBox="0 0 36 36"
-                  fill="none"
-                  aria-hidden="true"
-                >
-                  <line x1="18" y1="3" x2="18" y2="8" stroke="#E0F2FE" strokeWidth="2.4" strokeLinecap="round" />
-                  <circle cx="18" cy="3" r="2.2" fill="#34D399" />
-                  <rect x="6" y="8" width="24" height="20" rx="8" fill="#FFFFFF" />
-                  <rect x="10" y="13" width="16" height="8" rx="4" fill="#0F172A" />
-                  <circle cx="14.5" cy="17" r="1.8" fill="#38BDF8" />
-                  <circle cx="21.5" cy="17" r="1.8" fill="#38BDF8" />
-                  <path d="M14 24.5C15.4 25.8 20.6 25.8 22 24.5" stroke="#2563EB" strokeWidth="2" strokeLinecap="round" />
-                </svg>
+              <div className="metal-icon-btn w-11 h-11 rounded-2xl flex items-center justify-center shrink-0">
+                <MetallicRobot3D size={38} compactHeadOnly />
               </div>
               <div className="min-w-0">
                 <h2 className="m-0 text-[15px] font-extrabold leading-tight truncate">
@@ -480,12 +456,12 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
                     if (errorA) setErrorA('');
                   }}
                   placeholder="Ej. Marca Cuprum, Línea Eurovent Serie 70, perfil riel curvo o jaladera multipunto..."
-                  className="w-full rounded-xl border border-slate-300 p-2.5 text-[13px] font-medium"
+                  className="w-full rounded-xl border border-[#4A6072] p-2.5 text-[13px] font-medium"
                 />
               </div>
 
               {errorA && (
-                <p className="m-0 text-[12px] font-bold text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2">
+                <p className="m-0 text-[12px] font-bold text-red-300 bg-red-950/60 border border-red-400/50 rounded-xl px-3 py-2">
                   {errorA}
                 </p>
               )}
@@ -500,7 +476,7 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
                 type="submit"
                 id="btn-assistant-send-a"
                 disabled={sending}
-                className="w-full min-h-[44px] px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[13.5px] cursor-pointer flex items-center justify-center gap-2 shadow-md disabled:opacity-60"
+                className="metal-emerald-pill w-full min-h-[44px] px-4 rounded-xl font-extrabold text-[13.5px] cursor-pointer flex items-center justify-center gap-2 disabled:opacity-60"
               >
                 <span>{sending ? 'Abriendo envío...' : 'Enviar sugerencia al Administrador'}</span>
               </button>
@@ -524,7 +500,7 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
                     setSelectedPerfilId(e.target.value);
                     if (errorB) setErrorB('');
                   }}
-                  className="w-full min-h-[40px] rounded-xl border border-slate-300 px-2.5 text-[12.5px] font-bold"
+                  className="w-full min-h-[40px] rounded-xl border border-[#4A6072] px-2.5 text-[12.5px] font-bold"
                 >
                   <option value="">— Elegir perfil del catálogo (o escribir abajo) —</option>
                   {FAMILIA_ORDER.map((fam) => (
@@ -561,7 +537,7 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
                       ? 'Ej. Corte visto de frente / marca específica'
                       : 'Ej. Cabezal Serie 4500 o perfil nuevo'
                   }
-                  className="w-full min-h-[40px] rounded-xl border border-slate-300 px-3 text-[13px] font-semibold"
+                  className="w-full min-h-[40px] rounded-xl border border-[#4A6072] px-3 text-[13px] font-semibold"
                 />
               </div>
 
@@ -578,17 +554,17 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
                 />
 
                 {compressing && (
-                  <p className="m-0 mt-2 text-[11.5px] font-bold text-blue-600">
+                  <p className="m-0 mt-2 text-[11.5px] font-bold text-cyan-300">
                     Optimizando foto...
                   </p>
                 )}
 
                 {fotoDataUrl && !compressing && (
-                  <div className="mt-2 p-2 rounded-xl border border-slate-300 bg-slate-50 flex items-center gap-2.5">
+                  <div className="mt-2 p-2 rounded-xl border border-[#4A6072]/60 bg-[#07131B]/80 flex items-center gap-2.5">
                     <img
                       src={fotoDataUrl}
                       alt="Vista previa de foto para aprobación"
-                      className="w-14 h-14 rounded-lg object-cover border border-slate-300 shrink-0 bg-white"
+                      className="w-14 h-14 rounded-lg object-cover border border-[#4A6072] shrink-0 bg-white"
                     />
                     <div className="min-w-0 flex-1">
                       <div className="text-[11.5px] font-extrabold truncate">
@@ -605,7 +581,7 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
                         setFotoDataUrl('');
                         setFotoFileName('');
                       }}
-                      className="px-2 py-1 rounded-lg border border-red-200 bg-red-50 text-red-700 text-[11px] font-extrabold cursor-pointer shrink-0"
+                      className="px-2 py-1 rounded-lg border border-red-400/50 bg-red-950/60 text-red-200 text-[11px] font-extrabold cursor-pointer shrink-0"
                     >
                       Quitar
                     </button>
@@ -614,7 +590,7 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
               </div>
 
               {errorB && (
-                <p className="m-0 text-[12px] font-bold text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2">
+                <p className="m-0 text-[12px] font-bold text-red-300 bg-red-950/60 border border-red-400/50 rounded-xl px-3 py-2">
                   {errorB}
                 </p>
               )}
@@ -629,7 +605,7 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
                 type="submit"
                 id="btn-asistente-enviar-foto"
                 disabled={sending || compressing}
-                className="w-full min-h-[44px] px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-[13.5px] cursor-pointer flex items-center justify-center gap-2 shadow-md disabled:opacity-60"
+                className="metal-emerald-pill w-full min-h-[44px] px-4 rounded-xl font-extrabold text-[13.5px] cursor-pointer flex items-center justify-center gap-2 disabled:opacity-60"
               >
                 <span>{sending ? 'Preparando envío...' : 'Enviar foto para aprobación'}</span>
               </button>
@@ -638,78 +614,41 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
         </section>
       )}
 
-      {/* Botón flotante animado con robot amistoso */}
-      <button
-        type="button"
-        id="btn-floating-assistant"
-        data-skin-animation={isIndustrial1Yr ? 'industrial-hop-1yr' : 'default'}
-        aria-label={open ? 'Cerrar Asistente Aluminero Pro' : 'Abrir Asistente Aluminero Pro'}
-        aria-expanded={open}
-        aria-controls="card-floating-assistant"
-        onClick={handleToggleAssistant}
-        className={`relative w-[60px] h-[60px] rounded-full flex items-center justify-center cursor-pointer shadow-2xl border-2 border-cyan-300/80 transition-transform active:scale-95 ${
-          open || travelingToCenter
-            ? 'bg-slate-900 text-white'
-            : isIndustrial1Yr
-              ? 'assistant-robot-hop-1yr bg-gradient-to-br from-slate-800 via-emerald-800 to-amber-600 text-white'
-              : 'assistant-fab-float bg-gradient-to-br from-blue-600 via-blue-700 to-cyan-500 text-white'
-        }`}
-      >
-        {!open && !travelingToCenter && (
-          <span
-            aria-hidden="true"
-            className="assistant-fab-ring absolute inset-0 rounded-full pointer-events-none"
-          />
-        )}
-
-        {open ? (
-          <svg
-            width="24"
-            height="24"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.8"
-            strokeLinecap="round"
-            aria-hidden="true"
-          >
-            <line x1="6" y1="6" x2="18" y2="18" />
-            <line x1="18" y1="6" x2="6" y2="18" />
-          </svg>
-        ) : (
-          <svg
-            width="36"
-            height="36"
-            viewBox="0 0 40 40"
-            fill="none"
-            aria-hidden="true"
-            className="relative z-10"
-          >
-            {/* Antena amistosa */}
-            <line x1="20" y1="4.5" x2="20" y2="9.5" stroke="#BAE6FD" strokeWidth="2.6" strokeLinecap="round" />
-            <circle cx="20" cy="4" r="2.6" fill="#34D399" />
-            {/* Orejas / audífonos laterales */}
-            <rect x="4" y="16" width="4" height="9" rx="2" fill="#93C5FD" />
-            <rect x="32" y="16" width="4" height="9" rx="2" fill="#93C5FD" />
-            {/* Cabeza del robot */}
-            <rect x="8" y="9.5" width="24" height="22" rx="9" fill="#FFFFFF" />
-            {/* Visor oscuro */}
-            <rect x="11.5" y="14.5" width="17" height="9.5" rx="4.75" fill="#0F172A" />
-            {/* Ojos amigables */}
-            <circle cx="16.2" cy="19.2" r="2.1" fill="#38BDF8" />
-            <circle cx="23.8" cy="19.2" r="2.1" fill="#38BDF8" />
-            <circle cx="16.8" cy="18.5" r="0.7" fill="#FFFFFF" />
-            <circle cx="24.4" cy="18.5" r="0.7" fill="#FFFFFF" />
-            {/* Sonrisa */}
-            <path
-              d="M15.5 26.8C17.2 28.4 22.8 28.4 24.5 26.8"
-              stroke="#1D4ED8"
-              strokeWidth="2.2"
+      {/* Nuevo Robot 3D Metálico Flotante (SIN círculo azul de fondo, levitación suave + ojos cian luminosos) */}
+      {!travelingToCenter && (
+        <button
+          type="button"
+          id="btn-floating-assistant"
+          data-robot-style="metallic-3d-floating"
+          aria-label={open ? 'Cerrar Asistente Aluminero Pro' : 'Abrir Asistente Aluminero Pro'}
+          aria-expanded={open}
+          aria-controls="card-floating-assistant"
+          onClick={handleToggleAssistant}
+          className={
+            open
+              ? 'metal-icon-btn relative w-[48px] h-[48px] rounded-full flex items-center justify-center cursor-pointer transition-transform active:scale-95 text-white'
+              : 'relative bg-transparent border-0 p-0 m-0 flex items-center justify-center cursor-pointer transition-transform hover:scale-105 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80 rounded-2xl'
+          }
+        >
+          {open ? (
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.6"
               strokeLinecap="round"
-            />
-          </svg>
-        )}
-      </button>
+              aria-hidden="true"
+            >
+              <line x1="6" y1="6" x2="18" y2="18" />
+              <line x1="18" y1="6" x2="6" y2="18" />
+            </svg>
+          ) : (
+            <MetallicRobot3D size={74} className="robot-3d-levitate select-none" />
+          )}
+        </button>
+      )}
     </div>
   );
 };

@@ -8,6 +8,7 @@ import {
   isSkinUnlockedForLicense,
   LicenciaState,
 } from '../utils/storageHelpers';
+import { AlumineroProMetallicLogo } from './MetallicIcons';
 
 export type ScreenId =
   | 'menu'
@@ -88,12 +89,12 @@ export const TopBar: React.FC<TopBarProps> = ({
     <header
       className={`sticky top-0 z-40 w-full max-w-[100vw] overflow-x-hidden box-border h-[62px] backdrop-blur-lg border-b transition-colors ${
         isDark
-          ? 'bg-[#071326]/85 border-sky-400/20 text-white shadow-lg shadow-slate-950/25'
-          : 'bg-white/85 border-slate-200/90 text-slate-900 shadow-sm'
+          ? 'metal-topbar-dark text-white'
+          : 'bg-white/90 border-slate-200/90 text-slate-900 shadow-sm'
       }`}
     >
-      <div className="w-full max-w-full lg:max-w-[1120px] mx-auto h-full px-2.5 sm:px-3 flex items-center justify-between gap-2 box-border">
-        {/* Lado izquierdo: Botón regresar (←) en extremo izquierdo junto al logo AP */}
+      <div className="w-full max-w-full lg:max-w-[1120px] mx-auto h-full px-2.5 sm:px-3.5 flex items-center justify-between gap-2 box-border">
+        {/* Lado izquierdo: Botón regresar (←) en extremo izquierdo junto al logo metálico AP */}
         <div className="min-w-0 flex-1 flex items-center gap-1.5 sm:gap-2 overflow-hidden">
           {currentView !== 'menu' && (
             <button
@@ -102,9 +103,9 @@ export const TopBar: React.FC<TopBarProps> = ({
               onClick={onBack}
               aria-label="Volver un paso atrás"
               title="Regresar"
-              className={`inline-flex items-center justify-center gap-1 min-w-[34px] min-h-[34px] sm:min-h-[36px] px-2 sm:px-2.5 py-1 rounded-[10px] border text-[12px] font-bold cursor-pointer whitespace-nowrap shrink-0 transition-transform active:scale-95 ${
+              className={`inline-flex items-center justify-center gap-1 min-w-[34px] min-h-[34px] sm:min-h-[36px] px-2 sm:px-2.5 py-1 rounded-[11px] border text-[12px] font-bold cursor-pointer whitespace-nowrap shrink-0 transition-transform active:scale-95 ${
                 isDark
-                  ? 'border-white/20 bg-white/10 hover:bg-white/20 text-white'
+                  ? 'metal-icon-btn'
                   : 'border-slate-300 bg-slate-100 hover:bg-slate-200 text-slate-800'
               }`}
             >
@@ -121,20 +122,9 @@ export const TopBar: React.FC<TopBarProps> = ({
             onClick={onLogoClick}
             title="Aluminero Pro"
             aria-label="Logotipo AP"
-            className="p-0 border-0 bg-transparent cursor-pointer rounded-[10px] shrink-0 shadow-md transition-transform active:scale-95"
+            className="p-0 border-0 bg-transparent cursor-pointer rounded-[10px] shrink-0 transition-transform active:scale-95"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="32" height="32" className="block w-[30px] h-[30px] sm:w-[34px] sm:h-[34px] rounded-[8px] sm:rounded-[9px]">
-              <rect width="512" height="512" rx="112" fill="#1D4ED8" />
-              <rect x="22" y="22" width="468" height="468" rx="94" fill="#1E40AF" stroke="#60A5FA" strokeOpacity="0.45" strokeWidth="4" />
-              <rect x="92" y="84" width="328" height="222" rx="18" fill="#0F172A" fillOpacity="0.25" stroke="#FFFFFF" strokeWidth="24" />
-              <rect x="114" y="106" width="130" height="178" rx="4" fill="#60A5FA" fillOpacity="0.55" stroke="#FFFFFF" strokeWidth="6" />
-              <rect x="268" y="106" width="130" height="178" rx="4" fill="#DBEAFE" fillOpacity="0.92" stroke="#FFFFFF" strokeWidth="6" />
-              <rect x="245" y="96" width="22" height="198" rx="4" fill="#FFFFFF" />
-              <rect x="148" y="328" width="216" height="102" rx="22" fill="#FFFFFF" />
-              <text x="256" y="405" textAnchor="middle" fill="#1D4ED8" fontFamily="Arial, Helvetica, sans-serif" fontWeight="900" fontSize="82" letterSpacing="6">
-                AP
-              </text>
-            </svg>
+            <AlumineroProMetallicLogo size={36} className="block w-[34px] h-[34px] sm:w-[38px] sm:h-[38px]" />
           </button>
           {currentView === 'menu' && (
             <button
@@ -142,8 +132,8 @@ export const TopBar: React.FC<TopBarProps> = ({
               id="title-ap"
               onClick={onLogoClick}
               title="Aluminero Pro"
-              className={`min-w-0 flex-1 truncate block p-0 border-0 bg-transparent cursor-pointer font-extrabold text-[15px] sm:text-[18px] tracking-tight text-left ${
-                isDark ? 'text-white' : 'text-slate-900'
+              className={`min-w-0 flex-1 truncate block p-0 border-0 bg-transparent cursor-pointer font-extrabold text-[15.5px] sm:text-[18.5px] tracking-tight text-left ${
+                isDark ? 'metal-brand-text' : 'text-slate-900'
               }`}
             >
               Aluminero Pro
@@ -151,7 +141,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           )}
         </div>
 
-        {/* Lado derecho: Inicio (internas), Calculadora Rápida, Prueba PRO y Menú Hamburguesa */}
+        {/* Lado derecho: Inicio (internas), Calculadora metálica, píldora verde Versión Gratuita y Menú Hamburguesa */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           {currentView !== 'menu' && (
             <button
@@ -160,9 +150,9 @@ export const TopBar: React.FC<TopBarProps> = ({
               onClick={onGoHome}
               aria-label="Ir directo al menú principal (Inicio)"
               title="Ir a Inicio"
-              className={`inline-flex items-center justify-center gap-1 min-h-[34px] sm:min-h-[36px] px-2 sm:px-2.5 py-1 rounded-[10px] border text-[11.5px] sm:text-[12px] font-extrabold cursor-pointer whitespace-nowrap shrink-0 transition-all active:scale-95 ${
+              className={`inline-flex items-center justify-center gap-1 min-h-[34px] sm:min-h-[36px] px-2.5 py-1 rounded-[11px] border text-[11.5px] sm:text-[12px] font-extrabold cursor-pointer whitespace-nowrap shrink-0 transition-all active:scale-95 ${
                 isDark
-                  ? 'border-emerald-400/45 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-100'
+                  ? 'border-emerald-400/55 bg-emerald-600/25 hover:bg-emerald-600/35 text-emerald-100'
                   : 'border-emerald-400 bg-emerald-50 hover:bg-emerald-100 text-emerald-900'
               }`}
             >
@@ -190,10 +180,10 @@ export const TopBar: React.FC<TopBarProps> = ({
             onClick={onOpenCalculadora}
             aria-label="Abrir Calculadora Rápida"
             title="Calculadora Rápida"
-            className={`inline-flex items-center justify-center gap-1.5 min-w-[34px] min-h-[34px] sm:min-h-[36px] px-2 sm:px-2.5 py-1 rounded-[10px] border text-[12px] font-extrabold cursor-pointer whitespace-nowrap shrink-0 transition-all active:scale-95 ${
+            className={`inline-flex items-center justify-center gap-1.5 min-w-[36px] min-h-[36px] sm:min-h-[38px] px-2 sm:px-2.5 py-1 rounded-[11px] border text-[12px] font-extrabold cursor-pointer whitespace-nowrap shrink-0 transition-all active:scale-95 ${
               isDark
-                ? 'border-sky-400/45 bg-sky-500/20 hover:bg-sky-500/30 text-sky-100'
-                : 'border-blue-300 bg-blue-50 hover:bg-blue-100 text-blue-800'
+                ? 'metal-icon-btn'
+                : 'border-slate-300 bg-slate-100 hover:bg-slate-200 text-slate-800'
             }`}
           >
             <svg
@@ -223,14 +213,16 @@ export const TopBar: React.FC<TopBarProps> = ({
             type="button"
             id="btn-top-lic"
             onClick={onOpenPro}
-            className={`min-h-[34px] sm:min-h-[36px] px-2.5 sm:px-3 py-1 rounded-full border text-[10.5px] sm:text-[12px] max-[380px]:text-[10px] max-[380px]:px-2 max-[380px]:min-h-[30px] font-extrabold cursor-pointer whitespace-nowrap shrink-0 transition-all active:scale-95 ${
-              chipIsGreen
+            className={`min-h-[34px] sm:min-h-[36px] px-3 sm:px-3.5 py-1 rounded-full border text-[11px] sm:text-[12px] max-[380px]:text-[10px] max-[380px]:px-2.5 max-[380px]:min-h-[30px] font-extrabold cursor-pointer whitespace-nowrap shrink-0 transition-all active:scale-95 ${
+              paidLicenseActive
                 ? isDark
-                  ? 'border-emerald-400/60 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200'
-                  : 'border-emerald-500 bg-emerald-50 hover:bg-emerald-100 text-emerald-800'
-                : isDark
-                  ? 'border-amber-400/75 bg-amber-500/20 hover:bg-amber-500/30 text-amber-200'
+                  ? 'metal-gold-pro-badge'
                   : 'border-amber-500 bg-amber-100 hover:bg-amber-200 text-amber-900'
+                : isDark
+                  ? 'metal-emerald-pill'
+                  : chipIsGreen
+                    ? 'border-emerald-500 bg-emerald-50 hover:bg-emerald-100 text-emerald-800'
+                    : 'border-emerald-500 bg-emerald-600 hover:bg-emerald-700 text-white'
             }`}
           >
             {licChipText}
@@ -241,13 +233,13 @@ export const TopBar: React.FC<TopBarProps> = ({
             id="btn-open-drawer"
             onClick={onOpenDrawer}
             aria-label="Abrir menú lateral"
-            className={`min-w-[34px] min-h-[34px] sm:min-w-[38px] sm:min-h-[38px] rounded-[10px] border inline-flex items-center justify-center cursor-pointer shrink-0 transition-all active:scale-95 ${
+            className={`min-w-[36px] min-h-[36px] sm:min-w-[38px] sm:min-h-[38px] rounded-[11px] border inline-flex items-center justify-center cursor-pointer shrink-0 transition-all active:scale-95 ${
               isDark
-                ? 'border-white/20 bg-white/10 hover:bg-white/20 text-white'
+                ? 'metal-icon-btn'
                 : 'border-slate-300 bg-slate-100 hover:bg-slate-200 text-slate-800'
             }`}
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" aria-hidden="true">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" aria-hidden="true">
               <line x1="3" y1="6" x2="21" y2="6" />
               <line x1="3" y1="12" x2="21" y2="12" />
               <line x1="3" y1="18" x2="21" y2="18" />
@@ -393,13 +385,16 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
     >
       <div
         id="drawer-panel-surface"
-        className="w-full max-w-[340px] h-full bg-[#0B2545] text-white border-l border-slate-400/20 p-5 flex flex-col gap-2.5 overflow-y-auto shadow-2xl relative"
+        className="w-full max-w-[340px] h-full bg-gradient-to-b from-[#0A1A26] via-[#081520] to-[#07131B] text-white border-l border-[#4A6072]/75 p-5 flex flex-col gap-2.5 overflow-y-auto shadow-2xl relative"
       >
-        <div className="flex items-center justify-between pb-3 border-b border-white/15">
-          <div>
-            <div className="font-extrabold text-[16px] tracking-tight">Aluminero Pro</div>
-            <div className="text-[11.5px] text-slate-300">
-              Herramientas y Configuración
+        <div className="flex items-center justify-between pb-3 border-b border-[#4A6072]/45">
+          <div className="flex items-center gap-2.5">
+            <AlumineroProMetallicLogo size={32} />
+            <div>
+              <div className="font-extrabold text-[16px] tracking-tight metal-brand-text">Aluminero Pro</div>
+              <div className="text-[11.5px] text-[#B0C4D4]">
+                Herramientas y Configuración
+              </div>
             </div>
           </div>
           <button
@@ -409,7 +404,7 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
               onClose();
             }}
             aria-label="Cerrar menú lateral"
-            className="min-w-[38px] min-h-[38px] rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold cursor-pointer"
+            className="min-w-[38px] min-h-[38px] rounded-xl metal-icon-btn font-bold cursor-pointer"
           >
             ✕
           </button>

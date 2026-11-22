@@ -2,18 +2,20 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --navy-deep: #060E1B;
-  --navy-mid: #0F1E34;
-  --navy-card: #152845;
-  --navy-border: rgba(148, 163, 184, 0.24);
+  --navy-deep: #07131B;
+  --navy-mid: #0B1924;
+  --navy-card: #0F2230;
+  --navy-border: rgba(74, 96, 114, 0.58);
+  --steel-edge: #4A6072;
+  --steel-highlight: rgba(214, 232, 246, 0.28);
   --white: #FFFFFF;
   --surface-soft: #F8FAFC;
   --border: #E2E8F0;
   --text-dark: #0F172A;
   --text-muted: #475569;
   --text-subtle: #64748B;
-  --text-light: #F8FAFC;
-  --text-light-muted: #CBD5E1;
+  --text-light: #FFFFFF;
+  --text-light-muted: #B0C4D4;
   --accent: #2563EB;
   --accent-dark: #1D4ED8;
   --accent-soft: #EFF6FF;
@@ -54,15 +56,15 @@ body {
 @media (max-width: 380px) {
   #btn-top-lic {
     font-size: 10px;
-    padding-left: 7px;
-    padding-right: 7px;
+    padding-left: 8px;
+    padding-right: 8px;
     min-height: 30px;
   }
   #btn-top-back,
   #btn-top-calculadora,
   #btn-open-drawer {
-    min-width: 30px;
-    min-height: 30px;
+    min-width: 32px;
+    min-height: 32px;
     padding-left: 5px;
     padding-right: 5px;
   }
@@ -93,15 +95,26 @@ button, input, select, textarea { font-family: inherit; }
 }
 .toast-slide-down { animation: toastSlideDown 0.22s ease-out; }
 
-/* ==================== TEMA OSCURO (VISIBILIDAD NOCTURNA) ==================== */
-html[data-theme="dark"] body {
-  background: #060E1B;
-  color: #F1F5F9;
+/* ==================== TEMA OSCURO GLOBAL (AZUL PETRÓLEO + CRISTAL METÁLICO) ==================== */
+html[data-theme="dark"],
+html[data-theme="dark"] body,
+html[data-theme="dark"] #root {
+  background-color: #07131B;
+  background-image:
+    radial-gradient(ellipse 90% 45% at 50% -6%, rgba(56, 130, 178, 0.22), transparent 64%),
+    radial-gradient(circle at 14% 38%, rgba(34, 211, 238, 0.08), transparent 46%),
+    radial-gradient(circle at 88% 72%, rgba(74, 118, 152, 0.12), transparent 48%),
+    linear-gradient(180deg, #07131B 0%, #091822 48%, #0B1924 100%);
+  background-attachment: fixed;
+  color: #FFFFFF;
 }
 
 html[data-theme="dark"] .bg-white:not([data-preserve-light="true"]) {
-  background-color: #0F1E34;
-  color: #F1F5F9;
+  background-color: rgba(13, 30, 44, 0.84);
+  background-image: linear-gradient(160deg, rgba(22, 46, 66, 0.72) 0%, rgba(10, 24, 35, 0.9) 100%);
+  border-color: rgba(74, 96, 114, 0.72);
+  box-shadow: inset 0 1px 0 rgba(214, 232, 246, 0.14), 0 10px 26px rgba(2, 9, 15, 0.45);
+  color: #FFFFFF;
 }
 
 html[data-theme="dark"] .bg-\[\#FAFBFD\] {
@@ -111,22 +124,24 @@ html[data-theme="dark"] .bg-\[\#FAFBFD\] {
 
 html[data-theme="dark"] .bg-slate-50,
 html[data-theme="dark"] .bg-slate-50\/70 {
-  background-color: #152845;
-  color: #E2E8F0;
+  background-color: rgba(15, 34, 48, 0.82);
+  border-color: rgba(74, 96, 114, 0.56);
+  color: #E2EEF6;
 }
 
 html[data-theme="dark"] .bg-slate-100 {
-  background-color: #1B3254;
-  color: #F1F5F9;
+  background-color: rgba(21, 44, 62, 0.86);
+  color: #F1F8FC;
 }
 
 html[data-theme="dark"] .bg-slate-200 {
-  background-color: #243E66;
+  background-color: rgba(32, 58, 79, 0.86);
 }
 
 html[data-theme="dark"] .bg-slate-900 {
-  background-color: #071121;
-  border: 1px solid rgba(96, 165, 250, 0.24);
+  background-color: rgba(9, 23, 34, 0.9);
+  border: 1px solid rgba(74, 96, 114, 0.65);
+  box-shadow: inset 0 1px 0 rgba(214, 232, 246, 0.12);
 }
 
 html[data-theme="dark"] .bg-blue-50,
@@ -210,27 +225,27 @@ html[data-theme="dark"] .border-slate-100,
 html[data-theme="dark"] .border-slate-200,
 html[data-theme="dark"] .border-slate-200\/70,
 html[data-theme="dark"] .border-slate-300 {
-  border-color: rgba(148, 163, 184, 0.3);
+  border-color: rgba(74, 96, 114, 0.72);
 }
 
 html[data-theme="dark"] .border-blue-200 {
-  border-color: rgba(96, 165, 250, 0.45);
+  border-color: rgba(96, 165, 250, 0.48);
 }
 
 html[data-theme="dark"] .border-emerald-200,
 html[data-theme="dark"] .border-emerald-300,
 html[data-theme="dark"] .border-emerald-400 {
-  border-color: rgba(52, 211, 153, 0.5);
+  border-color: rgba(52, 211, 153, 0.62);
 }
 
 html[data-theme="dark"] .border-teal-200,
 html[data-theme="dark"] .border-teal-300 {
-  border-color: rgba(45, 212, 191, 0.48);
+  border-color: rgba(45, 212, 191, 0.5);
 }
 
 html[data-theme="dark"] .border-sky-200,
 html[data-theme="dark"] .border-sky-300 {
-  border-color: rgba(56, 189, 248, 0.48);
+  border-color: rgba(56, 189, 248, 0.5);
 }
 
 html[data-theme="dark"] .border-rose-200,
@@ -242,7 +257,7 @@ html[data-theme="dark"] .border-rose-400 {
 html[data-theme="dark"] .border-amber-200,
 html[data-theme="dark"] .border-amber-300,
 html[data-theme="dark"] .border-amber-400 {
-  border-color: rgba(251, 191, 36, 0.48);
+  border-color: rgba(212, 175, 55, 0.65);
 }
 
 html[data-theme="dark"] .border-red-200 {
@@ -252,23 +267,23 @@ html[data-theme="dark"] .border-red-200 {
 html[data-theme="dark"] .text-slate-900,
 html[data-theme="dark"] .text-\[\#1E293B\],
 html[data-theme="dark"] .text-\[\#0B2545\] {
-  color: #F8FAFC;
+  color: #FFFFFF;
 }
 
 html[data-theme="dark"] .text-slate-800 {
-  color: #F1F5F9;
+  color: #F4F9FD;
 }
 
 html[data-theme="dark"] .text-slate-700 {
-  color: #E2E8F0;
+  color: #DCE8F2;
 }
 
 html[data-theme="dark"] .text-slate-600 {
-  color: #CBD5E1;
+  color: #B0C4D4;
 }
 
 html[data-theme="dark"] .text-slate-500 {
-  color: #94A3B8;
+  color: #9CB4C7;
 }
 
 html[data-theme="dark"] .text-blue-950,
@@ -395,9 +410,9 @@ html[data-theme="dark"] .text-red-600 {
 html[data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]),
 html[data-theme="dark"] select,
 html[data-theme="dark"] textarea {
-  background-color: #081223;
-  color: #F8FAFC;
-  border-color: rgba(148, 163, 184, 0.34);
+  background-color: rgba(7, 19, 27, 0.92);
+  color: #FFFFFF;
+  border-color: rgba(74, 96, 114, 0.78);
 }
 
 html[data-theme="dark"] input::placeholder,
@@ -941,9 +956,13 @@ html[data-theme="light"] #card-floating-assistant {
 }
 
 html[data-theme="dark"] #card-floating-assistant {
-  background-color: #0F1E34;
-  border-color: rgba(96, 165, 250, 0.48);
-  color: #F8FAFC;
+  background: linear-gradient(155deg, rgba(16, 36, 52, 0.96) 0%, rgba(7, 19, 27, 0.98) 100%);
+  border-color: #4A6072;
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.78),
+    0 0 28px rgba(34, 211, 238, 0.16),
+    inset 0 1px 0 rgba(214, 232, 246, 0.24);
+  color: #FFFFFF;
 }
 
 html[data-theme="light"] #card-floating-assistant .assistant-subtext {
@@ -1405,8 +1424,8 @@ html[data-theme="light"] #calc-display {
   position: fixed;
   inset: 0;
   z-index: 10040;
-  background: #090d16;
-  color: #f1f5f9;
+  background: linear-gradient(180deg, #07131B 0%, #0B1924 100%);
+  color: #FFFFFF;
   font-family: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
@@ -1428,19 +1447,23 @@ html[data-theme="light"] #calc-display {
   margin-bottom: 12px;
   position: sticky;
   top: 0;
-  background: #090d16;
+  background: rgba(7, 19, 27, 0.94);
+  backdrop-filter: blur(12px);
   padding: 8px 0;
   z-index: 2;
 }
 #lev-root h2 {
   margin: 0;
-  font-size: 19px;
+  font-size: 16.5px;
   font-weight: 800;
   flex: 1;
+  min-width: 0;
+  line-height: 1.2;
 }
 #lev-root .card {
-  background: #101a2e;
-  border: 1px solid #94a3b833;
+  background: linear-gradient(155deg, rgba(16, 36, 52, 0.86) 0%, rgba(10, 24, 36, 0.92) 100%);
+  border: 1.25px solid #4A6072;
+  box-shadow: inset 0 1px 0 rgba(214, 232, 246, 0.16), 0 10px 24px rgba(0, 0, 0, 0.42);
   border-radius: 16px;
   padding: 12px;
   margin-bottom: 12px;
@@ -1522,7 +1545,7 @@ html[data-theme="light"] #calc-display {
   color: #94a3b8;
 }
 #lev-root .seg button.on {
-  background: #2563eb;
+  background: linear-gradient(180deg, rgba(46, 134, 186, 0.92), rgba(20, 74, 112, 0.96));
   color: #fff;
 }
 #lev-root .qty {
@@ -1532,9 +1555,11 @@ html[data-theme="light"] #calc-display {
 }
 #lev-root .qty button {
   width: 64px;
-  min-height: 56px;
+  min-height: 54px;
   font-size: 26px;
-  background: #2563eb;
+  background: linear-gradient(165deg, rgba(34, 78, 112, 0.92), rgba(14, 40, 62, 0.96));
+  border: 1.25px solid #597287;
+  box-shadow: inset 0 1px 0 rgba(220, 238, 250, 0.28);
 }
 #lev-root .qty b {
   flex: 1;
@@ -1685,32 +1710,51 @@ html[data-theme="light"] #calc-display {
   max-height: 100%;
 }
 #lev-entry {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 13px;
   width: 100%;
-  min-height: 64px;
-  padding: 12px 14px;
-  margin: 0 0 14px;
-  border-radius: 16px;
-  border: 1.5px solid #f97316aa;
-  background: linear-gradient(135deg, #f9731626, #2563eb26);
-  color: #fff;
+  min-height: 74px;
+  padding: 11px 15px;
+  margin: 0 0 11px;
+  border-radius: 17px;
+  border: 1.5px solid #5B7182;
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.016) 0px, rgba(255, 255, 255, 0.016) 1px, transparent 1px, transparent 3px),
+    linear-gradient(155deg, rgba(44, 52, 60, 0.88) 0%, rgba(23, 33, 41, 0.94) 55%, rgba(16, 25, 33, 0.97) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(244, 232, 206, 0.36),
+    inset 0 -1px 0 rgba(74, 96, 114, 0.65),
+    0 12px 28px rgba(2, 9, 15, 0.62);
+  color: #FFFFFF;
   font-weight: 800;
-  font-size: 15px;
+  font-size: 17px;
   text-align: left;
   cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+#lev-entry:hover {
+  border-color: #8CA5B8;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 245, 224, 0.5),
+    inset 0 -1px 0 rgba(125, 160, 186, 0.72),
+    0 14px 32px rgba(2, 9, 15, 0.72),
+    0 0 18px rgba(148, 197, 230, 0.14);
 }
 #lev-entry small {
   display: block;
-  font-weight: 600;
-  font-size: 11.5px;
-  color: #cbd5e1;
+  font-weight: 500;
+  font-size: 12.5px;
+  color: #D2DCE6;
+  margin-top: 2px;
+  line-height: 1.35;
 }
 html[data-theme="light"] #lev-entry {
-  background: linear-gradient(135deg, #fff7ed, #eff6ff);
-  border-color: #f97316;
-  color: #0f172a;
+  background: linear-gradient(135deg, #F8FAFC, #EDF3F9);
+  border-color: #64748B;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+  color: #0F172A;
 }
 html[data-theme="light"] #lev-entry small {
   color: #475569;
@@ -1823,18 +1867,226 @@ html[data-theme="light"] #lev-entry small {
   }
 }
 
-/* ==================== SISTEMA GLOBAL DE 3 CARÁTULAS (TEMAS VISUALES) ==================== */
-/* 1. BÁSICA (ACTUAL) - Fondo oscuro plano #0B1120 de alto contraste */
+/* ==================== SISTEMA GLOBAL DE CARÁTULAS + NUEVO DISEÑO METÁLICO OSCURO ==================== */
+/* 1. CARÁTULA PRINCIPAL METÁLICA / CRISTAL OSCURO (#07131B -> #0B1924 + #4A6072) */
 html[data-skin="basica"][data-theme="dark"],
 html[data-skin="basica"][data-theme="dark"] body,
 html[data-skin="basica"][data-theme="dark"] #root {
-  background-color: #0b1120 !important;
-  background-image: none !important;
+  background-color: #07131B !important;
+  background-image:
+    radial-gradient(ellipse 92% 42% at 50% -4%, rgba(64, 134, 180, 0.22), transparent 64%),
+    radial-gradient(circle at 10% 42%, rgba(56, 189, 248, 0.08), transparent 45%),
+    radial-gradient(circle at 90% 82%, rgba(200, 174, 126, 0.06), transparent 45%),
+    linear-gradient(180deg, #07131B 0%, #091822 50%, #0B1924 100%) !important;
+  background-attachment: fixed !important;
 }
 
-html[data-skin="basica"][data-theme="dark"] #view-menu .menu-hero-card {
-  background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%) !important;
-  border: 1px solid rgba(96, 165, 250, 0.45) !important;
+/* Barra superior metálica cristal oscuro */
+.metal-topbar-dark {
+  background: linear-gradient(180deg, rgba(10, 25, 36, 0.94) 0%, rgba(7, 19, 27, 0.92) 100%);
+  border-bottom: 1px solid rgba(74, 96, 114, 0.65);
+  box-shadow: 0 8px 24px rgba(2, 8, 14, 0.62), inset 0 -1px 0 rgba(214, 232, 246, 0.08);
+}
+
+.metal-brand-text {
+  background: linear-gradient(180deg, #F6E9D0 0%, #D9C6A2 52%, #B5A17D 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.65));
+}
+
+.metal-icon-btn {
+  background: linear-gradient(160deg, rgba(42, 58, 72, 0.85) 0%, rgba(16, 30, 42, 0.94) 100%);
+  border: 1.25px solid #597082;
+  color: #E8DEC9;
+  box-shadow:
+    inset 0 1px 0 rgba(235, 244, 252, 0.34),
+    inset 0 -1px 0 rgba(10, 20, 28, 0.8),
+    0 4px 12px rgba(2, 8, 14, 0.52);
+}
+.metal-icon-btn:hover {
+  border-color: #8CA6BA;
+  color: #FFFFFF;
+}
+
+/* Píldora verde esmeralda metálica ("Versión Gratuita", "41 perf.", etc.) */
+.metal-emerald-pill {
+  background: linear-gradient(180deg, rgba(64, 192, 132, 0.9) 0%, rgba(28, 138, 89, 0.92) 55%, rgba(18, 102, 66, 0.96) 100%);
+  border: 1.25px solid #7AE8B4;
+  color: #FFFFFF;
+  box-shadow:
+    inset 0 1px 0 rgba(232, 255, 244, 0.55),
+    0 4px 14px rgba(16, 152, 92, 0.34);
+  text-shadow: 0 1px 2px rgba(4, 36, 22, 0.45);
+}
+.metal-emerald-pill:hover {
+  filter: brightness(1.06);
+}
+
+/* Banner horizontal verde esmeralda "Invitación de un colega" */
+.metal-colleague-banner {
+  background: linear-gradient(180deg, rgba(22, 104, 72, 0.62) 0%, rgba(15, 76, 54, 0.72) 100%);
+  border: 1.4px solid #45C98E;
+  box-shadow:
+    inset 0 1px 0 rgba(176, 252, 218, 0.35),
+    0 10px 26px rgba(3, 18, 13, 0.48),
+    0 0 18px rgba(46, 204, 132, 0.14);
+}
+
+.metal-colleague-pin-btn {
+  background: linear-gradient(180deg, #43D492 0%, #24AD6F 100%);
+  border: 1.2px solid #9BF4C8;
+  color: #052617;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.52),
+    0 4px 14px rgba(16, 185, 129, 0.32);
+}
+.metal-colleague-pin-btn:hover {
+  filter: brightness(1.06);
+}
+
+/* Etiquetas PRO / Candados en borde dorado metálico */
+.metal-gold-pro-badge {
+  background: linear-gradient(180deg, rgba(46, 40, 28, 0.88) 0%, rgba(22, 22, 24, 0.94) 100%);
+  border: 1.2px solid #C8A562;
+  color: #F2D79B;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 242, 204, 0.28),
+    0 3px 10px rgba(0, 0, 0, 0.42);
+}
+
+/* Insignia bronce/champagne metálico ("3\" Gratis") */
+.metal-bronze-free-badge {
+  background: linear-gradient(180deg, rgba(50, 44, 34, 0.85) 0%, rgba(23, 28, 34, 0.92) 100%);
+  border: 1.2px solid #9C8A6B;
+  color: #F0E4CC;
+  box-shadow: inset 0 1px 0 rgba(255, 244, 222, 0.25);
+}
+
+/* Tarjeta ancha Hoja de Cotización (cristal oscuro + marco metálico biselado doble) */
+html[data-skin="basica"][data-theme="dark"] #view-menu .menu-hero-card,
+html[data-theme="dark"] #view-menu .metal-hero-card {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse 65% 55% at 50% 0%, rgba(186, 220, 244, 0.14), transparent 72%),
+    linear-gradient(165deg, rgba(19, 43, 62, 0.86) 0%, rgba(10, 25, 37, 0.94) 58%, rgba(8, 20, 30, 0.97) 100%) !important;
+  border: 1.6px solid #597287 !important;
+  box-shadow:
+    inset 0 1px 0 rgba(232, 244, 252, 0.44),
+    inset 0 -1px 0 rgba(74, 96, 114, 0.7),
+    inset 0 0 0 3px rgba(7, 19, 27, 0.48),
+    0 14px 32px rgba(2, 9, 15, 0.68),
+    0 0 20px rgba(74, 130, 168, 0.16) !important;
+  color: #FFFFFF !important;
+}
+
+/* Tarjetas cuadrícula 2x2 y módulos (cristal oscuro + borde acero biselado) */
+html[data-skin="basica"][data-theme="dark"] #view-menu .menu-grid-card,
+html[data-theme="dark"] #view-menu .metal-grid-card {
+  position: relative;
+  background:
+    radial-gradient(ellipse 80% 50% at 50% 0%, rgba(168, 208, 236, 0.12), transparent 68%),
+    linear-gradient(165deg, rgba(18, 41, 59, 0.84) 0%, rgba(10, 25, 37, 0.93) 62%, rgba(8, 20, 30, 0.96) 100%) !important;
+  border: 1.5px solid #4A6072 !important;
+  box-shadow:
+    inset 0 1px 0 rgba(226, 240, 252, 0.34),
+    inset 0 -1px 0 rgba(74, 96, 114, 0.62),
+    inset 0 0 0 3px rgba(7, 19, 27, 0.42),
+    0 12px 26px rgba(2, 9, 15, 0.6) !important;
+  color: #FFFFFF !important;
+}
+
+html[data-skin="basica"][data-theme="dark"] #view-menu .menu-grid-card:hover,
+html[data-theme="dark"] #view-menu .metal-grid-card:hover {
+  border-color: #7D99B0 !important;
+  box-shadow:
+    inset 0 1px 0 rgba(244, 250, 255, 0.46),
+    inset 0 0 0 3px rgba(7, 19, 27, 0.36),
+    0 16px 32px rgba(2, 9, 15, 0.72),
+    0 0 18px rgba(100, 175, 224, 0.18) !important;
+}
+
+html[data-theme="dark"] #view-menu .menu-card-sub {
+  color: #B0C4D4 !important;
+}
+
+/* Píldora esmeralda inferior de Catálogo Perfiles ("41 perf.") */
+.metal-cat-bottom-pill {
+  background: linear-gradient(180deg, rgba(20, 82, 62, 0.96) 0%, rgba(10, 48, 38, 0.98) 100%);
+  border: 1.4px solid #5CE1A8;
+  color: #8CF5C6;
+  box-shadow:
+    inset 0 1px 0 rgba(196, 255, 228, 0.38),
+    0 6px 18px rgba(0, 0, 0, 0.62),
+    0 0 12px rgba(52, 211, 153, 0.25);
+}
+
+/* ==================== ROBOT 3D METÁLICO FLOTANTE (LEVITACIÓN + BRILLO CIAN + DESPLAZAMIENTO AL CENTRO) ==================== */
+@keyframes robot3dLevitate {
+  0%, 100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(0, -8px, 0);
+  }
+}
+
+@keyframes robotCyanGlowPulse {
+  0%, 100% {
+    opacity: 0.9;
+    filter: drop-shadow(0 0 3px rgba(34, 211, 238, 0.75));
+  }
+  50% {
+    opacity: 1;
+    filter: drop-shadow(0 0 8px rgba(56, 248, 255, 1));
+  }
+}
+
+@keyframes robot3dGlideToCenter {
+  0% {
+    right: 16px;
+    bottom: 16px;
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 1;
+  }
+  55% {
+    right: 36vw;
+    bottom: 34vh;
+    transform: translate3d(50%, 50%, 0) scale(1.16) rotate(-4deg);
+    opacity: 1;
+  }
+  100% {
+    right: 50vw;
+    bottom: 50vh;
+    transform: translate3d(50%, 50%, 0) scale(1.25) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+.robot-3d-levitate {
+  animation: robot3dLevitate 3.4s ease-in-out infinite;
+  will-change: transform;
+}
+
+.robot-cyan-glow-pulse {
+  animation: robotCyanGlowPulse 2.8s ease-in-out infinite;
+}
+
+.robot-3d-glide-center {
+  position: fixed;
+  z-index: 60;
+  pointer-events: none;
+  animation: robot3dGlideToCenter 0.48s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .robot-3d-levitate,
+  .robot-cyan-glow-pulse,
+  .robot-3d-glide-center {
+    animation: none !important;
+  }
 }
 
 /* 2. EJECUTIVA AZUL (INTERMEDIA) - PRO 30d / 90d */
