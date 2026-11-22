@@ -12,6 +12,7 @@ interface Props {
   notasCount: number;
   cotizacionesCount?: number;
   savedReferral?: SavedColleagueReferral | null;
+  referredById?: string | null;
   pendingRemindersCount?: number;
   dueRemindersCount?: number;
   pushPermission?: NotificationPermission | 'unsupported';
@@ -35,6 +36,7 @@ export const MainMenuView: React.FC<Props> = ({
   notasCount,
   cotizacionesCount = 0,
   savedReferral = null,
+  referredById = null,
   pendingRemindersCount = 0,
   dueRemindersCount = 0,
   pushPermission = 'default',
@@ -54,16 +56,19 @@ export const MainMenuView: React.FC<Props> = ({
       data-pro-active={proActive ? 'true' : 'false'}
       className="screen-animate"
     >
-      <div className="mb-4 sm:mb-5 flex items-baseline gap-2.5 flex-wrap">
+      <div className="mb-4 sm:mb-5 flex items-center justify-between gap-2.5 flex-wrap">
         <h1 className="m-0 text-[clamp(1.45rem,3.6vw,2.1rem)] font-extrabold text-white leading-[1.15] tracking-tight [text-wrap:balance]">
           ¿Qué vamos a trabajar?
         </h1>
-        <span
-          id="menu-version-label"
-          className="mono text-[11px] font-semibold text-slate-400/80 bg-slate-800/50 border border-slate-700/60 rounded-md px-1.5 py-0.5 leading-none select-none"
-        >
-          v2.1
-        </span>
+        {referredById && (
+          <span
+            id="badge-menu-referred-by"
+            className="mono inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-300/95 bg-emerald-500/10 border border-emerald-400/30 rounded-lg px-2.5 py-1 leading-none"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" aria-hidden="true" />
+            Invitado por colega: {referredById}
+          </span>
+        )}
       </div>
 
       {/* Acceso directo a Levantamiento Rápido */}

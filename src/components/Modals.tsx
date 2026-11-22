@@ -4,15 +4,20 @@ import QRCode from 'qrcode';
 import {
   AlertTriangle,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Cloud,
   Copy,
+  CreditCard,
   Eye,
   EyeOff,
   Lock,
   LogOut,
   RefreshCw,
   ShieldCheck,
+  Sparkles,
   Trash2,
+  Users,
 } from 'lucide-react';
 import {
   Area,
@@ -26,9 +31,7 @@ import {
   YAxis,
 } from 'recharts';
 import {
-  buildColleaguePromoWhatsappUrl,
   buildDailyUsageSeries30d,
-  buildReferralInviteUrl,
   CATALOGO_PERFILES,
   CloudDeviceRecord,
   computeUsageStats30d,
@@ -79,6 +82,7 @@ import {
   loadReferralSenderName,
   openExternalLinkSafe,
   parseBackupPayload,
+  ReferralHistoryRecord,
   sanitizeWhatsappNumber,
   saveAdminPasswordOverride,
   SavedColleagueReferral,
@@ -92,19 +96,22 @@ import { PhotoPickerButtons } from './PhotoPickerButtons';
 
 /* ==================== MODAL PRO (Adquirir Licencia PRO + Activación por Clave) ==================== */
 export const PRO_PAYMENT_CONFIG = {
-  plan30Label: 'Plan 30 Días (Promo)',
-  plan30Price: '$329 MXN',
-  plan90Label: 'Plan 90 Días PRO (con respaldo en nube)',
-  plan90Price: '$799 MXN',
-  plan365Label: 'Plan 1 Año PRO (con respaldo en nube)',
-  plan365Price: '$1,499 MXN',
+  plan30Label: 'Promo 30 Días PRO',
+  plan30RegularPrice: '$699',
+  plan30Price: '$350 MXN',
+  plan90Label: 'Plan 90 Días PRO',
+  plan90RegularPrice: '$1,899',
+  plan90Price: '$950 MXN',
+  plan365Label: 'Plan 1 Año PRO',
+  plan365RegularPrice: '$3,499',
+  plan365Price: '$1,800 MXN',
+  mpLink30: 'https://mpago.la/1JpicFT',
+  mpLink90: 'https://mpago.la/1bVUVqU',
+  mpLink365: 'https://mpago.la/2BMGKsh',
   speiClabe: '722969010141447452',
-  // Reemplaza este texto por los 16 dígitos de tu tarjeta Mercado Pago para depósitos en OXXO
-  oxxoCard: '[PONER 16 DÍGITOS DE TU TARJETA MERCADO PAGO]',
-  beneficiario: 'Tonatiuh Olmos Tlaltzicapa',
+  beneficiario: 'Tonatiuh O',
   institucion: 'Mercado Pago W',
-  // Opcional: fija aquí tus 10 dígitos de WhatsApp (si está vacío, usa el número guardado en Panel Admin)
-  whatsapp10Digits: '',
+  whatsapp10Digits: '7351631532',
 };
 
 interface ProModalProps {
@@ -115,6 +122,7 @@ interface ProModalProps {
   trialExpiresAt?: number | null;
   whatsappNumber?: string;
   defaultEmail?: string;
+  referredById?: string | null;
   onClose: () => void;
   onActivateLic: (lic: LicenciaState) => Promise<{ ok: boolean; error?: string } | void> | void;
   onDeactivateLic: () => void;
@@ -129,12 +137,14 @@ export const ProModal: React.FC<ProModalProps> = ({
   trialExpiresAt = null,
   whatsappNumber = '',
   defaultEmail = '',
+  referredById = null,
   onClose,
   onActivateLic,
   onDeactivateLic,
   onShowToast,
 }) => {
   const [selectedPlanKey, setSelectedPlanKey] = useState<'30d' | '90d' | '365d'>('30d');
+  const [showSpeiDetails, setShowSpeiDetails] = useState(false);
   const [keyInput, setKeyInput] = useState('');
   const [cloudEmail, setCloudEmail] = useState(defaultEmail || '');
   const [cloudEmailConfirm, setCloudEmailConfirm] = useState(defaultEmail || '');
@@ -151,6 +161,13 @@ export const ProModal: React.FC<ProModalProps> = ({
   if (!open) return null;
 
   const safeDeviceId = String(deviceId || '').trim() || 'EQUIPO';
+  const cleanReferredById =
+    referredById &&
+    String(referredById).trim() &&
+    String(referredById).trim().toUpperCase() !== safeDeviceId.toUpperCase()
+      ? String(referredById).trim()
+      : null;
+
   const validTrialExpiresAt =
     typeof trialExpiresAt === 'number' && Number.isFinite(trialExpiresAt) ? trialExpiresAt : null;
   const trialInfo =
@@ -167,10 +184,6 @@ export const ProModal: React.FC<ProModalProps> = ({
     : keyNeedsCloudEmail || selectedPlanKey !== '30d';
   const isActivateDisabled =
     activating || (emailRequiredBeforeActivate && emailCheck.status !== 'confirmed');
-  const isOxxoPlaceholder =
-    !PRO_PAYMENT_CONFIG.oxxoCard ||
-    PRO_PAYMENT_CONFIG.oxxoCard.includes('[') ||
-    PRO_PAYMENT_CONFIG.oxxoCard.toUpperCase().includes('PONER');
 
   const handleCopyPaymentField = async (fieldId: string, rawValue: string, toastMsg: string) => {
     const trimmed = rawValue.trim();
@@ -193,17 +206,37 @@ export const ProModal: React.FC<ProModalProps> = ({
       ? `52${rawWaDigits}`
       : rawWaDigits.length > 10
         ? rawWaDigits
-        : '';
-  const selectedPlanName =
+        : '527351631532';
+
+  const selectedPlanMeta =
     selectedPlanKey === '30d'
-      ? PRO_PAYMENT_CONFIG.plan30Label
+      ? {
+          name: PRO_PAYMENT_CONFIG.plan30Label,
+          price: PRO_PAYMENT_CONFIG.plan30Price,
+          mpLink: PRO_PAYMENT_CONFIG.mpLink30,
+        }
       : selectedPlanKey === '90d'
-        ? 'Plan 90 Días PRO'
-        : 'Plan 1 Año PRO';
-  const waPaymentText = `Hola Tonatiuh, ya realicé mi pago del ${selectedPlanName} para Aluminero Pro. Mi ID de equipo es: ${deviceId}. Te adjunto mi comprobante.`;
-  const waPaymentUrl = waFullDigits
-    ? `https://wa.me/${waFullDigits}?text=${encodeURIComponent(waPaymentText)}`
-    : `https://wa.me/?text=${encodeURIComponent(waPaymentText)}`;
+        ? {
+            name: PRO_PAYMENT_CONFIG.plan90Label,
+            price: PRO_PAYMENT_CONFIG.plan90Price,
+            mpLink: PRO_PAYMENT_CONFIG.mpLink90,
+          }
+        : {
+            name: PRO_PAYMENT_CONFIG.plan365Label,
+            price: PRO_PAYMENT_CONFIG.plan365Price,
+            mpLink: PRO_PAYMENT_CONFIG.mpLink365,
+          };
+
+  const waBaseLines = [
+    `Hola, ya realicé mi pago del ${selectedPlanMeta.name} (${selectedPlanMeta.price}) para Aluminero Pro.`,
+    `ID de Equipo: ${safeDeviceId}`,
+  ];
+  if (cleanReferredById) {
+    waBaseLines.push(`Recomendado por el colega: ${cleanReferredById}`);
+  }
+  waBaseLines.push('Te adjunto mi comprobante para activar mi licencia.');
+  const waPaymentText = waBaseLines.join('\n');
+  const waPaymentUrl = `https://wa.me/${waFullDigits}?text=${encodeURIComponent(waPaymentText)}`;
 
   const handleActivate = async () => {
     if (activating) return;
@@ -299,6 +332,18 @@ export const ProModal: React.FC<ProModalProps> = ({
           </button>
         </div>
 
+        {cleanReferredById && (
+          <div
+            id="badge-pro-referred-by"
+            className="mt-2.5 px-3 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-[11.5px] font-semibold flex items-center gap-2"
+          >
+            <Users className="w-4 h-4 text-emerald-600 shrink-0" aria-hidden="true" />
+            <span>
+              Invitado por colega: <strong className="mono font-extrabold text-emerald-800">{cleanReferredById}</strong>
+            </span>
+          </div>
+        )}
+
         {proActive && licencia ? (
           <div className="mt-3 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-[12.5px]">
             <strong className="block">✓ Licencia Activa: {licencia?.planLabel || 'PRO'}</strong>
@@ -328,7 +373,7 @@ export const ProModal: React.FC<ProModalProps> = ({
           <div className="mt-3 p-3 rounded-xl bg-amber-50 border border-amber-300 text-amber-950 text-[12.5px]">
             <strong className="block">🔒 Versión Gratuita</strong>
             <span>
-              Ingresa una clave de activación válida o solicita al Administrador la activación de un plan para desbloquear todas las funciones PRO.
+              Ingresa una clave de activación válida o elige tu plan de lanzamiento para desbloquear todas las funciones PRO.
             </span>
           </div>
         )}
@@ -338,11 +383,25 @@ export const ProModal: React.FC<ProModalProps> = ({
           id="pro-adquirir-section"
           className="mt-3.5 p-3.5 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col gap-3"
         >
+          {/* Banner Promoción Exclusiva de Lanzamiento */}
+          <div
+            id="pro-launch-promo-banner"
+            className="p-3 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 text-slate-950 border border-amber-400 shadow-sm"
+          >
+            <div className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider text-slate-950">
+              <Sparkles className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+              <span>PROMOCIÓN EXCLUSIVA DE LANZAMIENTO</span>
+            </div>
+            <p className="m-0 mt-0.5 text-[11.5px] font-bold leading-snug text-slate-900">
+              Aprovecha hasta 50% de descuento este mes antes de que suban a su precio regular
+            </p>
+          </div>
+
           <div className="flex items-center justify-between gap-2">
             <div>
               <h3 className="m-0 text-[15px] font-extrabold text-slate-900">Adquirir Licencia PRO</h3>
               <p className="m-0 text-[11.5px] text-slate-500">
-                Elige tu plan, realiza el pago y envía tu comprobante para activar al instante
+                Elige tu plan, realiza tu pago seguro y envía tu comprobante para activar al instante
               </p>
             </div>
             <Cloud className="w-5 h-5 text-blue-600 shrink-0" aria-hidden="true" />
@@ -367,9 +426,14 @@ export const ProModal: React.FC<ProModalProps> = ({
                   Activación inmediata con PIN (sin correo / uso local)
                 </span>
               </div>
-              <strong className="mono text-[14.5px] text-blue-700 shrink-0 whitespace-nowrap">
-                {PRO_PAYMENT_CONFIG.plan30Price}
-              </strong>
+              <div className="text-right shrink-0 whitespace-nowrap">
+                <span className="block mono text-[11px] text-slate-400 line-through font-semibold">
+                  Antes {PRO_PAYMENT_CONFIG.plan30RegularPrice}
+                </span>
+                <strong className="mono text-[15px] text-blue-700 font-extrabold">
+                  {PRO_PAYMENT_CONFIG.plan30Price}
+                </strong>
+              </div>
             </button>
 
             <button
@@ -383,14 +447,21 @@ export const ProModal: React.FC<ProModalProps> = ({
               }`}
             >
               <div className="min-w-0 flex-1">
-                <strong className="block text-[13px] text-slate-900">Plan 90 Días PRO</strong>
+                <strong className="block text-[13px] text-slate-900">
+                  {PRO_PAYMENT_CONFIG.plan90Label}
+                </strong>
                 <span className="block text-[11.5px] text-slate-500">
                   Con respaldo en nube y acceso total
                 </span>
               </div>
-              <strong className="mono text-[14.5px] text-blue-700 shrink-0 whitespace-nowrap">
-                {PRO_PAYMENT_CONFIG.plan90Price}
-              </strong>
+              <div className="text-right shrink-0 whitespace-nowrap">
+                <span className="block mono text-[11px] text-slate-400 line-through font-semibold">
+                  Antes {PRO_PAYMENT_CONFIG.plan90RegularPrice}
+                </span>
+                <strong className="mono text-[15px] text-blue-700 font-extrabold">
+                  {PRO_PAYMENT_CONFIG.plan90Price}
+                </strong>
+              </div>
             </button>
 
             <button
@@ -404,110 +475,122 @@ export const ProModal: React.FC<ProModalProps> = ({
               }`}
             >
               <div className="min-w-0 flex-1">
-                <strong className="block text-[13px] text-slate-900">Plan 1 Año PRO</strong>
+                <strong className="block text-[13px] text-slate-900">
+                  {PRO_PAYMENT_CONFIG.plan365Label}
+                </strong>
                 <span className="block text-[11.5px] text-slate-500">
-                  Con respaldo en nube · Mejor ahorro anual
+                  Con respaldo en nube - Mejor ahorro anual
                 </span>
               </div>
-              <strong className="mono text-[14.5px] text-blue-700 shrink-0 whitespace-nowrap">
-                {PRO_PAYMENT_CONFIG.plan365Price}
-              </strong>
+              <div className="text-right shrink-0 whitespace-nowrap">
+                <span className="block mono text-[11px] text-slate-400 line-through font-semibold">
+                  Antes {PRO_PAYMENT_CONFIG.plan365RegularPrice}
+                </span>
+                <strong className="mono text-[15px] text-blue-700 font-extrabold">
+                  {PRO_PAYMENT_CONFIG.plan365Price}
+                </strong>
+              </div>
             </button>
           </div>
 
-          {/* Datos de pago con Copiar de un toque */}
+          {/* Métodos de Pago Seguros: Opción Principal (Mercado Pago) + Segunda Opción (SPEI) */}
           <div className="p-3 rounded-xl bg-white border border-slate-200 flex flex-col gap-2.5 text-[12px]">
-            <div className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">
-              Datos para Transferencia / Pago
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">
+                Métodos de Pago Seguros
+              </span>
+              <span className="mono text-[11px] font-extrabold text-blue-700">
+                {selectedPlanMeta.price}
+              </span>
             </div>
 
-            <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-slate-50 border border-slate-200">
-              <div className="min-w-0 flex-1">
-                <span className="block text-[10.5px] font-bold text-slate-500">
-                  Transferencia SPEI (CLABE)
-                </span>
-                <strong
-                  id="pro-spei-clabe-number"
-                  className="mono block whitespace-nowrap tracking-tight text-[10.5px] min-[360px]:text-[11.5px] sm:text-[12.5px] text-slate-900"
-                >
-                  {PRO_PAYMENT_CONFIG.speiClabe}
-                </strong>
-              </div>
+            {/* Opción Principal: Pago con Mercado Pago (abre en pestaña nueva el enlace del plan seleccionado) */}
+            <a
+              id="btn-pro-mercado-pago"
+              href={selectedPlanMeta.mpLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full min-h-[48px] px-3.5 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-600 active:scale-[0.99] text-white font-extrabold text-[13px] flex items-center justify-center gap-2 no-underline cursor-pointer shadow-md transition-all text-center leading-tight"
+            >
+              <CreditCard className="w-4 h-4 shrink-0" aria-hidden="true" />
+              <span>Pagar con Mercado Pago (Tarjeta, SPEI o Efectivo)</span>
+            </a>
+
+            {/* Segunda Opción: Transferencia SPEI desplegable */}
+            <div className="rounded-xl border border-slate-200 bg-slate-50 overflow-hidden">
               <button
                 type="button"
-                id="btn-copy-spei-clabe"
-                onClick={() =>
-                  void handleCopyPaymentField(
-                    'spei',
-                    PRO_PAYMENT_CONFIG.speiClabe,
-                    'CLABE SPEI copiada'
-                  )
-                }
-                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11.5px] font-bold cursor-pointer shrink-0"
+                id="btn-toggle-spei-details"
+                aria-expanded={showSpeiDetails}
+                onClick={() => setShowSpeiDetails((prev) => !prev)}
+                className="w-full min-h-[42px] px-3 py-2 flex items-center justify-between gap-2 bg-slate-50 hover:bg-slate-100 text-slate-800 font-bold text-[12.5px] cursor-pointer text-left transition-colors"
               >
-                <Copy className="w-3.5 h-3.5" aria-hidden="true" />
-                {copiedField === 'spei' ? 'Copiado' : 'Copiar'}
-              </button>
-            </div>
-
-            <div className="p-2 rounded-lg bg-slate-50 border border-slate-200 flex flex-col gap-1.5">
-              <div className="flex items-center justify-between gap-2">
-                <div className="min-w-0 flex-1">
-                  <span className="block text-[10.5px] font-bold text-slate-500">
-                    Depósito en tiendas OXXO (Tarjeta Mercado Pago)
-                  </span>
-                  {isOxxoPlaceholder ? (
-                    <span
-                      id="pro-oxxo-card-number"
-                      className="block text-[11.5px] font-semibold text-slate-500 italic mt-0.5"
-                    >
-                      Disponible al solicitar datos por WhatsApp
-                    </span>
-                  ) : (
-                    <strong
-                      id="pro-oxxo-card-number"
-                      className="mono block whitespace-nowrap tracking-tight text-[10.5px] min-[360px]:text-[11.5px] sm:text-[12.5px] text-slate-900 overflow-x-auto"
-                    >
-                      {PRO_PAYMENT_CONFIG.oxxoCard}
-                    </strong>
-                  )}
-                </div>
-                {isOxxoPlaceholder ? (
-                  <span className="inline-flex items-center px-2.5 py-1.5 rounded-lg bg-slate-200/80 text-slate-600 text-[11px] font-bold shrink-0">
-                    Por WhatsApp
-                  </span>
+                <span>Transferencia SPEI (Mismo precio)</span>
+                {showSpeiDetails ? (
+                  <ChevronUp className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" />
                 ) : (
-                  <button
-                    type="button"
-                    id="btn-copy-oxxo-card"
-                    onClick={() =>
-                      void handleCopyPaymentField(
-                        'oxxo',
-                        PRO_PAYMENT_CONFIG.oxxoCard,
-                        'Tarjeta Mercado Pago copiada'
-                      )
-                    }
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11.5px] font-bold cursor-pointer shrink-0"
-                  >
-                    <Copy className="w-3.5 h-3.5" aria-hidden="true" />
-                    {copiedField === 'oxxo' ? 'Copiado' : 'Copiar'}
-                  </button>
+                  <ChevronDown className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" />
                 )}
-              </div>
-              <p className="m-0 text-[10.5px] leading-snug text-slate-400">
-                Indica en caja que es depósito a tarjeta Mercado Pago (OXXO cobra comisión en caja).
-              </p>
-            </div>
+              </button>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1 border-t border-slate-100 text-[12px]">
-              <div>
-                <span className="block text-[10.5px] font-bold text-slate-500">Beneficiario</span>
-                <strong className="text-slate-900">{PRO_PAYMENT_CONFIG.beneficiario}</strong>
-              </div>
-              <div>
-                <span className="block text-[10.5px] font-bold text-slate-500">Institución</span>
-                <strong className="text-slate-900">{PRO_PAYMENT_CONFIG.institucion}</strong>
-              </div>
+              {showSpeiDetails && (
+                <div
+                  id="pro-spei-collapsible-panel"
+                  className="px-3 pb-3 pt-2 border-t border-slate-200 bg-white flex flex-col gap-2.5"
+                >
+                  <div className="flex items-center justify-between gap-2 p-2.5 rounded-lg bg-slate-50 border border-slate-200">
+                    <div className="min-w-0 flex-1">
+                      <span className="block text-[10.5px] font-bold text-slate-500">
+                        CLABE Interbancaria
+                      </span>
+                      <strong
+                        id="pro-spei-clabe-number"
+                        className="mono block whitespace-nowrap tracking-tight text-[11px] min-[360px]:text-[12px] sm:text-[13px] text-slate-900"
+                      >
+                        {PRO_PAYMENT_CONFIG.speiClabe}
+                      </strong>
+                    </div>
+                    <button
+                      type="button"
+                      id="btn-copy-spei-clabe"
+                      onClick={() =>
+                        void handleCopyPaymentField(
+                          'spei',
+                          PRO_PAYMENT_CONFIG.speiClabe,
+                          'CLABE SPEI copiada'
+                        )
+                      }
+                      className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-white text-[11.5px] font-bold cursor-pointer shrink-0 transition-colors ${
+                        copiedField === 'spei'
+                          ? 'bg-emerald-600 hover:bg-emerald-700'
+                          : 'bg-blue-600 hover:bg-blue-700'
+                      }`}
+                    >
+                      <Copy className="w-3.5 h-3.5" aria-hidden="true" />
+                      {copiedField === 'spei' ? 'Copiado' : 'Copiar'}
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[12px]">
+                    <div className="p-2 rounded-lg bg-slate-50 border border-slate-200/80">
+                      <span className="block text-[10px] font-bold text-slate-500 uppercase">
+                        Beneficiario
+                      </span>
+                      <strong className="text-slate-900">{PRO_PAYMENT_CONFIG.beneficiario}</strong>
+                    </div>
+                    <div className="p-2 rounded-lg bg-slate-50 border border-slate-200/80">
+                      <span className="block text-[10px] font-bold text-slate-500 uppercase">
+                        Institución
+                      </span>
+                      <strong className="text-slate-900">{PRO_PAYMENT_CONFIG.institucion}</strong>
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-950 text-[11.5px] font-semibold leading-snug">
+                    Escribe tu ID de Equipo (<strong className="mono">{safeDeviceId}</strong>) en el concepto de transferencia para activar tu licencia más rápido.
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1135,7 +1218,7 @@ const FALLBACK_MANIFEST_JSON = JSON.stringify(
   2
 );
 
-const FALLBACK_SW_JS = `const CACHE_NAME = 'aluminero-pro-v39-20261121';
+const FALLBACK_SW_JS = `const CACHE_NAME = 'aluminero-pro-v41-20261121';
 const APP_SHELL_ASSETS = [
   './',
   './index.html',
@@ -1547,6 +1630,9 @@ interface AdminModalProps {
   trabajosAntesDespues?: TrabajoAntesDespuesItem[];
   onPublishTrabajoAprobado?: (item: Omit<TrabajoAntesDespuesItem, 'id' | 'fecha' | 'aprobado'>) => void;
   onDeleteTrabajoAprobado?: (id: string) => void;
+  referralHistory?: ReferralHistoryRecord[];
+  onAddReferralRecord?: (rec: Omit<ReferralHistoryRecord, 'id' | 'createdAt'>) => void;
+  onDeleteReferralRecord?: (id: string) => void;
   onShowToast: (msg: string, topSuccess?: boolean) => void;
 }
 
@@ -1578,8 +1664,17 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   trabajosAntesDespues = [],
   onPublishTrabajoAprobado,
   onDeleteTrabajoAprobado,
+  referralHistory = [],
+  onAddReferralRecord,
+  onDeleteReferralRecord,
   onShowToast,
 }) => {
+  const [adminTab, setAdminTab] = useState<'general' | 'referidos'>('general');
+  const [refSearch, setRefSearch] = useState('');
+  const [refReferrerInput, setRefReferrerInput] = useState('');
+  const [refReferredIdInput, setRefReferredIdInput] = useState('');
+  const [refReferredNameInput, setRefReferredNameInput] = useState('');
+  const [refPlanSelect, setRefPlanSelect] = useState('M|Promo 30 Días PRO|$350 MXN');
   const [targetDevice, setTargetDevice] = useState(deviceId);
   const [clienteNombre, setClienteNombre] = useState('');
   const [clienteTelefono, setClienteTelefono] = useState('');
@@ -1613,6 +1708,22 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   const importBackupRef = useRef<HTMLInputElement>(null);
   const adminAntesRef = useRef<HTMLInputElement>(null);
   const adminDespuesRef = useRef<HTMLInputElement>(null);
+
+  const filteredReferrals = useMemo(() => {
+    const q = refSearch.trim().toLowerCase();
+    if (!q) return referralHistory;
+    return referralHistory.filter(
+      (r) =>
+        r.referrerId.toLowerCase().includes(q) ||
+        r.referredDeviceId.toLowerCase().includes(q) ||
+        (r.referredName || '').toLowerCase().includes(q) ||
+        r.planLabel.toLowerCase().includes(q)
+    );
+  }, [referralHistory, refSearch]);
+
+  const uniqueReferrersCount = useMemo(() => {
+    return new Set(referralHistory.map((r) => r.referrerId.trim().toUpperCase())).size;
+  }, [referralHistory]);
 
   useEffect(() => {
     if (!open) return;
@@ -2668,7 +2779,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
           <div>
             <h2 className="m-0 text-[18px] font-extrabold">Panel de Administrador</h2>
             <p className="m-0 text-[12px] text-slate-500">
-              4 planes oficiales, reposición de días exactos e historial de clientes
+              Planes oficiales, reposición de días exactos, referidos e historial de clientes
             </p>
           </div>
           <button
@@ -2682,6 +2793,239 @@ export const AdminModal: React.FC<AdminModalProps> = ({
           </button>
         </div>
 
+        {/* Pestañas del Panel de Administrador */}
+        <div
+          role="tablist"
+          aria-label="Secciones del Panel de Administrador"
+          className="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-slate-100 border border-slate-200 mb-3.5"
+        >
+          <button
+            type="button"
+            role="tab"
+            id="tab-admin-general"
+            aria-selected={adminTab === 'general'}
+            onClick={() => setAdminTab('general')}
+            className={`min-h-[38px] px-3 rounded-lg text-[12.5px] font-extrabold cursor-pointer transition-all ${
+              adminTab === 'general'
+                ? 'bg-white text-blue-700 shadow-sm border border-slate-200'
+                : 'bg-transparent text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            Licencias y Panel
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="tab-admin-referidos"
+            aria-selected={adminTab === 'referidos'}
+            onClick={() => setAdminTab('referidos')}
+            className={`min-h-[38px] px-3 rounded-lg text-[12.5px] font-extrabold cursor-pointer transition-all inline-flex items-center justify-center gap-1.5 ${
+              adminTab === 'referidos'
+                ? 'bg-white text-emerald-700 shadow-sm border border-emerald-200'
+                : 'bg-transparent text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Users className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+            <span>Referidos ({referralHistory.length})</span>
+          </button>
+        </div>
+
+        {adminTab === 'referidos' ? (
+          <div id="admin-referidos-panel" className="flex flex-col gap-3">
+            <div className="grid grid-cols-2 gap-2">
+              <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200">
+                <span className="block text-[10.5px] font-bold uppercase text-emerald-700">
+                  Referidos registrados
+                </span>
+                <strong className="mono text-[20px] font-extrabold text-emerald-900">
+                  {referralHistory.length}
+                </strong>
+              </div>
+              <div className="p-3 rounded-xl bg-blue-50 border border-blue-200">
+                <span className="block text-[10.5px] font-bold uppercase text-blue-700">
+                  Colegas referentes
+                </span>
+                <strong className="mono text-[20px] font-extrabold text-blue-900">
+                  {uniqueReferrersCount}
+                </strong>
+              </div>
+            </div>
+
+            {/* Formulario manual para registrar referido desde comprobante WhatsApp */}
+            {onAddReferralRecord && (
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex flex-col gap-2">
+                <div className="text-[12px] font-extrabold text-slate-800">
+                  Registrar recomendación de colega
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label
+                      htmlFor="inp-admin-ref-referrer"
+                      className="block text-[11px] font-bold text-slate-600 mb-0.5"
+                    >
+                      ID de quien recomendó *
+                    </label>
+                    <input
+                      id="inp-admin-ref-referrer"
+                      type="text"
+                      value={refReferrerInput}
+                      onChange={(e) => setRefReferrerInput(e.target.value)}
+                      placeholder="Ej. ALM-9X2K"
+                      className="w-full min-h-[38px] rounded-lg border border-slate-300 bg-white px-2.5 mono text-[12.5px] font-bold uppercase"
+                    />
+                  </div>
+                  <div>
+                    <label
+                      htmlFor="inp-admin-ref-referred"
+                      className="block text-[11px] font-bold text-slate-600 mb-0.5"
+                    >
+                      ID del colega referido *
+                    </label>
+                    <input
+                      id="inp-admin-ref-referred"
+                      type="text"
+                      value={refReferredIdInput}
+                      onChange={(e) => setRefReferredIdInput(e.target.value)}
+                      placeholder="Ej. ALM-4M7P"
+                      className="w-full min-h-[38px] rounded-lg border border-slate-300 bg-white px-2.5 mono text-[12.5px] font-bold uppercase"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label
+                      htmlFor="inp-admin-ref-name"
+                      className="block text-[11px] font-bold text-slate-600 mb-0.5"
+                    >
+                      Nombre / Taller (opcional)
+                    </label>
+                    <input
+                      id="inp-admin-ref-name"
+                      type="text"
+                      value={refReferredNameInput}
+                      onChange={(e) => setRefReferredNameInput(e.target.value)}
+                      placeholder="Ej. Taller Hernández"
+                      className="w-full min-h-[38px] rounded-lg border border-slate-300 bg-white px-2.5 text-[12.5px] font-semibold"
+                    />
+                  </div>
+                  <div>
+                    <label
+                      htmlFor="sel-admin-ref-plan"
+                      className="block text-[11px] font-bold text-slate-600 mb-0.5"
+                    >
+                      Plan PRO adquirido
+                    </label>
+                    <select
+                      id="sel-admin-ref-plan"
+                      value={refPlanSelect}
+                      onChange={(e) => setRefPlanSelect(e.target.value)}
+                      className="w-full min-h-[38px] rounded-lg border border-slate-300 bg-white px-2 text-[12px] font-bold"
+                    >
+                      <option value="M|Promo 30 Días PRO|$350 MXN">Promo 30 Días PRO ($350 MXN)</option>
+                      <option value="Q|Plan 90 Días PRO|$950 MXN">Plan 90 Días PRO ($950 MXN)</option>
+                      <option value="A|Plan 1 Año PRO|$1,800 MXN">Plan 1 Año PRO ($1,800 MXN)</option>
+                      <option value="G|Promoción 3 Días|$0 MXN">Promoción 3 Días ($0 MXN)</option>
+                      <option value="V|Licencia Vitalicia|Vitalicia">Licencia Vitalicia</option>
+                    </select>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  id="btn-admin-add-referral"
+                  onClick={() => {
+                    const cleanReferrer = refReferrerInput.trim().toUpperCase();
+                    const cleanReferred = refReferredIdInput.trim().toUpperCase();
+                    if (!cleanReferrer || !cleanReferred) {
+                      onShowToast('Ingresa el ID de quien recomendó y el ID del colega referido');
+                      return;
+                    }
+                    if (cleanReferrer === cleanReferred) {
+                      onShowToast('El ID referente y el ID referido no pueden ser iguales');
+                      return;
+                    }
+                    const [planCode, planLabel, amountLabel] = refPlanSelect.split('|');
+                    onAddReferralRecord({
+                      referrerId: cleanReferrer,
+                      referredDeviceId: cleanReferred,
+                      referredName: refReferredNameInput.trim(),
+                      planCode: planCode || 'M',
+                      planLabel: planLabel || 'Promo 30 Días PRO',
+                      amountLabel: amountLabel || '',
+                    });
+                    setRefReferrerInput('');
+                    setRefReferredIdInput('');
+                    setRefReferredNameInput('');
+                    onShowToast('Referido registrado en el historial', true);
+                  }}
+                  className="w-full min-h-[40px] rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[12.5px] cursor-pointer transition-colors"
+                >
+                  Guardar referido en historial
+                </button>
+              </div>
+            )}
+
+            {/* Buscador e historial de referidos */}
+            <div>
+              <input
+                type="search"
+                value={refSearch}
+                onChange={(e) => setRefSearch(e.target.value)}
+                placeholder="Buscar por ID referente, ID referido, nombre o plan..."
+                className="w-full min-h-[38px] rounded-xl border border-slate-200 bg-slate-50 px-3 text-[12.5px] font-semibold"
+              />
+            </div>
+
+            {filteredReferrals.length === 0 ? (
+              <div className="p-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 text-center text-[12px] text-slate-500">
+                {referralHistory.length === 0
+                  ? 'Aún no hay referidos registrados. Se guardan automáticamente cuando un colega invitado activa un plan PRO o al registrarlos manualmente aquí.'
+                  : 'No hay coincidencias para tu búsqueda.'}
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2 max-h-[340px] overflow-y-auto pr-0.5">
+                {filteredReferrals.map((rec) => (
+                  <div
+                    key={rec.id}
+                    className="p-3 rounded-xl border border-slate-200 bg-white flex flex-col gap-1.5 shadow-xs"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="text-[12px] font-bold text-slate-800">
+                          Recomendó:{' '}
+                          <span className="mono text-emerald-700 font-extrabold">{rec.referrerId}</span>
+                        </div>
+                        <div className="text-[12px] text-slate-700">
+                          Colega invitado:{' '}
+                          <span className="mono font-bold text-blue-700">{rec.referredDeviceId}</span>
+                          {rec.referredName ? ` · ${rec.referredName}` : ''}
+                        </div>
+                      </div>
+                      {onDeleteReferralRecord && (
+                        <button
+                          type="button"
+                          onClick={() => onDeleteReferralRecord(rec.id)}
+                          aria-label="Eliminar registro de referido"
+                          className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 cursor-pointer shrink-0"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between gap-2 flex-wrap pt-1 border-t border-slate-100">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 border border-blue-200 text-blue-800 text-[11px] font-extrabold">
+                        {rec.planLabel}
+                        {rec.amountLabel ? ` · ${rec.amountLabel}` : ''}
+                      </span>
+                      <span className="text-[10.5px] text-slate-400 mono">
+                        {new Date(rec.createdAt).toLocaleString('es-MX')}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
         <div id="admin-gen-box" className="flex flex-col gap-3">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             <div>
@@ -3747,6 +4091,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
             </button>
           </div>
         </div>
+        )}
       </div>
     </div>
     {typeof document !== 'undefined' ? createPortal(confirmModalsNode, document.body) : confirmModalsNode}
@@ -3754,17 +4099,21 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   );
 };
 
-/* ==================== MODAL RECOMENDAR APP (SPOTIFY INVITE + CONTEO FIREBASE + QR LOCAL) ==================== */
+/* ==================== MODAL RECOMENDAR APP (INVITAR A UN COLEGA + RASTREO POR ID + QR LOCAL) ==================== */
 interface RecomendarModalProps {
   open: boolean;
+  deviceId: string;
   defaultSenderName?: string;
+  referralHistory?: ReferralHistoryRecord[];
   onClose: () => void;
   onShowToast: (msg: string, topSuccess?: boolean) => void;
 }
 
 export const RecomendarModal: React.FC<RecomendarModalProps> = ({
   open,
+  deviceId,
   defaultSenderName = '',
+  referralHistory = [],
   onClose,
   onShowToast,
 }) => {
@@ -3776,18 +4125,30 @@ export const RecomendarModal: React.FC<RecomendarModalProps> = ({
   const [promoTotal, setPromoTotal] = useState<number>(() => loadCachedPromoCount());
   const [loadingCount, setLoadingCount] = useState<boolean>(false);
   const [busyAction, setBusyAction] = useState<'wa' | 'copy' | null>(null);
-  const [lastGeneratedUrl, setLastGeneratedUrl] = useState<string>('');
+
+  const safeDeviceId = useMemo(
+    () => String(deviceId || '').trim().toUpperCase() || 'EQUIPO',
+    [deviceId]
+  );
 
   const displaySenderName = useMemo(
     () => sanitizeReferralSenderName(senderName) || 'Tu nombre o taller',
     [senderName]
   );
 
-  const qrTargetUrl = useMemo(() => {
-    if (lastGeneratedUrl) return lastGeneratedUrl;
-    const clean = sanitizeReferralSenderName(senderName);
-    return clean ? buildReferralInviteUrl(clean, promoTotal) : getOfficialShareUrl();
-  }, [lastGeneratedUrl, senderName, promoTotal]);
+  // Enlace personalizado con el ID de Equipo del usuario: https://alumineropro.pages.dev/?ref=[ID_DEL_USUARIO]
+  const qrTargetUrl = useMemo(
+    () => `${getOfficialShareUrl()}/?ref=${encodeURIComponent(safeDeviceId)}`,
+    [safeDeviceId]
+  );
+
+  const myReferralsCount = useMemo(
+    () =>
+      referralHistory.filter(
+        (r) => r.referrerId.trim().toUpperCase() === safeDeviceId
+      ).length,
+    [referralHistory, safeDeviceId]
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -3847,7 +4208,6 @@ export const RecomendarModal: React.FC<RecomendarModalProps> = ({
     const bounded = val.slice(0, 60);
     setSenderName(bounded);
     saveReferralSenderName(bounded);
-    setLastGeneratedUrl('');
   };
 
   const copyTextSafe = async (text: string): Promise<boolean> => {
@@ -3882,16 +4242,13 @@ export const RecomendarModal: React.FC<RecomendarModalProps> = ({
     if (busyAction) return;
     setBusyAction('copy');
     try {
-      const cleanName = sanitizeReferralSenderName(senderName) || 'Un colega';
       const nextPromoNum = await incrementPromocionesEnviadasCount();
       setPromoTotal(nextPromoNum);
-      const inviteUrl = buildReferralInviteUrl(cleanName, nextPromoNum);
-      setLastGeneratedUrl(inviteUrl);
-      const copied = await copyTextSafe(inviteUrl);
+      const copied = await copyTextSafe(qrTargetUrl);
       onShowToast(
         copied
-          ? `Enlace de invitación #${nextPromoNum} copiado`
-          : `Invitación #${nextPromoNum}: ${inviteUrl}`,
+          ? `Enlace personal de referido copiado (${safeDeviceId})`
+          : `Tu enlace de referido: ${qrTargetUrl}`,
         true
       );
     } finally {
@@ -3906,9 +4263,7 @@ export const RecomendarModal: React.FC<RecomendarModalProps> = ({
       const cleanName = sanitizeReferralSenderName(senderName) || 'Un colega';
       const nextPromoNum = await incrementPromocionesEnviadasCount();
       setPromoTotal(nextPromoNum);
-      const inviteUrl = buildReferralInviteUrl(cleanName, nextPromoNum);
-      setLastGeneratedUrl(inviteUrl);
-      const waMessage = `${cleanName} te acaba de mandar 3 días de Aluminero Pro por 0 MXN. ¡Eso es amistad!\n\nExplora una herramienta profesional: tendrás acceso total a inventario, optimización de tramos y cotizaciones en PDF, e incluso sin conexión.\n\nAbre tu invitación (#${nextPromoNum}) aquí:\n${inviteUrl}`;
+      const waMessage = `${cleanName} te acaba de mandar 3 días de Aluminero Pro por 0 MXN. ¡Eso es amistad!\n\nExplora una herramienta profesional: tendrás acceso total a inventario, optimización de tramos y cotizaciones en PDF, e incluso sin conexión.\n\nAbre tu invitación personal (#${nextPromoNum}) aquí:\n${qrTargetUrl}`;
       const waUrl = `https://wa.me/?text=${encodeURIComponent(waMessage)}`;
       openExternalLinkSafe(waUrl);
       onShowToast(`Invitación #${nextPromoNum} lista para compartir en WhatsApp`, true);
@@ -3923,18 +4278,18 @@ export const RecomendarModal: React.FC<RecomendarModalProps> = ({
       className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-[2px] flex items-center justify-center p-3 sm:p-4"
       role="dialog"
       aria-modal="true"
-      aria-label="Recomendar App"
+      aria-label="Invitar a un colega"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
       <div className="w-full max-w-[440px] max-h-[92vh] overflow-y-auto bg-white text-slate-900 rounded-[22px] p-4 sm:p-5 shadow-2xl">
         <div className="flex items-center justify-between gap-2 mb-2.5">
-          <h2 className="m-0 text-[17.5px] font-extrabold tracking-tight">Recomendar App (QR)</h2>
+          <h2 className="m-0 text-[17.5px] font-extrabold tracking-tight">Invitar a un colega (QR)</h2>
           <button
             type="button"
             onClick={onClose}
-            aria-label="Cerrar Recomendar App"
+            aria-label="Cerrar Invitar a un colega"
             className="min-w-[36px] min-h-[36px] rounded-xl bg-slate-100 text-slate-700 font-bold cursor-pointer"
           >
             ✕
@@ -3944,12 +4299,27 @@ export const RecomendarModal: React.FC<RecomendarModalProps> = ({
         {/* Distintivo discreto de conteo global en Firebase */}
         <div
           id="lbl-community-promos"
-          className="mb-3 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11.5px] font-bold flex items-center justify-between gap-2"
+          className="mb-2.5 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11.5px] font-bold flex items-center justify-between gap-2"
         >
           <span className="truncate">Promociones compartidas por la comunidad:</span>
           <span className="mono font-extrabold text-emerald-700 whitespace-nowrap">
             {loadingCount ? `#${promoTotal}...` : `#${promoTotal}`}
           </span>
+        </div>
+
+        {/* Rastreo personal por ID de Equipo */}
+        <div className="mb-3 px-3 py-2 rounded-xl bg-blue-50 border border-blue-200 text-blue-900 text-[11.5px] flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <span className="block text-[10px] font-bold uppercase text-blue-700">
+              Tu código de referido automático
+            </span>
+            <strong className="mono text-[13px] font-extrabold text-blue-800">{safeDeviceId}</strong>
+          </div>
+          {myReferralsCount > 0 && (
+            <span className="px-2 py-0.5 rounded-lg bg-emerald-100 border border-emerald-300 text-emerald-800 text-[10.5px] font-extrabold whitespace-nowrap">
+              {myReferralsCount} referido(s)
+            </span>
+          )}
         </div>
 
         {/* Campo para nombre o taller del remitente */}
@@ -4013,7 +4383,7 @@ export const RecomendarModal: React.FC<RecomendarModalProps> = ({
             onClick={handleCopiarEnlaceInvitacion}
             className="w-full min-h-[44px] px-4 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-65 text-white font-bold text-[13px] cursor-pointer transition-colors"
           >
-            {busyAction === 'copy' ? 'Copiando enlace...' : 'Copiar enlace de invitación'}
+            {busyAction === 'copy' ? 'Copiando enlace...' : 'Copiar enlace personalizado'}
           </button>
         </div>
 
@@ -4052,6 +4422,7 @@ export const RecomendarModal: React.FC<RecomendarModalProps> = ({
 interface ColleagueReferralWelcomeModalProps {
   open: boolean;
   referral: SavedColleagueReferral | null;
+  referredById?: string | null;
   deviceId: string;
   whatsappNumber?: string;
   onExploreFree: () => void;
@@ -4061,10 +4432,14 @@ interface ColleagueReferralWelcomeModalProps {
 export const ColleagueReferralWelcomeModal: React.FC<ColleagueReferralWelcomeModalProps> = ({
   open,
   referral,
+  referredById = null,
   deviceId,
   onExploreFree,
 }) => {
   if (!open || !referral) return null;
+
+  const displayReferredBy =
+    (referredById && String(referredById).trim()) || referral.refName;
 
   return (
     <div
@@ -4075,10 +4450,20 @@ export const ColleagueReferralWelcomeModal: React.FC<ColleagueReferralWelcomeMod
       aria-label="Invitación de colega Aluminero Pro"
     >
       <div className="w-full max-w-[440px] flex flex-col items-center text-center">
-        <div className="mb-5 inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl border border-emerald-400/40 bg-emerald-500/15 text-emerald-300 text-[11px] font-extrabold uppercase tracking-[0.12em]">
+        <div className="mb-3 inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl border border-emerald-400/40 bg-emerald-500/15 text-emerald-300 text-[11px] font-extrabold uppercase tracking-[0.12em]">
           <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" aria-hidden="true" />
           Invitación especial · Promo #{referral.promoNumber}
         </div>
+
+        {displayReferredBy && (
+          <div
+            id="badge-welcome-referred-by"
+            className="mb-4 inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-white/10 border border-emerald-300/30 text-emerald-200 text-[11.5px] font-semibold"
+          >
+            <span>Invitado por colega:</span>
+            <strong className="mono font-extrabold text-white">{displayReferredBy}</strong>
+          </div>
+        )}
 
         <h1 className="m-0 text-[26px] sm:text-[31px] font-extrabold text-white leading-[1.16] tracking-tight [text-wrap:balance]">
           {referral.refName} te acaba de mandar 3 días de Aluminero Pro por 0 MXN. ¡Eso es amistad!

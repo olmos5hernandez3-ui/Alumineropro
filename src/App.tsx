@@ -45,9 +45,11 @@ import {
   verifyDeviceStatusInCloud,
 } from './utils/cloudSync';
 import {
+  addReferralHistoryRecord,
   AdminKeyRecord,
   AlumineroBackupPayload,
   buildAdminKeySignature,
+  captureReferredByFromSearch,
   clearLegacyAdminKeys,
   clearTrialStart,
   CloudAccountBackupPayload,
@@ -78,6 +80,7 @@ import {
   loadNotas,
   loadObrasAprobadas,
   loadPerfilFotos,
+  loadReferralHistory,
   loadRevokedDevicesMap,
   loadSavedColleagueReferral,
   loadSobrantes,
@@ -90,6 +93,7 @@ import {
   openExternalLinkSafe,
   PartidaObraExtended,
   PerfilFotosMap,
+  ReferralHistoryRecord,
   sanitizeWhatsappNumber,
   saveAdminKeys,
   saveAccessBlocked,
@@ -110,6 +114,7 @@ import {
   saveNotas,
   saveObrasAprobadas,
   savePerfilFotos,
+  saveReferralHistory,
   saveRevokedDevicesMap,
   saveSobrantes,
   saveSugerenciasWhatsapp,
@@ -304,13 +309,26 @@ export default function App() {
     subModal: null,
   };
 
-  // Invitación estilo Spotify (?ref=[Nombre]&promo=[NumeroPromo])
+  // Rastreo persistente de referidos (?ref=[ID_DEL_USUARIO]) en localStorage bajo clave 'referred_by_id'
+  // (ignora auto-referidos si coincide con el deviceId de este mismo equipo)
+  const [referredById] = useState<string | null>(() => {
+    const search = typeof window !== 'undefined' ? window.location.search : '';
+    return captureReferredByFromSearch(search, deviceId);
+  });
+  const [referralHistory, setReferralHistory] = useState<ReferralHistoryRecord[]>(() =>
+    loadReferralHistory()
+  );
+
+  // Invitación estilo Spotify (?ref=[ID_O_Nombre]&promo=[NumeroPromo])
   // Se inicializa antes de globalModals y navFramesRef para garantizar que la pantalla verde
   // de invitación aparezca SIEMPRE desde el primer frame antes de cualquier aviso PWA.
   const [savedColleagueReferral] = useState<SavedColleagueReferral | null>(() => {
     const parsedFromUrl =
       typeof window !== 'undefined' ? parseReferralFromSearch(window.location.search) : null;
-    if (parsedFromUrl) {
+    if (
+      parsedFromUrl &&
+      parsedFromUrl.refName.trim().toUpperCase() !== deviceId.trim().toUpperCase()
+    ) {
       const nextRef: SavedColleagueReferral = {
         refName: parsedFromUrl.refName,
         promoNumber: parsedFromUrl.promoNumber,
@@ -323,7 +341,10 @@ export default function App() {
   });
   const [initialReferralActive] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
-    return Boolean(parseReferralFromSearch(window.location.search));
+    const parsed = parseReferralFromSearch(window.location.search);
+    return Boolean(
+      parsed && parsed.refName.trim().toUpperCase() !== deviceId.trim().toUpperCase()
+    );
   });
 
   const [currentView, setCurrentView] = useState<ScreenId>('menu');
@@ -2377,6 +2398,7 @@ export default function App() {
             notasCount={notas.length}
             cotizacionesCount={cotizacionesCount}
             savedReferral={savedColleagueReferral}
+            referredById={referredById}
             pendingRemindersCount={reminderSummary.pendingCount}
             dueRemindersCount={reminderSummary.dueCount}
             pushPermission={pushPermission}
@@ -2848,6 +2870,7 @@ export default function App() {
         trialExpiresAt={trialExpiresAt}
         whatsappNumber={sugerenciasWhatsapp}
         defaultEmail={cloudAccountSession?.email || licencia?.linkedEmail || ''}
+        referredById={referredById}
         onClose={requestBack}
         onActivateLic={async (lic) => {
           const normKey = (lic.activatedKey || '').trim().toUpperCase();
@@ -2892,6 +2915,29 @@ export default function App() {
           });
           saveLicencia(lic);
           setLicencia(lic);
+
+          // Registrar automáticamente en el historial local de referidos si fue invitado por un colega
+          if (
+            referredById &&
+            referredById.trim().toUpperCase() !== deviceId.trim().toUpperCase()
+          ) {
+            const amountByCode: Record<string, string> = {
+              M: '$350 MXN',
+              Q: '$950 MXN',
+              A: '$1,800 MXN',
+              G: '$0 MXN',
+              V: 'Vitalicia',
+            };
+            const updatedRefs = addReferralHistoryRecord({
+              referrerId: referredById,
+              referredDeviceId: deviceId,
+              referredName: taller.nombre || hoja.proyecto.trim() || '',
+              planCode: lic.planCode,
+              planLabel: lic.planLabel,
+              amountLabel: amountByCode[lic.planCode] || '',
+            });
+            setReferralHistory(updatedRefs);
+          }
 
           if (cloudRes.ok && cloudRes.devices && cloudRes.stats) {
             applyCloudSnapshot({
@@ -3283,12 +3329,27 @@ export default function App() {
           setTrabajosAntesDespues((prev) => prev.filter((t) => t.id !== id));
           showToast('Trabajo eliminado de la galería');
         }}
+        referralHistory={referralHistory}
+        onAddReferralRecord={(rec) => {
+          const updated = addReferralHistoryRecord(rec);
+          setReferralHistory(updated);
+        }}
+        onDeleteReferralRecord={(id) => {
+          setReferralHistory((prev) => {
+            const next = prev.filter((item) => item.id !== id);
+            saveReferralHistory(next);
+            return next;
+          });
+          showToast('Registro de referido eliminado');
+        }}
         onShowToast={showToast}
       />
 
       <RecomendarModal
         open={recomendarOpen}
+        deviceId={deviceId}
         defaultSenderName={taller.nombre}
+        referralHistory={referralHistory}
         onClose={requestBack}
         onShowToast={showToast}
       />
@@ -3296,6 +3357,7 @@ export default function App() {
       <ColleagueReferralWelcomeModal
         open={isReferralWelcomeShowing}
         referral={savedColleagueReferral}
+        referredById={referredById}
         deviceId={deviceId}
         whatsappNumber={sugerenciasWhatsapp}
         onExploreFree={() => {

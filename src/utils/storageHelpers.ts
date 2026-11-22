@@ -44,7 +44,10 @@ export const KEYS = {
   SAVED_COLLEAGUE_REFERRAL: 'aluminero_saved_referral_v1',
   PROMO_COUNT_CACHE: 'aluminero_promo_count_cache_v1',
   RECORDATORIOS: 'aluminero_recordatorios_cotizacion_v1',
+  REFERRALS_HISTORY: 'aluminero_referrals_history_v1',
 };
+
+export const REFERRED_BY_ID_STORAGE_KEY = 'referred_by_id';
 
 export type AppTheme = 'light' | 'dark';
 
@@ -1372,3 +1375,147 @@ export function saveCachedPromoCount(total: number): void {
     // ignorar si localStorage no permite escritura
   }
 }
+
+export interface ReferralHistoryRecord {
+  id: string;
+  referrerId: string;
+  referredDeviceId: string;
+  referredName?: string;
+  planCode: string;
+  planLabel: string;
+  amountLabel?: string;
+  createdAt: number;
+}
+
+export function sanitizeReferredById(raw: string | null | undefined): string | null {
+  const clean = String(raw || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 60);
+  return clean || null;
+}
+
+export function loadReferredById(currentDeviceId?: string): string | null {
+  if (typeof localStorage === 'undefined') return null;
+  try {
+    const saved = sanitizeReferredById(localStorage.getItem(REFERRED_BY_ID_STORAGE_KEY));
+    if (!saved) return null;
+    if (
+      currentDeviceId &&
+      saved.toUpperCase() === String(currentDeviceId).trim().toUpperCase()
+    ) {
+      return null;
+    }
+    return saved;
+  } catch {
+    return null;
+  }
+}
+
+export function saveReferredById(
+  refId: string | null | undefined,
+  currentDeviceId?: string
+): string | null {
+  if (typeof localStorage === 'undefined') return null;
+  const clean = sanitizeReferredById(refId);
+  if (!clean) return loadReferredById(currentDeviceId);
+  const normSelf = String(currentDeviceId || '').trim().toUpperCase();
+  if (normSelf && clean.toUpperCase() === normSelf) {
+    return loadReferredById(currentDeviceId);
+  }
+  try {
+    localStorage.setItem(REFERRED_BY_ID_STORAGE_KEY, clean);
+  } catch {
+    // ignorar si localStorage no permite escritura
+  }
+  return clean;
+}
+
+export function captureReferredByFromSearch(
+  search: string,
+  currentDeviceId: string
+): string | null {
+  try {
+    const cleanSearch = String(search || '').trim();
+    if (cleanSearch) {
+      const params = new URLSearchParams(
+        cleanSearch.startsWith('?') ? cleanSearch.slice(1) : cleanSearch
+      );
+      const rawRef = sanitizeReferredById(params.get('ref'));
+      const normSelf = String(currentDeviceId || '').trim().toUpperCase();
+      if (rawRef && (!normSelf || rawRef.toUpperCase() !== normSelf)) {
+        return saveReferredById(rawRef, currentDeviceId);
+      }
+    }
+  } catch {
+    // ignorar errores de parsing de query string
+  }
+  return loadReferredById(currentDeviceId);
+}
+
+export function loadReferralHistory(): ReferralHistoryRecord[] {
+  if (typeof localStorage === 'undefined') return [];
+  const raw = safeJsonParse<unknown>(localStorage.getItem(KEYS.REFERRALS_HISTORY), []);
+  if (!Array.isArray(raw)) return [];
+  const out: ReferralHistoryRecord[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const obj = item as Partial<ReferralHistoryRecord>;
+    const referrerId = sanitizeReferredById(obj.referrerId);
+    const referredDeviceId = sanitizeReferredById(obj.referredDeviceId);
+    if (!referrerId || !referredDeviceId) continue;
+    out.push({
+      id:
+        typeof obj.id === 'string' && obj.id.trim()
+          ? obj.id.trim()
+          : `ref_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      referrerId,
+      referredDeviceId,
+      referredName: typeof obj.referredName === 'string' ? obj.referredName.trim().slice(0, 80) : '',
+      planCode: typeof obj.planCode === 'string' && obj.planCode.trim() ? obj.planCode.trim() : 'PRO',
+      planLabel:
+        typeof obj.planLabel === 'string' && obj.planLabel.trim()
+          ? obj.planLabel.trim()
+          : 'Licencia PRO',
+      amountLabel: typeof obj.amountLabel === 'string' ? obj.amountLabel.trim().slice(0, 40) : '',
+      createdAt:
+        typeof obj.createdAt === 'number' && Number.isFinite(obj.createdAt)
+          ? obj.createdAt
+          : Date.now(),
+    });
+  }
+  return out.sort((a, b) => b.createdAt - a.createdAt);
+}
+
+export function saveReferralHistory(items: ReferralHistoryRecord[]): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    const safe = Array.isArray(items) ? items.slice(0, 300) : [];
+    localStorage.setItem(KEYS.REFERRALS_HISTORY, JSON.stringify(safe));
+  } catch {
+    // ignorar si localStorage no permite escritura
+  }
+}
+
+export function addReferralHistoryRecord(
+  rec: Omit<ReferralHistoryRecord, 'id' | 'createdAt'>
+): ReferralHistoryRecord[] {
+  const existing = loadReferralHistory();
+  const cleanReferrer = sanitizeReferredById(rec.referrerId);
+  const cleanReferred = sanitizeReferredById(rec.referredDeviceId);
+  if (!cleanReferrer || !cleanReferred) return existing;
+  const nextEntry: ReferralHistoryRecord = {
+    id: `ref_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    referrerId: cleanReferrer,
+    referredDeviceId: cleanReferred,
+    referredName: (rec.referredName || '').trim().slice(0, 80),
+    planCode: (rec.planCode || 'PRO').trim(),
+    planLabel: (rec.planLabel || 'Licencia PRO').trim(),
+    amountLabel: (rec.amountLabel || '').trim().slice(0, 40),
+    createdAt: Date.now(),
+  };
+  const next = [nextEntry, ...existing].slice(0, 300);
+  saveReferralHistory(next);
+  return next;
+}
+
