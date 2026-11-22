@@ -20,9 +20,11 @@ import {
 } from '../firebase';
 import {
   computeUsageStats30d,
+  isColleaguePromoPlan,
   isEligibleForCloudBackup,
   isUnassignedAutoTrialDevice,
   normalizeDeviceIdInput,
+  PROMO_COLEGA_ALREADY_USED_ERROR,
   validateActivationKey,
   verifyAdminPassword,
   verifyRecoveryPin,
@@ -185,6 +187,14 @@ function buildSafeDeviceRecord(
     blockedAt: input.blockedAt === undefined ? (existing?.blockedAt ?? null) : input.blockedAt,
     trialActive: Boolean(input.trialActive),
     adminAssigned: Boolean(input.adminAssigned),
+    promo_colega_usada:
+      input.promo_colega_usada !== undefined
+        ? Boolean(input.promo_colega_usada)
+        : Boolean(existing?.promo_colega_usada),
+    fecha_activacion_colega:
+      input.fecha_activacion_colega !== undefined
+        ? input.fecha_activacion_colega
+        : existing?.fecha_activacion_colega ?? null,
     ...(input.linkedEmail || existing?.linkedEmail
       ? {
           linkedEmail: String(input.linkedEmail ?? existing?.linkedEmail ?? '')
@@ -650,6 +660,13 @@ export async function syncDeviceToCloud(params: {
         blockedAt,
         trialActive,
         adminAssigned,
+        promo_colega_usada:
+          Boolean(existing?.promo_colega_usada) || isColleaguePromoPlan(planCode, null, lastKey),
+        fecha_activacion_colega:
+          existing?.fecha_activacion_colega ??
+          (isColleaguePromoPlan(planCode, null, lastKey)
+            ? params.licencia?.activatedAt ?? now
+            : null),
         linkedEmail:
           params.licencia?.linkedEmail && isValidEmailFormat(normalizeEmail(params.licencia.linkedEmail))
             ? normalizeEmail(params.licencia.linkedEmail)
@@ -955,11 +972,25 @@ export async function activateKeyInCloud(params: {
     const planLabel = String(params.planLabel || 'PRO');
     const expiresAt = params.expiresAt ?? null;
     const valid = expiresAt === null || expiresAt > now;
+    const isColleague3d = isColleaguePromoPlan(planCode, keyValidation.customDays, cleanKey);
+
+    // Validación estricta de uso único: si el ID ya usó su promoción Colega de 3 días, rechazar inmediatamente
+    if (isColleague3d && Boolean(existing?.promo_colega_usada)) {
+      return {
+        ok: false,
+        error: PROMO_COLEGA_ALREADY_USED_ERROR,
+      };
+    }
 
     const cleanLinkedEmail =
       typeof params.linkedEmail === 'string' && isValidEmailFormat(normalizeEmail(params.linkedEmail))
         ? normalizeEmail(params.linkedEmail)
         : '';
+
+    const promoColegaUsedNext = Boolean(existing?.promo_colega_usada) || isColleague3d;
+    const fechaActivacionColegaNext = isColleague3d
+      ? existing?.fecha_activacion_colega ?? now
+      : existing?.fecha_activacion_colega ?? null;
 
     const nextDevice = buildSafeDeviceRecord(
       {
@@ -989,6 +1020,8 @@ export async function activateKeyInCloud(params: {
         blockedAt: null,
         trialActive: planCode === 'G',
         adminAssigned: Boolean(existing?.adminAssigned),
+        promo_colega_usada: promoColegaUsedNext,
+        fecha_activacion_colega: fechaActivacionColegaNext,
         linkedEmail: cleanLinkedEmail || existing?.linkedEmail,
       },
       existing,
@@ -1047,6 +1080,7 @@ export async function updateDeviceLicenseInCloud(params: {
   revoke?: boolean;
   block?: boolean;
   recordKeyOnly?: boolean;
+  resetPromoColega?: boolean;
 }): Promise<CloudSyncSnapshot | null> {
   if (FIREBASE_DB_URL.trim()) {
     return await updateDeviceLicenseRtdb(FIREBASE_DB_URL, params);
@@ -1291,38 +1325,85 @@ export async function updateDeviceLicenseInCloud(params: {
         }
       }
 
-      const planCode = String(params.planCode || 'M');
-      nextDevice = buildSafeDeviceRecord(
-        {
-          deviceId: normId,
-          cliente:
-            clienteClean === 'Cliente sin nombre' && existing?.cliente
-              ? existing.cliente
-              : clienteClean,
-          deviceLabel: existing?.deviceLabel || 'Equipo Remoto',
-          firstSeenAt: existing?.firstSeenAt ?? now,
-          lastSeenAt: existing?.lastSeenAt ?? now,
-          totalSessions: existing?.totalSessions ?? 0,
-          totalMinutes: existing?.totalMinutes ?? 0,
-          activeDays: Array.from(activeDaysSet).sort().slice(-60),
-          proActive: true,
-          planCode,
-          planLabel: String(params.planLabel || 'PRO'),
-          status: 'pro',
-          expiresAt: params.expiresAt ?? null,
-          lastKey: bodyKeyClean || existing?.lastKey || '',
-          updatedAt: now,
-          revoked: false,
-          revokedAt: null,
-          blocked: false,
-          blockedAt: null,
-          trialActive: planCode === 'G',
-          adminAssigned: true,
-          linkedEmail: existingEmail,
-        },
-        existing,
-        now
-      );
+      if (params.resetPromoColega && !params.planCode && !params.key) {
+        nextDevice = buildSafeDeviceRecord(
+          {
+            ...(existing || {
+              deviceId: normId,
+              cliente: clienteClean,
+              deviceLabel: 'Equipo Remoto',
+              firstSeenAt: now,
+              lastSeenAt: now,
+              totalSessions: 0,
+              totalMinutes: 0,
+              activeDays: Array.from(activeDaysSet).sort().slice(-60),
+              proActive: false,
+              planCode: 'FREE',
+              planLabel: 'Versión Gratuita',
+              status: 'free',
+              expiresAt: null,
+              lastKey: '',
+              revoked: false,
+              revokedAt: null,
+              blocked: false,
+              blockedAt: null,
+              trialActive: false,
+              adminAssigned: false,
+            }),
+            deviceId: normId,
+            promo_colega_usada: false,
+            fecha_activacion_colega: null,
+            updatedAt: now,
+          },
+          existing,
+          now
+        );
+      } else {
+        const planCode = String(params.planCode || 'M');
+        const isColleague3d = isColleaguePromoPlan(planCode, params.dias ?? null, bodyKeyClean);
+        const promoColegaUsedNext = params.resetPromoColega
+          ? false
+          : Boolean(existing?.promo_colega_usada) || isColleague3d;
+        const fechaActivacionColegaNext = params.resetPromoColega
+          ? null
+          : isColleague3d
+            ? existing?.fecha_activacion_colega ?? now
+            : existing?.fecha_activacion_colega ?? null;
+
+        nextDevice = buildSafeDeviceRecord(
+          {
+            deviceId: normId,
+            cliente:
+              clienteClean === 'Cliente sin nombre' && existing?.cliente
+                ? existing.cliente
+                : clienteClean,
+            deviceLabel: existing?.deviceLabel || 'Equipo Remoto',
+            firstSeenAt: existing?.firstSeenAt ?? now,
+            lastSeenAt: existing?.lastSeenAt ?? now,
+            totalSessions: existing?.totalSessions ?? 0,
+            totalMinutes: existing?.totalMinutes ?? 0,
+            activeDays: Array.from(activeDaysSet).sort().slice(-60),
+            proActive: true,
+            planCode,
+            planLabel: String(params.planLabel || 'PRO'),
+            status: 'pro',
+            expiresAt: params.expiresAt ?? null,
+            lastKey: bodyKeyClean || existing?.lastKey || '',
+            updatedAt: now,
+            revoked: false,
+            revokedAt: null,
+            blocked: false,
+            blockedAt: null,
+            trialActive: planCode === 'G',
+            adminAssigned: true,
+            promo_colega_usada: promoColegaUsedNext,
+            fecha_activacion_colega: fechaActivacionColegaNext,
+            linkedEmail: existingEmail,
+          },
+          existing,
+          now
+        );
+      }
       try {
         await setDoc(doc(db, 'devices', normId), nextDevice);
       } catch (err) {

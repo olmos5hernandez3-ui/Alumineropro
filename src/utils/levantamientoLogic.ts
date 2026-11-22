@@ -43,7 +43,7 @@ export const LEV_COLOR_ALUMINIO_OPTS = [
 ] as const;
 
 export const LEV_COLOR_VIDRIO_OPTS = [
-  { id: 'claro', label: 'Claro', hex: '#E0F2FE' },
+  { id: 'claro', label: 'Vidrio claro', hex: '#E0F2FE' },
   { id: 'filtrasol', label: 'Filtrasol', hex: '#64748B' },
   { id: 'tintex', label: 'Tintex', hex: '#34D399' },
   { id: 'esmerilado', label: 'Esmerilado', hex: '#CBD5E1' },
@@ -184,13 +184,34 @@ export function resolveLineaFromLevantamiento(pieza: LevantamientoPieza): {
         ? 'linea-2'
         : 'linea-3';
 
-  if (lp === 'Línea 3"') {
+  const lpLower = lp.toLowerCase();
+
+  if (lp === 'Línea 3"' || lpLower.includes('nacional 3"') || lpLower.includes('nacional 4')) {
     linea = isPuerta ? 'puerta-abatible' : '3';
     serieMod = 'linea-3';
-  } else if (lp === 'Línea 2"') {
+  } else if (
+    lp === 'Línea 2"' ||
+    lpLower.includes('nacional 2"') ||
+    lpLower.includes('1 ⅜') ||
+    lpLower.includes('1 ½') ||
+    lpLower.includes('1 3/8') ||
+    lpLower.includes('1 1/2')
+  ) {
     linea = isPuerta ? 'puerta-2' : '2';
     serieMod = 'linea-2';
-  } else if (lp === 'Línea Europea') {
+  } else if (
+    lp === 'Línea Europea' ||
+    lpLower.includes('europea') ||
+    lpLower.includes('eurovent') ||
+    lpLower.includes('euroalum') ||
+    lpLower.includes('muro cortina') ||
+    lpLower.includes('española') ||
+    lpLower.includes('1400') ||
+    lpLower.includes('3500') ||
+    lpLower.includes('4000') ||
+    lpLower.includes('4600') ||
+    lpLower.includes('10000')
+  ) {
     linea = isPuerta ? 'puerta-europea' : 'europea';
     serieMod = 'serie-70';
   } else if (lp === 'Batiente Alumer') {
@@ -265,6 +286,7 @@ export function resolveVidrioFromLevantamiento(colorVidrio?: string): {
       sinVidrio: true,
     };
   }
+  // Tanto 'claro' como 'vidrio claro' mapean a Vidrio claro 6 mm
   return {
     vidrio: 'claro6',
     relleno: getDefaultRellenoFromVidrio('claro6'),

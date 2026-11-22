@@ -1,6 +1,13 @@
 import React, { useEffect, useState } from 'react';
+import { Check, ChevronDown, ChevronUp, Crown, Lock, Palette } from 'lucide-react';
 import { getTrialCountdown, isProActive } from '../utils/alumineroLogic';
-import { AppTheme, LicenciaState } from '../utils/storageHelpers';
+import {
+  AppSkin,
+  AppTheme,
+  getSkinPlanRequirementLabel,
+  isSkinUnlockedForLicense,
+  LicenciaState,
+} from '../utils/storageHelpers';
 
 export type ScreenId =
   | 'menu'
@@ -14,7 +21,8 @@ export type ScreenId =
   | 'inventario'
   | 'catalogo'
   | 'terminos'
-  | 'privacidad';
+  | 'privacidad'
+  | 'admin';
 
 interface TopBarProps {
   currentView: ScreenId;
@@ -255,11 +263,14 @@ interface SideDrawerProps {
   open: boolean;
   proActive: boolean;
   isTrialActive?: boolean;
+  licencia?: LicenciaState | null;
   deviceId: string;
   theme: AppTheme;
+  skin: AppSkin;
   cloudAccountEmail?: string | null;
   isCloudBackupEligible?: boolean;
   onToggleTheme: () => void;
+  onSelectSkin: (skin: AppSkin) => void;
   onClose: () => void;
   onOpenPro: () => void;
   onOpenCloudBackup: () => void;
@@ -275,15 +286,66 @@ interface SideDrawerProps {
   onOpenCotizaciones?: () => void;
 }
 
+interface SkinOptionMeta {
+  id: AppSkin;
+  title: string;
+  subtitle: string;
+  tierBadge: string;
+  previewBg: string;
+  previewCardA: string;
+  previewCardB: string;
+  previewBorder: string;
+  previewAccent: string;
+}
+
+const SKIN_OPTIONS: SkinOptionMeta[] = [
+  {
+    id: 'basica',
+    title: 'Básica (Actual)',
+    subtitle: 'Diseño plano oscuro #0B1120 de alto contraste',
+    tierBadge: 'Gratis y Promo Colega',
+    previewBg: '#0B1120',
+    previewCardA: 'linear-gradient(135deg, #f97316, #ea580c)',
+    previewCardB: 'linear-gradient(135deg, #1D4ED8, #1E40AF)',
+    previewBorder: 'rgba(148, 163, 184, 0.35)',
+    previewAccent: '#38bdf8',
+  },
+  {
+    id: 'ejecutiva',
+    title: 'Ejecutiva Azul (Intermedia)',
+    subtitle: 'Azul acero metálico, bordes cian y acentos cobre',
+    tierBadge: 'PRO 30d o 90d',
+    previewBg: 'linear-gradient(145deg, #07152e, #0c234a)',
+    previewCardA: 'linear-gradient(135deg, #163d75, #0f2c59)',
+    previewCardB: 'linear-gradient(135deg, #142f5c, #0a1934)',
+    previewBorder: 'rgba(56, 189, 248, 0.72)',
+    previewAccent: '#f59e0b',
+  },
+  {
+    id: 'industrial',
+    title: 'Industrial Pro (Exclusiva)',
+    subtitle: 'Aluminio cepillado, marcos plata/oro y detalles esmeralda',
+    tierBadge: 'PRO Anual (1 Año)',
+    previewBg: 'linear-gradient(145deg, #0b0f17, #1a212e)',
+    previewCardA: 'linear-gradient(135deg, #064e3b, #1d2432)',
+    previewCardB: 'linear-gradient(135deg, #272f3d, #121720)',
+    previewBorder: 'rgba(212, 175, 55, 0.8)',
+    previewAccent: '#10b981',
+  },
+];
+
 export const SideDrawer: React.FC<SideDrawerProps> = ({
   open,
   proActive,
   isTrialActive = false,
+  licencia = null,
   deviceId,
   theme,
+  skin,
   cloudAccountEmail = null,
   isCloudBackupEligible = false,
   onToggleTheme,
+  onSelectSkin,
   onClose,
   onOpenPro,
   onOpenCloudBackup,
@@ -298,9 +360,23 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
   onOpenReminders,
   onOpenCotizaciones,
 }) => {
+  const [skinsExpanded, setSkinsExpanded] = useState(false);
+  const [missionExpanded, setMissionExpanded] = useState(false);
+  const [lockedSkinPrompt, setLockedSkinPrompt] = useState<SkinOptionMeta | null>(null);
+
   if (!open) return null;
 
   const isDark = theme === 'dark';
+  const currentSkinMeta = SKIN_OPTIONS.find((s) => s.id === skin) || SKIN_OPTIONS[0];
+
+  const handleSkinTap = (option: SkinOptionMeta) => {
+    const unlocked = isSkinUnlockedForLicense(option.id, licencia, proActive);
+    if (!unlocked) {
+      setLockedSkinPrompt(option);
+      return;
+    }
+    onSelectSkin(option.id);
+  };
 
   return (
     <div
@@ -309,10 +385,16 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
       aria-modal="true"
       aria-label="Menú lateral de herramientas y configuración"
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget) {
+          setLockedSkinPrompt(null);
+          onClose();
+        }
       }}
     >
-      <div className="w-full max-w-[330px] h-full bg-[#0B2545] text-white border-l border-slate-400/20 p-5 flex flex-col gap-2.5 overflow-y-auto shadow-2xl">
+      <div
+        id="drawer-panel-surface"
+        className="w-full max-w-[340px] h-full bg-[#0B2545] text-white border-l border-slate-400/20 p-5 flex flex-col gap-2.5 overflow-y-auto shadow-2xl relative"
+      >
         <div className="flex items-center justify-between pb-3 border-b border-white/15">
           <div>
             <div className="font-extrabold text-[16px] tracking-tight">Aluminero Pro</div>
@@ -322,7 +404,10 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => {
+              setLockedSkinPrompt(null);
+              onClose();
+            }}
             aria-label="Cerrar menú lateral"
             className="min-w-[38px] min-h-[38px] rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold cursor-pointer"
           >
@@ -342,6 +427,165 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
             {isDark ? 'Oscuro' : 'Claro'}
           </span>
         </button>
+
+        {/* 1.5 Carátulas / Apariencia (3 Temas Visuales Globales) */}
+        <div className="rounded-xl border border-sky-400/35 bg-slate-950/35 overflow-hidden shrink-0">
+          <button
+            type="button"
+            id="btn-drawer-caratulas"
+            aria-expanded={skinsExpanded}
+            onClick={() => setSkinsExpanded((prev) => !prev)}
+            className="w-full min-h-[48px] px-3.5 py-2.5 flex items-center justify-between gap-2 text-left text-white hover:bg-white/10 cursor-pointer transition-colors"
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <Palette className="w-4 h-4 text-sky-300 shrink-0" aria-hidden="true" />
+              <div className="min-w-0">
+                <span className="block text-[13.5px] font-extrabold leading-tight">
+                  Carátulas / Apariencia
+                </span>
+                <span className="block text-[11px] text-sky-200/90 truncate">
+                  Activa: {currentSkinMeta.title}
+                </span>
+              </div>
+            </div>
+            {skinsExpanded ? (
+              <ChevronUp className="w-4 h-4 text-slate-300 shrink-0" aria-hidden="true" />
+            ) : (
+              <ChevronDown className="w-4 h-4 text-slate-300 shrink-0" aria-hidden="true" />
+            )}
+          </button>
+
+          {skinsExpanded && (
+            <div
+              id="drawer-caratulas-list"
+              className="px-2.5 pb-3 pt-1.5 border-t border-white/10 flex flex-col gap-2"
+            >
+              {SKIN_OPTIONS.map((opt) => {
+                const unlocked = isSkinUnlockedForLicense(opt.id, licencia, proActive);
+                const isSelected = skin === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    id={`btn-skin-${opt.id}`}
+                    onClick={() => handleSkinTap(opt)}
+                    className={`w-full p-2.5 rounded-xl border text-left transition-all cursor-pointer active:scale-[0.98] ${
+                      isSelected
+                        ? 'border-sky-400 bg-sky-500/20 ring-1 ring-sky-400/70'
+                        : unlocked
+                          ? 'border-white/15 bg-white/5 hover:bg-white/10'
+                          : 'border-amber-400/30 bg-slate-900/60 hover:bg-slate-900/80 opacity-90'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      {/* Miniatura visual fiel de la carátula */}
+                      <div
+                        className="w-12 h-12 rounded-lg p-1.5 flex flex-col justify-between shrink-0 shadow-inner"
+                        style={{
+                          background: opt.previewBg,
+                          border: `1.5px solid ${opt.previewBorder}`,
+                        }}
+                        aria-hidden="true"
+                      >
+                        <div
+                          className="h-2.5 w-full rounded-[3px]"
+                          style={{
+                            background: opt.previewCardA,
+                            borderTop: `1.5px solid ${opt.previewAccent}`,
+                          }}
+                        />
+                        <div className="grid grid-cols-2 gap-1">
+                          <span
+                            className="h-3.5 rounded-[3px]"
+                            style={{
+                              background: opt.previewCardB,
+                              border: `1px solid ${opt.previewBorder}`,
+                            }}
+                          />
+                          <span
+                            className="h-3.5 rounded-[3px]"
+                            style={{
+                              background: opt.previewCardB,
+                              border: `1px solid ${opt.previewBorder}`,
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-1.5">
+                          <span className="text-[12.5px] font-extrabold text-white leading-tight truncate">
+                            {opt.title}
+                          </span>
+                          {isSelected ? (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-emerald-500/25 border border-emerald-400/50 text-emerald-200 text-[10px] font-extrabold shrink-0">
+                              <Check className="w-3 h-3" aria-hidden="true" />
+                              Activa
+                            </span>
+                          ) : !unlocked ? (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-amber-500/25 border border-amber-400/50 text-amber-200 text-[10px] font-extrabold shrink-0">
+                              <Lock className="w-3 h-3" aria-hidden="true" />
+                              PRO
+                            </span>
+                          ) : null}
+                        </div>
+                        <p className="m-0 mt-0.5 text-[10.5px] text-slate-300 leading-snug">
+                          {opt.subtitle}
+                        </p>
+                        <span className="inline-block mt-1 text-[10px] font-bold text-amber-200/90">
+                          {opt.tierBadge}
+                        </span>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+
+              {lockedSkinPrompt && (
+                <div
+                  id="drawer-skin-upgrade-prompt"
+                  className="mt-1 p-3 rounded-xl border border-amber-400/60 bg-slate-950/95 text-left shadow-lg"
+                >
+                  <div className="flex items-start gap-2">
+                    <Crown className="w-4 h-4 text-amber-300 shrink-0 mt-0.5" aria-hidden="true" />
+                    <div className="min-w-0 flex-1">
+                      <strong className="block text-[12px] font-extrabold text-amber-200">
+                        Carátula bloqueada: {lockedSkinPrompt.title}
+                      </strong>
+                      <p className="m-0 mt-1 text-[11px] text-slate-200 leading-snug">
+                        Disponible exclusivamente con{' '}
+                        <strong className="text-white">
+                          {getSkinPlanRequirementLabel(lockedSkinPrompt.id)}
+                        </strong>
+                        . {isTrialActive ? 'La Promo Colega de 3 días incluye solo la carátula Básica.' : 'Mejora tu plan para activarla al instante en toda la app.'}
+                      </p>
+                      <div className="mt-2.5 flex items-center gap-2">
+                        <button
+                          type="button"
+                          id="btn-drawer-skin-upgrade-pro"
+                          onClick={() => {
+                            setLockedSkinPrompt(null);
+                            onOpenPro();
+                          }}
+                          className="flex-1 min-h-[36px] px-3 py-1.5 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold text-[11.5px] cursor-pointer"
+                        >
+                          Mejorar a PRO
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setLockedSkinPrompt(null)}
+                          className="min-h-[36px] px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 font-bold text-[11px] cursor-pointer"
+                        >
+                          Cerrar
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* 2. Estado de Licencia PRO (con ID Equipo) */}
         <button
@@ -490,6 +734,52 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
               ⬇️ Instalar App (Sin internet)
             </button>
           )}
+        </div>
+
+        {/* Misión y Visión */}
+        <div className="pt-2 mt-1 border-t border-white/15 shrink-0">
+          <div className="rounded-xl border border-indigo-400/35 bg-slate-950/35 overflow-hidden">
+            <button
+              type="button"
+              id="btn-drawer-mision-vision"
+              aria-expanded={missionExpanded}
+              onClick={() => setMissionExpanded((prev) => !prev)}
+              className="w-full min-h-[46px] px-3.5 py-2.5 flex items-center justify-between gap-2 text-left text-white hover:bg-white/10 cursor-pointer transition-colors"
+            >
+              <span className="text-[13.5px] font-extrabold leading-tight">
+                🎯 Misión y Visión
+              </span>
+              {missionExpanded ? (
+                <ChevronUp className="w-4 h-4 text-slate-300 shrink-0" aria-hidden="true" />
+              ) : (
+                <ChevronDown className="w-4 h-4 text-slate-300 shrink-0" aria-hidden="true" />
+              )}
+            </button>
+
+            {missionExpanded && (
+              <div
+                id="drawer-mision-vision-panel"
+                className="px-3.5 pb-3.5 pt-2 border-t border-white/10 flex flex-col gap-3 text-[12px] leading-relaxed text-slate-200"
+              >
+                <div className="rounded-lg bg-white/5 border border-white/10 p-2.5">
+                  <strong className="block text-[11px] uppercase tracking-wider font-extrabold text-sky-300 mb-1">
+                    Misión
+                  </strong>
+                  <p className="m-0 text-slate-100">
+                    Facilitar y profesionalizar el trabajo diario de los aluminieros y vidrieros mediante una herramienta móvil rápida y precisa, que permita cotizar en obra, optimizar cortes de perfiles y reducir desperdicios para hacer cada proyecto más rentable.
+                  </p>
+                </div>
+                <div className="rounded-lg bg-white/5 border border-white/10 p-2.5">
+                  <strong className="block text-[11px] uppercase tracking-wider font-extrabold text-amber-300 mb-1">
+                    Visión
+                  </strong>
+                  <p className="m-0 text-slate-100">
+                    Convertirnos en la aplicación indispensable y de mayor confianza para los profesionales del aluminio y vidrio en México y Latinoamérica, impulsando la modernización digital de cada taller desde la palma de su mano.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Apartado Legal al final del menú lateral */}

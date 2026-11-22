@@ -1691,3 +1691,511 @@ html[data-theme="light"] #lev-entry small {
   font-weight: 800;
   cursor: pointer;
 }
+
+/* ==================== BANNER PROMO PRO (SHIMMER + LATIDO FUEGO) ==================== */
+@keyframes promoBannerShimmer {
+  0% {
+    transform: translateX(-140%) skewX(-24deg);
+    opacity: 0;
+  }
+  18% {
+    opacity: 0.7;
+  }
+  42% {
+    transform: translateX(240%) skewX(-24deg);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(240%) skewX(-24deg);
+    opacity: 0;
+  }
+}
+
+@keyframes fireHeartbeat {
+  0%, 100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 2px rgba(251, 146, 60, 0.35));
+  }
+  25% {
+    transform: scale(1.16);
+    filter: drop-shadow(0 0 8px rgba(251, 191, 36, 0.75));
+  }
+  40% {
+    transform: scale(1.03);
+  }
+  58% {
+    transform: scale(1.12);
+    filter: drop-shadow(0 0 6px rgba(249, 115, 22, 0.6));
+  }
+  75% {
+    transform: scale(1);
+  }
+}
+
+.pro-promo-shimmer {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.pro-promo-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: -25% auto -25% -40%;
+  width: 36%;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(254, 243, 199, 0.28) 45%,
+    rgba(251, 191, 36, 0.42) 55%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  pointer-events: none;
+  animation: promoBannerShimmer 3.6s ease-in-out infinite;
+  z-index: 1;
+}
+
+.pro-fire-pulse {
+  display: inline-block;
+  transform-origin: center bottom;
+  animation: fireHeartbeat 2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pro-promo-shimmer::after,
+  .pro-fire-pulse {
+    animation: none !important;
+  }
+}
+
+/* ==================== SISTEMA GLOBAL DE 3 CARÁTULAS (TEMAS VISUALES) ==================== */
+/* 1. BÁSICA (ACTUAL) - Fondo oscuro plano #0B1120 de alto contraste */
+html[data-skin="basica"][data-theme="dark"],
+html[data-skin="basica"][data-theme="dark"] body,
+html[data-skin="basica"][data-theme="dark"] #root {
+  background-color: #0b1120 !important;
+  background-image: none !important;
+}
+
+html[data-skin="basica"][data-theme="dark"] #view-menu .menu-hero-card {
+  background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%) !important;
+  border: 1px solid rgba(96, 165, 250, 0.45) !important;
+}
+
+/* 2. EJECUTIVA AZUL (INTERMEDIA) - PRO 30d / 90d */
+html[data-skin="ejecutiva"],
+html[data-skin="ejecutiva"] body,
+html[data-skin="ejecutiva"] #root {
+  background-color: #061024 !important;
+  background-image:
+    radial-gradient(ellipse 85% 50% at 50% -10%, rgba(56, 189, 248, 0.18), transparent 65%),
+    radial-gradient(circle at 90% 88%, rgba(217, 119, 6, 0.1), transparent 45%),
+    linear-gradient(180deg, #07152e 0%, #050d1e 100%) !important;
+  background-attachment: fixed !important;
+}
+
+html[data-skin="ejecutiva"] header {
+  background: linear-gradient(180deg, rgba(10, 26, 56, 0.96) 0%, rgba(7, 19, 43, 0.96) 100%) !important;
+  border-bottom: 1.5px solid rgba(56, 189, 248, 0.42) !important;
+  box-shadow: 0 6px 24px rgba(2, 12, 32, 0.65), inset 0 -1px 0 rgba(245, 158, 11, 0.25) !important;
+}
+
+html[data-skin="ejecutiva"] #drawer-panel-surface {
+  background: linear-gradient(180deg, #0b1f44 0%, #07142d 100%) !important;
+  border-left: 1.5px solid rgba(56, 189, 248, 0.45) !important;
+}
+
+html[data-skin="ejecutiva"] #lev-entry {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(145deg, #143260 0%, #0d2347 55%, #091a36 100%) !important;
+  border: 1.5px solid rgba(56, 189, 248, 0.6) !important;
+  box-shadow:
+    0 10px 26px rgba(2, 12, 32, 0.55),
+    0 0 18px rgba(56, 189, 248, 0.14),
+    inset 0 3px 0 #d97706 !important;
+  color: #ffffff !important;
+}
+
+html[data-skin="ejecutiva"] #lev-entry small {
+  color: #bae6fd !important;
+}
+
+html[data-skin="ejecutiva"] #view-menu .menu-hero-card {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(140deg, #163d75 0%, #0f2c59 52%, #0a1f42 100%) !important;
+  border: 1.5px solid rgba(56, 189, 248, 0.68) !important;
+  box-shadow:
+    0 14px 34px rgba(3, 15, 38, 0.72),
+    0 0 24px rgba(56, 189, 248, 0.2),
+    inset 0 3.5px 0 #d97706 !important;
+}
+
+html[data-skin="ejecutiva"] #view-menu .menu-grid-card {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(155deg, #142f5c 0%, #0d2244 55%, #091934 100%) !important;
+  border: 1.5px solid rgba(56, 189, 248, 0.45) !important;
+  box-shadow:
+    0 8px 22px rgba(2, 11, 28, 0.55),
+    0 0 12px rgba(56, 189, 248, 0.1),
+    inset 0 2.5px 0 rgba(217, 119, 6, 0.85) !important;
+  color: #f8fafc !important;
+}
+
+html[data-skin="ejecutiva"] #view-menu .menu-grid-card:hover {
+  border-color: rgba(125, 211, 252, 0.85) !important;
+  box-shadow:
+    0 12px 28px rgba(2, 11, 28, 0.68),
+    0 0 20px rgba(56, 189, 248, 0.25),
+    inset 0 2.5px 0 #f59e0b !important;
+}
+
+html[data-skin="ejecutiva"] #view-menu .menu-grid-card .menu-card-sub {
+  color: #cbd5e1 !important;
+}
+
+html[data-skin="ejecutiva"] #view-menu .menu-icon-box {
+  background: linear-gradient(145deg, rgba(186, 230, 253, 0.22) 0%, rgba(14, 116, 144, 0.4) 100%) !important;
+  border: 1px solid rgba(186, 230, 253, 0.45) !important;
+  color: #e0f2fe !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 4px 10px rgba(2, 12, 32, 0.4) !important;
+}
+
+html[data-skin="ejecutiva"] #view-menu .menu-badge-free,
+html[data-skin="ejecutiva"] #view-menu .menu-badge-info,
+html[data-skin="ejecutiva"] #view-menu .menu-badge-violet,
+html[data-skin="ejecutiva"] #view-menu .menu-badge-cyan {
+  background: rgba(14, 116, 144, 0.28) !important;
+  border: 1px solid rgba(56, 189, 248, 0.5) !important;
+  color: #e0f2fe !important;
+}
+
+html[data-skin="ejecutiva"] #view-menu .menu-badge-pro-pill {
+  background: linear-gradient(135deg, rgba(180, 83, 9, 0.35), rgba(217, 119, 6, 0.45)) !important;
+  border: 1px solid rgba(251, 191, 36, 0.65) !important;
+  color: #fef3c7 !important;
+}
+
+/* Propagación global Ejecutiva Azul a vistas internas, Levantamiento y Modales */
+html[data-skin="ejecutiva"][data-theme="dark"] main .bg-white,
+html[data-skin="ejecutiva"][data-theme="dark"] main .bg-slate-900,
+html[data-skin="ejecutiva"][data-theme="dark"] [role="dialog"] > div.bg-white {
+  background: linear-gradient(160deg, #122a52 0%, #0b1d3a 100%) !important;
+  border-color: rgba(56, 189, 248, 0.4) !important;
+}
+
+html[data-skin="ejecutiva"] #lev-root .shell {
+  background: linear-gradient(180deg, #0b1f44 0%, #07142c 100%) !important;
+  border: 1px solid rgba(56, 189, 248, 0.35) !important;
+}
+
+html[data-skin="ejecutiva"] #lev-root .card {
+  background: linear-gradient(155deg, #132d59 0%, #0c1f40 100%) !important;
+  border: 1px solid rgba(56, 189, 248, 0.4) !important;
+  box-shadow: inset 0 2px 0 rgba(217, 119, 6, 0.75) !important;
+}
+
+/* 3. INDUSTRIAL PRO (EXCLUSIVA) - PRO ANUAL (1 AÑO) */
+html[data-skin="industrial"],
+html[data-skin="industrial"] body,
+html[data-skin="industrial"] #root {
+  background-color: #070a10 !important;
+  background-image:
+    radial-gradient(ellipse 90% 45% at 50% -8%, rgba(16, 185, 129, 0.14), transparent 62%),
+    radial-gradient(circle at 85% 90%, rgba(212, 175, 55, 0.11), transparent 48%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'%3E%3Cg fill='none' stroke='%2394a3b8' stroke-opacity='0.08' stroke-width='1'%3E%3Cpath d='M0 20h160M0 60h160M0 100h160M0 140h160'/%3E%3Cpath d='M20 0v160M60 0v160M100 0v160M140 0v160'/%3E%3Cpath d='M0 160L160 0' stroke='%23e2e8f0' stroke-opacity='0.04'/%3E%3C/g%3E%3Crect x='22' y='22' width='36' height='36' fill='%2338bdf8' fill-opacity='0.035'/%3E%3Crect x='102' y='62' width='36' height='76' fill='%2310b981' fill-opacity='0.03'/%3E%3Crect x='62' y='102' width='36' height='36' fill='%23fbbf24' fill-opacity='0.025'/%3E%3C/svg%3E"),
+    linear-gradient(180deg, #0b0f17 0%, #070a10 100%) !important;
+  background-attachment: fixed !important;
+}
+
+html[data-skin="industrial"] header {
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.015) 0px, rgba(255, 255, 255, 0.015) 1px, transparent 1px, transparent 3px),
+    linear-gradient(180deg, rgba(28, 34, 46, 0.96) 0%, rgba(16, 20, 28, 0.97) 100%) !important;
+  border-bottom: 1.5px solid rgba(212, 175, 55, 0.48) !important;
+  box-shadow: 0 6px 26px rgba(0, 0, 0, 0.72), inset 0 1px 0 rgba(226, 232, 240, 0.18) !important;
+}
+
+html[data-skin="industrial"] #drawer-panel-surface {
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.015) 0px, rgba(255, 255, 255, 0.015) 1px, transparent 1px, transparent 3px),
+    linear-gradient(180deg, #1b212d 0%, #0e121a 100%) !important;
+  border-left: 1.5px solid rgba(212, 175, 55, 0.5) !important;
+}
+
+html[data-skin="industrial"] #lev-entry {
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.02) 0px, rgba(255, 255, 255, 0.02) 1px, transparent 1px, transparent 3px),
+    linear-gradient(145deg, #252d3b 0%, #161c26 52%, #0f141c 100%) !important;
+  border: 1.5px solid rgba(212, 175, 55, 0.58) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(241, 245, 249, 0.3),
+    inset 0 -1px 0 rgba(16, 185, 129, 0.45),
+    0 10px 26px rgba(0, 0, 0, 0.65) !important;
+  color: #f8fafc !important;
+}
+
+html[data-skin="industrial"] #lev-entry small {
+  color: #a7f3d0 !important;
+}
+
+html[data-skin="industrial"] #view-menu .menu-hero-card {
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.022) 0px, rgba(255, 255, 255, 0.022) 1px, transparent 1px, transparent 3px),
+    linear-gradient(135deg, #064e3b 0%, #14282b 45%, #1d2432 100%) !important;
+  border: 1.5px solid rgba(212, 175, 55, 0.68) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(254, 243, 199, 0.35),
+    inset 0 -1px 0 rgba(16, 185, 129, 0.55),
+    0 14px 36px rgba(0, 0, 0, 0.72),
+    0 0 22px rgba(16, 185, 129, 0.16) !important;
+}
+
+html[data-skin="industrial"] #view-menu .menu-grid-card {
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.018) 0px, rgba(255, 255, 255, 0.018) 1px, transparent 1px, transparent 3px),
+    linear-gradient(155deg, #252c38 0%, #171c25 55%, #10141c 100%) !important;
+  border: 1.5px solid rgba(212, 175, 55, 0.42) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(226, 232, 240, 0.28),
+    inset 0 0 0 1px rgba(148, 163, 184, 0.14),
+    0 10px 24px rgba(0, 0, 0, 0.62) !important;
+  color: #f8fafc !important;
+}
+
+html[data-skin="industrial"] #view-menu .menu-grid-card:hover {
+  border-color: rgba(251, 191, 36, 0.8) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(254, 243, 199, 0.42),
+    0 12px 28px rgba(0, 0, 0, 0.72),
+    0 0 16px rgba(212, 175, 55, 0.18) !important;
+}
+
+html[data-skin="industrial"] #view-menu .menu-grid-card .menu-card-sub {
+  color: #cbd5e1 !important;
+}
+
+html[data-skin="industrial"] #view-menu .menu-icon-box {
+  background: linear-gradient(145deg, #334155 0%, #1e293b 55%, #0f172a 100%) !important;
+  border: 1px solid rgba(212, 175, 55, 0.55) !important;
+  color: #fde68a !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 4px 10px rgba(0, 0, 0, 0.48) !important;
+}
+
+html[data-skin="industrial"] #view-menu .menu-badge-free,
+html[data-skin="industrial"] #view-menu .menu-badge-info,
+html[data-skin="industrial"] #view-menu .menu-badge-violet,
+html[data-skin="industrial"] #view-menu .menu-badge-cyan {
+  background: rgba(6, 78, 59, 0.55) !important;
+  border: 1px solid rgba(52, 211, 153, 0.55) !important;
+  color: #a7f3d0 !important;
+}
+
+html[data-skin="industrial"] #view-menu .menu-badge-pro-pill {
+  background: linear-gradient(135deg, rgba(161, 98, 7, 0.55), rgba(217, 119, 6, 0.45)) !important;
+  border: 1px solid rgba(251, 191, 36, 0.78) !important;
+  color: #fef3c7 !important;
+}
+
+/* Propagación global Industrial Pro a vistas internas, Levantamiento y Modales */
+html[data-skin="industrial"][data-theme="dark"] main .bg-white,
+html[data-skin="industrial"][data-theme="dark"] main .bg-slate-900,
+html[data-skin="industrial"][data-theme="dark"] [role="dialog"] > div.bg-white {
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.015) 0px, rgba(255, 255, 255, 0.015) 1px, transparent 1px, transparent 3px),
+    linear-gradient(160deg, #1f2633 0%, #121720 100%) !important;
+  border-color: rgba(212, 175, 55, 0.42) !important;
+}
+
+html[data-skin="industrial"] #lev-root .shell {
+  background: linear-gradient(180deg, #1a202c 0%, #0e121a 100%) !important;
+  border: 1px solid rgba(212, 175, 55, 0.42) !important;
+}
+
+html[data-skin="industrial"] #lev-root .card {
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.015) 0px, rgba(255, 255, 255, 0.015) 1px, transparent 1px, transparent 3px),
+    linear-gradient(155deg, #222936 0%, #131822 100%) !important;
+  border: 1px solid rgba(212, 175, 55, 0.4) !important;
+  box-shadow: inset 0 1px 0 rgba(226, 232, 240, 0.2) !important;
+}
+
+/* ==================== ROBOT 1 AÑO (CARÁTULA INDUSTRIAL PRO): BRINCO LENTO + RECORRIDO + MORPH ==================== */
+@keyframes assistantRobotHop1Yr {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scaleX(1) scaleY(1);
+  }
+  12% {
+    transform: translate3d(0, 2px, 0) scaleX(1.06) scaleY(0.93);
+  }
+  34% {
+    transform: translate3d(0, -18px, 0) scaleX(0.96) scaleY(1.05) rotate(-3deg);
+  }
+  54% {
+    transform: translate3d(0, 0, 0) scaleX(1.05) scaleY(0.94) rotate(0deg);
+  }
+  68% {
+    transform: translate3d(0, -7px, 0) scaleX(0.99) scaleY(1.02) rotate(2deg);
+  }
+  82% {
+    transform: translate3d(0, 0, 0) scaleX(1.02) scaleY(0.98) rotate(0deg);
+  }
+}
+
+.assistant-robot-hop-1yr {
+  animation: assistantRobotHop1Yr 2.7s cubic-bezier(0.37, 0, 0.63, 1) infinite;
+  border-color: rgba(251, 191, 36, 0.85) !important;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.65), 0 0 18px rgba(251, 191, 36, 0.32) !important;
+}
+
+@keyframes assistantTravelLeftToCenter {
+  0% {
+    left: 10%;
+    top: 62%;
+    transform: translate(-50%, -50%) scale(0.88) rotate(-8deg);
+    opacity: 0.7;
+  }
+  32% {
+    left: 28%;
+    top: 47%;
+    transform: translate(-50%, -50%) scale(1.08) rotate(4deg);
+    opacity: 1;
+  }
+  64% {
+    left: 42%;
+    top: 53%;
+    transform: translate(-50%, -50%) scale(1.04) rotate(-3deg);
+    opacity: 1;
+  }
+  100% {
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%) scale(1.24) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+.assistant-robot-travel-center {
+  animation: assistantTravelLeftToCenter 0.56s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes assistantMorphFromRobot {
+  0% {
+    opacity: 0.25;
+    transform: translate(-50%, -50%) scale(0.22);
+    border-radius: 999px;
+  }
+  58% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.03);
+    border-radius: 26px;
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+    border-radius: 22px;
+  }
+}
+
+.assistant-card-morph-center {
+  position: fixed !important;
+  top: 50% !important;
+  left: 50% !important;
+  right: auto !important;
+  bottom: auto !important;
+  transform: translate(-50%, -50%);
+  animation: assistantMorphFromRobot 0.36s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* ==================== CELEBRACIÓN MEMBRESÍA 1 AÑO (CONFETI + REGALO FLOTANTE) ==================== */
+@keyframes annualConfettiFall {
+  0% {
+    transform: translate3d(0, -12vh, 0) rotate(0deg);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 0.95;
+  }
+  100% {
+    transform: translate3d(var(--confetti-drift, 30px), 108vh, 0) rotate(540deg);
+    opacity: 0;
+  }
+}
+
+.annual-confetti-piece {
+  position: absolute;
+  top: -24px;
+  font-size: 16px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  animation-name: annualConfettiFall;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  will-change: transform, opacity;
+}
+
+@keyframes annualGiftFloat {
+  0%, 100% {
+    transform: translateY(0) rotate(-2deg);
+  }
+  50% {
+    transform: translateY(-12px) rotate(2.5deg);
+  }
+}
+
+@keyframes annualGiftGlow {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.6);
+  }
+  65% {
+    box-shadow: 0 0 0 18px rgba(251, 191, 36, 0);
+  }
+}
+
+@keyframes annualGiftUnbox {
+  0% {
+    opacity: 0;
+    transform: scale(0.75) translateY(18px);
+  }
+  70% {
+    opacity: 1;
+    transform: scale(1.03) translateY(-3px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.annual-gift-float {
+  animation: annualGiftFloat 2.3s ease-in-out infinite;
+}
+
+.annual-gift-glow {
+  animation: annualGiftGlow 1.9s ease-out infinite;
+}
+
+.annual-gift-unbox {
+  animation: annualGiftUnbox 0.34s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .assistant-robot-hop-1yr,
+  .assistant-robot-travel-center,
+  .assistant-card-morph-center,
+  .annual-confetti-piece,
+  .annual-gift-float,
+  .annual-gift-glow,
+  .annual-gift-unbox {
+    animation: none !important;
+  }
+}
+
+

@@ -1,10 +1,11 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CATALOGO_PERFILES,
   PerfilCatalogoItem,
   PerfilFamilia,
 } from '../utils/alumineroLogic';
 import {
+  AppSkin,
   compressImageToDataUrl,
   formatWhatsappUrlDigits,
   sanitizeWhatsappNumber,
@@ -14,6 +15,7 @@ import { PhotoPickerButtons } from './PhotoPickerButtons';
 interface FloatingAssistantProps {
   whatsappNumber: string;
   deviceId: string;
+  skin?: AppSkin;
   onShowToast: (msg: string, topSuccess?: boolean) => void;
 }
 
@@ -71,10 +73,53 @@ function triggerFileDownload(file: File): void {
 export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
   whatsappNumber,
   deviceId,
+  skin = 'basica',
   onShowToast,
 }) => {
   const [open, setOpen] = useState(false);
+  const [travelingToCenter, setTravelingToCenter] = useState(false);
+  const [morphedAtCenter, setMorphedAtCenter] = useState(false);
+  const travelTimerRef = useRef<number | null>(null);
   const [activeOption, setActiveOption] = useState<'A' | 'B'>('A');
+  const isIndustrial1Yr = skin === 'industrial';
+
+  useEffect(() => {
+    return () => {
+      if (travelTimerRef.current !== null) {
+        window.clearTimeout(travelTimerRef.current);
+      }
+    };
+  }, []);
+
+  const handleCloseAssistant = () => {
+    if (travelTimerRef.current !== null) {
+      window.clearTimeout(travelTimerRef.current);
+      travelTimerRef.current = null;
+    }
+    setTravelingToCenter(false);
+    setMorphedAtCenter(false);
+    setOpen(false);
+  };
+
+  const handleToggleAssistant = () => {
+    if (open || travelingToCenter) {
+      handleCloseAssistant();
+      return;
+    }
+    if (isIndustrial1Yr) {
+      setTravelingToCenter(true);
+      setMorphedAtCenter(false);
+      travelTimerRef.current = window.setTimeout(() => {
+        travelTimerRef.current = null;
+        setTravelingToCenter(false);
+        setMorphedAtCenter(true);
+        setOpen(true);
+      }, 560);
+    } else {
+      setMorphedAtCenter(false);
+      setOpen(true);
+    }
+  };
 
   // Opción A — Sugerir línea o perfil
   const [sugerenciaTexto, setSugerenciaTexto] = useState('');
@@ -281,12 +326,51 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
 
   return (
     <div id="floating-assistant-root" className="fixed bottom-4 right-4 sm:bottom-5 sm:right-5 z-40">
+      {/* Animación de recorrido de izquierda a derecha hasta el centro en carátula de 1 año */}
+      {travelingToCenter && (
+        <div
+          id="assistant-travel-stage"
+          aria-hidden="true"
+          className="fixed inset-0 z-50 pointer-events-none bg-slate-950/35 backdrop-blur-[1px]"
+        >
+          <div
+            id="assistant-traveling-robot"
+            className="assistant-robot-travel-center fixed w-[68px] h-[68px] rounded-full flex items-center justify-center bg-gradient-to-br from-amber-500 via-emerald-600 to-slate-900 border-2 border-amber-300 shadow-[0_18px_40px_rgba(0,0,0,0.7),0_0_24px_rgba(251,191,36,0.5)]"
+          >
+            <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+              <line x1="20" y1="4.5" x2="20" y2="9.5" stroke="#FDE68A" strokeWidth="2.6" strokeLinecap="round" />
+              <circle cx="20" cy="4" r="2.6" fill="#34D399" />
+              <rect x="4" y="16" width="4" height="9" rx="2" fill="#FCD34D" />
+              <rect x="32" y="16" width="4" height="9" rx="2" fill="#FCD34D" />
+              <rect x="8" y="9.5" width="24" height="22" rx="9" fill="#FFFFFF" />
+              <rect x="11.5" y="14.5" width="17" height="9.5" rx="4.75" fill="#0F172A" />
+              <circle cx="16.2" cy="19.2" r="2.1" fill="#34D399" />
+              <circle cx="23.8" cy="19.2" r="2.1" fill="#34D399" />
+              <path d="M15.5 26.8C17.2 28.4 22.8 28.4 24.5 26.8" stroke="#D97706" strokeWidth="2.2" strokeLinecap="round" />
+            </svg>
+          </div>
+        </div>
+      )}
+
+      {open && morphedAtCenter && (
+        <div
+          aria-hidden="true"
+          onClick={handleCloseAssistant}
+          className="fixed inset-0 z-40 bg-slate-950/55 backdrop-blur-[2px]"
+        />
+      )}
+
       {open && (
         <section
           id="card-floating-assistant"
           role="dialog"
           aria-label="Asistente Aluminero Pro"
-          className="assistant-card-enter fixed bottom-[86px] right-4 sm:right-5 w-[calc(100vw-2rem)] max-w-[388px] max-h-[calc(100vh-7rem)] overflow-y-auto rounded-[22px] border-[1.5px] shadow-2xl p-4"
+          data-centered-morph={morphedAtCenter ? 'true' : 'false'}
+          className={`${
+            morphedAtCenter
+              ? 'assistant-card-morph-center z-50 w-[calc(100vw-2rem)] max-w-[400px] max-h-[calc(100vh-5rem)]'
+              : 'assistant-card-enter fixed bottom-[86px] right-4 sm:right-5 w-[calc(100vw-2rem)] max-w-[388px] max-h-[calc(100vh-7rem)]'
+          } overflow-y-auto rounded-[22px] border-[1.5px] shadow-2xl p-4`}
         >
           {/* Encabezado */}
           <div className="flex items-center justify-between gap-2.5 pb-3 mb-3 border-b border-slate-200/80 assistant-card-divider">
@@ -320,7 +404,7 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
             <button
               type="button"
               id="btn-assistant-close"
-              onClick={() => setOpen(false)}
+              onClick={handleCloseAssistant}
               aria-label="Cerrar Asistente Aluminero Pro"
               className="min-w-[34px] min-h-[34px] rounded-xl assistant-close-btn font-extrabold text-[14px] cursor-pointer shrink-0 transition-colors"
             >
@@ -558,17 +642,20 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
       <button
         type="button"
         id="btn-floating-assistant"
+        data-skin-animation={isIndustrial1Yr ? 'industrial-hop-1yr' : 'default'}
         aria-label={open ? 'Cerrar Asistente Aluminero Pro' : 'Abrir Asistente Aluminero Pro'}
         aria-expanded={open}
         aria-controls="card-floating-assistant"
-        onClick={() => setOpen((prev) => !prev)}
+        onClick={handleToggleAssistant}
         className={`relative w-[60px] h-[60px] rounded-full flex items-center justify-center cursor-pointer shadow-2xl border-2 border-cyan-300/80 transition-transform active:scale-95 ${
-          open
+          open || travelingToCenter
             ? 'bg-slate-900 text-white'
-            : 'assistant-fab-float bg-gradient-to-br from-blue-600 via-blue-700 to-cyan-500 text-white'
+            : isIndustrial1Yr
+              ? 'assistant-robot-hop-1yr bg-gradient-to-br from-slate-800 via-emerald-800 to-amber-600 text-white'
+              : 'assistant-fab-float bg-gradient-to-br from-blue-600 via-blue-700 to-cyan-500 text-white'
         }`}
       >
-        {!open && (
+        {!open && !travelingToCenter && (
           <span
             aria-hidden="true"
             className="assistant-fab-ring absolute inset-0 rounded-full pointer-events-none"

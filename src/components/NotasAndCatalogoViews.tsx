@@ -6,6 +6,9 @@ import {
   HerrajeCategoria,
   LINEAS_CONFIG,
   LineaId,
+  MEXICO_ALUMINUM_CATEGORIES,
+  MEXICO_ALUMINUM_SYSTEMS,
+  MexicoAluminumCategoryId,
   PerfilCatalogoId,
   PerfilFamilia,
 } from '../utils/alumineroLogic';
@@ -299,6 +302,7 @@ export const CatalogoView: React.FC<CatalogoProps> = ({
   };
   const [busqueda, setBusqueda] = useState('');
   const [familiaFilter, setFamiliaFilter] = useState<PerfilFamilia | 'all'>('all');
+  const [mxCatFilter, setMxCatFilter] = useState<MexicoAluminumCategoryId | 'all'>('all');
   const [herrajeCat, setHerrajeCat] = useState<HerrajeCategoria | 'all'>('all');
   const [herrajeQuery, setHerrajeQuery] = useState('');
   const uploadTargetRef = useRef<PerfilCatalogoId | null>(null);
@@ -585,6 +589,97 @@ export const CatalogoView: React.FC<CatalogoProps> = ({
                 </div>
               );
             })}
+          </div>
+
+          {/* Catálogo Integral de Líneas Comerciales de Aluminio en México */}
+          <div
+            id="catalogo-lineas-mexico"
+            className="mt-6 pt-5 border-t-2 border-slate-200"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
+              <div>
+                <h2 className="m-0 text-[16.5px] font-extrabold text-[#1E293B]">
+                  🇲🇽 Líneas y Sistemas Comerciales de Aluminio en México
+                </h2>
+                <p className="m-0 text-[12px] text-slate-600 mt-0.5">
+                  Línea Nacional (Cuprum / Indalum / Panorama), Línea Española (Extrusiones Metálicas), Línea Europea (Eurovent / Euroalum) y Perfiles Estructurales e Industriales
+                </p>
+              </div>
+              <span className="px-2.5 py-1 rounded-lg bg-blue-50 border border-blue-200 text-blue-800 text-[11px] font-extrabold mono shrink-0">
+                {MEXICO_ALUMINUM_SYSTEMS.length} sistemas
+              </span>
+            </div>
+
+            <div className="flex flex-wrap gap-1.5 mb-3">
+              <button
+                type="button"
+                onClick={() => setMxCatFilter('all')}
+                className={`px-3 py-1.5 rounded-xl text-[12px] font-extrabold border cursor-pointer ${
+                  mxCatFilter === 'all'
+                    ? 'bg-[#0B2545] text-white border-[#0B2545]'
+                    : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
+                }`}
+              >
+                Todas las líneas
+              </button>
+              {MEXICO_ALUMINUM_CATEGORIES.map((cat) => (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => setMxCatFilter(cat.id)}
+                  className={`px-3 py-1.5 rounded-xl text-[12px] font-extrabold border cursor-pointer ${
+                    mxCatFilter === cat.id
+                      ? 'bg-[#0B2545] text-white border-[#0B2545]'
+                      : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
+                  }`}
+                >
+                  {cat.id === 'nacional'
+                    ? 'Línea Nacional (90°)'
+                    : cat.id === 'espanola'
+                      ? 'Línea Española (45°)'
+                      : cat.id === 'europea'
+                        ? 'Línea Europea (45°)'
+                        : 'Estructurales / Industriales'}
+                </button>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+              {MEXICO_ALUMINUM_SYSTEMS.filter((s) => {
+                const matchCat = mxCatFilter === 'all' || s.categoria === mxCatFilter;
+                const q = busqueda.trim().toLowerCase();
+                const matchText =
+                  !q ||
+                  s.nombre.toLowerCase().includes(q) ||
+                  s.fabricantes.toLowerCase().includes(q) ||
+                  s.tipoCorte.toLowerCase().includes(q) ||
+                  s.aplicacion.toLowerCase().includes(q);
+                return matchCat && matchText;
+              }).map((sys) => (
+                <div
+                  key={sys.id}
+                  className="p-3.5 rounded-[14px] border border-slate-300 bg-slate-50/80 text-[#1E293B] flex flex-col justify-between gap-1.5"
+                >
+                  <div>
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <span className="text-[10.5px] font-extrabold uppercase tracking-wide text-blue-700">
+                        {sys.fabricantes}
+                      </span>
+                      <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 text-[10px] font-extrabold">
+                        {sys.tipoCorte}
+                      </span>
+                    </div>
+                    <strong className="block text-[13.5px] text-[#1E293B] mt-1">{sys.nombre}</strong>
+                    <p className="text-[11.5px] text-slate-600 mt-1 mb-0 leading-snug">
+                      {sys.aplicacion}
+                    </p>
+                  </div>
+                  <div className="pt-1.5 mt-1 border-t border-slate-200 text-[11px] font-semibold text-slate-700">
+                    Cristal / uso: <strong className="text-slate-900">{sys.cristalRecomendado}</strong>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}

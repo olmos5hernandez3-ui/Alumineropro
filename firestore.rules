@@ -83,7 +83,9 @@ service cloud.firestore {
         'trialActive',
         'adminAssigned',
         'linkedEmail',
-        'status'
+        'status',
+        'promo_colega_usada',
+        'fecha_activacion_colega'
       ])
       && isValidId(data.deviceId)
       && data.deviceId.size() <= 64
@@ -109,7 +111,9 @@ service cloud.firestore {
       && (!('blockedAt' in data) || isNullableEpochMs(data.blockedAt))
       && data.trialActive is bool
       && data.adminAssigned is bool
-      && (!('linkedEmail' in data) || data.linkedEmail == null || isBoundedString(data.linkedEmail, 0, 160));
+      && (!('linkedEmail' in data) || data.linkedEmail == null || isBoundedString(data.linkedEmail, 0, 160))
+      && (!('promo_colega_usada' in data) || data.promo_colega_usada is bool)
+      && (!('fecha_activacion_colega' in data) || isNullableEpochMs(data.fecha_activacion_colega));
     }
 
     // ==================== VALIDACIÓN: ADMIN KEY ====================
@@ -252,7 +256,9 @@ service cloud.firestore {
           'trialActive',
           'adminAssigned',
           'linkedEmail',
-          'status'
+          'status',
+          'promo_colega_usada',
+          'fecha_activacion_colega'
         ]);
       allow delete: if isValidId(deviceId) && (resource == null || existing().deviceId == deviceId);
     }

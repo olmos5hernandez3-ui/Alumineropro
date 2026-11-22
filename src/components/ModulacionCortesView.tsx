@@ -203,17 +203,23 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
   const [discoKerfMm, setDiscoKerfMm] = useState<number>(3.5);
   const [umbralSobranteCm, setUmbralSobranteCm] = useState<number>(45);
   const [zoomPerfil, setZoomPerfil] = useState<PerfilZoomData | null>(null);
+  const [vidrioSeleccionado, setVidrioSeleccionado] = useState<string>('Vidrio claro 6 mm');
   const [activoLev, setActivoLev] = useState<LevantamientoDraft | null>(() => {
     try {
-      const raw = typeof window !== 'undefined' ? window.localStorage.getItem(LEV_KEYS.activo) : null;
-      if (!raw) return null;
-      const norm = normalizeLevantamientoDraft(JSON.parse(raw));
-      return norm.piezas.length > 0 ? norm : null;
+      if (typeof window === 'undefined') return null;
+      for (const key of [LEV_KEYS.activo, LEV_KEYS.draft]) {
+        const raw = window.localStorage.getItem(key);
+        if (!raw) continue;
+        const norm = normalizeLevantamientoDraft(JSON.parse(raw));
+        if (norm.piezas.length > 0) return norm;
+      }
+      return null;
     } catch {
       return null;
     }
   });
   const [activeLevPiezaId, setActiveLevPiezaId] = useState<string | null>(null);
+  const autoAppliedLevRef = useRef<string | null>(null);
 
   const step = controlledStep ?? localStep;
   const paso5Tab = controlledPaso5Tab ?? localPaso5Tab;
@@ -280,6 +286,24 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
       if (typeof p.conMosquitero === 'boolean') {
         setConMosquitero(p.conMosquitero);
       }
+      if (p.colorVidrio) {
+        const vLow = p.colorVidrio.trim().toLowerCase();
+        setVidrioSeleccionado(
+          vLow === 'claro' || vLow === 'vidrio claro'
+            ? 'Vidrio claro 6 mm'
+            : vLow === 'sin vidrio'
+              ? 'Sin vidrio'
+              : `${p.colorVidrio} 6 mm`
+        );
+      }
+      // Ejecutar automáticamente el cálculo de cortes y mostrar Paso 5 (Cortes y Tramos)
+      if (onNavigateModState) {
+        onNavigateModState({ step: 5, mosquiteroModalOpen: false, paso5Tab: 'cortes' });
+      } else {
+        setLocalMosqOpen(false);
+        setLocalStep(5);
+        setLocalPaso5Tab('cortes');
+      }
     };
     applyPending();
     window.addEventListener('alum-mod-apply', applyPending);
@@ -289,29 +313,34 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
   useEffect(() => {
     const syncActivo = () => {
       try {
-        const raw = window.localStorage.getItem(LEV_KEYS.activo);
-        if (!raw) {
-          setActivoLev(null);
-          return;
+        for (const key of [LEV_KEYS.activo, LEV_KEYS.draft]) {
+          const raw = window.localStorage.getItem(key);
+          if (!raw) continue;
+          const norm = normalizeLevantamientoDraft(JSON.parse(raw));
+          if (norm.piezas.length > 0) {
+            setActivoLev(norm);
+            return;
+          }
         }
-        const norm = normalizeLevantamientoDraft(JSON.parse(raw));
-        setActivoLev(norm.piezas.length > 0 ? norm : null);
+        setActivoLev(null);
       } catch {
         setActivoLev(null);
       }
     };
     window.addEventListener('aluminero:lev-activo-updated', syncActivo);
+    window.addEventListener('aluminero:lev-draft-updated', syncActivo);
     window.addEventListener('focus', syncActivo);
     return () => {
       window.removeEventListener('aluminero:lev-activo-updated', syncActivo);
+      window.removeEventListener('aluminero:lev-draft-updated', syncActivo);
       window.removeEventListener('focus', syncActivo);
     };
   }, []);
 
-  const handleSelectLevPieza = (p: LevantamientoPieza) => {
+  const handleSelectLevPieza = (p: LevantamientoPieza, silent = false) => {
     const resolved = resolveLineaFromLevantamiento(p);
     if (!resolved.modelo || !resolved.cat) {
-      onShowToast('Cancel / Otro no está disponible en Modulación.');
+      if (!silent) onShowToast('Cancel / Otro no está disponible en Modulación.');
       return;
     }
     setActiveLevPiezaId(p.id);
@@ -323,15 +352,47 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
     setSerieId(resolved.serieMod);
     setColorParaSobrantes(resolveColorAluminioFromLevantamiento(p.colorAluminio));
     setConMosquitero(resolveMosquiteroFromLevantamiento(p.mosquitero));
-    setCortadosMap({});
-    const specs = formatPiezaSpecs(p);
-    onShowToast(
-      specs
-        ? `Cargado: ${p.tipo} (${formatMedidaText(p)}) · ${specs}`
-        : `Cargado: ${p.tipo} (${formatMedidaText(p)})`,
-      true
+    const vRaw = String(p.colorVidrio || 'Vidrio claro').trim();
+    setVidrioSeleccionado(
+      vRaw.toLowerCase() === 'claro' || vRaw.toLowerCase() === 'vidrio claro'
+        ? 'Vidrio claro 6 mm'
+        : vRaw.toLowerCase() === 'sin vidrio'
+          ? 'Sin vidrio'
+          : `${vRaw} 6 mm`
     );
+    setCortadosMap({});
+    // Saltar automáticamente a Paso 5 con los cortes ya calculados
+    if (onNavigateModState) {
+      onNavigateModState({ step: 5, mosquiteroModalOpen: false, paso5Tab: 'cortes' });
+    } else {
+      setLocalMosqOpen(false);
+      setLocalStep(5);
+      setLocalPaso5Tab('cortes');
+    }
+    if (!silent) {
+      const specs = formatPiezaSpecs(p);
+      onShowToast(
+        specs
+          ? `Cortes calculados: ${p.tipo} (${formatMedidaText(p)}) · ${specs}`
+          : `Cortes calculados: ${p.tipo} (${formatMedidaText(p)})`,
+        true
+      );
+    }
   };
+
+  // Auto-ejecutar cálculo de cortes al entrar a Modulación con datos de Levantamiento Rápido
+  useEffect(() => {
+    if (!activoLev || activoLev.piezas.length === 0) return;
+    const firstSupported = activoLev.piezas.find((p) => {
+      const resolved = resolveLineaFromLevantamiento(p);
+      return Boolean(resolved.modelo && resolved.cat);
+    });
+    if (!firstSupported) return;
+    const sig = `${activoLev.id}:${firstSupported.id}:${firstSupported.anchoCm}x${firstSupported.altoCm}`;
+    if (autoAppliedLevRef.current === sig) return;
+    autoAppliedLevRef.current = sig;
+    handleSelectLevPieza(firstSupported, true);
+  }, [activoLev]);
 
   const handleRemoveLevPieza = (id: string) => {
     if (!activoLev) return;
@@ -402,18 +463,22 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
     return unidad === 'm' ? Math.max(20, round2(val * 100)) : Math.max(20, val);
   }, [altoInput, unidad]);
 
-  const calculoCortes = useMemo(
-    () =>
-      calcularModulacionCortes({
-        modeloId,
-        conMosquitero,
-        serieId,
-        sublineaId,
-        anchoCm,
-        altoCm,
-      }),
-    [modeloId, conMosquitero, serieId, sublineaId, anchoCm, altoCm]
-  );
+  const calculoCortes = useMemo(() => {
+    const base = calcularModulacionCortes({
+      modeloId,
+      conMosquitero,
+      serieId,
+      sublineaId,
+      anchoCm,
+      altoCm,
+    });
+    return {
+      ...base,
+      vidrios: base.vidrios.map((v) =>
+        v.tipo === 'vidrio' ? { ...v, espesorLabel: vidrioSeleccionado } : v
+      ),
+    };
+  }, [modeloId, conMosquitero, serieId, sublineaId, anchoCm, altoCm, vidrioSeleccionado]);
 
   const lineaCompatible: LineaId =
     selectedModelo.categoria === 'puertas'
@@ -582,21 +647,37 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
             </div>
             <button
               type="button"
+              id="btn-mod-limpiar-lev"
               onClick={handleClearActivoLev}
               className="min-h-[34px] px-3 py-1 rounded-xl border border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700 text-[11.5px] font-bold cursor-pointer"
             >
-              Cerrar lista
+              🧹 Limpiar lista
             </button>
           </div>
 
           <div className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] p-3.5 sm:p-4 shadow-md">
-            <div className="flex items-center justify-between gap-2 mb-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
               <h2 className="m-0 text-[14.5px] font-extrabold text-slate-900">
-                🪟 Trabajos a modular ({activoLev.piezas.length})
+                🪟 Trabajos a modular ({activoLev.piezas.length}) — Cálculo automático activo
               </h2>
-              <span className="text-[11px] text-slate-500 font-semibold">
-                Toca uno para cargar sus medidas
-              </span>
+              <div className="flex items-center gap-1.5">
+                <label htmlFor="sel-mod-vidrio" className="text-[11px] font-bold text-slate-600">
+                  Vidrio:
+                </label>
+                <select
+                  id="sel-mod-vidrio"
+                  value={vidrioSeleccionado}
+                  onChange={(e) => setVidrioSeleccionado(e.target.value)}
+                  className="min-h-[32px] rounded-lg border border-slate-300 bg-white px-2 text-[11.5px] font-bold text-slate-800"
+                >
+                  <option value="Vidrio claro 6 mm">Vidrio claro 6 mm</option>
+                  <option value="Vidrio claro 4 mm">Vidrio claro 4 mm</option>
+                  <option value="Filtrasol 6 mm">Filtrasol 6 mm</option>
+                  <option value="Tintex 6 mm">Tintex 6 mm</option>
+                  <option value="Esmerilado 6 mm">Esmerilado 6 mm</option>
+                  <option value="Reflecta 6 mm">Reflecta 6 mm</option>
+                </select>
+              </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {activoLev.piezas.map((p, idx) => {

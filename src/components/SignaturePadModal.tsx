@@ -341,33 +341,30 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
           )}
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              id="btn-signature-clear"
-              onClick={handleClear}
-              className="min-h-[42px] px-3.5 rounded-xl border border-slate-600 bg-slate-800 hover:bg-slate-700 text-slate-100 text-[12.5px] font-bold cursor-pointer"
-            >
-              Limpiar
-            </button>
-            <button
-              type="button"
-              id="btn-signature-cancel"
-              onClick={requestCloseLayer}
-              className="min-h-[42px] px-3.5 rounded-xl border border-slate-600 bg-transparent hover:bg-slate-800 text-slate-300 text-[12.5px] font-bold cursor-pointer"
-            >
-              Cancelar
-            </button>
-          </div>
-
+        <div className="grid grid-cols-3 gap-2 items-center pt-1">
+          <button
+            type="button"
+            id="btn-signature-cancel"
+            onClick={requestCloseLayer}
+            className="w-full min-h-[44px] px-2.5 rounded-xl border border-slate-600 bg-transparent hover:bg-slate-800 text-slate-200 text-[12.5px] font-bold cursor-pointer whitespace-nowrap"
+          >
+            Cancelar
+          </button>
           <button
             type="button"
             id="btn-signature-apply"
             onClick={handleApplySignature}
-            className="min-h-[44px] px-5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[13px] font-extrabold cursor-pointer shadow-lg"
+            className="w-full min-h-[44px] px-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[12.5px] font-extrabold cursor-pointer shadow-lg whitespace-nowrap"
           >
-            Aplicar firma al PDF
+            Aplicar PDF
+          </button>
+          <button
+            type="button"
+            id="btn-signature-clear"
+            onClick={handleClear}
+            className="w-full min-h-[44px] px-2.5 rounded-xl border border-slate-600 bg-slate-800 hover:bg-slate-700 text-slate-100 text-[12.5px] font-bold cursor-pointer whitespace-nowrap"
+          >
+            Limpiar
           </button>
         </div>
       </div>

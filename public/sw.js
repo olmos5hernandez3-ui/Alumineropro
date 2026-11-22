@@ -1,4 +1,4 @@
-const CACHE_NAME = 'aluminero-pro-v41-20261121';
+const CACHE_NAME = 'aluminero-pro-v42-20261122';
 const APP_SHELL_ASSETS = [
   '/',
   '/index.html',

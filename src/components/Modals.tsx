@@ -43,6 +43,7 @@ import {
   generateActivationKey,
   getOfficialShareUrl,
   getTrialCountdown,
+  isColleaguePromoPlan,
   isProActive,
   isShortPlanKeyPrefix,
   isUnassignedAutoTrialDevice,
@@ -52,6 +53,7 @@ import {
   normalizeDeviceIdInput,
   PerfilCatalogoId,
   PLANS,
+  PROMO_COLEGA_ALREADY_USED_ERROR,
   sanitizeReferralSenderName,
   TrabajoParams,
   UsageStats30d,
@@ -98,16 +100,16 @@ import { PhotoPickerButtons } from './PhotoPickerButtons';
 export const PRO_PAYMENT_CONFIG = {
   plan30Label: 'Promo 30 Días PRO',
   plan30RegularPrice: '$699',
-  plan30Price: '$350 MXN',
+  plan30Price: '$369 MXN',
   plan90Label: 'Plan 90 Días PRO',
   plan90RegularPrice: '$1,899',
-  plan90Price: '$950 MXN',
+  plan90Price: '$989 MXN',
   plan365Label: 'Plan 1 Año PRO',
-  plan365RegularPrice: '$3,499',
-  plan365Price: '$1,800 MXN',
-  mpLink30: 'https://mpago.la/1JpicFT',
-  mpLink90: 'https://mpago.la/1bVUVqU',
-  mpLink365: 'https://mpago.la/2BMGKsh',
+  plan365RegularPrice: '$3,599',
+  plan365Price: '$1,799 MXN',
+  mpLink30: 'https://mpago.la/2evqS3r',
+  mpLink90: 'https://mpago.la/2xXek7s',
+  mpLink365: 'https://mpago.la/335TCqb',
   speiClabe: '722969010141447452',
   beneficiario: 'Tonatiuh O',
   institucion: 'Mercado Pago W',
@@ -119,6 +121,7 @@ interface ProModalProps {
   deviceId: string;
   licencia: LicenciaState | null;
   proActive: boolean;
+  promoColegaUsed?: boolean;
   trialExpiresAt?: number | null;
   whatsappNumber?: string;
   defaultEmail?: string;
@@ -134,6 +137,7 @@ export const ProModal: React.FC<ProModalProps> = ({
   deviceId,
   licencia,
   proActive,
+  promoColegaUsed = false,
   trialExpiresAt = null,
   whatsappNumber = '',
   defaultEmail = '',
@@ -247,6 +251,11 @@ export const ProModal: React.FC<ProModalProps> = ({
       return;
     }
 
+    if (promoColegaUsed && isColleaguePromoPlan(res.plan.code, res.customDays, cleanKey)) {
+      onShowToast(PROMO_COLEGA_ALREADY_USED_ERROR);
+      return;
+    }
+
     const planRequiresCloudEmail =
       res.plan.code === 'Q' || res.plan.code === 'A' || (res.customDays ?? 0) >= 90;
     if (planRequiresCloudEmail && emailCheck.status !== 'confirmed') {
@@ -289,7 +298,7 @@ export const ProModal: React.FC<ProModalProps> = ({
   return (
     <div
       id="modal-pro"
-      className="fixed inset-0 z-50 bg-slate-950/75 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 bg-slate-950/75 overflow-y-auto flex items-start sm:items-center justify-center p-3 sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-label="Licencia Aluminero Pro"
@@ -297,7 +306,7 @@ export const ProModal: React.FC<ProModalProps> = ({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-[480px] max-h-[90vh] overflow-y-auto bg-white text-slate-900 rounded-[20px] p-5 shadow-2xl">
+      <div className="w-full max-w-[480px] my-auto bg-white text-slate-900 rounded-[20px] p-5 shadow-2xl">
         <div className="flex items-start justify-between gap-2">
           <div>
             <h2 className="m-0 text-[18px] font-extrabold">Estado de Licencia PRO</h2>
@@ -383,16 +392,18 @@ export const ProModal: React.FC<ProModalProps> = ({
           id="pro-adquirir-section"
           className="mt-3.5 p-3.5 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col gap-3"
         >
-          {/* Banner Promoción Exclusiva de Lanzamiento */}
+          {/* Banner Promoción Exclusiva de Lanzamiento (translúcido oscuro ámbar + shimmer + fuego pulsante) */}
           <div
             id="pro-launch-promo-banner"
-            className="p-3 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 text-slate-950 border border-amber-400 shadow-sm"
+            className="pro-promo-shimmer p-3.5 rounded-xl bg-slate-950/90 bg-gradient-to-r from-amber-500/15 via-orange-500/20 to-amber-500/15 border border-amber-500/40 shadow-md"
           >
-            <div className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider text-slate-950">
-              <Sparkles className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+            <div className="relative z-10 flex items-center gap-2 text-[11.5px] font-black uppercase tracking-wider text-amber-300">
+              <span className="pro-fire-pulse text-[15px] leading-none" aria-hidden="true">
+                🔥
+              </span>
               <span>PROMOCIÓN EXCLUSIVA DE LANZAMIENTO</span>
             </div>
-            <p className="m-0 mt-0.5 text-[11.5px] font-bold leading-snug text-slate-900">
+            <p className="relative z-10 m-0 mt-1 text-[12px] font-semibold leading-snug text-amber-50/95">
               Aprovecha hasta 50% de descuento este mes antes de que suban a su precio regular
             </p>
           </div>
@@ -426,9 +437,9 @@ export const ProModal: React.FC<ProModalProps> = ({
                   Activación inmediata con PIN (sin correo / uso local)
                 </span>
               </div>
-              <div className="text-right shrink-0 whitespace-nowrap">
-                <span className="block mono text-[11px] text-slate-400 line-through font-semibold">
-                  Antes {PRO_PAYMENT_CONFIG.plan30RegularPrice}
+              <div className="flex items-baseline justify-end gap-1.5 shrink-0 whitespace-nowrap">
+                <span className="mono text-[11.5px] text-slate-400 line-through font-semibold">
+                  {PRO_PAYMENT_CONFIG.plan30RegularPrice}
                 </span>
                 <strong className="mono text-[15px] text-blue-700 font-extrabold">
                   {PRO_PAYMENT_CONFIG.plan30Price}
@@ -454,9 +465,9 @@ export const ProModal: React.FC<ProModalProps> = ({
                   Con respaldo en nube y acceso total
                 </span>
               </div>
-              <div className="text-right shrink-0 whitespace-nowrap">
-                <span className="block mono text-[11px] text-slate-400 line-through font-semibold">
-                  Antes {PRO_PAYMENT_CONFIG.plan90RegularPrice}
+              <div className="flex items-baseline justify-end gap-1.5 shrink-0 whitespace-nowrap">
+                <span className="mono text-[11.5px] text-slate-400 line-through font-semibold">
+                  {PRO_PAYMENT_CONFIG.plan90RegularPrice}
                 </span>
                 <strong className="mono text-[15px] text-blue-700 font-extrabold">
                   {PRO_PAYMENT_CONFIG.plan90Price}
@@ -482,9 +493,9 @@ export const ProModal: React.FC<ProModalProps> = ({
                   Con respaldo en nube - Mejor ahorro anual
                 </span>
               </div>
-              <div className="text-right shrink-0 whitespace-nowrap">
-                <span className="block mono text-[11px] text-slate-400 line-through font-semibold">
-                  Antes {PRO_PAYMENT_CONFIG.plan365RegularPrice}
+              <div className="flex items-baseline justify-end gap-1.5 shrink-0 whitespace-nowrap">
+                <span className="mono text-[11.5px] text-slate-400 line-through font-semibold">
+                  {PRO_PAYMENT_CONFIG.plan365RegularPrice}
                 </span>
                 <strong className="mono text-[15px] text-blue-700 font-extrabold">
                   {PRO_PAYMENT_CONFIG.plan365Price}
@@ -1173,7 +1184,7 @@ interface JSZipInstance {
 
 type JSZipConstructor = new () => JSZipInstance;
 
-const CLOUDFLARE_HEADERS_TXT = `/
+export const CLOUDFLARE_HEADERS_TXT = `/
   Content-Type: text/html; charset=utf-8
   Cache-Control: no-cache
 
@@ -1190,10 +1201,10 @@ const CLOUDFLARE_HEADERS_TXT = `/
   Cache-Control: no-cache
 `;
 
-const CLOUDFLARE_REDIRECTS_TXT = `/* /index.html 200
+export const CLOUDFLARE_REDIRECTS_TXT = `/* /index.html 200
 `;
 
-const FALLBACK_MANIFEST_JSON = JSON.stringify(
+export const FALLBACK_MANIFEST_JSON = JSON.stringify(
   {
     id: './',
     name: 'Aluminero Pro',
@@ -1218,7 +1229,7 @@ const FALLBACK_MANIFEST_JSON = JSON.stringify(
   2
 );
 
-const FALLBACK_SW_JS = `const CACHE_NAME = 'aluminero-pro-v41-20261121';
+export const FALLBACK_SW_JS = `const CACHE_NAME = 'aluminero-pro-v42-20261122';
 const APP_SHELL_ASSETS = [
   './',
   './index.html',
@@ -1438,7 +1449,7 @@ self.addEventListener('fetch', (event) => {
 });
 `;
 
-async function ensureJSZipLoaded(): Promise<JSZipConstructor> {
+export async function ensureJSZipLoaded(): Promise<JSZipConstructor> {
   const win = window as unknown as { JSZip?: JSZipConstructor };
   if (typeof win.JSZip === 'function') {
     return win.JSZip;
@@ -1488,15 +1499,15 @@ function escapeJsonForInlineScript(value: unknown): string {
 const CLOSE_SCRIPT_TAG = '</scr' + 'ipt>';
 const CLOSE_STYLE_TAG = '</sty' + 'le>';
 
-function escapeInlineScriptContent(code: string): string {
+export function escapeInlineScriptContent(code: string): string {
   return code.replace(new RegExp('</scr' + 'ipt', 'gi'), '<\\/scr' + 'ipt');
 }
 
-function escapeInlineStyleContent(css: string): string {
+export function escapeInlineStyleContent(css: string): string {
   return css.replace(new RegExp('</sty' + 'le', 'gi'), '<\\/sty' + 'le');
 }
 
-function injectDeviceSeedIntoHtml(baseHtml: string, backupData: AlumineroBackupPayload): string {
+export function injectDeviceSeedIntoHtml(baseHtml: string, backupData: AlumineroBackupPayload): string {
   const seedMap: Record<string, string> = {
     aluminero_perfil_fotos_v1: JSON.stringify(backupData.perfilFotos || {}),
     aluminero_notas_v1: JSON.stringify(backupData.notas || []),
@@ -4136,10 +4147,16 @@ export const RecomendarModal: React.FC<RecomendarModalProps> = ({
     [senderName]
   );
 
-  // Enlace personalizado con el ID de Equipo del usuario: https://alumineropro.pages.dev/?ref=[ID_DEL_USUARIO]
+  // URL limpia y fija para el código QR, recuadro inferior y botón de copiar enlace
   const qrTargetUrl = useMemo(
-    () => `${getOfficialShareUrl()}/?ref=${encodeURIComponent(safeDeviceId)}`,
-    [safeDeviceId]
+    () => getOfficialShareUrl().replace(/\/+$/, ''),
+    []
+  );
+
+  // Enlace personalizado con ID de Equipo para compartir por WhatsApp
+  const whatsappReferralUrl = useMemo(
+    () => `${qrTargetUrl}/?ref=${encodeURIComponent(safeDeviceId)}`,
+    [qrTargetUrl, safeDeviceId]
   );
 
   const myReferralsCount = useMemo(
@@ -4247,8 +4264,8 @@ export const RecomendarModal: React.FC<RecomendarModalProps> = ({
       const copied = await copyTextSafe(qrTargetUrl);
       onShowToast(
         copied
-          ? `Enlace personal de referido copiado (${safeDeviceId})`
-          : `Tu enlace de referido: ${qrTargetUrl}`,
+          ? `Enlace de invitación copiado: ${qrTargetUrl}`
+          : `Enlace de invitación: ${qrTargetUrl}`,
         true
       );
     } finally {
@@ -4263,7 +4280,7 @@ export const RecomendarModal: React.FC<RecomendarModalProps> = ({
       const cleanName = sanitizeReferralSenderName(senderName) || 'Un colega';
       const nextPromoNum = await incrementPromocionesEnviadasCount();
       setPromoTotal(nextPromoNum);
-      const waMessage = `${cleanName} te acaba de mandar 3 días de Aluminero Pro por 0 MXN. ¡Eso es amistad!\n\nExplora una herramienta profesional: tendrás acceso total a inventario, optimización de tramos y cotizaciones en PDF, e incluso sin conexión.\n\nAbre tu invitación personal (#${nextPromoNum}) aquí:\n${qrTargetUrl}`;
+      const waMessage = `${cleanName} te acaba de mandar 3 días de Aluminero Pro por 0 MXN. ¡Eso es amistad!\n\nExplora una herramienta profesional: tendrás acceso total a inventario, optimización de tramos y cotizaciones en PDF, e incluso sin conexión.\n\nAbre tu invitación personal (#${nextPromoNum}) aquí:\n${whatsappReferralUrl}`;
       const waUrl = `https://wa.me/?text=${encodeURIComponent(waMessage)}`;
       openExternalLinkSafe(waUrl);
       onShowToast(`Invitación #${nextPromoNum} lista para compartir en WhatsApp`, true);
@@ -4275,7 +4292,7 @@ export const RecomendarModal: React.FC<RecomendarModalProps> = ({
   return (
     <div
       id="modal-recomendar"
-      className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-[2px] flex items-center justify-center p-3 sm:p-4"
+      className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-[2px] overflow-y-auto flex items-start justify-center p-3 sm:p-5"
       role="dialog"
       aria-modal="true"
       aria-label="Invitar a un colega"
@@ -4283,7 +4300,7 @@ export const RecomendarModal: React.FC<RecomendarModalProps> = ({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-[440px] max-h-[92vh] overflow-y-auto bg-white text-slate-900 rounded-[22px] p-4 sm:p-5 shadow-2xl">
+      <div className="w-full max-w-[440px] my-auto bg-white text-slate-900 rounded-[22px] p-4 sm:p-5 shadow-2xl">
         <div className="flex items-center justify-between gap-2 mb-2.5">
           <h2 className="m-0 text-[17.5px] font-extrabold tracking-tight">Invitar a un colega (QR)</h2>
           <button
@@ -4347,11 +4364,11 @@ export const RecomendarModal: React.FC<RecomendarModalProps> = ({
           className="relative overflow-hidden rounded-[20px] p-4 sm:p-5 mb-3.5 text-left border border-emerald-400/35 bg-[#060b14] bg-[radial-gradient(circle_at_50%_0%,rgba(16,185,129,0.36)_0%,rgba(16,185,129,0.12)_42%,rgba(6,11,20,0.98)_78%)] shadow-lg"
         >
           <div className="flex items-center justify-between gap-2 mb-2.5">
-            <span className="inline-flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-[0.12em] text-emerald-300">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" aria-hidden="true" />
+            <span className="inline-flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-[0.11em] text-emerald-300">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block shrink-0" aria-hidden="true" />
               ALUMINERO PRO · REGALO DE COLEGA
             </span>
-            <span className="mono text-[10.5px] font-extrabold text-emerald-200/90">
+            <span className="mono text-[10.5px] font-extrabold text-emerald-200/90 whitespace-nowrap shrink-0">
               Promo #{promoTotal}
             </span>
           </div>
@@ -4383,7 +4400,7 @@ export const RecomendarModal: React.FC<RecomendarModalProps> = ({
             onClick={handleCopiarEnlaceInvitacion}
             className="w-full min-h-[44px] px-4 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-65 text-white font-bold text-[13px] cursor-pointer transition-colors"
           >
-            {busyAction === 'copy' ? 'Copiando enlace...' : 'Copiar enlace personalizado'}
+            {busyAction === 'copy' ? 'Copiando enlace...' : 'Copiar enlace de invitación'}
           </button>
         </div>
 
@@ -4409,7 +4426,7 @@ export const RecomendarModal: React.FC<RecomendarModalProps> = ({
               <canvas ref={canvasRef} aria-label={`Código QR local para ${qrTargetUrl}`} />
             )}
           </div>
-          <div className="p-2 rounded-xl bg-slate-100 border border-slate-200 mono text-[11.5px] font-bold text-blue-700 break-all">
+          <div className="px-3 py-2 rounded-xl bg-slate-100 border border-slate-200 mono text-[12px] font-bold text-blue-700 text-center whitespace-nowrap overflow-x-auto">
             <span id="lbl-share-url">{qrTargetUrl}</span>
           </div>
         </div>

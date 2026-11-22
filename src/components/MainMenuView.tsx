@@ -13,6 +13,7 @@ interface Props {
   cotizacionesCount?: number;
   savedReferral?: SavedColleagueReferral | null;
   referredById?: string | null;
+  promoColegaUsed?: boolean;
   pendingRemindersCount?: number;
   dueRemindersCount?: number;
   pushPermission?: NotificationPermission | 'unsupported';
@@ -37,6 +38,7 @@ export const MainMenuView: React.FC<Props> = ({
   cotizacionesCount = 0,
   savedReferral = null,
   referredById = null,
+  promoColegaUsed = false,
   pendingRemindersCount = 0,
   dueRemindersCount = 0,
   pushPermission = 'default',
@@ -133,40 +135,72 @@ export const MainMenuView: React.FC<Props> = ({
         );
       })()}
 
-      {/* Acceso para canjear los 3 días gratis enviados por un colega */}
-      {!proActive && savedReferral && onClaimColleaguePromo && (
+      {/* Acceso para canjear los 3 días gratis enviados por un colega (o Actualizar a PRO si ya fue utilizada) */}
+      {!proActive && savedReferral && (
         <div
           id="card-menu-colleague-promo"
-          className="mb-3.5 w-full rounded-2xl p-3.5 sm:p-4 text-left border border-emerald-400/50 bg-[#060b14] bg-[radial-gradient(circle_at_15%_50%,rgba(16,185,129,0.28)_0%,rgba(6,11,20,0.96)_72%)] shadow-lg"
+          className={`mb-3.5 w-full rounded-2xl p-3.5 sm:p-4 text-left border shadow-lg ${
+            promoColegaUsed
+              ? 'border-amber-400/50 bg-[#0b101d] bg-[radial-gradient(circle_at_15%_50%,rgba(245,158,11,0.22)_0%,rgba(11,16,29,0.96)_72%)]'
+              : 'border-emerald-400/50 bg-[#060b14] bg-[radial-gradient(circle_at_15%_50%,rgba(16,185,129,0.28)_0%,rgba(6,11,20,0.96)_72%)]'
+          }`}
         >
           <div className="min-w-0 mb-2.5">
-            <span className="block text-[10.5px] font-extrabold uppercase tracking-wider text-emerald-300 leading-snug">
+            <span
+              className={`block text-[10.5px] font-extrabold uppercase tracking-wider leading-snug ${
+                promoColegaUsed ? 'text-amber-300' : 'text-emerald-300'
+              }`}
+            >
               INVITACIÓN DE UN COLEGA · {savedReferral.refName} · Promo #{savedReferral.promoNumber}
             </span>
             <span className="block text-[14px] sm:text-[15px] font-extrabold text-white leading-snug mt-0.5">
-              Canjear mis 3 días gratis de colega
+              {promoColegaUsed
+                ? 'Tu prueba Colega de 3 días concluyó en este equipo'
+                : 'Canjear mis 3 días gratis de colega'}
             </span>
-          </div>
-          <div className="flex flex-col sm:flex-row gap-2">
-            <button
-              type="button"
-              id="btn-menu-claim-colleague-promo"
-              onClick={onClaimColleaguePromo}
-              className="flex-1 min-h-[42px] px-3.5 py-2 rounded-xl bg-emerald-400 hover:bg-emerald-300 active:scale-[0.98] text-slate-950 font-extrabold text-[12px] sm:text-[12.5px] leading-tight cursor-pointer shadow-sm transition-all text-center"
-            >
-              Solicitar PIN de promoción colega al Administrador
-            </button>
-            {onOpenPro && (
-              <button
-                type="button"
-                id="btn-menu-enter-colleague-pin"
-                onClick={onOpenPro}
-                className="sm:w-auto min-h-[40px] px-3.5 py-2 rounded-xl border border-emerald-300/45 bg-emerald-500/15 hover:bg-emerald-500/25 active:scale-[0.98] text-emerald-100 font-bold text-[12px] cursor-pointer transition-all whitespace-nowrap text-center"
-              >
-                Ya tengo mi PIN
-              </button>
+            {promoColegaUsed && (
+              <p className="m-0 mt-1 text-[11.5px] text-amber-100/90 leading-snug">
+                Este ID ya utilizó su promoción Colega de 3 días anteriormente. Adquiere un plan de 30 días, 90 días o 1 Año para continuar con todos los beneficios PRO.
+              </p>
             )}
           </div>
+          {promoColegaUsed ? (
+            <div className="flex flex-col sm:flex-row gap-2">
+              {onOpenPro && (
+                <button
+                  type="button"
+                  id="btn-menu-upgrade-pro-after-colleague"
+                  onClick={onOpenPro}
+                  className="flex-1 min-h-[44px] px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 active:scale-[0.98] text-slate-950 font-extrabold text-[13px] leading-tight cursor-pointer shadow-sm transition-all text-center"
+                >
+                  Actualizar a PRO
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col sm:flex-row gap-2">
+              {onClaimColleaguePromo && (
+                <button
+                  type="button"
+                  id="btn-menu-claim-colleague-promo"
+                  onClick={onClaimColleaguePromo}
+                  className="flex-1 min-h-[42px] px-3.5 py-2 rounded-xl bg-emerald-400 hover:bg-emerald-300 active:scale-[0.98] text-slate-950 font-extrabold text-[12px] sm:text-[12.5px] leading-tight cursor-pointer shadow-sm transition-all text-center"
+                >
+                  Solicitar PIN de promoción colega al Administrador
+                </button>
+              )}
+              {onOpenPro && (
+                <button
+                  type="button"
+                  id="btn-menu-enter-colleague-pin"
+                  onClick={onOpenPro}
+                  className="sm:w-auto min-h-[40px] px-3.5 py-2 rounded-xl border border-emerald-300/45 bg-emerald-500/15 hover:bg-emerald-500/25 active:scale-[0.98] text-emerald-100 font-bold text-[12px] cursor-pointer transition-all whitespace-nowrap text-center"
+                >
+                  Ya tengo mi PIN
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
 

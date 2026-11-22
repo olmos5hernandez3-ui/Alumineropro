@@ -28,6 +28,13 @@ import {
   normalizeDeviceIdInput,
   formatActivationKeyInput,
   validatePiezaDimensiones,
+  validateRealisticOpeningDimensions,
+  generateRandomMxPhonePlaceholder,
+  MEXICO_ALUMINUM_CATEGORIES,
+  MEXICO_ALUMINUM_SYSTEMS,
+  isOneYearProPlan,
+  computeSalesAnalytics,
+  VIDRIOS_CONFIG,
   type AperturaVentanaId,
 } from './alumineroLogic';
 import {
@@ -78,9 +85,11 @@ import {
 } from './pdfHeaderUtils';
 import {
   buildLevantamientoWhatsappText,
+  LEV_COLOR_VIDRIO_OPTS,
   LEV_KEYS,
   mergeLevantamientosBackup,
   normalizeLevantamientoDraft,
+  resolveLineaFromLevantamiento,
 } from './levantamientoLogic';
 import {
   computeCorredizaLeafTranslateX,
@@ -2156,3 +2165,141 @@ test('58. Pila LIFO de capas de historial cierra solo la capa superior (PDF shee
   assert.deepEqual(closed, ['signature', 'sheet']);
   assert.equal(consumeTopHistoryOverlay(), false);
 });
+
+test('59. Análisis de Ventas: ticket promedio, tasa de aprobación y materiales más consumidos', () => {
+  const res = computeSalesAnalytics({
+    cotizacionesGuardadas: [
+      {
+        id: 'q1',
+        folio: 'COT-2026-001',
+        fecha: '20/11/2026',
+        cliente: 'Casa Sur',
+        total: 15000,
+        piezasCount: 4,
+        estado: 'aprobada',
+        materiales: [
+          { id: 'cabezal', nombre: 'Cabezal 3" (7836)', codigo: '7836', linea: 'Línea 3"', cantidad: 6, unidad: 'tramos' },
+          { id: 'riel', nombre: 'Riel 3" (7857)', codigo: '7857', linea: 'Línea 3"', cantidad: 4, unidad: 'tramos' },
+        ],
+      },
+      {
+        id: 'q2',
+        folio: 'COT-2026-002',
+        fecha: '21/11/2026',
+        cliente: 'Depto Centro',
+        total: 25000,
+        piezasCount: 5,
+        estado: 'aprobada',
+        materiales: [
+          { id: 'cabezal', nombre: 'Cabezal 3" (7836)', codigo: '7836', linea: 'Línea 3"', cantidad: 8, unidad: 'tramos' },
+          { id: 'jamba', nombre: 'Jamba 3" (7825)', codigo: '7825', linea: 'Línea 3"', cantidad: 10, unidad: 'tramos' },
+        ],
+      },
+      {
+        id: 'q3',
+        folio: 'COT-2026-003',
+        fecha: '21/11/2026',
+        cliente: 'No aprobada',
+        total: 99000,
+        piezasCount: 10,
+        estado: 'enviada',
+        materiales: [
+          { id: 'ignorado', nombre: 'Perfil Ignorado', linea: 'Línea 2"', cantidad: 99, unidad: 'tramos' },
+        ],
+      },
+      {
+        id: 'q4',
+        folio: 'COT-2026-004',
+        fecha: '21/11/2026',
+        cliente: 'Rechazada',
+        total: 50000,
+        piezasCount: 2,
+        estado: 'rechazada',
+      },
+    ],
+  });
+
+  assert.equal(res.approvedCount, 2);
+  assert.equal(res.sentCount, 1);
+  assert.equal(res.rejectedCount, 1);
+  assert.equal(res.approvalRatePct, 50);
+  assert.equal(res.totalApprovedRevenue, 40000);
+  assert.equal(res.averageTicket, 20000);
+  assert.equal(res.minTicket, 15000);
+  assert.equal(res.maxTicket, 25000);
+  assert.equal(res.topMaterials[0].nombre, 'Cabezal 3" (7836)');
+  assert.equal(res.topMaterials[0].cantidad, 14);
+  assert.equal(res.topMaterials[1].nombre, 'Jamba 3" (7825)');
+  assert.equal(res.topMaterials[1].cantidad, 10);
+  assert.ok(!res.topMaterials.some((m) => m.nombre === 'Perfil Ignorado'));
+});
+
+test('60. Levantamiento Rápido: validación realista bloquea 10×11 cm y acepta medidas de obra reales', () => {
+  const absurd = validateRealisticOpeningDimensions(10, 11, 'Ventana Corrediza');
+  assert.equal(absurd.valid, false);
+  assert.ok(absurd.error && absurd.error.length > 10);
+
+  const tinyWindow = validateRealisticOpeningDimensions(25, 25, 'Ventana Corrediza');
+  assert.equal(tinyWindow.valid, false);
+
+  const goodWindow = validateRealisticOpeningDimensions(120, 100, 'Ventana Corrediza');
+  assert.equal(goodWindow.valid, true);
+
+  const tinyDoor = validateRealisticOpeningDimensions(40, 120, 'Puerta Batiente');
+  assert.equal(tinyDoor.valid, false);
+
+  const goodDoor = validateRealisticOpeningDimensions(90, 210, 'Puerta Batiente');
+  assert.equal(goodDoor.valid, true);
+
+  const giant = validateRealisticOpeningDimensions(750, 200, 'Ventana Fija');
+  assert.equal(giant.valid, false);
+});
+
+test('61. Teléfono placeholder aleatorio MX (10 dígitos, nunca 735-163-1532)', () => {
+  for (let i = 0; i < 15; i += 1) {
+    const ph = generateRandomMxPhonePlaceholder(() => (i * 0.13 + 0.05) % 0.99);
+    const digits = ph.replace(/\D/g, '');
+    assert.equal(digits.length, 10);
+    assert.ok(!ph.includes('735-163-1532') && !digits.includes('7351631532'));
+  }
+});
+
+test('62. Catálogo completo de líneas de aluminio en México y detección de plan 1 año', () => {
+  const cats = new Set(MEXICO_ALUMINUM_CATEGORIES.map((c) => c.id));
+  assert.ok(cats.has('nacional'));
+  assert.ok(cats.has('espanola'));
+  assert.ok(cats.has('europea'));
+  assert.ok(cats.has('estructural'));
+
+  const nombres = MEXICO_ALUMINUM_SYSTEMS.map((s) => s.nombre).join(' | ');
+  for (const token of ['1 ⅜"', '1 ½"', '2"', '3"', '4"', '4 ½"', '1400', '3500', '4000', '4600', '10000', 'Muro Cortina', 'PTR', 'V-Slot']) {
+    assert.ok(nombres.includes(token), `Falta sistema comercial: ${token}`);
+  }
+
+  assert.equal(
+    resolveLineaFromLevantamiento({ id: '1', tipo: 'Ventana Corrediza', area: 'Sala', anchoCm: 120, altoCm: 100, cant: 1, notas: '', foto: '', lineaPerfil: 'Línea Española 4600' }).linea,
+    'europea'
+  );
+  assert.equal(
+    resolveLineaFromLevantamiento({ id: '2', tipo: 'Ventana Corrediza', area: 'Sala', anchoCm: 120, altoCm: 100, cant: 1, notas: '', foto: '', lineaPerfil: 'Eurovent Serie 70' }).linea,
+    'europea'
+  );
+  assert.equal(
+    resolveLineaFromLevantamiento({ id: '3', tipo: 'Ventana Corrediza', area: 'Sala', anchoCm: 120, altoCm: 100, cant: 1, notas: '', foto: '', lineaPerfil: 'Nacional 2"' }).linea,
+    '2'
+  );
+
+  assert.equal(isOneYearProPlan({ planCode: 'A' }), true);
+  assert.equal(isOneYearProPlan({ planCode: 'M' }), false);
+  assert.equal(isOneYearProPlan({ dias: 365 }), true);
+  assert.equal(isOneYearProPlan({ planLabel: 'Plan 1 Año PRO' }), true);
+});
+
+test('63. Vidrio claro por defecto en todos los catálogos de vidrio', () => {
+  assert.equal(VIDRIOS_CONFIG.claro6.nombre, 'Vidrio claro 6 mm');
+  assert.equal(VIDRIOS_CONFIG.claro4.nombre, 'Vidrio claro 4 mm');
+  const flotClaro = PANEL_RELLENO_CATALOGO.find((p) => p.id === 'flot-claro');
+  assert.equal(flotClaro?.nombre, 'Vidrio claro');
+  assert.equal(LEV_COLOR_VIDRIO_OPTS[0].label, 'Vidrio claro');
+});
+

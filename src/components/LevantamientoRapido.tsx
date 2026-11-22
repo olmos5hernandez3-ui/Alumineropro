@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlumBridgePayload,
   buildBridgePayloadFromPieza,
@@ -24,7 +24,14 @@ import {
   overwriteHojaProyectoInStorage,
   resumenLevantamiento,
 } from '../utils/levantamientoLogic';
-import { formatClientPhoneInput } from '../utils/alumineroLogic';
+import {
+  formatClientPhoneInput,
+  generateRandomMxPhonePlaceholder,
+  MEXICO_ALUMINUM_CATEGORIES,
+  MEXICO_ALUMINUM_SYSTEMS,
+  MexicoAluminumCategoryId,
+  validateRealisticOpeningDimensions,
+} from '../utils/alumineroLogic';
 import {
   ClienteGuardado,
   loadClientes,
@@ -76,7 +83,7 @@ function createEmptyForm(
     cant: 1,
     lineaPerfil: specs?.lineaPerfil || getDefaultLineaPerfilForTipo(tipo),
     colorAluminio: specs?.colorAluminio || 'Natural',
-    colorVidrio: specs?.colorVidrio || 'Claro',
+    colorVidrio: specs?.colorVidrio || 'Vidrio claro',
     mosquitero: specs?.mosquitero || 'Sin mosquitero',
     notas: '',
     foto: '',
@@ -138,6 +145,10 @@ export const LevantamientoRapido: React.FC<Props> = ({
     typeof window !== 'undefined' ? loadClientes() : []
   );
   const [showCliSuggestions, setShowCliSuggestions] = useState(false);
+  const [showMexicoLines, setShowMexicoLines] = useState(false);
+  const [mexicoLineCat, setMexicoLineCat] = useState<MexicoAluminumCategoryId>('nacional');
+  const [customLineaText, setCustomLineaText] = useState('');
+  const randomPhonePlaceholder = useMemo(() => generateRandomMxPhonePlaceholder(), []);
   const [confirmNewOpen, setConfirmNewOpen] = useState(false);
   const [confirmDeletePieceId, setConfirmDeletePieceId] = useState<string | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -170,6 +181,11 @@ export const LevantamientoRapido: React.FC<Props> = ({
     setDraft(updated);
     if (!safeSave(LEV_KEYS.draft, updated)) {
       notify('No hay espacio suficiente para guardar. Elimina fotos o levantamientos antiguos.');
+    }
+    try {
+      window.dispatchEvent(new CustomEvent('aluminero:lev-draft-updated'));
+    } catch {
+      // ignorar
     }
     return updated;
   }, [notify]);
@@ -356,6 +372,17 @@ export const LevantamientoRapido: React.FC<Props> = ({
       setLocalError('Captura ancho y alto válidos.');
       return;
     }
+    const dimCheck = validateRealisticOpeningDimensions(anchoCm, altoCm, form.tipo);
+    if (!dimCheck.valid) {
+      const msg = dimCheck.error || 'Medidas inválidas para el tipo de pieza seleccionado.';
+      setLocalError(msg);
+      notify(msg);
+      return;
+    }
+    const lineaFinal =
+      form.lineaPerfil === 'Otra' && customLineaText.trim()
+        ? customLineaText.trim()
+        : form.lineaPerfil;
     const pieza: LevantamientoPieza = {
       id: form.editId || `lv-${Date.now()}-${Math.floor(Math.random() * 9999)}`,
       tipo: form.tipo,
@@ -363,27 +390,33 @@ export const LevantamientoRapido: React.FC<Props> = ({
       anchoCm,
       altoCm,
       cant: Math.max(1, form.cant),
-      lineaPerfil: form.lineaPerfil,
+      lineaPerfil: lineaFinal,
       colorAluminio: form.colorAluminio,
-      colorVidrio: form.colorVidrio,
+      colorVidrio: form.colorVidrio || 'Vidrio claro',
       mosquitero: form.mosquitero,
       notas: form.notas.trim(),
       foto: form.foto,
     };
+    const isEditing = Boolean(form.editId);
     const nextPiezas = form.editId
       ? draft.piezas.map((x) => (x.id === form.editId ? pieza : x))
       : [...draft.piezas, pieza];
     persistDraft({ ...draft, piezas: nextPiezas });
     setForm(
       createEmptyForm(form.u, form.tipo, {
-        lineaPerfil: form.lineaPerfil,
+        lineaPerfil: lineaFinal,
         colorAluminio: form.colorAluminio,
-        colorVidrio: form.colorVidrio,
+        colorVidrio: form.colorVidrio || 'Vidrio claro',
         mosquitero: form.mosquitero,
       })
     );
     setLocalError(null);
-    if (rootRef.current) rootRef.current.scrollTop = 0;
+    notify(
+      isEditing
+        ? 'Cambios guardados en la pieza.'
+        : `Medida #${nextPiezas.length} agregada. Puedes seguir capturando más medidas.`,
+      true
+    );
   };
 
   const handlePhotoUpload = (file: File) => {
@@ -730,7 +763,7 @@ export const LevantamientoRapido: React.FC<Props> = ({
                     telefono: formatClientPhoneInput(e.target.value, draft.telefono ?? ''),
                   })
                 }
-                placeholder="Ej. 735-163-1532"
+                placeholder={randomPhonePlaceholder}
               />
 
               <label htmlFor="lv-dir">Dirección / ubicación / referencia (opcional)</label>
@@ -840,7 +873,7 @@ export const LevantamientoRapido: React.FC<Props> = ({
                 </button>
               </div>
 
-              <label>Línea de perfil</label>
+              <label>Línea de perfil (México: Nacional, Española, Europea, Estructural)</label>
               <div className="lev-chip-group" role="group" aria-label="Línea de perfil">
                 {LEV_LINEA_PERFIL_OPTS.map((opt) => {
                   const active = form.lineaPerfil === opt.label;
@@ -850,13 +883,103 @@ export const LevantamientoRapido: React.FC<Props> = ({
                       type="button"
                       className={`lev-chip${active ? ' on' : ''}`}
                       aria-pressed={active}
-                      onClick={() => setForm((prev) => ({ ...prev, lineaPerfil: opt.label }))}
+                      onClick={() => {
+                        setForm((prev) => ({ ...prev, lineaPerfil: opt.label }));
+                        if (opt.id === 'otra') setShowMexicoLines(true);
+                      }}
                     >
                       {opt.label}
                     </button>
                   );
                 })}
+                <button
+                  type="button"
+                  id="lv-btn-mexico-lines"
+                  className={`lev-chip${showMexicoLines ? ' on' : ''}`}
+                  aria-expanded={showMexicoLines}
+                  onClick={() => setShowMexicoLines((prev) => !prev)}
+                >
+                  {showMexicoLines ? '▲ Ocultar líneas MX' : '🇲🇽 Más líneas MX'}
+                </button>
               </div>
+
+              {form.lineaPerfil &&
+                !LEV_LINEA_PERFIL_OPTS.some((o) => o.label === form.lineaPerfil) && (
+                  <div
+                    style={{
+                      marginTop: '6px',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      color: '#38bdf8',
+                    }}
+                  >
+                    Línea seleccionada: {form.lineaPerfil}
+                  </div>
+                )}
+
+              {showMexicoLines && (
+                <div
+                  id="lv-mexico-lines-panel"
+                  style={{
+                    marginTop: '8px',
+                    padding: '10px',
+                    borderRadius: '12px',
+                    background: 'rgba(15, 23, 42, 0.72)',
+                    border: '1px solid rgba(56, 189, 248, 0.35)',
+                  }}
+                >
+                  <div className="lev-chip-group" style={{ marginBottom: '8px' }}>
+                    {MEXICO_ALUMINUM_CATEGORIES.map((cat) => (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        className={`lev-chip${mexicoLineCat === cat.id ? ' on' : ''}`}
+                        onClick={() => setMexicoLineCat(cat.id)}
+                      >
+                        {cat.id === 'nacional'
+                          ? 'Nacional (90°)'
+                          : cat.id === 'espanola'
+                            ? 'Española (45°)'
+                            : cat.id === 'europea'
+                              ? 'Europea (45°)'
+                              : 'Estructural / Ind.'}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="lev-chip-group">
+                    {MEXICO_ALUMINUM_SYSTEMS.filter((s) => s.categoria === mexicoLineCat).map((sys) => {
+                      const active = form.lineaPerfil === sys.quickLabel;
+                      return (
+                        <button
+                          key={sys.id}
+                          type="button"
+                          className={`lev-chip${active ? ' on' : ''}`}
+                          title={`${sys.nombre} · ${sys.tipoCorte} · ${sys.cristalRecomendado}`}
+                          onClick={() => {
+                            setForm((prev) => ({ ...prev, lineaPerfil: sys.quickLabel }));
+                            setCustomLineaText('');
+                          }}
+                        >
+                          {sys.quickLabel}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <input
+                    id="lv-custom-linea"
+                    type="text"
+                    value={customLineaText}
+                    onChange={(e) => {
+                      setCustomLineaText(e.target.value);
+                      if (e.target.value.trim()) {
+                        setForm((prev) => ({ ...prev, lineaPerfil: e.target.value.trim() }));
+                      }
+                    }}
+                    placeholder="O escribe otra línea/serie (ej. Española 4600, Eurovent 100 mm, PTR 2x1)..."
+                    style={{ marginTop: '8px' }}
+                  />
+                </div>
+              )}
 
               <label>Color de aluminio</label>
               <div className="lev-chip-group" role="group" aria-label="Color de aluminio">
@@ -974,7 +1097,7 @@ export const LevantamientoRapido: React.FC<Props> = ({
 
               <div className="grid" style={{ marginTop: '12px' }}>
                 <button type="button" className="or" id="lv-btn-add" onClick={handleAddOrUpdatePieza}>
-                  {form.editId ? '💾 Guardar cambios' : '＋ Agregar Medida'}
+                  {form.editId ? '💾 Guardar cambios' : '＋ Agregar más medidas'}
                 </button>
                 {form.editId && (
                   <button
@@ -989,7 +1112,7 @@ export const LevantamientoRapido: React.FC<Props> = ({
             </div>
 
             <div className="card">
-              <b>Piezas del levantamiento</b>
+              <b>Piezas del levantamiento ({draft.piezas.length})</b>
               {draft.piezas.length === 0 ? (
                 <div className="pv" style={{ color: '#94a3b8', padding: '10px 0' }}>
                   Aún no has agregado medidas.

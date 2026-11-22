@@ -10,7 +10,56 @@ import {
   optimizarVidrio2D,
   PiezaVidrioInput,
 } from '../utils/glassOptimizer2D';
+import {
+  LEV_KEYS,
+  LevantamientoDraft,
+  normalizeLevantamientoDraft,
+} from '../utils/levantamientoLogic';
 import { HojaVidrioItem } from '../utils/storageHelpers';
+
+function loadLatestLevantamientoForGlass(): LevantamientoDraft | null {
+  if (typeof window === 'undefined') return null;
+  for (const key of [LEV_KEYS.activo, LEV_KEYS.draft]) {
+    try {
+      const raw = window.localStorage.getItem(key);
+      if (!raw) continue;
+      const norm = normalizeLevantamientoDraft(JSON.parse(raw));
+      if (norm.piezas.length > 0) return norm;
+    } catch {
+      // ignorar
+    }
+  }
+  return null;
+}
+
+function buildGlassPiezasFromLevantamiento(lev: LevantamientoDraft): PiezaVidrioInput[] {
+  const result: PiezaVidrioInput[] = [];
+  lev.piezas.forEach((p, idx) => {
+    const vidRaw = String(p.colorVidrio || 'Vidrio claro').trim();
+    if (vidRaw.toLowerCase() === 'sin vidrio') return;
+    const tipoNombre =
+      vidRaw.toLowerCase() === 'claro' || vidRaw.toLowerCase() === 'vidrio claro'
+        ? 'Vidrio claro 6 mm'
+        : `${vidRaw} 6 mm`;
+    const isCorrediza =
+      p.tipo.toLowerCase().includes('corrediza') || p.tipo.toLowerCase().includes('cancel');
+    const panesPerUnit = isCorrediza ? 2 : 1;
+    const glassW = isCorrediza
+      ? Math.max(15, round2((p.anchoCm - 5.5) / 2))
+      : Math.max(15, round2(p.anchoCm - 5.5));
+    const glassH = Math.max(15, round2(p.altoCm - 14));
+    result.push({
+      id: `v-lev-${p.id}-${idx}`,
+      etiqueta: `${p.area ? `${p.area} · ` : ''}${p.tipo}`,
+      tipoNombre,
+      anchoCm: glassW,
+      altoCm: glassH,
+      cantidad: Math.max(1, (Number(p.cant) || 1) * panesPerUnit),
+      permitirRotacion: !esMaterialDireccional(tipoNombre),
+    });
+  });
+  return result;
+}
 
 interface VidrioOptimizerViewProps {
   hojasVidrio: HojaVidrioItem[];
@@ -56,20 +105,32 @@ export const VidrioOptimizerView: React.FC<VidrioOptimizerViewProps> = ({
   const hojaPartidas = Array.isArray(rawHojaPartidas) ? rawHojaPartidas : [];
   const piezasIniciales = Array.isArray(rawPiezasIniciales) ? rawPiezasIniciales : [];
 
-  const [piezas, setPiezas] = useState<PiezaVidrioInput[]>(() =>
-    piezasIniciales.length > 0
-      ? piezasIniciales
-      : [
-          {
-            id: 'v-demo-1',
-            etiqueta: 'Ventana Sala',
-            tipoNombre: 'Claro 6 mm',
-            anchoCm: 56.5,
-            altoCm: 82.0,
-            cantidad: 2,
-          },
-        ]
-  );
+  const initialLev = useMemo(() => loadLatestLevantamientoForGlass(), []);
+  const [importedClient, setImportedClient] = useState<{
+    cliente: string;
+    telefono?: string;
+    direccion?: string;
+    fecha?: string;
+  } | null>(() => {
+    if (piezasIniciales.length > 0) return null;
+    if (initialLev && initialLev.piezas.length > 0) {
+      return {
+        cliente: initialLev.cliente || 'Cliente de Levantamiento',
+        telefono: initialLev.telefono,
+        direccion: initialLev.direccion,
+        fecha: initialLev.fecha,
+      };
+    }
+    return null;
+  });
+
+  const [piezas, setPiezas] = useState<PiezaVidrioInput[]>(() => {
+    if (piezasIniciales.length > 0) return piezasIniciales;
+    if (initialLev && initialLev.piezas.length > 0) {
+      return buildGlassPiezasFromLevantamiento(initialLev);
+    }
+    return [];
+  });
 
   useEffect(() => {
     if (piezasIniciales.length > 0) {
@@ -77,12 +138,68 @@ export const VidrioOptimizerView: React.FC<VidrioOptimizerViewProps> = ({
     }
   }, [piezasIniciales]);
 
-  // Nueva pieza manual
+  useEffect(() => {
+    const syncLev = () => {
+      const lev = loadLatestLevantamientoForGlass();
+      if (!lev || lev.piezas.length === 0) return;
+      setImportedClient({
+        cliente: lev.cliente || 'Cliente de Levantamiento',
+        telefono: lev.telefono,
+        direccion: lev.direccion,
+        fecha: lev.fecha,
+      });
+      setPiezas(buildGlassPiezasFromLevantamiento(lev));
+    };
+    window.addEventListener('aluminero:lev-draft-updated', syncLev);
+    window.addEventListener('aluminero:lev-activo-updated', syncLev);
+    return () => {
+      window.removeEventListener('aluminero:lev-draft-updated', syncLev);
+      window.removeEventListener('aluminero:lev-activo-updated', syncLev);
+    };
+  }, []);
+
+  // Nueva pieza manual (campos limpios con placeholders en instalación nueva)
   const [newEtiqueta, setNewEtiqueta] = useState('');
-  const [newTipo, setNewTipo] = useState('Claro 6 mm');
-  const [newAncho, setNewAncho] = useState('80');
-  const [newAlto, setNewAlto] = useState('110');
-  const [newCantidad, setNewCantidad] = useState(2);
+  const [newTipo, setNewTipo] = useState('Vidrio claro 6 mm');
+  const [newAncho, setNewAncho] = useState('');
+  const [newAlto, setNewAlto] = useState('');
+  const [newCantidad, setNewCantidad] = useState(1);
+
+  const handleLimpiarTodo = () => {
+    setPiezas([]);
+    setImportedClient(null);
+    setFiltrarTipo('todos');
+    setNewEtiqueta('');
+    setNewAncho('');
+    setNewAlto('');
+    setNewCantidad(1);
+    setNewTipo('Vidrio claro 6 mm');
+    onShowToast('Datos limpiados. Listo para ingresar medidas manualmente.');
+  };
+
+  const handleImportarLevantamiento = () => {
+    const lev = loadLatestLevantamientoForGlass();
+    if (!lev || lev.piezas.length === 0) {
+      onShowToast('No hay medidas en Levantamiento Rápido para importar');
+      return;
+    }
+    const nextPiezas = buildGlassPiezasFromLevantamiento(lev);
+    if (nextPiezas.length === 0) {
+      onShowToast('Las piezas del levantamiento están marcadas sin vidrio');
+      return;
+    }
+    setImportedClient({
+      cliente: lev.cliente || 'Cliente de Levantamiento',
+      telefono: lev.telefono,
+      direccion: lev.direccion,
+      fecha: lev.fecha,
+    });
+    setPiezas(nextPiezas);
+    onShowToast(
+      `${nextPiezas.length} medida(s) importadas de ${lev.cliente || 'Levantamiento Rápido'}`,
+      true
+    );
+  };
 
   // Parámetros 2D
   const [filtrarTipo, setFiltrarTipo] = useState<string>('todos');
@@ -111,7 +228,7 @@ export const VidrioOptimizerView: React.FC<VidrioOptimizerViewProps> = ({
         : undefined;
       for (const vid of part.despiece?.vidrios || []) {
         if (vid.tipo !== 'vidrio') continue;
-        const tipoFinal = vid.espesorLabel || fallbackTipo || 'Claro 6 mm';
+        const tipoFinal = vid.espesorLabel || fallbackTipo || 'Vidrio claro 6 mm';
         const canRot =
           typeof vid.permitirRotacion === 'boolean'
             ? vid.permitirRotacion
@@ -146,7 +263,7 @@ export const VidrioOptimizerView: React.FC<VidrioOptimizerViewProps> = ({
       onShowToast('Ingresa ancho y alto válidos en cm (mínimo 5 cm)');
       return;
     }
-    const tipoClean = newTipo.trim() || 'Claro 6 mm';
+    const tipoClean = newTipo.trim() || 'Vidrio claro 6 mm';
     setPiezas((prev) => [
       ...prev,
       {
@@ -172,7 +289,7 @@ export const VidrioOptimizerView: React.FC<VidrioOptimizerViewProps> = ({
         permitirRotacion,
         filtrarTipo,
         hojaRespaldo: {
-          tipoNombre: filtrarTipo !== 'todos' ? filtrarTipo : piezas[0]?.tipoNombre || 'Claro 6 mm',
+          tipoNombre: filtrarTipo !== 'todos' ? filtrarTipo : piezas[0]?.tipoNombre || 'Vidrio claro 6 mm',
           anchoCm: Math.max(40, Number(respaldoW) || 260),
           altoCm: Math.max(40, Number(respaldoH) || 180),
         },
@@ -195,11 +312,27 @@ export const VidrioOptimizerView: React.FC<VidrioOptimizerViewProps> = ({
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
+            id="btn-vidrio-importar-lev"
+            onClick={handleImportarLevantamiento}
+            className="min-h-[40px] px-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-[12px] font-black cursor-pointer"
+          >
+            📐 Importar Levantamiento
+          </button>
+          <button
+            type="button"
             id="btn-vidrio-importar-hoja"
             onClick={handleImportarDesdeHoja}
             className="min-h-[40px] px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[12px] font-extrabold cursor-pointer"
           >
             📥 Importar de Cotización ({hojaPartidas.length})
+          </button>
+          <button
+            type="button"
+            id="btn-vidrio-limpiar"
+            onClick={handleLimpiarTodo}
+            className="min-h-[40px] px-3 rounded-xl border border-rose-400/60 bg-rose-500/20 hover:bg-rose-500/30 text-rose-100 text-[12px] font-extrabold cursor-pointer"
+          >
+            🧹 Limpiar
           </button>
           <button
             type="button"
@@ -210,6 +343,40 @@ export const VidrioOptimizerView: React.FC<VidrioOptimizerViewProps> = ({
           </button>
         </div>
       </div>
+
+      {importedClient && (
+        <div
+          id="vidrio-imported-client-banner"
+          className="mb-4 rounded-2xl border border-emerald-400/50 bg-emerald-950/50 px-4 py-3 flex flex-wrap items-center justify-between gap-2.5"
+        >
+          <div className="min-w-0">
+            <div className="text-[11px] font-extrabold uppercase tracking-wider text-emerald-300">
+              ✅ Datos importados automáticamente de Levantamiento Rápido
+            </div>
+            <div className="text-[14.5px] font-extrabold text-white mt-0.5 truncate">
+              Cliente: {importedClient.cliente}
+            </div>
+            {(importedClient.telefono || importedClient.direccion || importedClient.fecha) && (
+              <div className="text-[12px] text-emerald-100/85 mt-0.5 truncate">
+                {[
+                  importedClient.telefono ? `Tel: ${importedClient.telefono}` : '',
+                  importedClient.direccion || '',
+                  importedClient.fecha ? `Fecha: ${importedClient.fecha}` : '',
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </div>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={handleLimpiarTodo}
+            className="min-h-[36px] px-3 rounded-xl border border-white/25 bg-white/10 hover:bg-white/20 text-white text-[12px] font-extrabold cursor-pointer"
+          >
+            Limpiar para entrada manual
+          </button>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
         {/* Columna izquierda: Lista de piezas y configuración */}
@@ -268,6 +435,7 @@ export const VidrioOptimizerView: React.FC<VidrioOptimizerViewProps> = ({
                     step={0.1}
                     value={newAncho}
                     onChange={(e) => setNewAncho(e.target.value)}
+                    placeholder="Ej. 80"
                     className="w-full min-h-[38px] rounded-xl border border-slate-300 px-2.5 mono text-[13px] font-bold bg-white"
                   />
                 </div>
@@ -283,6 +451,7 @@ export const VidrioOptimizerView: React.FC<VidrioOptimizerViewProps> = ({
                     step={0.1}
                     value={newAlto}
                     onChange={(e) => setNewAlto(e.target.value)}
+                    placeholder="Ej. 110"
                     className="w-full min-h-[38px] rounded-xl border border-slate-300 px-2.5 mono text-[13px] font-bold bg-white"
                   />
                 </div>

@@ -102,6 +102,14 @@
           "type": "string",
           "description": "Correo de respaldo en la nube vinculado al equipo.",
           "maxLength": 160
+        },
+        "promo_colega_usada": {
+          "type": "boolean",
+          "description": "Bandera booleana permanente que indica si el ID ya utilizó su promoción Colega de 3 días gratis."
+        },
+        "fecha_activacion_colega": {
+          "type": "number",
+          "description": "Marca de tiempo en milisegundos (o null) en que se activó por primera vez la promoción Colega de 3 días."
         }
       },
       "required": [

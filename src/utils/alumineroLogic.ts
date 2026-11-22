@@ -301,8 +301,8 @@ export interface VidrioConfig {
 }
 
 export const VIDRIOS_CONFIG: Record<VidrioId, VidrioConfig> = {
-  claro4: { id: 'claro4', nombre: 'Claro 4 mm', extraM2: -150, swatch: '#DBEAFE', fill: '#DBEAFE' },
-  claro6: { id: 'claro6', nombre: 'Claro 6 mm', extraM2: 0, swatch: '#BAE6FD', fill: '#BAE6FD' },
+  claro4: { id: 'claro4', nombre: 'Vidrio claro 4 mm', extraM2: -150, swatch: '#DBEAFE', fill: '#DBEAFE' },
+  claro6: { id: 'claro6', nombre: 'Vidrio claro 6 mm', extraM2: 0, swatch: '#BAE6FD', fill: '#BAE6FD' },
   filtrasol6: { id: 'filtrasol6', nombre: 'Filtrasol 6 mm', extraM2: 280, swatch: '#64748B', fill: '#64748B' },
   tintex6: { id: 'tintex6', nombre: 'Tintex 6 mm', extraM2: 320, swatch: '#6EE7B7', fill: '#6EE7B7' },
 };
@@ -348,7 +348,7 @@ export const PANEL_RELLENO_CATALOGO: PanelRellenoItem[] = [
   {
     id: 'flot-claro',
     categoria: 'flotado',
-    nombre: 'Claro',
+    nombre: 'Vidrio claro',
     descripcion: 'Cristal flotado transparente de alta claridad para ventana o puerta.',
     espesoresMm: [3, 4, 6, 9, 12],
     defaultEspesorMm: 6,
@@ -3081,6 +3081,24 @@ export interface CloudDeviceRecord {
   trialActive?: boolean;
   adminAssigned?: boolean;
   linkedEmail?: string;
+  promo_colega_usada?: boolean;
+  fecha_activacion_colega?: number | null;
+}
+
+export const PROMO_COLEGA_ALREADY_USED_ERROR =
+  'Este ID ya utilizó su promoción Colega de 3 días anteriormente. Para continuar disfrutando los beneficios, adquiere un plan de 30 días, 90 días o 1 Año';
+
+export function isColleaguePromoPlan(
+  planCode?: string | null,
+  customDays?: number | null,
+  keyCode?: string | null
+): boolean {
+  const code = String(planCode || '').trim().toUpperCase();
+  const key = String(keyCode || '').trim().toUpperCase();
+  if (code === 'G' || code === 'D3') return true;
+  if (typeof customDays === 'number' && customDays === 3) return true;
+  if (/^AP-G-/i.test(key) || /^AP-D3-/i.test(key)) return true;
+  return false;
 }
 
 export function isUnassignedAutoTrialDevice(
@@ -3598,4 +3616,579 @@ export function validatePiezaDimensiones(
   }
   return { valid: true };
 }
+
+// ==================== LÍNEAS Y PERFILES COMERCIALES DE MÉXICO ====================
+
+export type MexicoAluminumCategoryId = 'nacional' | 'espanola' | 'europea' | 'estructural';
+
+export interface MexicoAluminumSystemItem {
+  id: string;
+  categoria: MexicoAluminumCategoryId;
+  nombre: string;
+  fabricantes: string;
+  tipoCorte: string;
+  cristalRecomendado: string;
+  aplicacion: string;
+  quickLabel: string;
+}
+
+export interface MexicoAluminumCategoryMeta {
+  id: MexicoAluminumCategoryId;
+  titulo: string;
+  subtitulo: string;
+  corteBadge: string;
+  accentClass: string;
+}
+
+export const MEXICO_ALUMINUM_CATEGORIES: MexicoAluminumCategoryMeta[] = [
+  {
+    id: 'nacional',
+    titulo: 'Línea Nacional (Tradicional / Panorama)',
+    subtitulo: 'Cuprum, Indalum, Alumer · 1 ⅜", 1 ½", 2", 3", 4" y 4 ½"',
+    corteBadge: 'Cortes rectos a 90°',
+    accentClass: 'blue',
+  },
+  {
+    id: 'espanola',
+    titulo: 'Línea Española (Extrusiones Metálicas)',
+    subtitulo: 'Series 1400, 3500, 4000, 4600 y 10000',
+    corteBadge: 'Cortes a 45° · Templado 6–10 mm',
+    accentClass: 'amber',
+  },
+  {
+    id: 'europea',
+    titulo: 'Línea Europea (Eurovent / Euroalum)',
+    subtitulo: 'Ligeras/medias (35–70 mm), pesadas (80–150 mm) y Muro Cortina',
+    corteBadge: 'Cortes a 45° · Doble cristal / Duovent',
+    accentClass: 'emerald',
+  },
+  {
+    id: 'estructural',
+    titulo: 'Perfiles Estructurales e Industriales',
+    subtitulo: 'PTR, ángulos, soleras, canales (U), tees (T), duelas, louvers y V-Slot',
+    corteBadge: 'Industrial / Arquitectónico',
+    accentClass: 'violet',
+  },
+];
+
+export const MEXICO_ALUMINUM_SYSTEMS: MexicoAluminumSystemItem[] = [
+  // 1. Línea Nacional (Tradicional / Panorama — Cuprum, Indalum)
+  {
+    id: 'nac-1-3-8',
+    categoria: 'nacional',
+    nombre: 'Línea Nacional 1 ⅜" (Bolsa / Fijo Ligero)',
+    fabricantes: 'Cuprum · Indalum · Panorama',
+    tipoCorte: 'Corte recto a 90°',
+    cristalRecomendado: 'Vidrio claro 3 a 6 mm',
+    aplicacion: 'Cancel de baño económico, fijos ligeros y mosquiteros.',
+    quickLabel: 'Nacional 1 ⅜"',
+  },
+  {
+    id: 'nac-1-1-2',
+    categoria: 'nacional',
+    nombre: 'Línea Nacional 1 ½" (Tradicional)',
+    fabricantes: 'Cuprum · Indalum · Panorama',
+    tipoCorte: 'Corte recto a 90°',
+    cristalRecomendado: 'Vidrio claro 4 a 6 mm',
+    aplicacion: 'Ventanas corredizas económicas, fijos y divisiones interiores.',
+    quickLabel: 'Nacional 1 ½"',
+  },
+  {
+    id: 'nac-2',
+    categoria: 'nacional',
+    nombre: 'Línea Nacional 2" (Panorama / Tradicional)',
+    fabricantes: 'Cuprum · Indalum · Alumer',
+    tipoCorte: 'Corte recto a 90°',
+    cristalRecomendado: 'Vidrio claro / Filtrasol 4 a 6 mm',
+    aplicacion: 'Ventanas residenciales estándar, puertas ligeras y guillotina.',
+    quickLabel: 'Línea 2"',
+  },
+  {
+    id: 'nac-3',
+    categoria: 'nacional',
+    nombre: 'Línea Nacional 3" (Panorama / Alumer)',
+    fabricantes: 'Cuprum · Indalum · Alumer',
+    tipoCorte: 'Corte recto a 90°',
+    cristalRecomendado: 'Vidrio claro / Templado 6 mm',
+    aplicacion: 'Ventanales corredizos, fijos 3" y cancelería residencial reforzada.',
+    quickLabel: 'Línea 3"',
+  },
+  {
+    id: 'nac-4',
+    categoria: 'nacional',
+    nombre: 'Línea Nacional 4" (Comercial)',
+    fabricantes: 'Cuprum · Indalum · Panorama',
+    tipoCorte: 'Corte recto a 90°',
+    cristalRecomendado: 'Cristal 6 a 9.5 mm / Templado',
+    aplicacion: 'Frentes comerciales, escaparates, accesos pesados y claros altos.',
+    quickLabel: 'Nacional 4"',
+  },
+  {
+    id: 'nac-4-1-2',
+    categoria: 'nacional',
+    nombre: 'Línea Nacional 4 ½" (Estructural Comercial)',
+    fabricantes: 'Cuprum · Indalum · Panorama',
+    tipoCorte: 'Corte recto a 90°',
+    cristalRecomendado: 'Cristal templado 6 a 10 mm',
+    aplicacion: 'Fachadas comerciales de gran altura y accesos de tráfico intenso.',
+    quickLabel: 'Nacional 4 ½"',
+  },
+  // 2. Línea Española (Extrusiones Metálicas)
+  {
+    id: 'esp-1400',
+    categoria: 'espanola',
+    nombre: 'Línea Española Serie 1400',
+    fabricantes: 'Extrusiones Metálicas',
+    tipoCorte: 'Corte a 45° con escuadras',
+    cristalRecomendado: 'Cristal templado 6 a 10 mm',
+    aplicacion: 'Ventanas abatibles, proyectantes y fijos perimetrales herméticos.',
+    quickLabel: 'Española S-1400',
+  },
+  {
+    id: 'esp-3500',
+    categoria: 'espanola',
+    nombre: 'Línea Española Serie 3500',
+    fabricantes: 'Extrusiones Metálicas',
+    tipoCorte: 'Corte a 45° con escuadras',
+    cristalRecomendado: 'Cristal templado 6 a 10 mm',
+    aplicacion: 'Ventanas corredizas residenciales de cierre perimetral y alta hermeticidad.',
+    quickLabel: 'Española S-3500',
+  },
+  {
+    id: 'esp-4000',
+    categoria: 'espanola',
+    nombre: 'Línea Española Serie 4000',
+    fabricantes: 'Extrusiones Metálicas',
+    tipoCorte: 'Corte a 45° con escuadras',
+    cristalRecomendado: 'Cristal templado 6 a 10 mm',
+    aplicacion: 'Puertas abatibles, fijos y ventanales comerciales de estilo español.',
+    quickLabel: 'Española S-4000',
+  },
+  {
+    id: 'esp-4600',
+    categoria: 'espanola',
+    nombre: 'Línea Española Serie 4600',
+    fabricantes: 'Extrusiones Metálicas',
+    tipoCorte: 'Corte a 45° con escuadras',
+    cristalRecomendado: 'Cristal templado 6 a 10 mm',
+    aplicacion: 'Corredizas pesadas y ventanales panorámicos con riel reforzado.',
+    quickLabel: 'Española S-4600',
+  },
+  {
+    id: 'esp-10000',
+    categoria: 'espanola',
+    nombre: 'Línea Española Serie 10000',
+    fabricantes: 'Extrusiones Metálicas',
+    tipoCorte: 'Corte a 45° con escuadras',
+    cristalRecomendado: 'Cristal templado 6 a 10 mm',
+    aplicacion: 'Puertas monumentales, canceles pesados y proyectos residenciales de lujo.',
+    quickLabel: 'Española S-10000',
+  },
+  // 3. Línea Europea (Eurovent / Euroalum)
+  {
+    id: 'eur-ligeras',
+    categoria: 'europea',
+    nombre: 'Línea Europea Series Ligeras/Medias (35, 45, 50, 60, 70 mm)',
+    fabricantes: 'Eurovent · Euroalum',
+    tipoCorte: 'Corte a 45° con escuadras de inyección',
+    cristalRecomendado: 'Cristal sencillo o Doble cristal / Duovent',
+    aplicacion: 'Ventanas corredizas, abatibles, oscilobatientes y puertas residenciales.',
+    quickLabel: 'Europea S-70 (35–70 mm)',
+  },
+  {
+    id: 'eur-35-50',
+    categoria: 'europea',
+    nombre: 'Línea Europea Serie 35 / 45 / 50 mm',
+    fabricantes: 'Eurovent · Euroalum',
+    tipoCorte: 'Corte a 45°',
+    cristalRecomendado: 'Vidrio claro 6 mm o Duovent',
+    aplicacion: 'Ventanas practicables, proyectantes y corredizas serie ligera/media.',
+    quickLabel: 'Europea 35/45/50 mm',
+  },
+  {
+    id: 'eur-60-70',
+    categoria: 'europea',
+    nombre: 'Línea Europea Serie 60 / 70 mm',
+    fabricantes: 'Eurovent · Euroalum',
+    tipoCorte: 'Corte a 45°',
+    cristalRecomendado: 'Doble cristal / Duovent hasta 24 mm',
+    aplicacion: 'Corredizas y abatibles de alto aislamiento acústico y térmico.',
+    quickLabel: 'Europea 60/70 mm',
+  },
+  {
+    id: 'eur-pesadas',
+    categoria: 'europea',
+    nombre: 'Línea Europea Series Pesadas (80, 100, 150 mm)',
+    fabricantes: 'Eurovent · Euroalum',
+    tipoCorte: 'Corte a 45° reforzado',
+    cristalRecomendado: 'Doble cristal / Duovent / Templado laminado',
+    aplicacion: 'Grandes ventanales piso a techo, corredizas elevables y puertas monumentales.',
+    quickLabel: 'Europea Pesada 80–150 mm',
+  },
+  {
+    id: 'eur-muro-cortina',
+    categoria: 'europea',
+    nombre: 'Línea Europea Muro Cortina (Fachada Integral)',
+    fabricantes: 'Eurovent · Euroalum · Cuprum',
+    tipoCorte: 'Corte a 45° / 90° estructural',
+    cristalRecomendado: 'Doble cristal / Duovent / Control solar templado',
+    aplicacion: 'Fachadas acristaladas de edificios corporativos y torres comerciales.',
+    quickLabel: 'Muro Cortina',
+  },
+  // 4. Perfiles Estructurales e Industriales
+  {
+    id: 'est-ptr',
+    categoria: 'estructural',
+    nombre: 'Tubulares de Aluminio (PTR Cuadrado / Rectangular)',
+    fabricantes: 'Cuprum · Indalum · Extrusoras MX',
+    tipoCorte: 'Corte a 90° o 45°',
+    cristalRecomendado: 'Pérgolas, portones, rejas y marcos estructurales',
+    aplicacion: 'Estructuras ligeras, pérgolas, marcos portantes y barandales.',
+    quickLabel: 'Tubular PTR',
+  },
+  {
+    id: 'est-angulos-soleras',
+    categoria: 'estructural',
+    nombre: 'Ángulos (L) y Soleras de Aluminio',
+    fabricantes: 'Cuprum · Indalum · Extrusoras MX',
+    tipoCorte: 'Corte a 90° o 45°',
+    cristalRecomendado: 'Remates, escuadras y refuerzos',
+    aplicacion: 'Remates perimetrales, molduras, soportes y escuadras de armado.',
+    quickLabel: 'Ángulo / Solera',
+  },
+  {
+    id: 'est-canales-tees',
+    categoria: 'estructural',
+    nombre: 'Canales (U) y Tees (T) de Aluminio',
+    fabricantes: 'Cuprum · Indalum · Extrusoras MX',
+    tipoCorte: 'Corte recto a 90°',
+    cristalRecomendado: 'Vidrio templado 6 a 12 mm / paneles',
+    aplicacion: 'Sujeción de cristales fijos, canceles templados, plafones y divisiones.',
+    quickLabel: 'Canal U / Tee T',
+  },
+  {
+    id: 'est-duelas-louvers',
+    categoria: 'estructural',
+    nombre: 'Duelas y Louvers Arquitectónicos',
+    fabricantes: 'Cuprum · Indalum · Alumer',
+    tipoCorte: 'Corte recto a 90°',
+    cristalRecomendado: 'Panel ciego / celosía ventilada',
+    aplicacion: 'Puertas entableradas, portones, celosías, parasoles y fachadas ventiladas.',
+    quickLabel: 'Duela / Louver',
+  },
+  {
+    id: 'est-vslot',
+    categoria: 'estructural',
+    nombre: 'Perfiles Modulares Industriales tipo V-Slot / T-Slot',
+    fabricantes: 'Extrusión Industrial MX',
+    tipoCorte: 'Corte de precisión a 90°',
+    cristalRecomendado: 'Policarbonato / acrílico / guardas',
+    aplicacion: 'Automatización, guardas industriales, mesas de corte CNC y estructuras modulares.',
+    quickLabel: 'Perfil V-Slot',
+  },
+];
+
+// ==================== VALIDACIÓN REALISTA DE MEDIDAS (LEVANTAMIENTO) ====================
+
+export function validateRealisticOpeningDimensions(
+  anchoCm: number,
+  altoCm: number,
+  tipo: string = 'Ventana Corrediza'
+): DimensionValidationResult {
+  const ancho = Number(anchoCm);
+  const alto = Number(altoCm);
+  if (!Number.isFinite(ancho) || !Number.isFinite(alto) || ancho <= 0 || alto <= 0) {
+    return {
+      valid: false,
+      error: 'Medidas inválidas: ingresa ancho y alto numéricos mayores a 0 cm.',
+    };
+  }
+
+  const tipoLower = String(tipo || '').trim().toLowerCase();
+  const isPuerta = tipoLower.includes('puerta');
+  const isCancel = tipoLower.includes('cancel');
+
+  if (ancho > 600 || alto > 450) {
+    return {
+      valid: false,
+      error: `Medidas fuera de rango (${ancho} × ${alto} cm): el máximo permitido es 600 cm de ancho por 450 cm de alto.`,
+    };
+  }
+
+  if (isPuerta) {
+    if (ancho < 50 || alto < 150) {
+      return {
+        valid: false,
+        error: `Medida inválida para puerta (${ancho} × ${alto} cm): una puerta real debe medir al menos 50 cm de ancho × 150 cm de alto.`,
+      };
+    }
+  } else if (isCancel) {
+    if (ancho < 30 || alto < 40) {
+      return {
+        valid: false,
+        error: `Medida inválida para cancel (${ancho} × ${alto} cm): verifica las dimensiones reales (mínimo 30 × 40 cm).`,
+      };
+    }
+  } else {
+    if (ancho < 25 || alto < 25 || ancho * alto < 900) {
+      return {
+        valid: false,
+        error: `Medida irreal o inválida (${ancho} × ${alto} cm): una ventana real debe medir al menos 30 × 30 cm (mínimo 25 cm por lado). Verifica si ingresaste metros en lugar de centímetros.`,
+      };
+    }
+  }
+
+  const ratio = Math.max(ancho / alto, alto / ancho);
+  if (ratio > 12) {
+    return {
+      valid: false,
+      error: `Proporción irreal (${ancho} × ${alto} cm): revisa que el ancho y el alto estén en la misma unidad (cm o m).`,
+    };
+  }
+
+  return { valid: true };
+}
+
+// ==================== TELÉFONO ALEATORIO DE EJEMPLO (MX) ====================
+
+const MX_RANDOM_LADAS = ['55', '33', '81', '222', '442', '999', '664', '777', '477', '614'];
+
+export function generateRandomMxPhonePlaceholder(rng: () => number = Math.random): string {
+  const ladaIdx = Math.floor(Math.abs(rng()) * MX_RANDOM_LADAS.length) % MX_RANDOM_LADAS.length;
+  const lada = MX_RANDOM_LADAS[ladaIdx];
+  const remainingLen = 10 - lada.length;
+  let rest = '';
+  for (let i = 0; i < remainingLen; i += 1) {
+    rest += String(Math.floor(Math.abs(rng()) * 10) % 10);
+  }
+  const full = `${lada}${rest}`;
+  // Nunca retornar el número fijo antiguo
+  if (full === '7351631532') {
+    return 'Ej. 55-4812-9034';
+  }
+  if (lada.length === 2) {
+    return `Ej. ${full.slice(0, 2)}-${full.slice(2, 6)}-${full.slice(6, 10)}`;
+  }
+  return `Ej. ${full.slice(0, 3)}-${full.slice(3, 6)}-${full.slice(6, 10)}`;
+}
+
+// ==================== DETECTOR DE PLAN ANUAL (1 AÑO PRO) ====================
+
+export function isOneYearProPlan(params: {
+  planCode?: string | null;
+  planLabel?: string | null;
+  activatedKey?: string | null;
+  dias?: number | null;
+}): boolean {
+  const code = String(params.planCode || '').trim().toUpperCase();
+  const label = String(params.planLabel || '').toLowerCase();
+  const key = String(params.activatedKey || '').trim().toUpperCase();
+  const dias = Number(params.dias || 0);
+  if (code === 'A' || /^AP-A-/i.test(key)) return true;
+  if (Number.isFinite(dias) && dias >= 300) return true;
+  if (/1\s*a[ñn]o|anual|365\s*d[ií]as/.test(label)) return true;
+  return false;
+}
+
+// ==================== ANÁLISIS DE VENTAS (PANEL ADMINISTRADOR) ====================
+
+export interface SalesAnalyticsMaterialItem {
+  id: string;
+  nombre: string;
+  codigo: string;
+  linea: string;
+  cantidad: number;
+  unidad: string;
+  pct: number;
+}
+
+export interface SalesAnalyticsQuoteInput {
+  id: string;
+  folio: string;
+  fecha: string;
+  cliente: string;
+  total: number;
+  piezasCount?: number;
+  estado: 'enviada' | 'aprobada' | 'rechazada';
+  createdAt?: number;
+  materiales?: Array<{
+    id?: string;
+    nombre: string;
+    codigo?: string;
+    linea?: string;
+    cantidad: number;
+    unidad?: string;
+  }>;
+}
+
+export interface SalesAnalyticsObraInput {
+  proyecto: string;
+  linea: LineaId;
+  perfilId: PerfilCatalogoId;
+  tramos: number;
+}
+
+export interface SalesAnalyticsHistorialInput {
+  referencia: string;
+  linea: LineaId;
+  cantidad: number;
+  total: number;
+}
+
+export interface SalesAnalyticsResult {
+  totalQuotesCount: number;
+  approvedCount: number;
+  sentCount: number;
+  rejectedCount: number;
+  approvalRatePct: number;
+  totalApprovedRevenue: number;
+  averageTicket: number;
+  minTicket: number;
+  maxTicket: number;
+  topMaterials: SalesAnalyticsMaterialItem[];
+  approvedQuotes: SalesAnalyticsQuoteInput[];
+  totalMaterialUnits: number;
+}
+
+export function computeSalesAnalytics(params: {
+  cotizacionesGuardadas: SalesAnalyticsQuoteInput[];
+  obrasAprobadas?: SalesAnalyticsObraInput[];
+  historial?: SalesAnalyticsHistorialInput[];
+}): SalesAnalyticsResult {
+  const allQuotes = Array.isArray(params.cotizacionesGuardadas) ? params.cotizacionesGuardadas : [];
+  const obras = Array.isArray(params.obrasAprobadas) ? params.obrasAprobadas : [];
+  const historial = Array.isArray(params.historial) ? params.historial : [];
+
+  const approvedQuotes = allQuotes.filter((q) => q && q.estado === 'aprobada');
+  const sentCount = allQuotes.filter((q) => q && q.estado === 'enviada').length;
+  const rejectedCount = allQuotes.filter((q) => q && q.estado === 'rechazada').length;
+  const approvedCount = approvedQuotes.length;
+  const totalQuotesCount = allQuotes.length;
+
+  let totalApprovedRevenue = 0;
+  let minTicket = Infinity;
+  let maxTicket = 0;
+
+  for (const q of approvedQuotes) {
+    const val = Math.max(0, Number(q.total) || 0);
+    totalApprovedRevenue += val;
+    if (val < minTicket) minTicket = val;
+    if (val > maxTicket) maxTicket = val;
+  }
+
+  const averageTicket = approvedCount > 0 ? round2(totalApprovedRevenue / approvedCount) : 0;
+  const approvalRatePct =
+    totalQuotesCount > 0 ? Math.round((approvedCount / totalQuotesCount) * 100) : 0;
+
+  const materialMap = new Map<
+    string,
+    { id: string; nombre: string; codigo: string; linea: string; cantidad: number; unidad: string }
+  >();
+
+  const addMat = (
+    key: string,
+    nombre: string,
+    codigo: string,
+    linea: string,
+    cantidad: number,
+    unidad: string
+  ) => {
+    const qty = Number(cantidad) || 0;
+    if (qty <= 0 || !nombre.trim()) return;
+    const normKey = key.trim().toLowerCase();
+    const existing = materialMap.get(normKey);
+    if (existing) {
+      existing.cantidad = round2(existing.cantidad + qty);
+    } else {
+      materialMap.set(normKey, {
+        id: normKey,
+        nombre: nombre.trim(),
+        codigo: codigo.trim(),
+        linea: linea.trim(),
+        cantidad: round2(qty),
+        unidad: unidad.trim() || 'pzas',
+      });
+    }
+  };
+
+  let quotesWithMaterials = 0;
+  for (const q of approvedQuotes) {
+    if (Array.isArray(q.materiales) && q.materiales.length > 0) {
+      quotesWithMaterials += 1;
+      for (const m of q.materiales) {
+        const key = `${m.id || m.nombre}__${m.linea || ''}`;
+        addMat(
+          key,
+          m.nombre,
+          m.codigo || '',
+          m.linea || 'General',
+          m.cantidad,
+          m.unidad || 'pzas'
+        );
+      }
+    }
+  }
+
+  // Enriquecer con obras aprobadas (perfiles exactos apartados para obras aprobadas)
+  for (const o of obras) {
+    const perfilMeta = CATALOGO_PERFILES.find((p) => p.id === o.perfilId);
+    const lineaMeta = LINEAS_CONFIG[o.linea];
+    const nombre = perfilMeta ? perfilMeta.nombre : String(o.perfilId || 'Perfil');
+    const codigo = perfilMeta ? perfilMeta.codigoRef : '';
+    const lineaNombre = lineaMeta ? lineaMeta.nombre : String(o.linea || 'Aluminio');
+    addMat(`${o.perfilId}__${o.linea}`, nombre, codigo, lineaNombre, o.tramos || 1, 'tramos');
+  }
+
+  // Fallback si existen cotizaciones aprobadas antiguas sin detalle de perfiles ni obras apartadas
+  if (materialMap.size === 0 && approvedCount > 0 && historial.length > 0) {
+    const approvedClientNames = new Set(
+      approvedQuotes.map((q) => String(q.cliente || '').trim().toLowerCase()).filter(Boolean)
+    );
+    const matchedHist = historial.filter((h) => {
+      const ref = String(h.referencia || '').trim().toLowerCase();
+      return !ref || approvedClientNames.size === 0 || approvedClientNames.has(ref);
+    });
+    const sourceHist = matchedHist.length > 0 ? matchedHist : historial;
+    for (const h of sourceHist) {
+      const lineaMeta = LINEAS_CONFIG[h.linea];
+      const lineaNombre = lineaMeta ? lineaMeta.nombre : `Línea ${h.linea}`;
+      addMat(`linea_${h.linea}`, lineaNombre, h.linea.toUpperCase(), lineaNombre, h.cantidad || 1, 'pzas');
+    }
+  } else if (quotesWithMaterials === 0 && materialMap.size === 0 && approvedCount > 0) {
+    // Último respaldo si las cotizaciones aprobadas no tenían detalle de materiales
+    for (const q of approvedQuotes) {
+      addMat(
+        'cot-general',
+        'Perfiles / Piezas cotizadas',
+        'GENERAL',
+        'Cotización aprobada',
+        Math.max(1, Number(q.piezasCount) || 1),
+        'pzas'
+      );
+    }
+  }
+
+  const rawMaterials = Array.from(materialMap.values()).sort((a, b) => b.cantidad - a.cantidad);
+  const totalMaterialUnits = round2(rawMaterials.reduce((acc, m) => acc + m.cantidad, 0));
+  const topMaterials: SalesAnalyticsMaterialItem[] = rawMaterials.slice(0, 12).map((m) => ({
+    ...m,
+    pct: totalMaterialUnits > 0 ? Math.round((m.cantidad / totalMaterialUnits) * 100) : 0,
+  }));
+
+  return {
+    totalQuotesCount,
+    approvedCount,
+    sentCount,
+    rejectedCount,
+    approvalRatePct,
+    totalApprovedRevenue: round2(totalApprovedRevenue),
+    averageTicket,
+    minTicket: approvedCount > 0 && Number.isFinite(minTicket) ? round2(minTicket) : 0,
+    maxTicket: approvedCount > 0 ? round2(maxTicket) : 0,
+    topMaterials,
+    approvedQuotes,
+    totalMaterialUnits,
+  };
+}
+
 

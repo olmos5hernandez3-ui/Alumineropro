@@ -207,9 +207,9 @@ export const PdfHeaderPreview: React.FC<PdfHeaderPreviewProps> = ({
             type="button"
             id="btn-hoja-vista-previa-badge"
             onClick={onPreviewPdf}
-            className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 font-extrabold text-[10.5px] whitespace-nowrap shrink-0 cursor-pointer"
+            className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 border border-amber-300 text-slate-950 font-black text-[11px] whitespace-nowrap shrink-0 cursor-pointer shadow-sm"
           >
-            👁 Vista Previa
+            👁 Vista previa
           </button>
         ) : (
           <span className="text-[10px] text-[#64748b] whitespace-nowrap shrink-0">

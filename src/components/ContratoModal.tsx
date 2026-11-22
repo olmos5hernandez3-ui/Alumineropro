@@ -91,17 +91,23 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
       })
     : 'A convenir tras verificación de medidas en obra';
 
+  const cliNombreRaw = String(cliente?.nombre ?? '').trim();
+  const cliTelRaw = String(cliente?.telefono ?? '').trim();
+  const cliDirRaw = String(cliente?.direccion ?? '').trim();
+  const proyectoRaw = String(hoja?.proyecto ?? '').trim();
+  const partidasSafe = Array.isArray(hoja?.partidas) ? hoja.partidas : [];
+
   const cliNombreFinal =
-    cliente.nombre.trim() || hoja.proyecto.trim() || 'Cliente por confirmar';
+    cliNombreRaw || proyectoRaw || 'Cliente por confirmar';
 
   const clausulaAnticipoText =
-    cliente.clausulaAnticipo?.trim() || DEFAULT_CONTRATO_CLAUSES.anticipo;
+    String(cliente?.clausulaAnticipo ?? '').trim() || DEFAULT_CONTRATO_CLAUSES.anticipo;
   const clausulaEntregaText =
-    cliente.clausulaEntrega?.trim() || DEFAULT_CONTRATO_CLAUSES.entrega;
+    String(cliente?.clausulaEntrega ?? '').trim() || DEFAULT_CONTRATO_CLAUSES.entrega;
   const clausulaVanoText =
-    cliente.clausulaCondicionesVano?.trim() || DEFAULT_CONTRATO_CLAUSES.condicionesVano;
+    String(cliente?.clausulaCondicionesVano ?? '').trim() || DEFAULT_CONTRATO_CLAUSES.condicionesVano;
   const clausulaGarantiaText =
-    cliente.clausulaGarantia?.trim() || DEFAULT_CONTRATO_CLAUSES.garantia;
+    String(cliente?.clausulaGarantia ?? '').trim() || DEFAULT_CONTRATO_CLAUSES.garantia;
 
   const handleConfirmSetupAndGenerate = (e: React.FormEvent) => {
     e.preventDefault();
@@ -111,21 +117,27 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
     setPhase('preview');
   };
 
+  const handleOpenPreviewDirect = () => {
+    const folioNuevo = cliente?.folio || folioActivo || issueNextContratoFolio();
+    setFolioActivo(folioNuevo);
+    setPhase('preview');
+  };
+
   const handleShareWhatsApp = async () => {
     const lines = [
       `*CONTRATO DE SERVICIOS — ${folioActivo}*`,
-      `*Taller:* ${taller.nombre || 'Aluminero Pro'}`,
-      taller.tel ? `Tel: ${taller.tel}` : '',
-      taller.ubicacion ? `Ubicación: ${taller.ubicacion}` : '',
+      `*Taller:* ${taller?.nombre || 'Aluminero Pro'}`,
+      taller?.tel ? `Tel: ${taller.tel}` : '',
+      taller?.ubicacion ? `Ubicación: ${taller.ubicacion}` : '',
       '',
       `*Cliente:* ${cliNombreFinal}`,
-      cliente.direccion.trim() ? `*Obra:* ${cliente.direccion.trim()}` : '',
+      cliDirRaw ? `*Obra:* ${cliDirRaw}` : '',
       `*Entrega estimada:* ${fechaEntregaTexto}`,
       '',
       '*Trabajos contratados:*',
-      ...hoja.partidas.map((item, idx) => {
-        const l = LINEAS_CONFIG[item.linea];
-        const c = COLORES_CONFIG[item.color];
+      ...partidasSafe.map((item, idx) => {
+        const l = LINEAS_CONFIG[item.linea] || LINEAS_CONFIG['3'];
+        const c = COLORES_CONFIG[item.color] || COLORES_CONFIG.natural;
         const rel = l.esMosquitero ? 'Malla mosquitera' : getRellenoLabel(item.relleno, item.vidrio);
         return `${idx + 1}. ${item.etiqueta ? `${item.etiqueta} - ` : ''}${l.nombre} (${item.anchoCm}×${item.altoCm} cm, ${c.corto}, ${rel}) ×${item.cantidad} = ${formatMXN(item.totalLinea)}`;
       }),
@@ -139,7 +151,7 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
     ].filter(Boolean);
 
     const text = lines.join('\n');
-    const cleanPhone = (cliente.telefono || '').replace(/\D/g, '');
+    const cleanPhone = cliTelRaw.replace(/\D/g, '');
     const waUrl = cleanPhone
       ? `https://wa.me/${cleanPhone.length === 10 ? `52${cleanPhone}` : cleanPhone}?text=${encodeURIComponent(text)}`
       : `https://wa.me/?text=${encodeURIComponent(text)}`;
@@ -375,20 +387,29 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center justify-end gap-2.5 pt-2 border-t border-slate-200">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-3 border-t border-slate-200">
               <button
                 type="button"
+                id="btn-contrato-cancelar"
                 onClick={onClose}
-                className="min-h-[44px] px-4 rounded-xl border border-slate-300 bg-white text-slate-700 text-[13px] font-bold cursor-pointer"
+                className="w-full min-h-[44px] px-4 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-[13px] font-bold cursor-pointer"
               >
                 Cancelar
               </button>
               <button
+                type="button"
+                id="btn-contrato-vista-previa"
+                onClick={handleOpenPreviewDirect}
+                className="w-full min-h-[44px] px-4 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 text-[13px] font-black cursor-pointer shadow-sm"
+              >
+                👁 Vista previa
+              </button>
+              <button
                 type="submit"
                 id="btn-contrato-generar-vista"
-                className="min-h-[46px] px-5 rounded-xl bg-[#0B2545] hover:bg-[#133866] text-white text-[13.5px] font-extrabold cursor-pointer shadow-md"
+                className="w-full min-h-[44px] px-4 rounded-xl bg-[#0B2545] hover:bg-[#133866] text-white text-[13px] font-extrabold cursor-pointer shadow-md"
               >
-                Generar Documento Carta →
+                Generar Contrato →
               </button>
             </div>
           </form>
@@ -576,14 +597,14 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
                   <strong>Cliente:</strong> {cliNombreFinal}
                 </div>
                 <div className="break-words">
-                  <strong>Teléfono:</strong> {cliente.telefono.trim() || 'No especificado'}
+                  <strong>Teléfono:</strong> {cliTelRaw || 'No especificado'}
                 </div>
                 <div className="sm:col-span-2 break-words">
-                  <strong>Dirección de obra:</strong> {cliente.direccion.trim() || 'Por confirmar en sitio'}
+                  <strong>Dirección de obra:</strong> {cliDirRaw || 'Por confirmar en sitio'}
                 </div>
-                {hoja.proyecto.trim() && (
+                {proyectoRaw && (
                   <div className="sm:col-span-2 break-words">
-                    <strong>Referencia / Proyecto:</strong> {hoja.proyecto.trim()}
+                    <strong>Referencia / Proyecto:</strong> {proyectoRaw}
                   </div>
                 )}
               </div>
@@ -601,17 +622,17 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
                   </tr>
                 </thead>
                 <tbody>
-                  {hoja.partidas.map((item, idx) => {
-                    const linea = LINEAS_CONFIG[item.linea];
-                    const color = COLORES_CONFIG[item.color];
+                  {partidasSafe.map((item, idx) => {
+                    const linea = LINEAS_CONFIG[item.linea] || LINEAS_CONFIG['3'];
+                    const color = COLORES_CONFIG[item.color] || COLORES_CONFIG.natural;
                     const panelDesc = getRellenoLabel(item.relleno, item.vidrio);
                     const apTxt =
                       linea.categoria === 'ventanas' && !linea.esMosquitero && !linea.esCancelBano
-                        ? ` · ${APERTURA_DESC[item.apertura] || item.apertura}`
+                        ? ` · ${APERTURA_DESC[item.apertura] || item.apertura || ''}`
                         : '';
                     const unitPrice = item.cantidad > 0 ? item.totalLinea / item.cantidad : item.totalLinea;
                     return (
-                      <tr key={item.id} className="border-b border-slate-200 last:border-b-0 bg-white">
+                      <tr key={item.id || `part-${idx}`} className="border-b border-slate-200 last:border-b-0 bg-white">
                         <td className="p-2 align-middle">
                           <PartidaMiniSvg partida={item} width={112} height={84} />
                         </td>
@@ -730,29 +751,40 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
             </div>
           </div>
 
-          {/* Botones flotantes inferiores (ocultos al imprimir) */}
-          <div className="contrato-no-print sticky bottom-0 z-10 -mx-3 sm:-mx-6 -mb-3 sm:-mb-6 px-3 sm:px-6 py-3 bg-white/95 backdrop-blur border-t border-slate-200 flex flex-wrap items-center justify-end gap-2">
+          {/* Botones flotantes inferiores bien ordenados (ocultos al imprimir) */}
+          <div className="contrato-no-print sticky bottom-0 z-10 -mx-3 sm:-mx-6 -mb-3 sm:-mb-6 px-3 sm:px-6 py-3 bg-white/95 backdrop-blur border-t border-slate-200 grid grid-cols-2 sm:grid-cols-5 gap-2">
+            <button
+              type="button"
+              id="btn-contrato-vista-previa-doc"
+              onClick={() => {
+                setEditarClausulas(false);
+                document.getElementById('contrato-print-area')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }}
+              className="min-h-[44px] px-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 text-[12px] sm:text-[12.5px] font-black cursor-pointer shadow-sm"
+            >
+              👁 Vista previa
+            </button>
             <button
               type="button"
               id="btn-contrato-firmar"
               onClick={() => setSignaturePadOpen(true)}
-              className="min-h-[44px] px-4 rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-950 text-[12.5px] sm:text-[13px] font-extrabold cursor-pointer"
+              className="min-h-[44px] px-3 rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-950 text-[12px] sm:text-[12.5px] font-extrabold cursor-pointer"
             >
-              {clientSignatureUrl ? '✍️ Cambiar firma' : '✍️ Firmar cliente'}
+              {clientSignatureUrl ? '✍️ Cambiar firma' : '✍️ Firmar'}
             </button>
             <button
               type="button"
               id="btn-contrato-whatsapp"
               onClick={handleShareWhatsApp}
-              className="min-h-[44px] px-4 rounded-xl bg-green-600 hover:bg-green-700 text-white text-[12.5px] sm:text-[13px] font-extrabold cursor-pointer shadow-sm"
+              className="min-h-[44px] px-3 rounded-xl bg-green-600 hover:bg-green-700 text-white text-[12px] sm:text-[12.5px] font-extrabold cursor-pointer shadow-sm"
             >
-              💬 Compartir Resumen por WhatsApp
+              💬 WhatsApp
             </button>
             <button
               type="button"
               id="btn-contrato-pdf"
               onClick={() => {
-                if (hoja.partidas.length === 0) {
+                if (partidasSafe.length === 0) {
                   onShowToast('Agrega al menos una partida para generar el contrato PDF');
                   return;
                 }
@@ -762,21 +794,25 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
                   cliente,
                   folioActivo,
                   clientSignatureUrl || undefined
-                ).then(() => {
-                  onShowToast(`PDF Contrato ${folioActivo} descargado`, true);
-                });
+                )
+                  .then(() => {
+                    onShowToast(`PDF Contrato ${folioActivo} descargado`, true);
+                  })
+                  .catch(() => {
+                    onShowToast('No se pudo descargar el PDF del contrato');
+                  });
               }}
-              className="min-h-[44px] px-4 rounded-xl border border-blue-300 bg-blue-50 hover:bg-blue-100 text-blue-900 text-[12.5px] sm:text-[13px] font-extrabold cursor-pointer"
+              className="min-h-[44px] px-3 rounded-xl border border-blue-300 bg-blue-50 hover:bg-blue-100 text-blue-900 text-[12px] sm:text-[12.5px] font-extrabold cursor-pointer"
             >
-              📄 Descargar PDF
+              📄 PDF
             </button>
             <button
               type="button"
               id="btn-contrato-print"
               onClick={() => window.print()}
-              className="min-h-[44px] px-5 rounded-xl bg-[#0B2545] hover:bg-[#133866] text-white text-[12.5px] sm:text-[13px] font-extrabold cursor-pointer shadow-md"
+              className="col-span-2 sm:col-span-1 min-h-[44px] px-3 rounded-xl bg-[#0B2545] hover:bg-[#133866] text-white text-[12px] sm:text-[12.5px] font-extrabold cursor-pointer shadow-md"
             >
-              🖨️ Imprimir / Guardar PDF
+              🖨️ Imprimir
             </button>
           </div>
         </div>

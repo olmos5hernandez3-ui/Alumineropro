@@ -45,6 +45,8 @@ export const KEYS = {
   PROMO_COUNT_CACHE: 'aluminero_promo_count_cache_v1',
   RECORDATORIOS: 'aluminero_recordatorios_cotizacion_v1',
   REFERRALS_HISTORY: 'aluminero_referrals_history_v1',
+  SKIN: 'aluminero_skin_v1',
+  PROMO_COLEGA_USAGE: 'aluminero_promo_colega_usage_v1',
 };
 
 export const REFERRED_BY_ID_STORAGE_KEY = 'referred_by_id';
@@ -645,6 +647,15 @@ export function upsertCliente(
 // ==================== HISTORIAL DE COTIZACIONES (PDF FINAL) ====================
 export type CotizacionEstado = 'enviada' | 'aprobada' | 'rechazada';
 
+export interface CotizacionMaterialResumen {
+  id?: string;
+  nombre: string;
+  codigo?: string;
+  linea?: string;
+  cantidad: number;
+  unidad?: string;
+}
+
 export interface CotizacionGuardada {
   id: string;
   folio: string;
@@ -654,6 +665,7 @@ export interface CotizacionGuardada {
   direccion?: string;
   total: number;
   piezasCount?: number;
+  materiales?: CotizacionMaterialResumen[];
   estado: CotizacionEstado;
   createdAt: number;
 }
@@ -697,6 +709,12 @@ export function recordCotizacionGuardada(
     direccion: entry.direccion?.trim() || undefined,
     total: Number.isFinite(entry.total) ? entry.total : 0,
     piezasCount: entry.piezasCount,
+    materiales:
+      Array.isArray(entry.materiales) && entry.materiales.length > 0
+        ? entry.materiales
+        : existingIdx >= 0
+          ? list[existingIdx].materiales
+          : undefined,
     estado: entry.estado || (existingIdx >= 0 ? list[existingIdx].estado : 'enviada'),
     createdAt: Date.now(),
   };
@@ -1518,4 +1536,148 @@ export function addReferralHistoryRecord(
   saveReferralHistory(next);
   return next;
 }
+
+// ==================== CARÁTULAS / APARIENCIA GLOBAL (3 TEMAS) ====================
+export type AppSkin = 'basica' | 'ejecutiva' | 'industrial';
+
+export function loadSkin(): AppSkin {
+  if (typeof localStorage === 'undefined') return 'basica';
+  const stored = localStorage.getItem(KEYS.SKIN);
+  if (stored === 'basica' || stored === 'ejecutiva' || stored === 'industrial') {
+    return stored;
+  }
+  return 'basica';
+}
+
+export function saveSkin(skin: AppSkin): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(KEYS.SKIN, skin);
+  } catch {
+    // ignorar si localStorage no permite escritura
+  }
+}
+
+export function getUnlockedSkinsForLicense(
+  licencia: LicenciaState | null | undefined,
+  proActive: boolean
+): AppSkin[] {
+  if (!proActive || !licencia || !licencia.active) {
+    return ['basica'];
+  }
+  const code = String(licencia.planCode || '').trim().toUpperCase();
+  const key = String(licencia.activatedKey || '').trim().toUpperCase();
+  // Promo Colega de 3 días (G / D3): solo Carátula Básica
+  if (code === 'G' || code === 'D3' || /^AP-G-/i.test(key) || /^AP-D3-/i.test(key)) {
+    return ['basica'];
+  }
+  // Plan Anual (A) o Vitalicio (V / expiresAt === null) o días >= 300: desbloquea las 3 carátulas
+  if (code === 'A' || code === 'V' || licencia.expiresAt === null) {
+    return ['basica', 'ejecutiva', 'industrial'];
+  }
+  if (/^D(\d+)$/.test(code)) {
+    const customDays = Number(code.slice(1)) || 0;
+    if (customDays >= 300) return ['basica', 'ejecutiva', 'industrial'];
+    if (customDays >= 7) return ['basica', 'ejecutiva'];
+    return ['basica'];
+  }
+  // Planes 30 días (M) y 90 días (Q): Básica + Ejecutiva Azul
+  if (code === 'M' || code === 'Q') {
+    return ['basica', 'ejecutiva'];
+  }
+  return ['basica', 'ejecutiva'];
+}
+
+export function isSkinUnlockedForLicense(
+  skin: AppSkin,
+  licencia: LicenciaState | null | undefined,
+  proActive: boolean
+): boolean {
+  return getUnlockedSkinsForLicense(licencia, proActive).includes(skin);
+}
+
+export function getSkinPlanRequirementLabel(skin: AppSkin): string {
+  if (skin === 'ejecutiva') return 'Plan PRO 30 días o 90 días';
+  if (skin === 'industrial') return 'Plan PRO Anual (1 Año)';
+  return 'Versión Gratuita y Promo Colega';
+}
+
+// ==================== USO ÚNICO PROMO COLEGA (3 DÍAS GRATIS) ====================
+export interface PromoColegaUsageRecord {
+  deviceId: string;
+  promo_colega_usada: boolean;
+  fecha_activacion_colega: number | null;
+}
+
+export function loadPromoColegaUsage(deviceId: string): PromoColegaUsageRecord {
+  const normId = normalizeDeviceIdInput(deviceId) || String(deviceId || '').trim().toUpperCase();
+  const fallback: PromoColegaUsageRecord = {
+    deviceId: normId,
+    promo_colega_usada: false,
+    fecha_activacion_colega: null,
+  };
+  if (typeof localStorage === 'undefined') return fallback;
+  const raw = safeJsonParse<Partial<PromoColegaUsageRecord> | Record<string, Partial<PromoColegaUsageRecord>> | null>(
+    localStorage.getItem(KEYS.PROMO_COLEGA_USAGE),
+    null
+  );
+  if (!raw || typeof raw !== 'object') return fallback;
+  // Soporta almacenamiento por mapa de deviceId o registro directo
+  const byMap = (raw as Record<string, Partial<PromoColegaUsageRecord>>)[normId];
+  const rec = byMap && typeof byMap === 'object' ? byMap : (raw as Partial<PromoColegaUsageRecord>);
+  if (rec.deviceId && normalizeDeviceIdInput(rec.deviceId) !== normId && !byMap) {
+    return fallback;
+  }
+  const used = Boolean(rec.promo_colega_usada);
+  const ts =
+    typeof rec.fecha_activacion_colega === 'number' && Number.isFinite(rec.fecha_activacion_colega)
+      ? rec.fecha_activacion_colega
+      : null;
+  return {
+    deviceId: normId,
+    promo_colega_usada: used,
+    fecha_activacion_colega: used ? ts : null,
+  };
+}
+
+export function savePromoColegaUsage(
+  deviceId: string,
+  used: boolean,
+  activatedAt: number | null
+): PromoColegaUsageRecord {
+  const normId = normalizeDeviceIdInput(deviceId) || String(deviceId || '').trim().toUpperCase();
+  const nextRec: PromoColegaUsageRecord = {
+    deviceId: normId,
+    promo_colega_usada: Boolean(used),
+    fecha_activacion_colega: used && typeof activatedAt === 'number' && Number.isFinite(activatedAt) ? activatedAt : null,
+  };
+  if (typeof localStorage === 'undefined') return nextRec;
+  try {
+    const existingRaw = safeJsonParse<Record<string, PromoColegaUsageRecord>>(
+      localStorage.getItem(KEYS.PROMO_COLEGA_USAGE),
+      {}
+    );
+    const nextMap: Record<string, PromoColegaUsageRecord> =
+      existingRaw && typeof existingRaw === 'object' && !Array.isArray(existingRaw)
+        ? { ...existingRaw }
+        : {};
+    nextMap[normId] = nextRec;
+    localStorage.setItem(KEYS.PROMO_COLEGA_USAGE, JSON.stringify(nextMap));
+  } catch {
+    // ignorar si localStorage no permite escritura
+  }
+  return nextRec;
+}
+
+export function formatDateTimeExact(ts: number | null | undefined): string {
+  if (typeof ts !== 'number' || !Number.isFinite(ts) || ts <= 0) return '—';
+  const d = new Date(ts);
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  const hh = String(d.getHours()).padStart(2, '0');
+  const min = String(d.getMinutes()).padStart(2, '0');
+  return `${dd}/${mm}/${yyyy} ${hh}:${min}`;
+}
+
 

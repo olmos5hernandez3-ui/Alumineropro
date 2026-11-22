@@ -1,8 +1,9 @@
-import React, { Suspense, lazy, useEffect, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import {
   COLORES_CONFIG,
   consolidarMaterialesObra,
   formatClientPhoneInput,
+  generateRandomMxPhonePlaceholder,
   getRellenoLabel,
   LINEAS_CONFIG,
   PartidaObra,
@@ -29,14 +30,13 @@ import {
   CotizacionReminder,
   CotizacionReminderStatus,
 } from '../utils/pushReminders';
+import { ContratoModal } from './ContratoModal';
 import { CotizacionRemindersPanel } from './CotizacionRemindersPanel';
+import { ErrorBoundary } from './ErrorBoundary';
 import { PartidaMiniSvg } from './PartidaMiniSvg';
 import { PdfHeaderCustomizerModal, PdfHeaderPreview } from './PdfHeaderCustomizer';
 import { PerfilSectionSvg } from './PerfilSectionSvg';
 
-const LazyContratoModal = lazy(() =>
-  import('./ContratoModal').then((m) => ({ default: m.ContratoModal }))
-);
 const LazyPdfPreviewModal = lazy(() =>
   import('./PdfPreviewModal').then((m) => ({ default: m.PdfPreviewModal }))
 );
@@ -123,6 +123,7 @@ export const HojaCotizacionView: React.FC<Props> = ({
   const [pdfHeaderModalOpen, setPdfHeaderModalOpen] = useState(false);
   const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
   const [currentFolio, setCurrentFolio] = useState<string>(() => peekNextCotizacionFolio());
+  const randomPhonePlaceholder = useMemo(() => generateRandomMxPhonePlaceholder(), []);
   const [clientesGuardados, setClientesGuardados] = useState<ClienteGuardado[]>(() => loadClientes());
   const [showClientSuggestions, setShowClientSuggestions] = useState(false);
 
@@ -350,7 +351,7 @@ export const HojaCotizacionView: React.FC<Props> = ({
                 const formatted = formatClientPhoneInput(e.target.value, hoja.clienteTel ?? '');
                 onUpdateHoja({ clienteTel: formatted });
               }}
-              placeholder="Ej. 735-163-1532"
+              placeholder={randomPhonePlaceholder}
               className="w-full min-h-[44px] rounded-xl border border-slate-300 px-3 mono text-[13.5px] font-semibold"
             />
           </div>
@@ -660,9 +661,9 @@ export const HojaCotizacionView: React.FC<Props> = ({
                 type="button"
                 id="btn-generar-pdf-cliente"
                 onClick={handleOpenPdfPreview}
-                className="w-full min-h-[48px] px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-[14px] cursor-pointer"
+                className="w-full min-h-[50px] px-4 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 hover:from-amber-400 hover:via-orange-400 hover:to-amber-400 text-slate-950 border border-amber-300 font-black text-[14.5px] cursor-pointer shadow-lg"
               >
-                📄 Vista Previa y Descargar PDF
+                👁 Vista Previa y Descargar PDF
               </button>
               <button
                 type="button"
@@ -815,8 +816,12 @@ export const HojaCotizacionView: React.FC<Props> = ({
         )}
 
       {contratoOpen && (
-        <Suspense fallback={null}>
-          <LazyContratoModal
+        <ErrorBoundary
+          resetKey={contratoOpen}
+          title="No se pudo abrir la pantalla de Contrato"
+          onGoHome={() => setContratoOpen(false)}
+        >
+          <ContratoModal
             open={contratoOpen}
             hoja={hoja}
             taller={taller}
@@ -824,10 +829,13 @@ export const HojaCotizacionView: React.FC<Props> = ({
             onUpdateCliente={onUpdateContratoCliente}
             onUpdateProyecto={(proyecto) => onUpdateHoja({ proyecto })}
             onToggleIva={(incluirIva) => onUpdateHoja({ incluirIva })}
-            onClose={() => (onRequestBack ? onRequestBack() : setContratoOpen(false))}
+            onClose={() => {
+              setContratoOpen(false);
+              onRequestBack?.();
+            }}
             onShowToast={onShowToast}
           />
-        </Suspense>
+        </ErrorBoundary>
       )}
 
       {pdfPreviewOpen && (
@@ -839,6 +847,14 @@ export const HojaCotizacionView: React.FC<Props> = ({
             contratoCliente={contratoCliente}
             onClose={() => setPdfPreviewOpen(false)}
             onFinalPdfDownloaded={(res) => {
+              const materialesResumen = consolidado.map((row) => ({
+                id: `${row.perfilId}__${row.linea}`,
+                nombre: row.perfilNombre,
+                codigo: row.perfilId,
+                linea: LINEAS_CONFIG[row.linea]?.nombre || row.linea,
+                cantidad: row.tramosRequeridos || 1,
+                unidad: 'tramos',
+              }));
               recordCotizacionGuardada({
                 folio: res.folio,
                 fecha: res.dateLabel,
@@ -847,6 +863,7 @@ export const HojaCotizacionView: React.FC<Props> = ({
                 direccion: hoja.clienteDir || contratoCliente.direccion,
                 total: res.total,
                 piezasCount: hoja.partidas.length,
+                materiales: materialesResumen,
               });
               window.dispatchEvent(new CustomEvent('aluminero:cotizaciones-updated'));
               setCurrentFolio(peekNextCotizacionFolio());

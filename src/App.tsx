@@ -11,8 +11,10 @@ import {
   getRellenoLabel,
   getRellenoPrecioM2,
   getRellenoPriceKey,
+  isColleaguePromoPlan,
   isEligibleForCloudBackup,
   isFeatureProRequired,
+  isOneYearProPlan,
   isProActive,
   isUnassignedAutoTrialDevice,
   LINEAS_CONFIG,
@@ -23,6 +25,7 @@ import {
   parseReferralFromSearch,
   PartidaObra,
   PerfilCatalogoId,
+  PROMO_COLEGA_ALREADY_USED_ERROR,
   round2,
   TrabajoParams,
   UsageStats30d,
@@ -103,7 +106,12 @@ import {
   saveCotizacionReminders,
   saveDeletedAdminKeySigs,
   SavedColleagueReferral,
+  AppSkin,
   AppTheme,
+  isSkinUnlockedForLicense,
+  loadPromoColegaUsage,
+  loadSkin,
+  PromoColegaUsageRecord,
   saveFormulas,
   saveHistorial,
   saveHoja,
@@ -114,8 +122,10 @@ import {
   saveNotas,
   saveObrasAprobadas,
   savePerfilFotos,
+  savePromoColegaUsage,
   saveReferralHistory,
   saveRevokedDevicesMap,
+  saveSkin,
   saveSobrantes,
   saveSugerenciasWhatsapp,
   saveTaller,
@@ -155,6 +165,7 @@ import { MainMenuView } from './components/MainMenuView';
 import { TrabajoView } from './components/TrabajoView';
 import { HojaCotizacionView } from './components/HojaCotizacionView';
 import { TallerView } from './components/TallerView';
+import { AdminDashboardView } from './components/AdminDashboardView';
 import {
   AdminAuthModal,
   AdminModal,
@@ -170,6 +181,7 @@ import {
   TutorialModal,
 } from './components/Modals';
 import { FloatingAssistant } from './components/FloatingAssistant';
+import { AnnualCelebrationOverlay } from './components/AnnualCelebrationOverlay';
 import { FloatingInstallButton } from './components/FloatingInstallButton';
 import { CalculadoraModal } from './components/CalculadoraModal';
 import { LevantamientoRapido } from './components/LevantamientoRapido';
@@ -410,7 +422,7 @@ export default function App() {
   );
   const [cobrarMinM2, setCobrarMinM2] = useState(false);
   const [incluirIva, setIncluirIva] = useState(false);
-  const [areaText, setAreaText] = useState('Sala');
+  const [areaText, setAreaText] = useState('');
   const [etiquetaPieza, setEtiquetaPieza] = useState('');
   const [extraPct, setExtraPct] = useState(0);
   const [referencia, setReferencia] = useState('');
@@ -418,6 +430,11 @@ export default function App() {
 
   // Modals & UI (controlados desde la pila unificada NavFrame + popstate)
   const [theme, setTheme] = useState<AppTheme>(() => loadTheme());
+  const [skin, setSkin] = useState<AppSkin>(() => loadSkin());
+  const [annualCelebrationOpen, setAnnualCelebrationOpen] = useState(false);
+  const [promoColegaUsage, setPromoColegaUsage] = useState<PromoColegaUsageRecord>(() =>
+    loadPromoColegaUsage(deviceId)
+  );
   const pwa = usePWAInstall();
   const isOnline = useOnlineStatus();
   const [installFabDismissed, setInstallFabDismissed] = useState(false);
@@ -632,6 +649,21 @@ export default function App() {
     const normSelfId = deviceId.trim().toUpperCase();
     const myCloudRec = (snap.devices || []).find((d) => d.deviceId.trim().toUpperCase() === normSelfId);
     if (myCloudRec) {
+      // Sincroniza la bandera permanente promo_colega_usada desde Firestore hacia el respaldo local
+      if (myCloudRec.promo_colega_usada === true) {
+        const savedUsage = savePromoColegaUsage(
+          deviceId,
+          true,
+          myCloudRec.fecha_activacion_colega ?? myCloudRec.updatedAt ?? Date.now()
+        );
+        setPromoColegaUsage(savedUsage);
+      } else if (
+        myCloudRec.promo_colega_usada === false &&
+        myCloudRec.fecha_activacion_colega === null
+      ) {
+        const resetUsage = savePromoColegaUsage(deviceId, false, null);
+        setPromoColegaUsage(resetUsage);
+      }
       const localLic = licenciaRef.current;
       const now = Date.now();
       const isSessionMoved = myCloudRec.planCode === 'SESSION_MOVED';
@@ -840,6 +872,16 @@ export default function App() {
     document.documentElement.setAttribute('data-theme', theme);
     document.documentElement.classList.toggle('dark', theme === 'dark');
   }, [theme]);
+
+  useEffect(() => {
+    const allowed = isSkinUnlockedForLicense(skin, licencia, proActive);
+    const effectiveSkin: AppSkin = allowed ? skin : 'basica';
+    if (effectiveSkin !== skin) {
+      setSkin('basica');
+    }
+    saveSkin(effectiveSkin);
+    document.documentElement.setAttribute('data-skin', effectiveSkin);
+  }, [skin, licencia, proActive]);
 
   useEffect(() => {
     saveTaller(taller);
@@ -2343,12 +2385,17 @@ export default function App() {
     catalogo: 'Catálogo de Perfiles',
     terminos: 'Términos y Condiciones',
     privacidad: 'Aviso de Privacidad',
+    admin: 'Panel de Administrador',
   };
 
   return (
     <div
       className={`min-h-screen w-full max-w-[100vw] overflow-x-hidden box-border transition-colors ${
-        theme === 'dark' ? 'bg-[#060E1B] text-slate-100' : 'bg-[#EEF3F9] text-slate-900'
+        skin !== 'basica'
+          ? 'bg-transparent text-slate-100'
+          : theme === 'dark'
+            ? 'bg-[#0B1120] text-slate-100'
+            : 'bg-[#EEF3F9] text-slate-900'
       }`}
     >
       <TopBar
@@ -2366,7 +2413,11 @@ export default function App() {
         onOpenCalculadora={() => openGlobalModal('calculadora')}
       />
 
-      <main className="w-full max-w-[1120px] mx-auto px-3 sm:px-4 pt-5 pb-24 box-border overflow-x-hidden">
+      <main
+        className={`w-full ${
+          currentView === 'admin' ? 'max-w-[1440px] px-4 sm:px-6 lg:px-8' : 'max-w-[1120px] px-3 sm:px-4'
+        } mx-auto pt-5 pb-24 box-border overflow-x-hidden`}
+      >
         {!isOnline && (
           <div
             id="offline-banner"
@@ -2399,6 +2450,7 @@ export default function App() {
             cotizacionesCount={cotizacionesCount}
             savedReferral={savedColleagueReferral}
             referredById={referredById}
+            promoColegaUsed={promoColegaUsage.promo_colega_usada}
             pendingRemindersCount={reminderSummary.pendingCount}
             dueRemindersCount={reminderSummary.dueCount}
             pushPermission={pushPermission}
@@ -2828,6 +2880,288 @@ export default function App() {
         {currentView === 'privacidad' && (
           <AvisoPrivacidadView onBack={requestBack} />
         )}
+
+        {currentView === 'admin' && (
+          <AdminDashboardView
+            deviceId={deviceId}
+            licencia={licencia}
+            adminKeys={adminKeys}
+            revokedDevicesMap={revokedDevicesMap}
+            revokedKeys={revokedKeys}
+            cloudDevices={cloudDevices}
+            cloudStats={cloudStats}
+            cloudConnected={cloudConnected}
+            cloudRefreshing={cloudRefreshing}
+            cloudLastSyncAt={cloudLastSyncAt}
+            formulas={formulas}
+            backupData={{
+              app: 'Aluminero Pro',
+              version: 1,
+              exportedAt: new Date().toISOString(),
+              perfilFotos,
+              notas,
+              taller,
+              formulas,
+              inventario,
+              inventarioHerrajes,
+              sobrantes,
+              hojasVidrio,
+              obrasAprobadas,
+              historial,
+              sugerenciasWhatsapp,
+              trabajosAntesDespues,
+              recordatorios: cotizacionReminders,
+            }}
+            onExit={goHome}
+            onRefreshCloud={refreshCloudNow}
+            onCloudActivateDevice={async (payload) => {
+              const normTarget = normalizeDeviceIdInput(payload.deviceId, deviceId);
+              if (!payload.revoke && !payload.recordKeyOnly) {
+                if (normTarget === deviceId.trim().toUpperCase()) {
+                  setAccessBlockedSync(false);
+                }
+                setRevokedDevicesMap((prev) => {
+                  if (!(normTarget in prev)) return prev;
+                  const next = { ...prev };
+                  delete next[normTarget];
+                  saveRevokedDevicesMap(next);
+                  return next;
+                });
+                if (payload.key) {
+                  const nk = payload.key.trim().toUpperCase();
+                  revokedKeysRef.current.delete(nk);
+                  setRevokedKeys((prev) => prev.filter((k) => k.trim().toUpperCase() !== nk));
+                }
+                if (
+                  normTarget === deviceId.trim().toUpperCase() &&
+                  isColleaguePromoPlan(payload.planCode, payload.dias ?? null, payload.key)
+                ) {
+                  setPromoColegaUsage(savePromoColegaUsage(deviceId, true, Date.now()));
+                }
+              }
+              const snap = await updateDeviceLicenseInCloud({ ...payload, deviceId: normTarget });
+              applyCloudSnapshot(snap);
+              return Boolean(snap);
+            }}
+            onActivateLic={(lic) => {
+              setAccessBlockedSync(false);
+              saveTrialRevoked(false);
+              setTrialRevoked(false);
+              const assignedLic: LicenciaState = { ...lic, adminAssigned: true };
+              saveLicencia(assignedLic);
+              setLicencia(assignedLic);
+              if (isColleaguePromoPlan(lic.planCode, null, lic.activatedKey)) {
+                setPromoColegaUsage(savePromoColegaUsage(deviceId, true, lic.activatedAt || Date.now()));
+              }
+              if (isOneYearProPlan(assignedLic)) {
+                setAnnualCelebrationOpen(true);
+              }
+            }}
+            onRecordAdminKey={(rec) => {
+              const sig = buildAdminKeySignature(rec);
+              if (deletedAdminKeySigsRef.current.has(sig)) {
+                deletedAdminKeySigsRef.current.delete(sig);
+                saveDeletedAdminKeySigs(Array.from(deletedAdminKeySigsRef.current));
+              }
+              const normDev = rec.deviceId.trim().toUpperCase();
+              const normKey = rec.key.trim().toUpperCase();
+              revokedKeysRef.current.delete(normKey);
+              setRevokedKeys((prev) => prev.filter((k) => k.trim().toUpperCase() !== normKey));
+              setRevokedDevicesMap((prev) => {
+                if (!(normDev in prev)) return prev;
+                const next = { ...prev };
+                delete next[normDev];
+                saveRevokedDevicesMap(next);
+                return next;
+              });
+              setAdminKeys((prev) => {
+                const next = [
+                  { ...rec, revoked: false, revokedAt: null },
+                  ...prev.filter((item) => buildAdminKeySignature(item) !== sig),
+                ];
+                saveAdminKeys(next);
+                return next;
+              });
+            }}
+            onDeleteAdminKey={async (rec) => {
+              const normDev = normalizeDeviceIdInput(rec.deviceId);
+              if (rec.key) {
+                const sig = buildAdminKeySignature(rec);
+                deletedAdminKeySigsRef.current.add(sig);
+                saveDeletedAdminKeySigs(Array.from(deletedAdminKeySigsRef.current));
+                setAdminKeys((prev) => {
+                  const next = prev.filter(
+                    (item) =>
+                      item.id !== rec.id &&
+                      buildAdminKeySignature(item) !== sig &&
+                      normalizeDeviceIdInput(item.deviceId) !== normDev
+                  );
+                  saveAdminKeys(next);
+                  return next;
+                });
+              } else {
+                setAdminKeys((prev) => {
+                  const next = prev.filter((item) => normalizeDeviceIdInput(item.deviceId) !== normDev);
+                  saveAdminKeys(next);
+                  return next;
+                });
+              }
+              setCloudDevices((prev) =>
+                prev.filter((d) => normalizeDeviceIdInput(d.deviceId) !== normDev)
+              );
+              try {
+                const snap = await deleteAdminKeyInCloud({
+                  id: rec.id,
+                  deviceId: normDev,
+                  key: rec.key || '',
+                  deleteDevice: true,
+                });
+                if (snap) applyCloudSnapshot(snap);
+              } catch (err) {
+                console.error('Error al borrar en nube:', err);
+              }
+              showToast('Usuario eliminado del historial');
+            }}
+            onRevokePromo={async (targetDeviceId, keyCode) => {
+              const normTarget = normalizeDeviceIdInput(targetDeviceId, deviceId);
+              const now = Date.now();
+              const matchedDeviceKey = cloudDevices.find(
+                (d) => normalizeDeviceIdInput(d.deviceId) === normTarget
+              )?.lastKey;
+              const resolvedKey = (keyCode || matchedDeviceKey || '').trim().toUpperCase();
+              if (resolvedKey) {
+                revokedKeysRef.current.add(resolvedKey);
+                setRevokedKeys((prev) => (prev.includes(resolvedKey) ? prev : [...prev, resolvedKey]));
+              }
+              setAdminKeys((prev) => {
+                const next = prev.map((item) =>
+                  normalizeDeviceIdInput(item.deviceId) === normTarget
+                    ? { ...item, revoked: true, revokedAt: now }
+                    : item
+                );
+                saveAdminKeys(next);
+                return next;
+              });
+              setRevokedDevicesMap((prev) => {
+                const next = { ...prev, [normTarget]: now };
+                saveRevokedDevicesMap(next);
+                return next;
+              });
+              if (normTarget === deviceId.trim().toUpperCase()) {
+                setAccessBlockedSync(false);
+                revokeLocalProAccess({ showMessage: false, markTrialRevoked: true });
+              }
+              const snap = await updateDeviceLicenseInCloud({
+                deviceId: normTarget,
+                key: resolvedKey || undefined,
+                revoke: true,
+              }).catch(() => null);
+              applyCloudSnapshot(snap);
+              showToast(
+                snap
+                  ? `Plan revocado en la nube para ${normTarget}. Regresó a Versión Gratuita.`
+                  : 'Error al conectar con la nube para revocar.'
+              );
+              return Boolean(snap);
+            }}
+            onRevokeFreeAccess={async (targetDeviceId, keyCode) => {
+              const normTarget = normalizeDeviceIdInput(targetDeviceId, deviceId);
+              const now = Date.now();
+              const matchedDeviceKey = cloudDevices.find(
+                (d) => normalizeDeviceIdInput(d.deviceId) === normTarget
+              )?.lastKey;
+              const resolvedKey = (keyCode || matchedDeviceKey || '').trim().toUpperCase();
+              if (resolvedKey) {
+                revokedKeysRef.current.add(resolvedKey);
+                setRevokedKeys((prev) => (prev.includes(resolvedKey) ? prev : [...prev, resolvedKey]));
+              }
+              setRevokedDevicesMap((prev) => {
+                const next = { ...prev, [normTarget]: now };
+                saveRevokedDevicesMap(next);
+                return next;
+              });
+              if (normTarget === deviceId.trim().toUpperCase()) {
+                setAccessBlockedSync(true);
+                revokeLocalProAccess({ showMessage: false, markTrialRevoked: true });
+              }
+              const snap = await updateDeviceLicenseInCloud({
+                deviceId: normTarget,
+                key: resolvedKey || undefined,
+                block: true,
+              }).catch(() => null);
+              applyCloudSnapshot(snap);
+              showToast(
+                snap
+                  ? `Acceso bloqueado en la nube para ${normTarget}.`
+                  : 'Error al conectar con la nube para bloquear.'
+              );
+              return Boolean(snap);
+            }}
+            onResetPromoColega={async (targetDeviceId) => {
+              const normTarget = normalizeDeviceIdInput(targetDeviceId, deviceId);
+              if (normTarget === deviceId.trim().toUpperCase()) {
+                setPromoColegaUsage(savePromoColegaUsage(deviceId, false, null));
+              }
+              const snap = await updateDeviceLicenseInCloud({
+                deviceId: normTarget,
+                resetPromoColega: true,
+              }).catch(() => null);
+              applyCloudSnapshot(snap);
+              showToast(
+                snap
+                  ? `Permiso de Promo Colega restablecido manualmente para ${normTarget}.`
+                  : 'No se pudo conectar con la nube para restablecer el permiso.',
+                Boolean(snap)
+              );
+              return Boolean(snap);
+            }}
+            onImportFormulas={(imported) => {
+              setFormulas((prev) => {
+                const byId = new Map(prev.map((f) => [f.id, f]));
+                for (const f of imported) byId.set(f.id, f);
+                const next = Array.from(byId.values());
+                saveFormulas(next);
+                return next;
+              });
+            }}
+            onImportBackup={handleImportBackup}
+            sugerenciasWhatsapp={sugerenciasWhatsapp}
+            onSaveSugerenciasWhatsapp={(phone) => {
+              const clean = saveSugerenciasWhatsapp(phone.trim());
+              setSugerenciasWhatsapp(clean);
+            }}
+            trabajosAntesDespues={trabajosAntesDespues}
+            onPublishTrabajoAprobado={(item) => {
+              setTrabajosAntesDespues((prev) => [
+                {
+                  ...item,
+                  id: `ad-${Date.now()}`,
+                  fecha: new Date().toLocaleDateString('es-MX'),
+                  aprobado: true,
+                },
+                ...prev,
+              ]);
+            }}
+            onDeleteTrabajoAprobado={(id) => {
+              setTrabajosAntesDespues((prev) => prev.filter((t) => t.id !== id));
+              showToast('Trabajo eliminado de la galería');
+            }}
+            referralHistory={referralHistory}
+            onAddReferralRecord={(rec) => {
+              const updated = addReferralHistoryRecord(rec);
+              setReferralHistory(updated);
+            }}
+            onDeleteReferralRecord={(id) => {
+              setReferralHistory((prev) => {
+                const next = prev.filter((item) => item.id !== id);
+                saveReferralHistory(next);
+                return next;
+              });
+              showToast('Registro de referido eliminado');
+            }}
+            onShowToast={showToast}
+          />
+        )}
         </div>
         </ErrorBoundary>
       </main>
@@ -2836,11 +3170,22 @@ export default function App() {
         open={drawerOpen}
         proActive={proActive}
         isTrialActive={isTrialActive}
+        licencia={licencia}
         deviceId={deviceId}
         theme={theme}
+        skin={skin}
         cloudAccountEmail={cloudAccountSession?.email || null}
         isCloudBackupEligible={isCloudBackupEligible}
         onToggleTheme={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
+        onSelectSkin={(nextSkin) => {
+          setSkin(nextSkin);
+          const skinNames: Record<AppSkin, string> = {
+            basica: 'Básica (Actual)',
+            ejecutiva: 'Ejecutiva Azul',
+            industrial: 'Industrial Pro',
+          };
+          showToast(`Carátula "${skinNames[nextSkin]}" aplicada en toda la app`, true);
+        }}
         onClose={requestBack}
         onOpenPro={() => openModalFromDrawer('pro')}
         onOpenCloudBackup={() => openModalFromDrawer('cloudBackup')}
@@ -2867,6 +3212,7 @@ export default function App() {
         deviceId={deviceId}
         licencia={licencia}
         proActive={proActive}
+        promoColegaUsed={promoColegaUsage.promo_colega_usada}
         trialExpiresAt={trialExpiresAt}
         whatsappNumber={sugerenciasWhatsapp}
         defaultEmail={cloudAccountSession?.email || licencia?.linkedEmail || ''}
@@ -2874,6 +3220,16 @@ export default function App() {
         onClose={requestBack}
         onActivateLic={async (lic) => {
           const normKey = (lic.activatedKey || '').trim().toUpperCase();
+          const isColleague3d = isColleaguePromoPlan(lic.planCode, null, normKey);
+
+          // Validación estricta de uso único en almacenamiento local antes incluso de contactar nube
+          if (isColleague3d && promoColegaUsage.promo_colega_usada) {
+            return {
+              ok: false,
+              error: PROMO_COLEGA_ALREADY_USED_ERROR,
+            };
+          }
+
           if (normKey && revokedKeysRef.current.has(normKey)) {
             return {
               ok: false,
@@ -2897,10 +3253,19 @@ export default function App() {
               revokedKeysRef.current.add(normKey);
               setRevokedKeys((prev) => (prev.includes(normKey) ? prev : [...prev, normKey]));
             }
+            if (cloudRes.error === PROMO_COLEGA_ALREADY_USED_ERROR) {
+              setPromoColegaUsage(savePromoColegaUsage(deviceId, true, Date.now()));
+            }
             return {
               ok: false,
               error: cloudRes.error || 'Este código fue revocado y ya no puede activarse.',
             };
+          }
+
+          // Bloqueo definitivo tras primer uso exitoso de Promo Colega (3 días)
+          if (isColleague3d) {
+            const savedUsage = savePromoColegaUsage(deviceId, true, lic.activatedAt || Date.now());
+            setPromoColegaUsage(savedUsage);
           }
 
           saveTrialRevoked(false);
@@ -2915,6 +3280,9 @@ export default function App() {
           });
           saveLicencia(lic);
           setLicencia(lic);
+          if (isOneYearProPlan(lic)) {
+            setAnnualCelebrationOpen(true);
+          }
 
           // Registrar automáticamente en el historial local de referidos si fue invitado por un colega
           if (
@@ -2922,9 +3290,9 @@ export default function App() {
             referredById.trim().toUpperCase() !== deviceId.trim().toUpperCase()
           ) {
             const amountByCode: Record<string, string> = {
-              M: '$350 MXN',
-              Q: '$950 MXN',
-              A: '$1,800 MXN',
+              M: '$369 MXN',
+              Q: '$989 MXN',
+              A: '$1,799 MXN',
               G: '$0 MXN',
               V: 'Vitalicia',
             };
@@ -2979,7 +3347,8 @@ export default function App() {
         open={adminAuthOpen}
         onClose={requestBack}
         onSuccess={() => {
-          replaceGlobalModal('adminAuth', 'adminModal');
+          // Cierra el diálogo de contraseña y navega a la pantalla dedicada completa de Administrador
+          pushNavFrame({ view: 'admin', globalModals: [] });
         }}
       />
 
@@ -3061,6 +3430,9 @@ export default function App() {
           const assignedLic: LicenciaState = { ...lic, adminAssigned: true };
           saveLicencia(assignedLic);
           setLicencia(assignedLic);
+          if (isOneYearProPlan(assignedLic)) {
+            setAnnualCelebrationOpen(true);
+          }
         }}
         onRecordAdminKey={(rec) => {
           const sig = buildAdminKeySignature(rec);
@@ -3662,7 +4034,18 @@ export default function App() {
       <FloatingAssistant
         whatsappNumber={sugerenciasWhatsapp}
         deviceId={deviceId}
+        skin={skin}
         onShowToast={showToast}
+      />
+
+      <AnnualCelebrationOverlay
+        open={annualCelebrationOpen}
+        onClose={() => setAnnualCelebrationOpen(false)}
+        onApplyIndustrialSkin={() => {
+          setSkin('industrial');
+          saveSkin('industrial');
+          showToast('¡Carátula Industrial Pro (1 Año) activada en toda la app!', true);
+        }}
       />
 
       <LevantamientoRapido
@@ -3741,7 +4124,7 @@ export default function App() {
         </div>
       )}
 
-      {accessBlocked && !adminModalOpen && !adminAuthOpen && (
+      {accessBlocked && !adminModalOpen && !adminAuthOpen && currentView !== 'admin' && (
         <div
           id="modal-access-suspended"
           role="alertdialog"
