@@ -159,6 +159,7 @@ import {
 } from './utils/pushReminders';
 import { RemindersModal } from './components/CotizacionRemindersPanel';
 import { esMaterialDireccional, PiezaVidrioInput } from './utils/glassOptimizer2D';
+import { aggregateModulacionJobs } from './utils/modulacionLogic';
 import { useOnlineStatus, usePWAInstall } from './utils/usePWAInstall';
 import { ScreenId, SideDrawer, TopBar } from './components/TopBarAndDrawer';
 import { MainMenuView } from './components/MainMenuView';
@@ -188,11 +189,13 @@ import { LevantamientoRapido } from './components/LevantamientoRapido';
 import {
   AlumBridgePayload,
   LevantamientoDraft,
+  LevantamientoPieza,
   mergePiezaSpecsAndNotes,
   normalizeLevantamientoDraft,
   overwriteHojaProyectoInStorage,
   resolveColorAluminioFromLevantamiento,
   resolveLineaFromLevantamiento,
+  resolveMosquiteroFromLevantamiento,
   resolveVidrioFromLevantamiento,
 } from './utils/levantamientoLogic';
 
@@ -1241,6 +1244,10 @@ export default function App() {
   );
 
   const requestBack = useCallback(() => {
+    // 1. Primero consumir cualquier capa/modal local registrada (Visor PDF, Hoja PDF, Vista previa de Contrato, etc.)
+    if (consumeTopHistoryOverlay()) {
+      return;
+    }
     if (navFramesRef.current.length <= 1) {
       return;
     }
@@ -1498,12 +1505,8 @@ export default function App() {
       const prevFrame = navFramesRef.current[navFramesRef.current.length - 1] || BASE_FRAME;
 
       if (navFramesRef.current.length > 1) {
-        const targetDepth =
-          event.state &&
-          typeof event.state.depth === 'number' &&
-          event.state.depth < navFramesRef.current.length - 1
-            ? Math.max(0, event.state.depth)
-            : navFramesRef.current.length - 2;
+        // Retroceder ESTRICTAMENTE 1 pantalla/paso a la vez (nunca saltar directo al Menú Inicio)
+        const targetDepth = Math.max(0, navFramesRef.current.length - 2);
         const targetFrame = navFramesRef.current[targetDepth] || BASE_FRAME;
         navFramesRef.current = navFramesRef.current.slice(0, targetDepth + 1);
         commitBackFrameSync(targetFrame, prevFrame);
@@ -1542,6 +1545,56 @@ export default function App() {
     };
   }, [applyFrameState, initialReferralActive]);
 
+  // Gesto táctil nativo de deslizar desde el borde izquierdo (Swipe-Back) en Modulación, Cortes y demás pantallas
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    let startX = 0;
+    let startY = 0;
+    let tracking = false;
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length !== 1) {
+        tracking = false;
+        return;
+      }
+      const touch = e.touches[0];
+      // Solo activar desde el borde izquierdo (<= 36px) para no interferir con scroll horizontal de tablas/planos
+      if (touch.clientX <= 36) {
+        startX = touch.clientX;
+        startY = touch.clientY;
+        tracking = true;
+      } else {
+        tracking = false;
+      }
+    };
+
+    const onTouchEnd = (e: TouchEvent) => {
+      if (!tracking || e.changedTouches.length === 0) return;
+      tracking = false;
+      const touch = e.changedTouches[0];
+      const dx = touch.clientX - startX;
+      const dy = touch.clientY - startY;
+      if (dx >= 65 && Math.abs(dx) > Math.abs(dy) * 1.4) {
+        if (currentViewRef.current !== 'menu' || navFramesRef.current.length > 1) {
+          requestBack();
+        }
+      }
+    };
+
+    const onTouchCancel = () => {
+      tracking = false;
+    };
+
+    window.addEventListener('touchstart', onTouchStart, { passive: true });
+    window.addEventListener('touchend', onTouchEnd, { passive: true });
+    window.addEventListener('touchcancel', onTouchCancel, { passive: true });
+    return () => {
+      window.removeEventListener('touchstart', onTouchStart);
+      window.removeEventListener('touchend', onTouchEnd);
+      window.removeEventListener('touchcancel', onTouchCancel);
+    };
+  }, [requestBack]);
+
   const handleSelectLinea = (lineaId: LineaId) => {
     const cfg = LINEAS_CONFIG[lineaId];
     if (cfg.pro && !proActive) {
@@ -1569,9 +1622,11 @@ export default function App() {
       apertura:
         lineaId === 'mosq-fijo'
           ? 'fija'
-          : lineaId === 'mosq-corredizo' || lineaId === 'cancel-bano'
-            ? 'corrediza'
-            : prev.apertura,
+          : lineaId === 'mosq-abatible'
+            ? 'abatible'
+            : lineaId === 'mosq-corredizo' || lineaId === 'cancel-bano'
+              ? 'corrediza'
+              : prev.apertura,
       tolerancias: { ...cfg.toleranciasDefault },
     }));
     const baseRate = taller.tarifasBase[lineaId] ?? cfg.tarifaBaseDefault;
@@ -2539,6 +2594,44 @@ export default function App() {
               }));
               showToast('Precio m² del panel actualizado', true);
             }}
+            onOpenGlassOptimizerFromJobs={(jobs: LevantamientoPieza[]) => {
+              const agg = aggregateModulacionJobs(
+                jobs.map((p) => {
+                  const m = resolveLineaFromLevantamiento(p);
+                  return {
+                    id: p.id,
+                    etiqueta: p.area ? `${p.tipo} (${p.area})` : p.tipo,
+                    modeloId: m.modelo || 'win-corrediza',
+                    conMosquitero: resolveMosquiteroFromLevantamiento(p.mosquitero),
+                    serieId: m.serieMod,
+                    sublineaId: 'comercial-hermetica',
+                    anchoCm: Math.max(20, Number(p.anchoCm) || 120),
+                    altoCm: Math.max(20, Number(p.altoCm) || 120),
+                    cantidad: Math.max(1, Number(p.cant) || 1),
+                    vidrioLabel: p.colorVidrio || 'Claro 6mm',
+                    sinVidrio:
+                      String(p.colorVidrio || '').toLowerCase().includes('sin vidrio') ||
+                      String(p.tipo || '').toLowerCase().includes('mosquitero'),
+                  };
+                })
+              );
+              const imported: PiezaVidrioInput[] = agg.vidriosConsolidados.map((v, idx) => ({
+                id: `v-trab-${Date.now()}-${idx}`,
+                etiqueta: v.nombre,
+                tipoNombre: v.espesorLabel || 'Claro 6mm',
+                anchoCm: v.anchoCm,
+                altoCm: v.altoCm,
+                cantidad: Math.max(1, v.pzas),
+                permitirRotacion: !esMaterialDireccional(v.espesorLabel || 'Claro 6mm'),
+              }));
+              if (imported.length === 0) {
+                showToast('Los trabajos seleccionados no llevan vidrio');
+                return;
+              }
+              setVidrioPiezasDraft(imported);
+              navigateTo('vidrio');
+              showToast(`${imported.length} corte(s) de vidrio enviados al Optimizador 2D`, true);
+            }}
             onShowToast={showToast}
           />
         )}
@@ -3158,6 +3251,12 @@ export default function App() {
                 return next;
               });
               showToast('Registro de referido eliminado');
+            }}
+            onResetCounters={() => {
+              setAdminKeys([]);
+              saveAdminKeys([]);
+              setReferralHistory([]);
+              saveReferralHistory([]);
             }}
             onShowToast={showToast}
           />

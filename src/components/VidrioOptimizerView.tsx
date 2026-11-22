@@ -19,30 +19,35 @@ import { HojaVidrioItem } from '../utils/storageHelpers';
 
 function loadLatestLevantamientoForGlass(): LevantamientoDraft | null {
   if (typeof window === 'undefined') return null;
-  for (const key of [LEV_KEYS.activo, LEV_KEYS.draft]) {
+  const candidates: LevantamientoDraft[] = [];
+  for (const key of [LEV_KEYS.draft, LEV_KEYS.activo]) {
     try {
       const raw = window.localStorage.getItem(key);
       if (!raw) continue;
       const norm = normalizeLevantamientoDraft(JSON.parse(raw));
-      if (norm.piezas.length > 0) return norm;
+      if (norm.piezas.length > 0) candidates.push(norm);
     } catch {
       // ignorar
     }
   }
-  return null;
+  if (candidates.length === 0) return null;
+  if (candidates.length === 1) return candidates[0];
+  // Prefer the one with more pieces; on tie prefer draft (index 0) since it is updated live
+  return candidates[0].piezas.length >= candidates[1].piezas.length ? candidates[0] : candidates[1];
 }
 
 function buildGlassPiezasFromLevantamiento(lev: LevantamientoDraft): PiezaVidrioInput[] {
   const result: PiezaVidrioInput[] = [];
   lev.piezas.forEach((p, idx) => {
+    const tipoLow = String(p.tipo || '').toLowerCase();
     const vidRaw = String(p.colorVidrio || 'Vidrio claro').trim();
-    if (vidRaw.toLowerCase() === 'sin vidrio') return;
+    if (vidRaw.toLowerCase() === 'sin vidrio' || tipoLow.includes('mosquitero')) return;
     const tipoNombre =
       vidRaw.toLowerCase() === 'claro' || vidRaw.toLowerCase() === 'vidrio claro'
         ? 'Vidrio claro 6 mm'
         : `${vidRaw} 6 mm`;
     const isCorrediza =
-      p.tipo.toLowerCase().includes('corrediza') || p.tipo.toLowerCase().includes('cancel');
+      tipoLow.includes('corrediza') || tipoLow.includes('cancel');
     const panesPerUnit = isCorrediza ? 2 : 1;
     const glassW = isCorrediza
       ? Math.max(15, round2((p.anchoCm - 5.5) / 2))
@@ -50,7 +55,7 @@ function buildGlassPiezasFromLevantamiento(lev: LevantamientoDraft): PiezaVidrio
     const glassH = Math.max(15, round2(p.altoCm - 14));
     result.push({
       id: `v-lev-${p.id}-${idx}`,
-      etiqueta: `${p.area ? `${p.area} · ` : ''}${p.tipo}`,
+      etiqueta: `#${idx + 1} ${p.area ? `${p.area} · ` : ''}${p.tipo}`,
       tipoNombre,
       anchoCm: glassW,
       altoCm: glassH,

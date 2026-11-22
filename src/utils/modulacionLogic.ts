@@ -1184,3 +1184,112 @@ export function buildPartidaFromModulacion(
     },
   };
 }
+
+/* ==================== AGREGACIÓN MULTI-TRABAJO PARA MODULACIÓN Y VIDRIO 2D ==================== */
+
+export interface ModulacionMultiJobInput {
+  id: string;
+  etiqueta: string;
+  modeloId: ModulacionModeloId;
+  conMosquitero: boolean;
+  serieId: ModulacionSerieId;
+  sublineaId: ModulacionSublineaId;
+  anchoCm: number;
+  altoCm: number;
+  cantidad: number;
+  vidrioLabel?: string;
+  sinVidrio?: boolean;
+}
+
+export interface ModulacionJobCalculatedItem {
+  job: ModulacionMultiJobInput;
+  calculo: ModulacionCalculoResult;
+  perfilesEscalados: ModulacionPerfilCorteRow[];
+  vidriosEscalados: CorteVidrio[];
+  totalAluminioM: number;
+}
+
+export interface ModulacionMultiJobResult {
+  items: ModulacionJobCalculatedItem[];
+  perfilesConsolidados: ModulacionPerfilCorteRow[];
+  vidriosConsolidados: CorteVidrio[];
+  totalTrabajos: number;
+  totalPiezas: number;
+  totalAluminioM: number;
+  tramos610Estimados: number;
+}
+
+export function aggregateModulacionJobs(
+  jobs: ModulacionMultiJobInput[]
+): ModulacionMultiJobResult {
+  const safeJobs = Array.isArray(jobs) ? jobs : [];
+  const items: ModulacionJobCalculatedItem[] = [];
+  const perfilesConsolidados: ModulacionPerfilCorteRow[] = [];
+  const vidriosConsolidados: CorteVidrio[] = [];
+  let totalPiezas = 0;
+  let totalAluminioM = 0;
+
+  for (const job of safeJobs) {
+    const qty = Math.max(1, Math.round(Number(job.cantidad) || 1));
+    const calculo = calcularModulacionCortes({
+      modeloId: job.modeloId,
+      conMosquitero: job.conMosquitero,
+      serieId: job.serieId,
+      sublineaId: job.sublineaId,
+      anchoCm: job.anchoCm,
+      altoCm: job.altoCm,
+    });
+
+    const perfilesEscalados: ModulacionPerfilCorteRow[] = calculo.perfiles.map((row) => {
+      const scaledQty = row.cantidad * qty;
+      return {
+        ...row,
+        id: `${job.id}__${row.id}`,
+        nombre: safeJobs.length > 1 ? `${row.nombre} · ${job.etiqueta}` : row.nombre,
+        cantidad: scaledQty,
+        cantidadLabel:
+          qty > 1 ? `x${scaledQty} (${row.cantidad} × ${qty} pzas)` : row.cantidadLabel,
+        totalMetros: round2(row.totalMetros * qty),
+      };
+    });
+
+    const vidriosEscalados: CorteVidrio[] = job.sinVidrio
+      ? []
+      : calculo.vidrios.map((v) => {
+          const pzas = Math.max(1, v.pzas * qty);
+          return {
+            ...v,
+            nombre: job.etiqueta || v.nombre,
+            pzas,
+            areaM2: round2(((v.anchoCm * v.altoCm) / 10000) * pzas),
+            espesorLabel: job.vidrioLabel || v.espesorLabel || 'Claro 6 mm',
+          };
+        });
+
+    const jobAluminioM = round2(calculo.totalAluminioM * qty);
+    totalPiezas += qty;
+    totalAluminioM = round2(totalAluminioM + jobAluminioM);
+
+    items.push({
+      job,
+      calculo,
+      perfilesEscalados,
+      vidriosEscalados,
+      totalAluminioM: jobAluminioM,
+    });
+
+    perfilesConsolidados.push(...perfilesEscalados);
+    vidriosConsolidados.push(...vidriosEscalados);
+  }
+
+  return {
+    items,
+    perfilesConsolidados,
+    vidriosConsolidados,
+    totalTrabajos: items.length,
+    totalPiezas,
+    totalAluminioM,
+    tramos610Estimados: totalAluminioM > 0 ? Math.max(1, Math.ceil((totalAluminioM * 100) / TRAMO_STD_CM)) : 0,
+  };
+}
+

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   AperturaVentanaId,
   CancelEstiloId,
@@ -13,6 +13,20 @@ import {
   PerfilCatalogoId,
   TrabajoParams,
 } from '../utils/alumineroLogic';
+import {
+  formatMedidaText,
+  LEV_KEYS,
+  LevantamientoDraft,
+  LevantamientoPieza,
+  normalizeLevantamientoDraft,
+  resolveColorAluminioFromLevantamiento,
+  resolveLineaFromLevantamiento,
+  resolveMosquiteroFromLevantamiento,
+} from '../utils/levantamientoLogic';
+import {
+  aggregateModulacionJobs,
+  ModulacionMultiJobInput,
+} from '../utils/modulacionLogic';
 import { generarPdfTecnico } from '../utils/pdfExport';
 import { computeSimProgressFromElapsed } from '../utils/blueprintMotion';
 import {
@@ -67,6 +81,7 @@ interface Props {
   onUpdateRellenoPrecioM2: (materialId: string, espesorMm: number, price: number) => void;
   workTab?: 'descuentos' | 'cotizacion';
   onChangeWorkTab?: (tab: 'descuentos' | 'cotizacion') => void;
+  onOpenGlassOptimizerFromJobs?: (piezas: LevantamientoPieza[]) => void;
   onShowToast: (msg: string, topSuccess?: boolean) => void;
 }
 
@@ -134,6 +149,7 @@ export const TrabajoView: React.FC<Props> = ({
   onUpdateRellenoPrecioM2,
   workTab: controlledWorkTab,
   onChangeWorkTab,
+  onOpenGlassOptimizerFromJobs,
   onShowToast,
 }) => {
   const [localWorkTab, setLocalWorkTab] = useState<'descuentos' | 'cotizacion'>('descuentos');
@@ -147,6 +163,110 @@ export const TrabajoView: React.FC<Props> = ({
   const [showTolerancias, setShowTolerancias] = useState(false);
   const [simPlaying, setSimPlaying] = useState(false);
   const [simProgress, setSimProgress] = useState(0);
+
+  const loadLevForCuts = (): LevantamientoDraft | null => {
+    try {
+      const rawDraft = localStorage.getItem(LEV_KEYS.draft);
+      const rawAct = localStorage.getItem(LEV_KEYS.activo);
+      const d1 = rawDraft ? normalizeLevantamientoDraft(JSON.parse(rawDraft)) : null;
+      const d2 = rawAct ? normalizeLevantamientoDraft(JSON.parse(rawAct)) : null;
+      const list = [d1, d2].filter(
+        (d): d is LevantamientoDraft => Boolean(d && Array.isArray(d.piezas) && d.piezas.length > 0)
+      );
+      if (list.length === 0) return null;
+      list.sort(
+        (a, b) =>
+          b.piezas.length - a.piezas.length ||
+          (Date.parse(b.fecha || '') || 0) - (Date.parse(a.fecha || '') || 0)
+      );
+      return list[0];
+    } catch {
+      return null;
+    }
+  };
+
+  const [levCutsDraft, setLevCutsDraft] = useState<LevantamientoDraft | null>(() => loadLevForCuts());
+  const [selectedLevJobIds, setSelectedLevJobIds] = useState<string[]>(() => {
+    const initial = loadLevForCuts();
+    return initial ? initial.piezas.map((p) => p.id) : [];
+  });
+  const [activeLevJobId, setActiveLevJobId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const syncLev = () => {
+      const latest = loadLevForCuts();
+      setLevCutsDraft(latest);
+      if (latest) {
+        setSelectedLevJobIds((prev) => {
+          const valid = prev.filter((id) => latest.piezas.some((p) => p.id === id));
+          return valid.length > 0 ? valid : latest.piezas.map((p) => p.id);
+        });
+      } else {
+        setSelectedLevJobIds([]);
+      }
+    };
+    window.addEventListener('aluminero:levantamiento-activo', syncLev);
+    window.addEventListener('focus', syncLev);
+    return () => {
+      window.removeEventListener('aluminero:levantamiento-activo', syncLev);
+      window.removeEventListener('focus', syncLev);
+    };
+  }, []);
+
+  const selectedLevJobs = useMemo(() => {
+    if (!levCutsDraft) return [];
+    return levCutsDraft.piezas.filter((p) => selectedLevJobIds.includes(p.id));
+  }, [levCutsDraft, selectedLevJobIds]);
+
+  const multiCutsSummary = useMemo(() => {
+    if (selectedLevJobs.length === 0) return null;
+    const jobs: ModulacionMultiJobInput[] = selectedLevJobs.map((p) => {
+      const m = resolveLineaFromLevantamiento(p);
+      return {
+        id: p.id,
+        etiqueta: p.area ? `${p.tipo} (${p.area})` : p.tipo,
+        modeloId: m.modelo || 'win-corrediza',
+        conMosquitero: resolveMosquiteroFromLevantamiento(p.mosquitero),
+        serieId: m.serieMod,
+        sublineaId: 'comercial-hermetica',
+        anchoCm: Math.max(20, Number(p.anchoCm) || 120),
+        altoCm: Math.max(20, Number(p.altoCm) || 120),
+        cantidad: Math.max(1, Number(p.cant) || 1),
+        vidrioLabel: p.colorVidrio || 'Claro 6mm',
+        sinVidrio:
+          String(p.colorVidrio || '').toLowerCase().includes('sin vidrio') ||
+          String(p.tipo || '').toLowerCase().includes('mosquitero'),
+      };
+    });
+    return aggregateModulacionJobs(jobs);
+  }, [selectedLevJobs]);
+
+  const toggleSelectAllLevJobs = (checked: boolean) => {
+    if (!levCutsDraft) return;
+    setSelectedLevJobIds(checked ? levCutsDraft.piezas.map((p) => p.id) : []);
+  };
+
+  const toggleSingleLevJob = (id: string) => {
+    setSelectedLevJobIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const loadLevJobIntoTrabajo = (p: LevantamientoPieza) => {
+    const m = resolveLineaFromLevantamiento(p);
+    setActiveLevJobId(p.id);
+    onSelectLinea(m.linea);
+    onChangeParams({
+      anchoCm: Math.max(20, Number(p.anchoCm) || 120),
+      altoCm: Math.max(20, Number(p.altoCm) || 120),
+      cantidad: Math.max(1, Number(p.cant) || 1),
+      color: resolveColorAluminioFromLevantamiento(p.colorAluminio),
+      apertura: m.apertura,
+    });
+    if (p.area) onChangeAreaText(p.area);
+    onChangeEtiquetaPieza(p.area ? `${p.tipo} · ${p.area}` : p.tipo);
+    onShowToast(`Cargado en Lista de cortes: ${p.tipo} (${p.anchoCm}×${p.altoCm} cm)`, true);
+  };
 
   const lineaCfg = LINEAS_CONFIG[params.linea];
   const colorCfg = COLORES_CONFIG[params.color];
@@ -162,6 +282,7 @@ export const TrabajoView: React.FC<Props> = ({
     'cancel-bano',
     'mosq-fijo',
     'mosq-corredizo',
+    'mosq-abatible',
     'puerta-2',
     'puerta-abatible',
     'puerta-europea',
@@ -356,7 +477,13 @@ export const TrabajoView: React.FC<Props> = ({
                   </h2>
                   <p className="m-0 text-[12px] text-slate-500">
                     {esMosq
-                      ? `${params.linea === 'mosq-fijo' ? 'Malla fija tensada con cola de rata' : 'Hoja mosquitera corrediza con 2 carretillas'} · ${colorCfg.nombre}`
+                      ? `${
+                          params.linea === 'mosq-fijo'
+                            ? 'Malla fija tensada con cola de rata'
+                            : params.linea === 'mosq-abatible'
+                              ? 'Hoja mosquitera abatible con bisagras y broche magnético'
+                              : 'Hoja mosquitera corrediza con 2 carretillas'
+                        } · ${colorCfg.nombre}`
                       : esPuerta
                         ? `Puerta abatible apertura ${params.sentidoPuerta === 'izq' ? 'izquierda' : 'derecha'}`
                         : `${params.apertura === 'fija' ? '1 hoja fija' : `${params.hojas} hojas`} · ${colorCfg.nombre}`}
@@ -742,6 +869,95 @@ export const TrabajoView: React.FC<Props> = ({
                 Ajustar descuentos
               </button>
             </div>
+
+            {levCutsDraft && levCutsDraft.piezas.length > 0 && (
+              <div
+                id="trabajo-lev-jobs-panel"
+                className="mb-3 p-3 rounded-2xl bg-slate-900/95 border border-cyan-500/35 text-slate-100"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                  <div>
+                    <strong className="block text-[12.5px] font-extrabold text-cyan-200">
+                      📋 Trabajos del Levantamiento ({selectedLevJobs.length}/{levCutsDraft.piezas.length} seleccionados)
+                    </strong>
+                    <span className="block text-[11px] text-slate-300">
+                      Marca los trabajos a incluir en el resumen de cortes o toca uno para cargarlo.
+                    </span>
+                  </div>
+                  <label className="inline-flex items-center gap-1.5 text-[11.5px] font-extrabold text-cyan-100 cursor-pointer select-none">
+                    <input
+                      id="chk-trabajo-select-all"
+                      type="checkbox"
+                      checked={selectedLevJobs.length === levCutsDraft.piezas.length}
+                      onChange={(e) => toggleSelectAllLevJobs(e.target.checked)}
+                      className="w-4 h-4 accent-cyan-400 cursor-pointer"
+                    />
+                    Seleccionar todos
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[210px] overflow-y-auto pr-0.5">
+                  {levCutsDraft.piezas.map((p, idx) => {
+                    const isChecked = selectedLevJobIds.includes(p.id);
+                    const isLoaded = activeLevJobId === p.id;
+                    return (
+                      <div
+                        key={p.id}
+                        id={`trabajo-job-card-${p.id}`}
+                        className={`rounded-xl p-2 border transition-all flex items-start gap-2 ${
+                          isLoaded
+                            ? 'bg-orange-500/15 border-orange-400 ring-1 ring-orange-400/50'
+                            : isChecked
+                              ? 'bg-cyan-500/15 border-cyan-400/70'
+                              : 'bg-slate-800/70 border-slate-700 opacity-75'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          id={`chk-trabajo-job-${p.id}`}
+                          checked={isChecked}
+                          onChange={() => toggleSingleLevJob(p.id)}
+                          aria-label={`Seleccionar ${p.tipo} para lista de cortes`}
+                          className="mt-0.5 w-4 h-4 accent-cyan-400 cursor-pointer shrink-0"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => loadLevJobIntoTrabajo(p)}
+                          className="flex-1 min-w-0 text-left bg-transparent border-0 p-0 cursor-pointer text-inherit"
+                        >
+                          <div className="text-[11.5px] font-extrabold text-white truncate">
+                            #{idx + 1} {p.tipo} ×{p.cant}
+                          </div>
+                          <div className="mono text-[10.5px] text-cyan-200 font-bold">
+                            {formatMedidaText(p)}
+                            {p.area ? ` · ${p.area}` : ''}
+                          </div>
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {multiCutsSummary && selectedLevJobs.length > 0 && (
+                  <div className="mt-2.5 pt-2 border-t border-slate-700/80 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                    <span className="mono text-emerald-300 font-bold">
+                      Total seleccionados: {multiCutsSummary.totalAluminioM.toFixed(2)} m ·{' '}
+                      {multiCutsSummary.tramos610Estimados} tramo(s) 6.10 m
+                    </span>
+                    {onOpenGlassOptimizerFromJobs && (
+                      <button
+                        type="button"
+                        id="btn-trabajo-send-selected-vidrio"
+                        onClick={() => onOpenGlassOptimizerFromJobs(selectedLevJobs)}
+                        className="px-2.5 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-extrabold text-[11px] cursor-pointer"
+                      >
+                        ✂️ Enviar a Vidrio 2D
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 mb-2 rounded-[11px] bg-blue-50 border border-blue-200">
               <label htmlFor="sel-formula-corte" className="text-[12px] font-extrabold text-blue-700 whitespace-nowrap">

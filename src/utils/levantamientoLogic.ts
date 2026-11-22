@@ -20,6 +20,7 @@ export const LEV_TIPOS = [
   'Ventana Corrediza',
   'Ventana Fija',
   'Ventana Abatible / Proyección',
+  'Mosquitero abatible',
   'Puerta',
   'Cancel / Otro',
 ] as const;
@@ -55,6 +56,7 @@ export const LEV_MOSQUITERO_OPTS = [
   { id: 'sin', label: 'Sin mosquitero' },
   { id: 'fijo', label: 'Mosquitero Fijo' },
   { id: 'corredizo', label: 'Mosquitero Corredizo' },
+  { id: 'abatible', label: 'Mosquitero abatible' },
 ] as const;
 
 export type LevantamientoTipo = (typeof LEV_TIPOS)[number];
@@ -88,6 +90,12 @@ export const LEV_MAPA: Record<string, LevantamientoMapaItem> = {
   'Ventana Abatible / Proyección': {
     linea: 'europea',
     modelo: 'win-proyeccion',
+    cat: 'ventanas',
+  },
+  'Mosquitero abatible': {
+    linea: 'mosq-abatible',
+    apertura: 'abatible',
+    modelo: 'win-abatible',
     cat: 'ventanas',
   },
   Puerta: {
@@ -157,6 +165,7 @@ export interface StorageLike {
 
 export function getDefaultLineaPerfilForTipo(tipo: string): LevantamientoLineaPerfil {
   if (tipo === 'Ventana Abatible / Proyección') return 'Línea Europea';
+  if (tipo === 'Mosquitero abatible') return 'Cancel / Mosq.';
   if (tipo === 'Puerta') return 'Batiente Alumer';
   if (tipo === 'Cancel / Otro') return 'Cancel / Mosq.';
   return 'Línea 3"';
@@ -185,6 +194,15 @@ export function resolveLineaFromLevantamiento(pieza: LevantamientoPieza): {
         : 'linea-3';
 
   const lpLower = lp.toLowerCase();
+
+  if (pieza.tipo === 'Mosquitero abatible') {
+    linea = 'mosq-abatible';
+    apertura = 'abatible';
+    modelo = 'win-abatible';
+    cat = 'ventanas';
+    serieMod = 'linea-3';
+    return { linea, apertura, modelo, cat, serieMod };
+  }
 
   if (lp === 'Línea 3"' || lpLower.includes('nacional 3"') || lpLower.includes('nacional 4')) {
     linea = isPuerta ? 'puerta-abatible' : '3';
@@ -227,6 +245,9 @@ export function resolveLineaFromLevantamiento(pieza: LevantamientoPieza): {
     } else if (pieza.mosquitero === 'Mosquitero Corredizo') {
       linea = 'mosq-corredizo';
       apertura = 'corrediza';
+    } else if (pieza.mosquitero === 'Mosquitero abatible') {
+      linea = 'mosq-abatible';
+      apertura = 'abatible';
     } else {
       linea = 'cancel-bano';
       apertura = 'corrediza';

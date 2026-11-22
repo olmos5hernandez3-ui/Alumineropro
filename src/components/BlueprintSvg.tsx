@@ -46,7 +46,11 @@ export const BlueprintSvg: React.FC<Props> = ({ params, despiece, simProgress })
 
   const footerText = esMosq
     ? `TELA MOSQUITERA: ${despiece.telaMosquiteraM2.toFixed(2)} m² · COLA DE RATA: ${despiece.colaDeRataM.toFixed(2)} m${
-        params.linea === 'mosq-corredizo' ? ` · ${despiece.carretillasMosq} CARRETILLAS` : ''
+        params.linea === 'mosq-corredizo'
+          ? ` · ${despiece.carretillasMosq} CARRETILLAS`
+          : params.linea === 'mosq-abatible'
+            ? ' · 2 BISAGRAS · IMÁN'
+            : ''
       }`
     : despiece.vidrios[0]
       ? `${esCancel ? 'CANCEL' : 'RELLENO'} (${panelLabel.toUpperCase()} · ${despiece.vidrios.reduce((s, v) => s + v.pzas, 0)} PZAS): ${despiece.vidrios[0].anchoCm} × ${despiece.vidrios[0].altoCm} cm`
@@ -248,6 +252,98 @@ export const BlueprintSvg: React.FC<Props> = ({ params, despiece, simProgress })
             <circle cx={(params.invertido ? frameX + frameW * 0.75 : frameX + frameW * 0.25)} cy={frameY + frameH / 2} r="15" fill="rgba(29,78,216,0.9)" />
             <text x={(params.invertido ? frameX + frameW * 0.75 : frameX + frameW * 0.25)} y={frameY + frameH / 2 + 4} textAnchor="middle" fill="#FFFFFF" fontSize="13" fontWeight="800">
               {params.invertido ? '←' : '→'}
+            </text>
+          </g>
+        </g>
+      )}
+
+      {/* ==================== MOSQUITERO ABATIBLE ==================== */}
+      {params.linea === 'mosq-abatible' && (
+        <g>
+          {/* Contramarco 5844 perimetral */}
+          <rect x={frameX} y={frameY} width={frameW} height={frameH} fill="#F8FAFC" stroke={colorCfg.frameStroke} strokeWidth="2" />
+          <rect x={frameX} y={frameY} width={frameW} height={12} fill={colorCfg.frameFill} stroke={colorCfg.frameStroke} />
+          <rect x={frameX} y={frameY + frameH - 12} width={frameW} height={12} fill={colorCfg.frameFill} stroke={colorCfg.frameStroke} />
+          <rect x={frameX} y={frameY} width={12} height={frameH} fill={colorCfg.frameFill} stroke={colorCfg.frameStroke} />
+          <rect x={frameX + frameW - 12} y={frameY} width={12} height={frameH} fill={colorCfg.frameFill} stroke={colorCfg.frameStroke} />
+
+          {/* Hoja abatible con malla mosquitera */}
+          <g
+            transform={
+              params.invertido
+                ? `translate(${frameX + frameW - 12}, 0) scale(${swingScaleX}, 1) translate(${-(frameX + frameW - 12)}, 0)`
+                : `translate(${frameX + 12}, 0) scale(${swingScaleX}, 1) translate(${-(frameX + 12)}, 0)`
+            }
+          >
+            <rect
+              x={frameX + 12}
+              y={frameY + 12}
+              width={frameW - 24}
+              height={frameH - 24}
+              fill="url(#mosq-mesh)"
+              stroke={colorCfg.frameStroke}
+              strokeWidth="8"
+            />
+            <rect
+              x={frameX + 18}
+              y={frameY + 18}
+              width={frameW - 36}
+              height={frameH - 36}
+              fill="none"
+              stroke="#0F172A"
+              strokeWidth="1.6"
+              strokeDasharray="5 2"
+            />
+            {/* Líneas de giro de hoja abatible */}
+            <line
+              x1={params.invertido ? frameX + frameW - 14 : frameX + 14}
+              y1={frameY + 14}
+              x2={params.invertido ? frameX + 16 : frameX + frameW - 16}
+              y2={frameY + frameH / 2}
+              stroke="#1D4ED8"
+              strokeWidth="1.4"
+              strokeDasharray="6 4"
+            />
+            <line
+              x1={params.invertido ? frameX + frameW - 14 : frameX + 14}
+              y1={frameY + frameH - 14}
+              x2={params.invertido ? frameX + 16 : frameX + frameW - 16}
+              y2={frameY + frameH / 2}
+              stroke="#1D4ED8"
+              strokeWidth="1.4"
+              strokeDasharray="6 4"
+            />
+            {/* Bisagras */}
+            <rect
+              x={params.invertido ? frameX + frameW - 16 : frameX + 8}
+              y={frameY + 34}
+              width={8}
+              height={20}
+              rx={2}
+              fill="#1D4ED8"
+            />
+            <rect
+              x={params.invertido ? frameX + frameW - 16 : frameX + 8}
+              y={frameY + frameH - 54}
+              width={8}
+              height={20}
+              rx={2}
+              fill="#1D4ED8"
+            />
+            {/* Jaladera y cierre magnético */}
+            <rect
+              x={params.invertido ? frameX + 20 : frameX + frameW - 28}
+              y={frameY + frameH / 2 - 16}
+              width={8}
+              height={32}
+              rx={3}
+              fill="#F59E0B"
+              stroke="#0F172A"
+              strokeWidth="1"
+            />
+            <rect x={136} y={frameY + frameH / 2 - 16} width={188} height={32} rx={8} fill="rgba(255,255,255,0.92)" stroke="#475569" />
+            <text x={230} y={frameY + frameH / 2 + 4} textAnchor="middle" fill="#0F172A" fontSize="11.5" fontWeight="800">
+              MOSQ. ABATIBLE · {colorCfg.corto.toUpperCase()}
             </text>
           </g>
         </g>

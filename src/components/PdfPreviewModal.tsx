@@ -72,23 +72,21 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
       return;
     }
 
-    if (isRunningInIframe()) {
+    sheetOverlayTokenRef.current = pushHistoryOverlay('pdf-sheet', () => {
       sheetHistoryPushedRef.current = false;
       sheetOverlayTokenRef.current = null;
-      return;
-    }
+      onCloseRef.current();
+    });
 
-    try {
-      window.history.pushState({ apPdfLayer: 'sheet' }, '');
-      sheetHistoryPushedRef.current = true;
-      sheetOverlayTokenRef.current = pushHistoryOverlay('pdf-sheet', () => {
+    if (!isRunningInIframe()) {
+      try {
+        window.history.pushState({ apPdfLayer: 'sheet' }, '');
+        sheetHistoryPushedRef.current = true;
+      } catch {
         sheetHistoryPushedRef.current = false;
-        sheetOverlayTokenRef.current = null;
-        onCloseRef.current();
-      });
-    } catch {
+      }
+    } else {
       sheetHistoryPushedRef.current = false;
-      sheetOverlayTokenRef.current = null;
     }
 
     return () => {
@@ -106,23 +104,21 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
       return;
     }
 
-    if (isRunningInIframe()) {
+    viewerOverlayTokenRef.current = pushHistoryOverlay('pdf-viewer', () => {
       viewerHistoryPushedRef.current = false;
       viewerOverlayTokenRef.current = null;
-      return;
-    }
+      setViewerOpen(false);
+    });
 
-    try {
-      window.history.pushState({ apPdfLayer: 'viewer' }, '');
-      viewerHistoryPushedRef.current = true;
-      viewerOverlayTokenRef.current = pushHistoryOverlay('pdf-viewer', () => {
+    if (!isRunningInIframe()) {
+      try {
+        window.history.pushState({ apPdfLayer: 'viewer' }, '');
+        viewerHistoryPushedRef.current = true;
+      } catch {
         viewerHistoryPushedRef.current = false;
-        viewerOverlayTokenRef.current = null;
-        setViewerOpen(false);
-      });
-    } catch {
+      }
+    } else {
       viewerHistoryPushedRef.current = false;
-      viewerOverlayTokenRef.current = null;
     }
 
     return () => {

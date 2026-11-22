@@ -99,8 +99,7 @@ export const PdfHeaderPreview: React.FC<PdfHeaderPreviewProps> = ({
   return (
     <div
       data-testid="pdf-header-preview"
-      data-preserve-light="true"
-      className="rounded-xl border border-slate-300 bg-white overflow-hidden shadow-sm"
+      className="rounded-xl border border-slate-700/80 bg-[#0d1629] overflow-hidden shadow-md"
     >
       <div
         className="px-4 py-3.5 transition-colors relative"
@@ -198,8 +197,8 @@ export const PdfHeaderPreview: React.FC<PdfHeaderPreviewProps> = ({
         )}
       </div>
 
-      <div className="px-4 py-2.5 bg-[#ffffff] flex items-center justify-between gap-2 text-[11px] border-t border-[#e2e8f0]">
-        <span className="font-bold text-[#0f1729] truncate">
+      <div className="px-4 py-2.5 bg-[#0d1629] flex items-center justify-between gap-2 text-[11px] border-t border-slate-700/80">
+        <span className="font-bold text-slate-100 truncate">
           Proyecto / Cliente: {clienteTexto}
         </span>
         {onPreviewPdf ? (
@@ -212,7 +211,7 @@ export const PdfHeaderPreview: React.FC<PdfHeaderPreviewProps> = ({
             👁 Vista previa
           </button>
         ) : (
-          <span className="text-[10px] text-[#64748b] whitespace-nowrap shrink-0">
+          <span className="text-[10px] text-slate-400 whitespace-nowrap shrink-0">
             Vista previa PDF
           </span>
         )}

@@ -30,6 +30,7 @@ import {
   MEXICO_ALUMINUM_CATEGORIES,
   MEXICO_ALUMINUM_SYSTEMS,
   MexicoAluminumCategoryId,
+  validateLevantamientoRequiredFields,
   validateRealisticOpeningDimensions,
 } from '../utils/alumineroLogic';
 import {
@@ -152,10 +153,28 @@ export const LevantamientoRapido: React.FC<Props> = ({
   const [confirmNewOpen, setConfirmNewOpen] = useState(false);
   const [confirmDeletePieceId, setConfirmDeletePieceId] = useState<string | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [selectedPieceId, setSelectedPieceId] = useState<string | null>(null);
+  const [editModalPiece, setEditModalPiece] = useState<{
+    id: string;
+    tipo: string;
+    area: string;
+    ancho: string;
+    alto: string;
+    cant: number;
+    lineaPerfil: string;
+    colorAluminio: string;
+    colorVidrio: string;
+    mosquitero: string;
+    notas: string;
+  } | null>(null);
+  const [editModalError, setEditModalError] = useState<string | null>(null);
   const importFileRef = useRef<HTMLInputElement | null>(null);
+  const lastTapRef = useRef<{ id: string; ts: number }>({ id: '', ts: 0 });
 
   const rootRef = useRef<HTMLDivElement | null>(null);
   const cliInputRef = useRef<HTMLInputElement | null>(null);
+  const anchoInputRef = useRef<HTMLInputElement | null>(null);
+  const altoInputRef = useRef<HTMLInputElement | null>(null);
   const viewsRef = useRef<LevScreen[]>(views);
   viewsRef.current = views;
   const closingCbRef = useRef<(() => void) | null>(null);
@@ -364,12 +383,99 @@ export const LevantamientoRapido: React.FC<Props> = ({
     return clean;
   };
 
+  const openPieceEditModal = (p: LevantamientoPieza) => {
+    setSelectedPieceId(p.id);
+    setEditModalError(null);
+    setEditModalPiece({
+      id: p.id,
+      tipo: p.tipo,
+      area: p.area || '',
+      ancho: String(p.anchoCm),
+      alto: String(p.altoCm),
+      cant: Math.max(1, Number(p.cant) || 1),
+      lineaPerfil: p.lineaPerfil || getDefaultLineaPerfilForTipo(p.tipo),
+      colorAluminio: p.colorAluminio || 'Natural',
+      colorVidrio: p.colorVidrio || (p.tipo === 'Mosquitero abatible' ? 'Sin vidrio' : 'Vidrio claro'),
+      mosquitero: p.mosquitero || (p.tipo === 'Mosquitero abatible' ? 'Mosquitero abatible' : 'Sin mosquitero'),
+      notas: p.notas || '',
+    });
+  };
+
+  const handleSavePieceEditModal = () => {
+    if (!editModalPiece) return;
+    const reqCheck = validateLevantamientoRequiredFields({
+      cliente: draft.cliente || 'Cliente',
+      anchoRaw: editModalPiece.ancho,
+      altoRaw: editModalPiece.alto,
+      requireCliente: false,
+    });
+    if (!reqCheck.valid) {
+      setEditModalError(reqCheck.message);
+      return;
+    }
+    const anchoCm = cmFromUnit(editModalPiece.ancho, 'cm');
+    const altoCm = cmFromUnit(editModalPiece.alto, 'cm');
+    if (!anchoCm || !altoCm) {
+      setEditModalError('Falta completar: Ancho y Alto válidos en cm.');
+      return;
+    }
+    const dimCheck = validateRealisticOpeningDimensions(anchoCm, altoCm, editModalPiece.tipo);
+    if (!dimCheck.valid) {
+      setEditModalError(dimCheck.error || 'Medidas inválidas para el tipo de pieza seleccionado.');
+      return;
+    }
+    const nextPiezas = draft.piezas.map((x) =>
+      x.id === editModalPiece.id
+        ? {
+            ...x,
+            tipo: editModalPiece.tipo,
+            area: editModalPiece.area.trim(),
+            anchoCm,
+            altoCm,
+            cant: Math.max(1, Number(editModalPiece.cant) || 1),
+            lineaPerfil: editModalPiece.lineaPerfil.trim() || getDefaultLineaPerfilForTipo(editModalPiece.tipo),
+            colorAluminio: editModalPiece.colorAluminio || 'Natural',
+            colorVidrio: editModalPiece.colorVidrio || 'Vidrio claro',
+            mosquitero: editModalPiece.mosquitero || 'Sin mosquitero',
+            notas: editModalPiece.notas.trim(),
+          }
+        : x
+    );
+    const updatedDraft: LevantamientoDraft = { ...draft, piezas: nextPiezas };
+    persistDraft(updatedDraft);
+    safeSave(LEV_KEYS.activo, updatedDraft);
+    window.dispatchEvent(new CustomEvent('aluminero:lev-activo-updated'));
+    setEditModalPiece(null);
+    setEditModalError(null);
+    notify('Pieza actualizada correctamente.', true);
+  };
+
   const handleAddOrUpdatePieza = () => {
-    if (!ensureCliente()) return;
+    const reqCheck = validateLevantamientoRequiredFields({
+      cliente: draft.cliente,
+      anchoRaw: form.ancho,
+      altoRaw: form.alto,
+      lineaPerfil: form.lineaPerfil,
+      lineaPerfilOtro: customLineaText,
+    });
+    if (!reqCheck.valid) {
+      setLocalError(reqCheck.message);
+      notify(reqCheck.message);
+      if (reqCheck.firstMissingKey === 'cliente') {
+        cliInputRef.current?.focus();
+      } else if (reqCheck.firstMissingKey === 'ancho') {
+        anchoInputRef.current?.focus();
+      } else if (reqCheck.firstMissingKey === 'alto') {
+        altoInputRef.current?.focus();
+      }
+      return;
+    }
     const anchoCm = cmFromUnit(form.ancho, form.u);
     const altoCm = cmFromUnit(form.alto, form.u);
     if (!anchoCm || !altoCm) {
-      setLocalError('Captura ancho y alto válidos.');
+      const msg = 'Falta completar: Ancho y Alto válidos mayores a 0.';
+      setLocalError(msg);
+      notify(msg);
       return;
     }
     const dimCheck = validateRealisticOpeningDimensions(anchoCm, altoCm, form.tipo);
@@ -401,7 +507,11 @@ export const LevantamientoRapido: React.FC<Props> = ({
     const nextPiezas = form.editId
       ? draft.piezas.map((x) => (x.id === form.editId ? pieza : x))
       : [...draft.piezas, pieza];
-    persistDraft({ ...draft, piezas: nextPiezas });
+    const nextDraft = { ...draft, piezas: nextPiezas };
+    persistDraft(nextDraft);
+    safeSave(LEV_KEYS.activo, nextDraft);
+    window.dispatchEvent(new CustomEvent('aluminero:lev-activo-updated'));
+    setSelectedPieceId(pieza.id);
     setForm(
       createEmptyForm(form.u, form.tipo, {
         lineaPerfil: lineaFinal,
@@ -790,12 +900,19 @@ export const LevantamientoRapido: React.FC<Props> = ({
                 value={form.tipo}
                 onChange={(e) => {
                   const nextTipo = e.target.value;
+                  const isMosqAbatible = nextTipo === 'Mosquitero abatible';
                   setForm((prev) => ({
                     ...prev,
                     tipo: nextTipo,
                     lineaPerfil: prev.editId
                       ? prev.lineaPerfil
                       : getDefaultLineaPerfilForTipo(nextTipo),
+                    colorVidrio: isMosqAbatible
+                      ? 'Sin vidrio'
+                      : prev.colorVidrio === 'Sin vidrio'
+                        ? 'Vidrio claro'
+                        : prev.colorVidrio,
+                    mosquitero: isMosqAbatible ? 'Mosquitero abatible' : prev.mosquitero,
                   }));
                 }}
               >
@@ -818,19 +935,27 @@ export const LevantamientoRapido: React.FC<Props> = ({
               <label>Medidas y unidad</label>
               <div className="row">
                 <input
+                  ref={anchoInputRef}
                   id="lv-an"
                   type="text"
                   inputMode="decimal"
                   value={form.ancho}
-                  onChange={(e) => setForm((prev) => ({ ...prev, ancho: e.target.value }))}
+                  onChange={(e) => {
+                    setForm((prev) => ({ ...prev, ancho: e.target.value }));
+                    if (localError) setLocalError(null);
+                  }}
                   placeholder={form.u === 'm' ? 'Ancho (m)' : 'Ancho (cm)'}
                 />
                 <input
+                  ref={altoInputRef}
                   id="lv-al"
                   type="text"
                   inputMode="decimal"
                   value={form.alto}
-                  onChange={(e) => setForm((prev) => ({ ...prev, alto: e.target.value }))}
+                  onChange={(e) => {
+                    setForm((prev) => ({ ...prev, alto: e.target.value }));
+                    if (localError) setLocalError(null);
+                  }}
                   placeholder={form.u === 'm' ? 'Alto (m)' : 'Alto (cm)'}
                 />
                 <div className="seg">
@@ -1095,6 +1220,26 @@ export const LevantamientoRapido: React.FC<Props> = ({
                 )}
               </div>
 
+              {localError && (
+                <div
+                  id="lv-missing-alert"
+                  role="alert"
+                  style={{
+                    marginTop: '10px',
+                    padding: '10px 12px',
+                    borderRadius: '10px',
+                    background: 'rgba(185, 28, 28, 0.22)',
+                    border: '1px solid rgba(248, 113, 113, 0.65)',
+                    color: '#fecaca',
+                    fontSize: '13px',
+                    fontWeight: 700,
+                    lineHeight: 1.4,
+                  }}
+                >
+                  ⚠️ {localError}
+                </div>
+              )}
+
               <div className="grid" style={{ marginTop: '12px' }}>
                 <button type="button" className="or" id="lv-btn-add" onClick={handleAddOrUpdatePieza}>
                   {form.editId ? '💾 Guardar cambios' : '＋ Agregar más medidas'}
@@ -1112,21 +1257,59 @@ export const LevantamientoRapido: React.FC<Props> = ({
             </div>
 
             <div className="card">
-              <b>Piezas del levantamiento ({draft.piezas.length})</b>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
+                <b>Piezas del levantamiento ({draft.piezas.length})</b>
+                {draft.piezas.length > 0 && (
+                  <small style={{ color: '#93c5fd', fontSize: '11.5px', fontWeight: 600 }}>
+                    Toca para seleccionar · Doble toque/clic para editar
+                  </small>
+                )}
+              </div>
               {draft.piezas.length === 0 ? (
                 <div className="pv" style={{ color: '#94a3b8', padding: '10px 0' }}>
                   Aún no has agregado medidas.
                 </div>
               ) : (
-                draft.piezas.map((p, idx) => (
-                  <div className="it" key={p.id}>
+                draft.piezas.map((p, idx) => {
+                  const isSelected = selectedPieceId === p.id;
+                  return (
+                  <div
+                    className="it"
+                    key={p.id}
+                    data-piece-id={p.id}
+                    data-selected={isSelected ? 'true' : 'false'}
+                    style={{
+                      cursor: 'pointer',
+                      border: isSelected ? '2px solid #f97316' : '1px solid #26324d',
+                      background: isSelected ? 'rgba(249, 115, 22, 0.12)' : undefined,
+                      borderRadius: '12px',
+                      padding: '10px',
+                      marginTop: '8px',
+                      transition: 'border-color 140ms ease, background-color 140ms ease',
+                    }}
+                    onClick={() => {
+                      const now = Date.now();
+                      if (lastTapRef.current.id === p.id && now - lastTapRef.current.ts < 360) {
+                        lastTapRef.current = { id: '', ts: 0 };
+                        openPieceEditModal(p);
+                        return;
+                      }
+                      lastTapRef.current = { id: p.id, ts: now };
+                      setSelectedPieceId(p.id);
+                    }}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      openPieceEditModal(p);
+                    }}
+                  >
                     {p.foto ? (
                       <img
                         className="th"
                         src={p.foto}
                         alt="Foto"
                         style={{ cursor: 'pointer' }}
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation();
                           setViewerFoto(p.foto);
                           pushView('foto');
                         }}
@@ -1136,12 +1319,27 @@ export const LevantamientoRapido: React.FC<Props> = ({
                         className="th"
                         style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                       >
-                        🪟
+                        {p.tipo === 'Mosquitero abatible' ? '🦟' : '🪟'}
                       </div>
                     )}
                     <div className="tx">
                       <b>
                         {idx + 1}. {p.tipo}
+                        {isSelected && (
+                          <span
+                            style={{
+                              marginLeft: '6px',
+                              fontSize: '10.5px',
+                              padding: '1px 6px',
+                              borderRadius: '6px',
+                              background: '#ea580c',
+                              color: '#fff',
+                              fontWeight: 800,
+                            }}
+                          >
+                            Seleccionada
+                          </span>
+                        )}
                       </b>
                       {p.area && <small>{p.area}</small>}
                       <div>
@@ -1179,7 +1377,7 @@ export const LevantamientoRapido: React.FC<Props> = ({
                       )}
                       {p.notas && <small>{p.notas}</small>}
                     </div>
-                    <div className="ac">
+                    <div className="ac" onClick={(e) => e.stopPropagation()}>
                       <button
                         type="button"
                         title="Duplicar medida"
@@ -1192,24 +1390,7 @@ export const LevantamientoRapido: React.FC<Props> = ({
                         type="button"
                         title="Editar medida"
                         aria-label={`Editar ${p.tipo}`}
-                        onClick={() => {
-                          setForm({
-                            tipo: p.tipo,
-                            area: p.area,
-                            ancho: String(p.anchoCm),
-                            alto: String(p.altoCm),
-                            u: 'cm',
-                            cant: p.cant,
-                            lineaPerfil: p.lineaPerfil || getDefaultLineaPerfilForTipo(p.tipo),
-                            colorAluminio: p.colorAluminio || 'Natural',
-                            colorVidrio: p.colorVidrio || 'Claro',
-                            mosquitero: p.mosquitero || 'Sin mosquitero',
-                            notas: p.notas,
-                            foto: p.foto,
-                            editId: p.id,
-                          });
-                          if (rootRef.current) rootRef.current.scrollTop = 0;
-                        }}
+                        onClick={() => openPieceEditModal(p)}
                       >
                         ✏️
                       </button>
@@ -1221,6 +1402,7 @@ export const LevantamientoRapido: React.FC<Props> = ({
                             const nextPiezas = draft.piezas.filter((x) => x.id !== p.id);
                             persistDraft({ ...draft, piezas: nextPiezas });
                             if (form.editId === p.id) setForm(createEmptyForm());
+                            if (selectedPieceId === p.id) setSelectedPieceId(null);
                             setConfirmDeletePieceId(null);
                           }}
                         >
@@ -1239,7 +1421,8 @@ export const LevantamientoRapido: React.FC<Props> = ({
                       )}
                     </div>
                   </div>
-                ))
+                  );
+                })
               )}
               <div className="tot">{resumenLevantamiento(draft.piezas)}</div>
             </div>
@@ -1438,6 +1621,245 @@ export const LevantamientoRapido: React.FC<Props> = ({
         {isOpen && currentScreen === 'foto' && viewerFoto && (
           <div className="vw" onClick={goBackView}>
             <img src={viewerFoto} alt="Vista ampliada" />
+          </div>
+        )}
+
+        {isOpen && editModalPiece && (
+          <div
+            id="modal-lev-edit-piece"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Editar pieza del levantamiento"
+            onClick={() => setEditModalPiece(null)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 10020,
+              background: 'rgba(2, 6, 23, 0.82)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '16px',
+              overflowY: 'auto',
+            }}
+          >
+            <div
+              className="card"
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                width: '100%',
+                maxWidth: '460px',
+                background: '#0f172a',
+                border: '1px solid #334155',
+                borderRadius: '16px',
+                padding: '16px',
+                boxShadow: '0 24px 60px rgba(0,0,0,0.65)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                <b style={{ fontSize: '16px', color: '#f8fafc' }}>✏️ Editar pieza</b>
+                <button
+                  type="button"
+                  className="gh"
+                  style={{ flex: '0 0 auto', padding: '6px 10px' }}
+                  onClick={() => setEditModalPiece(null)}
+                >
+                  ✕
+                </button>
+              </div>
+
+              {editModalError && (
+                <div
+                  role="alert"
+                  style={{
+                    marginBottom: '10px',
+                    padding: '9px 11px',
+                    borderRadius: '10px',
+                    background: 'rgba(185, 28, 28, 0.25)',
+                    border: '1px solid rgba(248, 113, 113, 0.65)',
+                    color: '#fecaca',
+                    fontSize: '12.5px',
+                    fontWeight: 700,
+                  }}
+                >
+                  ⚠️ {editModalError}
+                </div>
+              )}
+
+              <label htmlFor="lv-edit-tipo">Tipo de pieza</label>
+              <select
+                id="lv-edit-tipo"
+                value={editModalPiece.tipo}
+                onChange={(e) => {
+                  const nextTipo = e.target.value;
+                  setEditModalPiece((prev) =>
+                    prev
+                      ? {
+                          ...prev,
+                          tipo: nextTipo,
+                          colorVidrio: nextTipo === 'Mosquitero abatible' ? 'Sin vidrio' : prev.colorVidrio,
+                          mosquitero: nextTipo === 'Mosquitero abatible' ? 'Mosquitero abatible' : prev.mosquitero,
+                        }
+                      : prev
+                  );
+                }}
+              >
+                {LEV_TIPOS.map((tp) => (
+                  <option key={tp} value={tp}>
+                    {tp}
+                  </option>
+                ))}
+              </select>
+
+              <label htmlFor="lv-edit-area">Ubicación / área</label>
+              <input
+                id="lv-edit-area"
+                type="text"
+                value={editModalPiece.area}
+                onChange={(e) =>
+                  setEditModalPiece((prev) => (prev ? { ...prev, area: e.target.value } : prev))
+                }
+                placeholder="Ej. Sala, Recámara"
+              />
+
+              <label>Medidas (cm) y cantidad</label>
+              <div className="row">
+                <input
+                  id="lv-edit-ancho"
+                  type="text"
+                  inputMode="decimal"
+                  value={editModalPiece.ancho}
+                  onChange={(e) =>
+                    setEditModalPiece((prev) => (prev ? { ...prev, ancho: e.target.value } : prev))
+                  }
+                  placeholder="Ancho (cm)"
+                />
+                <input
+                  id="lv-edit-alto"
+                  type="text"
+                  inputMode="decimal"
+                  value={editModalPiece.alto}
+                  onChange={(e) =>
+                    setEditModalPiece((prev) => (prev ? { ...prev, alto: e.target.value } : prev))
+                  }
+                  placeholder="Alto (cm)"
+                />
+                <input
+                  id="lv-edit-cant"
+                  type="number"
+                  min={1}
+                  max={999}
+                  style={{ maxWidth: '82px' }}
+                  value={editModalPiece.cant}
+                  onChange={(e) =>
+                    setEditModalPiece((prev) =>
+                      prev ? { ...prev, cant: Math.max(1, Number(e.target.value) || 1) } : prev
+                    )
+                  }
+                />
+              </div>
+
+              <label htmlFor="lv-edit-perfil">Línea / Perfil</label>
+              <select
+                id="lv-edit-perfil"
+                value={editModalPiece.lineaPerfil}
+                onChange={(e) =>
+                  setEditModalPiece((prev) => (prev ? { ...prev, lineaPerfil: e.target.value } : prev))
+                }
+              >
+                {LEV_LINEA_PERFIL_OPTS.filter((o) => o.id !== 'otra').map((opt) => (
+                  <option key={opt.id} value={opt.label}>
+                    {opt.label}
+                  </option>
+                ))}
+                {!LEV_LINEA_PERFIL_OPTS.some((o) => o.label === editModalPiece.lineaPerfil) && (
+                  <option value={editModalPiece.lineaPerfil}>{editModalPiece.lineaPerfil}</option>
+                )}
+              </select>
+
+              <div className="row">
+                <div style={{ flex: 1 }}>
+                  <label htmlFor="lv-edit-color">Color aluminio</label>
+                  <select
+                    id="lv-edit-color"
+                    value={editModalPiece.colorAluminio}
+                    onChange={(e) =>
+                      setEditModalPiece((prev) =>
+                        prev ? { ...prev, colorAluminio: e.target.value } : prev
+                      )
+                    }
+                  >
+                    {LEV_COLOR_ALUMINIO_OPTS.map((opt) => (
+                      <option key={opt.id} value={opt.label}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label htmlFor="lv-edit-vidrio">Tipo de vidrio</label>
+                  <select
+                    id="lv-edit-vidrio"
+                    value={editModalPiece.colorVidrio}
+                    onChange={(e) =>
+                      setEditModalPiece((prev) =>
+                        prev ? { ...prev, colorVidrio: e.target.value } : prev
+                      )
+                    }
+                  >
+                    {LEV_COLOR_VIDRIO_OPTS.map((opt) => (
+                      <option key={opt.id} value={opt.label}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <label htmlFor="lv-edit-mosq">Mosquitero</label>
+              <select
+                id="lv-edit-mosq"
+                value={editModalPiece.mosquitero}
+                onChange={(e) =>
+                  setEditModalPiece((prev) => (prev ? { ...prev, mosquitero: e.target.value } : prev))
+                }
+              >
+                {LEV_MOSQUITERO_OPTS.map((opt) => (
+                  <option key={opt.id} value={opt.label}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+
+              <label htmlFor="lv-edit-notas">Notas</label>
+              <input
+                id="lv-edit-notas"
+                type="text"
+                value={editModalPiece.notas}
+                onChange={(e) =>
+                  setEditModalPiece((prev) => (prev ? { ...prev, notas: e.target.value } : prev))
+                }
+                placeholder="Detalle de instalación..."
+              />
+
+              <div className="row" style={{ marginTop: '14px' }}>
+                <button
+                  type="button"
+                  id="lv-edit-save-btn"
+                  className="or"
+                  onClick={handleSavePieceEditModal}
+                >
+                  💾 Guardar cambios
+                </button>
+                <button
+                  type="button"
+                  className="gh"
+                  onClick={() => setEditModalPiece(null)}
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>

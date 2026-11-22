@@ -431,13 +431,22 @@ html[data-theme="dark"] #btn-admin-download-html {
 
 /* Mantener alto contraste en planos técnicos, zoom de perfiles y código QR durante modo nocturno */
 html[data-theme="dark"] #plano-svg ~ *,
-html[data-theme="dark"] [data-preserve-light="true"] {
-  background-color: #FFFFFF;
-  color: #0F172A;
+html[data-theme="dark"] [data-preserve-light="true"],
+html[data-theme="dark"] [data-preserve-light="true"] .bg-white {
+  background-color: #FFFFFF !important;
+  color: #0F172A !important;
+}
+
+html[data-theme="dark"] [data-preserve-light="true"] .bg-slate-50,
+html[data-theme="dark"] [data-preserve-light="true"] .bg-slate-50\/70 {
+  background-color: #F8FAFC;
+  color: #1E293B;
 }
 
 html[data-theme="dark"] [data-preserve-light="true"] .text-slate-900,
 html[data-theme="dark"] [data-preserve-light="true"] .text-slate-800,
+html[data-theme="dark"] [data-preserve-light="true"] .text-slate-700,
+html[data-theme="dark"] [data-preserve-light="true"] .text-\[\#0B2545\],
 html[data-theme="dark"] [data-preserve-light="true"] strong {
   color: #0F172A;
 }
@@ -469,6 +478,52 @@ html[data-theme="dark"] [data-preserve-light="true"] .text-emerald-800 {
 
 html[data-theme="dark"] [data-preserve-light="true"] .text-white {
   color: #FFFFFF;
+}
+
+/* Recuadro azul marino de Folio/Fecha/Entrega en Contrato: texto blanco de altísimo contraste en todos los temas */
+.contrato-folio-dark,
+html[data-theme="dark"] [data-preserve-light="true"] .contrato-folio-dark,
+html[data-theme="light"] [data-preserve-light="true"] .contrato-folio-dark {
+  background-color: #0B2545 !important;
+  border-color: rgba(125, 211, 252, 0.45) !important;
+  color: #FFFFFF !important;
+}
+
+.contrato-folio-dark *,
+html[data-theme="dark"] [data-preserve-light="true"] .contrato-folio-dark *,
+html[data-theme="dark"] [data-preserve-light="true"] .contrato-folio-dark strong,
+html[data-theme="light"] [data-preserve-light="true"] .contrato-folio-dark strong {
+  color: #FFFFFF !important;
+}
+
+.contrato-folio-dark .contrato-folio-label,
+html[data-theme="dark"] [data-preserve-light="true"] .contrato-folio-dark .contrato-folio-label,
+html[data-theme="light"] [data-preserve-light="true"] .contrato-folio-dark .contrato-folio-label {
+  color: #BAE6FD !important;
+}
+
+/* Cabecera de tabla del contrato siempre en azul marino con texto blanco nítido */
+html[data-theme="dark"] [data-preserve-light="true"] thead tr.bg-\[\#0B2545\],
+html[data-theme="dark"] [data-preserve-light="true"] thead tr.bg-\[\#0B2545\] th {
+  background-color: #0B2545 !important;
+  color: #FFFFFF !important;
+}
+
+/* Botones inferiores sólidos del modal de Contrato siempre legibles */
+html[data-theme="dark"] #btn-contrato-firmar {
+  background-color: #F59E0B !important;
+  color: #0F172A !important;
+  border-color: #FCD34D !important;
+}
+html[data-theme="dark"] #btn-contrato-pdf {
+  background-color: #2563EB !important;
+  color: #FFFFFF !important;
+  border-color: #60A5FA !important;
+}
+html[data-theme="dark"] #btn-contrato-vista-previa-doc {
+  background-color: #4F46E5 !important;
+  color: #FFFFFF !important;
+  border-color: #818CF8 !important;
 }
 
 /* Resaltado inconfundible de línea / módulo seleccionado en modo oscuro */

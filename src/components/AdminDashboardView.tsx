@@ -39,6 +39,7 @@ import {
 import {
   CloudDeviceRecord,
   computeSalesAnalytics,
+  filterAdminRecordsByResetBaseline,
   formatClientHeaderDisplay,
   formatClientPhoneInput,
   formatCombinedClientLabel,
@@ -121,8 +122,11 @@ export interface AdminDashboardViewProps {
   referralHistory: ReferralHistoryRecord[];
   onAddReferralRecord: (rec: Omit<ReferralHistoryRecord, 'id' | 'createdAt'>) => void;
   onDeleteReferralRecord: (id: string) => void;
+  onResetCounters?: () => void;
   onShowToast: (msg: string, topSuccess?: boolean) => void;
 }
+
+const ADMIN_COUNTERS_RESET_KEY = 'aluminero_admin_counters_reset_at_v1';
 
 type AdminTabId = 'dashboard' | 'graficas' | 'ventas' | 'claves' | 'referidos' | 'herramientas';
 type PlanFilterId = 'todos' | 'gratis' | 'colega3d' | '30d' | '90d' | '365d' | 'bloqueados';
@@ -221,10 +225,27 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   referralHistory,
   onAddReferralRecord,
   onDeleteReferralRecord,
+  onResetCounters,
   onShowToast,
 }) => {
   const [activeTab, setActiveTab] = useState<AdminTabId>('dashboard');
   const [nowTick, setNowTick] = useState<number>(() => Date.now());
+  const [countersResetAt, setCountersResetAt] = useState<number>(() => {
+    try {
+      const saved = window.localStorage.getItem(ADMIN_COUNTERS_RESET_KEY);
+      if (saved !== null) {
+        const parsed = Number(saved);
+        if (Number.isFinite(parsed) && parsed > 0) return parsed;
+      }
+      // Inicio limpio en 0 para contadores estadísticos (se actualizan dinámicamente con nueva actividad real)
+      const baseline = Date.now();
+      window.localStorage.setItem(ADMIN_COUNTERS_RESET_KEY, String(baseline));
+      return baseline;
+    } catch {
+      return Date.now();
+    }
+  });
+  const [confirmResetCounters, setConfirmResetCounters] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [planFilter, setPlanFilter] = useState<PlanFilterId>('todos');
   const [chartGranularity, setChartGranularity] = useState<ChartGranularity>('week');
@@ -310,14 +331,35 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     [revokedKeys]
   );
 
-  // Merge cloud devices + local self + adminKeys history into a single auditable user directory
+  const activeReferralHistory = useMemo(
+    () => filterAdminRecordsByResetBaseline(referralHistory, countersResetAt),
+    [referralHistory, countersResetAt]
+  );
+
+  const handleConfirmResetCounters = () => {
+    const ts = Date.now();
+    setCountersResetAt(ts);
+    try {
+      window.localStorage.setItem(ADMIN_COUNTERS_RESET_KEY, String(ts));
+    } catch {
+      // ignore storage quota errors
+    }
+    onResetCounters?.();
+    setConfirmResetCounters(false);
+    onShowToast('Contadores estadísticos reiniciados a 0. Se actualizarán con cada nuevo registro real.', true);
+  };
+
+  // Merge filtered cloud devices + adminKeys history into a single auditable user directory (starts at 0 cleanly)
   const auditUsers = useMemo(() => {
     const cleanSelfId = normalizeDeviceIdInput(deviceId) || deviceId.trim().toUpperCase();
     const now = nowTick;
 
+    const effectiveAdminKeys = filterAdminRecordsByResetBaseline(adminKeys, countersResetAt);
+    const effectiveCloudDevices = filterAdminRecordsByResetBaseline(cloudDevices, countersResetAt);
+
     // Group all historical keys per device
     const keysByDevice = new Map<string, AdminKeyRecord[]>();
-    for (const k of adminKeys) {
+    for (const k of effectiveAdminKeys) {
       const norm = normalizeDeviceIdInput(k.deviceId);
       if (!norm) continue;
       const list = keysByDevice.get(norm) || [];
@@ -330,12 +372,13 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     }
 
     const devById = new Map<string, CloudDeviceRecord>();
-    for (const dev of cloudDevices) {
+    for (const dev of effectiveCloudDevices) {
       const norm = normalizeDeviceIdInput(dev.deviceId);
       if (norm) devById.set(norm, dev);
     }
 
-    const allIds = Array.from(new Set([cleanSelfId, ...devById.keys(), ...keysByDevice.keys()])).filter(Boolean);
+    // Do NOT inject cleanSelfId as a dummy user when there is no real record after reset
+    const allIds = Array.from(new Set([...devById.keys(), ...keysByDevice.keys()])).filter(Boolean);
 
     return allIds
       .map((normId) => {
@@ -489,7 +532,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         if (b.isSelf) return 1;
         return b.lastSeenAt - a.lastSeenAt;
       });
-  }, [cloudDevices, adminKeys, deviceId, licencia, backupData.taller, revokedDevicesMap, revokedKeysSet, nowTick]);
+  }, [cloudDevices, adminKeys, deviceId, licencia, backupData.taller, revokedDevicesMap, revokedKeysSet, nowTick, countersResetAt]);
 
   // KPI metrics
   const kpis = useMemo(() => {
@@ -586,16 +629,17 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       proRate,
       colegaUsageRate,
       estimatedProValue,
-      totalKeysIssued: adminKeys.length,
+      totalKeysIssued: filterAdminRecordsByResetBaseline(adminKeys, countersResetAt).length,
     };
-  }, [kpis, adminKeys.length]);
+  }, [kpis, adminKeys, countersResetAt]);
 
   // Chart 2: Promo activations per week or month
   const activationsSeriesData = useMemo(() => {
     const events: { ts: number; isColleague: boolean }[] = [];
     const seenSigs = new Set<string>();
+    const filteredKeys = filterAdminRecordsByResetBaseline(adminKeys, countersResetAt);
 
-    for (const k of adminKeys) {
+    for (const k of filteredKeys) {
       if (!k.createdAt) continue;
       const sig = `${normalizeDeviceIdInput(k.deviceId)}::${k.createdAt}`;
       seenSigs.add(sig);
@@ -652,7 +696,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     return Array.from(buckets.values())
       .sort((a, b) => a.sortKey.localeCompare(b.sortKey))
       .slice(-10);
-  }, [adminKeys, auditUsers, chartGranularity]);
+  }, [adminKeys, auditUsers, chartGranularity, countersResetAt]);
 
   // Filtered audit users
   const filteredUsers = useMemo(() => {
@@ -1106,8 +1150,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
   const filteredReferrals = useMemo(() => {
     const q = refSearch.trim().toLowerCase();
-    if (!q) return referralHistory;
-    return referralHistory.filter(
+    if (!q) return activeReferralHistory;
+    return activeReferralHistory.filter(
       (r) =>
         r.referrerId.toLowerCase().includes(q) ||
         r.referredDeviceId.toLowerCase().includes(q) ||
@@ -1176,13 +1220,43 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+          <div className="flex items-center gap-2 shrink-0 flex-wrap">
+            {!confirmResetCounters ? (
+              <button
+                type="button"
+                id="btn-admin-reset-counters"
+                onClick={() => setConfirmResetCounters(true)}
+                className="min-h-[42px] px-3.5 py-2 rounded-xl border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-200 font-bold text-[12px] inline-flex items-center gap-1.5 cursor-pointer transition-colors"
+              >
+                <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Reiniciar contadores a 0</span>
+              </button>
+            ) : (
+              <div className="inline-flex items-center gap-1.5 rounded-xl border border-rose-500/50 bg-rose-950/60 px-2.5 py-1.5">
+                <span className="text-[11.5px] font-bold text-rose-100">¿Poner todo en 0?</span>
+                <button
+                  type="button"
+                  id="btn-admin-reset-counters-confirm"
+                  onClick={handleConfirmResetCounters}
+                  className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-[11.5px] cursor-pointer border-0"
+                >
+                  Sí, reiniciar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmResetCounters(false)}
+                  className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-[11.5px] cursor-pointer border border-slate-600"
+                >
+                  No
+                </button>
+              </div>
+            )}
             <button
               type="button"
               id="btn-admin-refresh-cloud"
               onClick={() => void onRefreshCloud()}
               disabled={cloudRefreshing}
-              className="min-h-[44px] px-4 py-2 rounded-xl border border-sky-400/40 bg-sky-500/15 hover:bg-sky-500/25 text-sky-100 font-bold text-[12.5px] inline-flex items-center gap-2 cursor-pointer transition-colors disabled:opacity-60"
+              className="min-h-[42px] px-3.5 py-2 rounded-xl border border-sky-400/40 bg-sky-500/15 hover:bg-sky-500/25 text-sky-100 font-bold text-[12px] inline-flex items-center gap-2 cursor-pointer transition-colors disabled:opacity-60"
             >
               <RefreshCw className={`w-4 h-4 ${cloudRefreshing ? 'animate-spin' : ''}`} aria-hidden="true" />
               <span>{cloudRefreshing ? 'Actualizando...' : 'Actualizar Nube'}</span>
@@ -1191,7 +1265,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               type="button"
               id="btn-admin-exit"
               onClick={onExit}
-              className="min-h-[44px] px-4 py-2 rounded-xl border border-slate-600 bg-slate-800 hover:bg-slate-700 text-white font-bold text-[12.5px] inline-flex items-center gap-1.5 cursor-pointer transition-colors"
+              className="min-h-[42px] px-3.5 py-2 rounded-xl border border-slate-600 bg-slate-800 hover:bg-slate-700 text-white font-bold text-[12px] inline-flex items-center gap-1.5 cursor-pointer transition-colors"
             >
               <ArrowLeft className="w-4 h-4" aria-hidden="true" />
               <span>Salir al Inicio</span>
@@ -1199,43 +1273,76 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           </div>
         </div>
 
-        {/* Navegación por páginas bien espaciada (incluye Gráficas y Análisis de Ventas) */}
-        <div
-          role="tablist"
-          aria-label="Páginas de administración"
-          className="mt-5 pt-4 border-t border-slate-800 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5"
-        >
-          {(
-            [
-              { id: 'dashboard', label: 'Usuarios y Auditoría', icon: Users },
-              { id: 'graficas', label: 'Gráficas y Analíticas', icon: BarChart3 },
-              { id: 'ventas', label: 'Análisis de Ventas', icon: TrendingUp },
-              { id: 'claves', label: 'Generar Claves', icon: KeyRound },
-              { id: 'referidos', label: `Referidos (${referralHistory.length})`, icon: Gift },
-              { id: 'herramientas', label: 'Respaldo y Ajustes', icon: Settings },
-            ] as const
-          ).map((tab) => {
-            const Icon = tab.icon;
-            const active = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                role="tab"
-                id={`tab-admin-${tab.id}`}
-                aria-selected={active}
-                onClick={() => setActiveTab(tab.id)}
-                className={`min-h-[46px] px-3.5 py-2.5 rounded-xl border text-[12.5px] font-extrabold inline-flex items-center justify-center gap-2 cursor-pointer transition-all ${
-                  active
-                    ? 'border-blue-500 bg-blue-600 text-white shadow-md'
-                    : 'border-slate-700/80 bg-slate-800/70 hover:bg-slate-800 text-slate-300'
-                }`}
-              >
-                <Icon className="w-4 h-4 shrink-0" aria-hidden="true" />
-                <span className="truncate">{tab.label}</span>
-              </button>
-            );
-          })}
+        {/* Acción Principal Destacada: Generar Claves */}
+        <div className="mt-5 pt-4 border-t border-slate-800 flex flex-col gap-3">
+          <button
+            type="button"
+            role="tab"
+            id="tab-admin-claves"
+            aria-selected={activeTab === 'claves'}
+            onClick={() => setActiveTab('claves')}
+            className={`w-full min-h-[56px] px-5 py-3.5 rounded-2xl border-2 text-left flex items-center justify-between gap-3 cursor-pointer transition-all shadow-lg ${
+              activeTab === 'claves'
+                ? 'border-amber-300 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 text-slate-950 shadow-orange-500/35 ring-2 ring-amber-300/40'
+                : 'border-amber-400/80 bg-gradient-to-r from-amber-500 via-orange-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-slate-950 shadow-orange-500/20'
+            }`}
+          >
+            <span className="flex items-center gap-3 min-w-0">
+              <span className="w-10 h-10 rounded-xl bg-slate-950/20 border border-slate-950/20 flex items-center justify-center shrink-0">
+                <KeyRound className="w-5 h-5 text-slate-950" aria-hidden="true" />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-[16px] sm:text-[17px] font-black tracking-tight leading-tight text-slate-950">
+                  Generar Claves PRO
+                </span>
+                <span className="block text-[12px] font-bold text-slate-900/90 mt-0.5 truncate">
+                  Acción principal · Emitir PINs de 3 días (Colega), 30 días, 90 días o 1 Año al instante
+                </span>
+              </span>
+            </span>
+            <span className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-950 text-amber-300 text-[12px] font-extrabold">
+              <span>{activeTab === 'claves' ? 'Abierto' : 'Abrir generador'}</span>
+              <ArrowRight className="w-4 h-4" aria-hidden="true" />
+            </span>
+          </button>
+
+          {/* Navegación secundaria ordenada y simétrica */}
+          <div
+            role="tablist"
+            aria-label="Páginas secundarias de administración"
+            className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5"
+          >
+            {(
+              [
+                { id: 'dashboard', label: 'Usuarios y Auditoría', icon: Users },
+                { id: 'graficas', label: 'Gráficas y Analíticas', icon: BarChart3 },
+                { id: 'ventas', label: 'Análisis de Ventas', icon: TrendingUp },
+                { id: 'referidos', label: `Referidos (${activeReferralHistory.length})`, icon: Gift },
+                { id: 'herramientas', label: 'Respaldo y Ajustes', icon: Settings },
+              ] as const
+            ).map((tab) => {
+              const Icon = tab.icon;
+              const active = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  id={`tab-admin-${tab.id}`}
+                  aria-selected={active}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`min-h-[46px] px-3.5 py-2.5 rounded-xl border text-[12.5px] font-extrabold inline-flex items-center justify-center gap-2 cursor-pointer transition-all ${
+                    active
+                      ? 'border-blue-500 bg-blue-600 text-white shadow-md'
+                      : 'border-slate-700/80 bg-slate-800/70 hover:bg-slate-800 text-slate-300'
+                  }`}
+                >
+                  <Icon className="w-4 h-4 shrink-0" aria-hidden="true" />
+                  <span className="truncate">{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 

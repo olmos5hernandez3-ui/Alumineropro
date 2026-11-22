@@ -7,6 +7,7 @@ export type LineaId =
   | 'cancel-bano'
   | 'mosq-fijo'
   | 'mosq-corredizo'
+  | 'mosq-abatible'
   | 'puerta-2'
   | 'puerta-abatible'
   | 'puerta-europea';
@@ -206,6 +207,16 @@ export const LINEAS_CONFIG: Record<LineaId, LineaConfig> = {
     esMosquitero: true,
     tarifaBaseDefault: 1280,
     toleranciasDefault: { marcoH: 0, hojaV: 3.2, hojaH: 0, vidAncho: 2.5, vidAlto: 5.2 },
+  },
+  'mosq-abatible': {
+    id: 'mosq-abatible',
+    categoria: 'ventanas',
+    nombre: 'Mosquitero Abatible',
+    desc: 'Marco abatible + bisagras + cierre + tela',
+    pro: true,
+    esMosquitero: true,
+    tarifaBaseDefault: 1380,
+    toleranciasDefault: { marcoH: 0, hojaV: 1.4, hojaH: 1.4, vidAncho: 3.0, vidAlto: 3.0 },
   },
   'puerta-2': {
     id: 'puerta-2',
@@ -1522,6 +1533,101 @@ export function calcularDespiece(params: TrabajoParams): DespieceCalculado {
         nombre: 'Felpa guardapolvo',
         detalle: 'Sellado lateral en cruce contra insectos',
         cantidad: round2((hojaAlto / 100) * qty),
+        unidad: 'm',
+      }
+    );
+  } else if (linea === 'mosq-abatible') {
+    const marcoAncho = round1(Math.max(15, A - tolerancias.marcoH));
+    const marcoAlto = round1(Math.max(15, H));
+    const hojaAncho = round1(Math.max(15, A - tolerancias.hojaH));
+    const hojaAlto = round1(Math.max(15, H - tolerancias.hojaV));
+
+    perfiles.push(
+      {
+        perfilId: 'alumer_5844',
+        nombre: 'Contramarco Mosq. Abatible Horiz. (5844)',
+        funcion: 'Cabezal y base perimetral de apoyo abatible',
+        pzas: 2 * qty,
+        angulo: '45°',
+        medidaCm: marcoAncho,
+      },
+      {
+        perfilId: 'alumer_5844',
+        nombre: 'Contramarco Mosq. Abatible Vert. (5844)',
+        funcion: 'Laterales verticales de apoyo y bisagras',
+        pzas: 2 * qty,
+        angulo: '45°',
+        medidaCm: marcoAlto,
+      },
+      {
+        perfilId: 'mosq_marco',
+        nombre: 'Bastidor Abatible Horiz. (MOSQ-25)',
+        funcion: 'Superior e inferior de hoja abatible',
+        pzas: 2 * qty,
+        angulo: '45°',
+        medidaCm: hojaAncho,
+      },
+      {
+        perfilId: 'mosq_marco',
+        nombre: 'Bastidor Abatible Vert. (MOSQ-25)',
+        funcion: 'Laterales de hoja abatible para bisagras y cierre',
+        pzas: 2 * qty,
+        angulo: '45°',
+        medidaCm: hojaAlto,
+      }
+    );
+
+    const mallaW = round1(Math.max(10, hojaAncho - tolerancias.vidAncho));
+    const mallaH = round1(Math.max(10, hojaAlto - tolerancias.vidAlto));
+    const mallaM2Unit = round2(((hojaAncho * hojaAlto) / 10000) * 1.12);
+    telaMosquiteraM2 = round2(mallaM2Unit * qty);
+    colaDeRataM = round2(((2 * (hojaAncho + hojaAlto)) / 100 + 0.25) * qty);
+
+    vidrios.push({
+      tipo: 'malla',
+      nombre: 'Tela Mosquitera (Hoja Abatible)',
+      pzas: qty,
+      anchoCm: mallaW,
+      altoCm: mallaH,
+      areaM2: telaMosquiteraM2,
+      espesorLabel: `${telaMosquiteraM2.toFixed(2)} m² (incl. 12% tensado)`,
+    });
+
+    herrajes.push(
+      {
+        nombre: 'Bisagras de resorte / libro para mosquitero abatible',
+        detalle: '2 bisagras laterales (3 si alto > 160 cm)',
+        cantidad: (H > 160 ? 3 : 2) * qty,
+        unidad: 'pzas',
+      },
+      {
+        nombre: 'Jaladera + broche magnético de cierre',
+        detalle: 'Apertura manual y cierre hermético contra insectos',
+        cantidad: 1 * qty,
+        unidad: 'jgo',
+      },
+      {
+        nombre: 'Cola de rata / Vinil redondo',
+        detalle: 'Cordón redondo para canal de malla',
+        cantidad: colaDeRataM,
+        unidad: 'm',
+      },
+      {
+        nombre: 'Tela Mosquitera',
+        detalle: `Malla fibra gris/negra (${mallaW}×${mallaH} cm)`,
+        cantidad: telaMosquiteraM2,
+        unidad: 'm²',
+      },
+      {
+        nombre: 'Escuadras esquineras mosquitero',
+        detalle: '4 escuadras de unión para bastidor abatible',
+        cantidad: 4 * qty,
+        unidad: 'pzas',
+      },
+      {
+        nombre: 'Felpa perimetral guardapolvo',
+        detalle: 'Sellado perimetral entre hoja y contramarco',
+        cantidad: round2(((2 * (hojaAncho + hojaAlto)) / 100) * qty),
         unidad: 'm',
       }
     );
@@ -4190,5 +4296,85 @@ export function computeSalesAnalytics(params: {
     totalMaterialUnits,
   };
 }
+
+// ==================== VALIDACIÓN CAMPOS OBLIGATORIOS LEVANTAMIENTO ====================
+
+export interface LevantamientoRequiredValidationResult {
+  valid: boolean;
+  missingFields: string[];
+  firstMissingKey: 'cliente' | 'ancho' | 'alto' | 'lineaPerfilOtro' | null;
+  message: string;
+}
+
+export function validateLevantamientoRequiredFields(input: {
+  cliente: string;
+  anchoRaw: string | number;
+  altoRaw: string | number;
+  lineaPerfil?: string;
+  lineaPerfilOtro?: string;
+  requireCliente?: boolean;
+}): LevantamientoRequiredValidationResult {
+  const missingFields: string[] = [];
+  let firstMissingKey: 'cliente' | 'ancho' | 'alto' | 'lineaPerfilOtro' | null = null;
+
+  const clienteClean = String(input.cliente || '').trim();
+  const anchoStr = String(input.anchoRaw ?? '').trim();
+  const altoStr = String(input.altoRaw ?? '').trim();
+  const anchoNum = Number(anchoStr.replace(',', '.'));
+  const altoNum = Number(altoStr.replace(',', '.'));
+
+  if (input.requireCliente !== false && !clienteClean) {
+    missingFields.push('Nombre del cliente');
+    if (!firstMissingKey) firstMissingKey = 'cliente';
+  }
+  if (!anchoStr || !Number.isFinite(anchoNum) || anchoNum <= 0) {
+    missingFields.push('Ancho');
+    if (!firstMissingKey) firstMissingKey = 'ancho';
+  }
+  if (!altoStr || !Number.isFinite(altoNum) || altoNum <= 0) {
+    missingFields.push('Alto');
+    if (!firstMissingKey) firstMissingKey = 'alto';
+  }
+  if (input.lineaPerfil === 'Otra' && !String(input.lineaPerfilOtro || '').trim()) {
+    missingFields.push('Línea / perfil personalizado');
+    if (!firstMissingKey) firstMissingKey = 'lineaPerfilOtro';
+  }
+
+  if (missingFields.length === 0) {
+    return { valid: true, missingFields: [], firstMissingKey: null, message: '' };
+  }
+
+  const formattedList =
+    missingFields.length === 1
+      ? missingFields[0]
+      : `${missingFields.slice(0, -1).join(', ')} y ${missingFields[missingFields.length - 1]}`;
+
+  return {
+    valid: false,
+    missingFields,
+    firstMissingKey,
+    message: `Falta completar antes de agregar: ${formattedList}.`,
+  };
+}
+
+// ==================== FILTRO BASELINE CONTADORES EN 0 (PANEL ADMIN) ====================
+
+export function filterAdminRecordsByResetBaseline<
+  T extends { updatedAt?: number; lastSeenAt?: number; createdAt?: number; firstSeenAt?: number },
+>(records: T[], resetAtMs: number): T[] {
+  if (!Array.isArray(records) || records.length === 0) return [];
+  const baseline = Number(resetAtMs) || 0;
+  if (baseline <= 0) return records;
+  return records.filter((item) => {
+    const ts = Math.max(
+      Number(item.updatedAt) || 0,
+      Number(item.lastSeenAt) || 0,
+      Number(item.createdAt) || 0,
+      Number(item.firstSeenAt) || 0
+    );
+    return ts > baseline;
+  });
+}
+
 
 

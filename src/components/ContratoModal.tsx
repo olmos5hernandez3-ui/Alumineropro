@@ -1,6 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { COLORES_CONFIG, getRellenoLabel, LINEAS_CONFIG, round2 } from '../utils/alumineroLogic';
 import { generarPdfContratoServicio } from '../utils/pdfExport';
+import {
+  pushHistoryOverlay,
+  removeHistoryOverlay,
+} from '../utils/historyOverlayStack';
 import {
   ContratoClienteInfo,
   DEFAULT_CONTRATO_CLAUSES,
@@ -47,20 +51,55 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
   onShowToast,
 }) => {
   const [phase, setPhase] = useState<'setup' | 'preview'>('setup');
+  const [cleanPreview, setCleanPreview] = useState(false);
   const [folioActivo, setFolioActivo] = useState<string>(() => peekNextContratoFolio());
   const [editarClausulas, setEditarClausulas] = useState(false);
   const [signaturePadOpen, setSignaturePadOpen] = useState(false);
   const [clientSignatureUrl, setClientSignatureUrl] = useState<string>('');
+  const previewCardRef = useRef<HTMLDivElement | null>(null);
+  const previewOverlayTokenRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (open) {
       setPhase('setup');
+      setCleanPreview(false);
       setEditarClausulas(false);
       setSignaturePadOpen(false);
       setClientSignatureUrl('');
       setFolioActivo(peekNextContratoFolio());
     }
   }, [open]);
+
+  // Registrar capa de historial local para que Atrás regrese 1 paso (Vista previa -> Configuración -> Hoja)
+  useEffect(() => {
+    if (!open || phase !== 'preview') {
+      removeHistoryOverlay(previewOverlayTokenRef.current);
+      previewOverlayTokenRef.current = null;
+      return;
+    }
+    previewOverlayTokenRef.current = pushHistoryOverlay('contrato-preview', () => {
+      previewOverlayTokenRef.current = null;
+      if (signaturePadOpen) {
+        setSignaturePadOpen(false);
+        return;
+      }
+      if (cleanPreview) {
+        setCleanPreview(false);
+        return;
+      }
+      setPhase('setup');
+    });
+    return () => {
+      removeHistoryOverlay(previewOverlayTokenRef.current);
+      previewOverlayTokenRef.current = null;
+    };
+  }, [open, phase, cleanPreview, signaturePadOpen]);
+
+  useEffect(() => {
+    if (open && phase === 'preview' && previewCardRef.current) {
+      previewCardRef.current.scrollTop = 0;
+    }
+  }, [open, phase, cleanPreview]);
 
   if (!open) return null;
 
@@ -109,17 +148,26 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
   const clausulaGarantiaText =
     String(cliente?.clausulaGarantia ?? '').trim() || DEFAULT_CONTRATO_CLAUSES.garantia;
 
+  const handleCloseModal = () => {
+    removeHistoryOverlay(previewOverlayTokenRef.current);
+    previewOverlayTokenRef.current = null;
+    onClose();
+  };
+
   const handleConfirmSetupAndGenerate = (e: React.FormEvent) => {
     e.preventDefault();
     const folioNuevo = issueNextContratoFolio();
     setFolioActivo(folioNuevo);
     onUpdateCliente({ folio: folioNuevo });
+    setCleanPreview(false);
     setPhase('preview');
   };
 
   const handleOpenPreviewDirect = () => {
     const folioNuevo = cliente?.folio || folioActivo || issueNextContratoFolio();
     setFolioActivo(folioNuevo);
+    setEditarClausulas(false);
+    setCleanPreview(true);
     setPhase('preview');
   };
 
@@ -187,12 +235,12 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
   return (
     <div
       id="modal-contrato"
-      className="fixed inset-0 z-50 bg-slate-950/80 flex items-center justify-center p-2.5 sm:p-4 overflow-y-auto"
+      className="fixed inset-0 z-50 bg-slate-950/85 flex items-start sm:items-center justify-center p-2.5 sm:p-4 overflow-y-auto"
       role="dialog"
       aria-modal="true"
       aria-label="Contrato de Prestación de Servicios"
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget) handleCloseModal();
       }}
     >
       {/* ==================== PASO 1: CONFIGURACIÓN RÁPIDA ANTES DE GENERAR ==================== */}
@@ -212,7 +260,7 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
             </div>
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleCloseModal}
               aria-label="Cerrar configuración de contrato"
               className="min-w-[36px] min-h-[36px] rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold cursor-pointer shrink-0"
             >
@@ -391,7 +439,7 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
               <button
                 type="button"
                 id="btn-contrato-cancelar"
-                onClick={onClose}
+                onClick={handleCloseModal}
                 className="w-full min-h-[44px] px-4 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-[13px] font-bold cursor-pointer"
               >
                 Cancelar
@@ -416,30 +464,48 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
         </div>
       ) : (
         /* ==================== PASO 2: DOCUMENTO LEGAL LIMPIO (VISTA CARTA / PDF) ==================== */
-        <div className="w-full max-w-[850px] bg-white text-[#1E293B] border border-slate-300 rounded-[20px] p-3 sm:p-6 shadow-2xl max-h-[94vh] overflow-y-auto my-auto flex flex-col gap-4">
+        <div
+          ref={previewCardRef}
+          id="contrato-preview-container"
+          className="w-full max-w-[880px] bg-white text-[#1E293B] border border-slate-300 rounded-[20px] p-3 sm:p-6 shadow-2xl max-h-[94vh] overflow-y-auto my-auto flex flex-col gap-4"
+        >
           {/* Barra superior de edición rápida (oculta al imprimir) */}
-          <div className="contrato-no-print flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-200">
-            <div className="flex flex-wrap items-center gap-2">
+          <div className="contrato-no-print flex items-start justify-between gap-2 pb-3 border-b border-slate-200">
+            <div className="flex flex-wrap items-center gap-2 min-w-0 flex-1">
               <button
                 type="button"
-                onClick={() => setPhase('setup')}
-                className="min-h-[36px] px-3 rounded-xl border border-slate-300 bg-slate-100 hover:bg-slate-200 text-slate-800 text-[12px] font-extrabold cursor-pointer"
+                id="btn-contrato-volver-datos"
+                onClick={() => {
+                  if (cleanPreview) {
+                    setCleanPreview(false);
+                  } else {
+                    setPhase('setup');
+                  }
+                }}
+                className="min-h-[38px] px-3 rounded-xl border border-slate-300 bg-slate-100 hover:bg-slate-200 text-slate-800 text-[12px] font-extrabold cursor-pointer"
               >
-                ← Ajustar datos
+                {cleanPreview ? '← Salir de vista previa' : '← Ajustar datos'}
               </button>
-              <button
-                type="button"
-                onClick={() => setEditarClausulas((p) => !p)}
-                className="min-h-[36px] px-3 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-800 text-[12px] font-extrabold cursor-pointer"
-              >
-                {editarClausulas ? 'Ocultar editor de cláusulas' : '✏️ Editar cláusulas'}
-              </button>
+              {!cleanPreview && (
+                <button
+                  type="button"
+                  onClick={() => setEditarClausulas((p) => !p)}
+                  className="min-h-[38px] px-3 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-800 text-[12px] font-extrabold cursor-pointer"
+                >
+                  {editarClausulas ? 'Ocultar editor de cláusulas' : '✏️ Editar cláusulas'}
+                </button>
+              )}
+              {cleanPreview && (
+                <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-indigo-600/20 border border-indigo-400/50 text-indigo-200 text-[11px] font-extrabold">
+                  👁 Vista previa lista ({partidasSafe.length} partida{partidasSafe.length === 1 ? '' : 's'})
+                </span>
+              )}
             </div>
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleCloseModal}
               aria-label="Cerrar modal de contrato"
-              className="min-w-[36px] min-h-[36px] rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold cursor-pointer"
+              className="min-w-[36px] min-h-[36px] rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold cursor-pointer shrink-0"
             >
               ✕
             </button>
@@ -537,11 +603,11 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
           <div
             id="contrato-print-area"
             data-preserve-light="true"
-            className="bg-white text-slate-900 border border-slate-300 rounded-2xl p-5 sm:p-7 shadow-sm"
+            className="w-full bg-white text-slate-900 border border-slate-300 rounded-2xl p-4 sm:p-7 shadow-sm"
           >
             {/* Encabezado Ejecutivo del Taller + Folio Único */}
-            <div className="flex flex-wrap items-start justify-between gap-4 pb-4 border-b-2 border-[#0B2545]">
-              <div className="flex items-start gap-3 min-w-0 flex-1">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 pb-4 border-b-2 border-[#0B2545] w-full">
+              <div className="flex items-start gap-3 w-full sm:flex-1 sm:min-w-[240px]">
                 {taller.logoDataUrl ? (
                   <img
                     src={taller.logoDataUrl}
@@ -553,36 +619,39 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
                     AP
                   </div>
                 )}
-                <div className="min-w-0">
+                <div className="flex-1 min-w-0">
                   <div className="text-[11px] font-extrabold text-blue-700 uppercase tracking-wider">
                     Contrato de Prestación de Servicios
                   </div>
-                  <h1 className="m-0 text-[18px] font-black text-[#0B2545] leading-tight break-words">
+                  <h1 className="m-0 text-[18px] sm:text-[19px] font-black text-[#0B2545] leading-snug break-normal">
                     {taller.nombre || 'Taller de Aluminio y Vidrio'}
                   </h1>
-                  <div className="text-[12px] text-slate-700 font-semibold mt-0.5 break-words">
+                  <div className="text-[12px] text-slate-700 font-semibold mt-0.5">
                     Tel: <span className="mono">{taller.tel || 'Sin especificar'}</span>
                   </div>
                   {taller.ubicacion && (
-                    <div className="text-[11.5px] text-slate-600 break-words">
+                    <div className="text-[11.5px] text-slate-600">
                       Ubicación: {taller.ubicacion}
                     </div>
                   )}
                 </div>
               </div>
 
-              <div className="text-left sm:text-right bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 shrink-0">
-                <div className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider">
+              <div
+                id="contrato-folio-card"
+                className="contrato-folio-dark w-full sm:w-auto sm:min-w-[215px] sm:max-w-[295px] text-left sm:text-right bg-[#0B2545] border border-sky-400/40 rounded-xl px-4 py-3 shrink-0 shadow-sm"
+              >
+                <div className="contrato-folio-label text-[10.5px] font-extrabold uppercase tracking-wider text-sky-200">
                   Folio de Contrato
                 </div>
-                <div id="contrato-folio-badge" className="mono text-[15px] font-black text-[#0B2545]">
+                <div id="contrato-folio-badge" className="mono text-[16px] font-black text-white mt-0.5">
                   {folioActivo}
                 </div>
-                <div className="text-[11.5px] text-slate-700 mt-1">
-                  Fecha: <strong>{fechaHoy}</strong>
+                <div className="text-[11.5px] text-white mt-1.5 leading-snug">
+                  Fecha: <strong className="text-white font-extrabold">{fechaHoy}</strong>
                 </div>
-                <div className="text-[11.5px] text-slate-700">
-                  Entrega est.: <strong>{fechaEntregaTexto}</strong>
+                <div className="text-[11.5px] text-white mt-0.5 leading-snug">
+                  Entrega est.: <strong className="text-white font-extrabold">{fechaEntregaTexto}</strong>
                 </div>
               </div>
             </div>
@@ -751,24 +820,27 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
             </div>
           </div>
 
-          {/* Botones flotantes inferiores bien ordenados (ocultos al imprimir) */}
-          <div className="contrato-no-print sticky bottom-0 z-10 -mx-3 sm:-mx-6 -mb-3 sm:-mb-6 px-3 sm:px-6 py-3 bg-white/95 backdrop-blur border-t border-slate-200 grid grid-cols-2 sm:grid-cols-5 gap-2">
+          {/* Botones flotantes inferiores bien ordenados y con alto contraste (ocultos al imprimir) */}
+          <div className="contrato-no-print sticky bottom-0 z-10 -mx-3 sm:-mx-6 -mb-3 sm:-mb-6 px-3 sm:px-6 pt-3 pb-4 rounded-b-[19px] bg-[#0f172a] border-t border-slate-700 grid grid-cols-2 sm:grid-cols-5 gap-2">
             <button
               type="button"
               id="btn-contrato-vista-previa-doc"
               onClick={() => {
                 setEditarClausulas(false);
-                document.getElementById('contrato-print-area')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                setCleanPreview((prev) => !prev);
+                if (previewCardRef.current) {
+                  previewCardRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+                }
               }}
-              className="min-h-[44px] px-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 text-[12px] sm:text-[12.5px] font-black cursor-pointer shadow-sm"
+              className="min-h-[44px] px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 border border-indigo-400/60 text-white text-[12px] sm:text-[12.5px] font-extrabold cursor-pointer shadow-sm"
             >
-              👁 Vista previa
+              {cleanPreview ? '✏️ Editar vista' : '👁 Vista previa'}
             </button>
             <button
               type="button"
               id="btn-contrato-firmar"
               onClick={() => setSignaturePadOpen(true)}
-              className="min-h-[44px] px-3 rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-950 text-[12px] sm:text-[12.5px] font-extrabold cursor-pointer"
+              className="min-h-[44px] px-3 rounded-xl border border-amber-300 bg-amber-500 hover:bg-amber-400 text-slate-950 text-[12px] sm:text-[12.5px] font-black cursor-pointer shadow-sm"
             >
               {clientSignatureUrl ? '✍️ Cambiar firma' : '✍️ Firmar'}
             </button>
@@ -776,7 +848,7 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
               type="button"
               id="btn-contrato-whatsapp"
               onClick={handleShareWhatsApp}
-              className="min-h-[44px] px-3 rounded-xl bg-green-600 hover:bg-green-700 text-white text-[12px] sm:text-[12.5px] font-extrabold cursor-pointer shadow-sm"
+              className="min-h-[44px] px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[12px] sm:text-[12.5px] font-extrabold cursor-pointer shadow-sm"
             >
               💬 WhatsApp
             </button>
@@ -802,7 +874,7 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
                     onShowToast('No se pudo descargar el PDF del contrato');
                   });
               }}
-              className="min-h-[44px] px-3 rounded-xl border border-blue-300 bg-blue-50 hover:bg-blue-100 text-blue-900 text-[12px] sm:text-[12.5px] font-extrabold cursor-pointer"
+              className="min-h-[44px] px-3 rounded-xl border border-blue-400/60 bg-blue-600 hover:bg-blue-500 text-white text-[12px] sm:text-[12.5px] font-extrabold cursor-pointer shadow-sm"
             >
               📄 PDF
             </button>
@@ -810,7 +882,7 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
               type="button"
               id="btn-contrato-print"
               onClick={() => window.print()}
-              className="col-span-2 sm:col-span-1 min-h-[44px] px-3 rounded-xl bg-[#0B2545] hover:bg-[#133866] text-white text-[12px] sm:text-[12.5px] font-extrabold cursor-pointer shadow-md"
+              className="col-span-2 sm:col-span-1 min-h-[44px] px-3 rounded-xl border border-sky-400/40 bg-[#0B2545] hover:bg-[#133866] text-white text-[12px] sm:text-[12.5px] font-extrabold cursor-pointer shadow-md"
             >
               🖨️ Imprimir
             </button>

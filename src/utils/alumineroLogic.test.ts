@@ -34,6 +34,8 @@ import {
   MEXICO_ALUMINUM_SYSTEMS,
   isOneYearProPlan,
   computeSalesAnalytics,
+  validateLevantamientoRequiredFields,
+  filterAdminRecordsByResetBaseline,
   VIDRIOS_CONFIG,
   type AperturaVentanaId,
 } from './alumineroLogic';
@@ -44,6 +46,7 @@ import {
   calcularModulacionCortes,
   buildPartidaFromModulacion,
   optimizarTramos1D,
+  aggregateModulacionJobs,
 } from './modulacionLogic';
 import { optimizarVidrio2D } from './glassOptimizer2D';
 import {
@@ -87,6 +90,7 @@ import {
   buildLevantamientoWhatsappText,
   LEV_COLOR_VIDRIO_OPTS,
   LEV_KEYS,
+  LEV_TIPOS,
   mergeLevantamientosBackup,
   normalizeLevantamientoDraft,
   resolveLineaFromLevantamiento,
@@ -2302,4 +2306,151 @@ test('63. Vidrio claro por defecto en todos los catálogos de vidrio', () => {
   assert.equal(flotClaro?.nombre, 'Vidrio claro');
   assert.equal(LEV_COLOR_VIDRIO_OPTS[0].label, 'Vidrio claro');
 });
+
+test('64. Validación específica de campos faltantes al agregar medidas en Levantamiento Rápido', () => {
+  const allMissing = validateLevantamientoRequiredFields({
+    cliente: '   ',
+    anchoRaw: '',
+    altoRaw: '',
+    lineaPerfil: 'Línea 3"',
+  });
+  assert.equal(allMissing.valid, false);
+  assert.deepEqual(allMissing.missingFields, ['Nombre del cliente', 'Ancho', 'Alto']);
+  assert.equal(allMissing.firstMissingKey, 'cliente');
+  assert.match(allMissing.message, /Nombre del cliente, Ancho y Alto/);
+
+  const onlyAlto = validateLevantamientoRequiredFields({
+    cliente: 'Juan Pérez',
+    anchoRaw: '120',
+    altoRaw: '0',
+    lineaPerfil: 'Línea 3"',
+  });
+  assert.equal(onlyAlto.valid, false);
+  assert.deepEqual(onlyAlto.missingFields, ['Alto']);
+  assert.equal(onlyAlto.firstMissingKey, 'alto');
+  assert.match(onlyAlto.message, /Alto/);
+
+  const customPerfilMissing = validateLevantamientoRequiredFields({
+    cliente: 'Juan Pérez',
+    anchoRaw: '120',
+    altoRaw: '100',
+    lineaPerfil: 'Otra',
+    lineaPerfilOtro: '  ',
+  });
+  assert.equal(customPerfilMissing.valid, false);
+  assert.equal(customPerfilMissing.firstMissingKey, 'lineaPerfilOtro');
+
+  const ok = validateLevantamientoRequiredFields({
+    cliente: 'Juan Pérez',
+    anchoRaw: '120',
+    altoRaw: '100',
+    lineaPerfil: 'Línea 3"',
+  });
+  assert.equal(ok.valid, true);
+  assert.equal(ok.missingFields.length, 0);
+});
+
+test('65. Mosquitero abatible disponible en Levantamiento y con despiece completo', () => {
+  assert.ok(LEV_TIPOS.includes('Mosquitero abatible'));
+  assert.ok(LINEAS_CONFIG['mosq-abatible']);
+  assert.equal(LINEAS_CONFIG['mosq-abatible'].esMosquitero, true);
+
+  const resolved = resolveLineaFromLevantamiento({
+    id: 'm1',
+    tipo: 'Mosquitero abatible',
+    area: 'Puerta patio',
+    anchoCm: 95,
+    altoCm: 210,
+    cant: 1,
+    notas: '',
+    foto: '',
+  });
+  assert.equal(resolved.linea, 'mosq-abatible');
+  assert.equal(resolved.apertura, 'abatible');
+
+  const d = calcularDespiece({
+    linea: 'mosq-abatible',
+    anchoCm: 95,
+    altoCm: 210,
+    color: 'blanco',
+    vidrio: 'claro6',
+    hojas: 1,
+    apertura: 'abatible',
+    sentidoPuerta: 'izq',
+    puertaIntermedio: false,
+    puertaEconomica: false,
+    invertido: false,
+    cantidad: 2,
+    tolerancias: LINEAS_CONFIG['mosq-abatible'].toleranciasDefault,
+  });
+  assert.ok(d.perfiles.some((p) => p.perfilId === 'mosq_marco'));
+  assert.ok(d.perfiles.some((p) => p.perfilId === 'alumer_5844'));
+  assert.ok(d.herrajes.some((h) => h.nombre.toLowerCase().includes('bisagra')));
+  assert.ok(d.telaMosquiteraM2 > 0);
+  assert.ok(d.colaDeRataM > 0);
+});
+
+test('66. Modulación multi-trabajo consolida perfiles, tramos 6.10m y TODOS los vidrios seleccionados', () => {
+  const res = aggregateModulacionJobs([
+    {
+      id: 'j1',
+      etiqueta: 'Sala · Ventana Corrediza',
+      modeloId: 'win-corrediza',
+      conMosquitero: false,
+      serieId: 'linea-3',
+      sublineaId: 'comercial-hermetica',
+      anchoCm: 150,
+      altoCm: 120,
+      cantidad: 2,
+      vidrioLabel: 'Claro 6 mm',
+    },
+    {
+      id: 'j2',
+      etiqueta: 'Recámara · Ventana Fija',
+      modeloId: 'win-fija',
+      conMosquitero: false,
+      serieId: 'linea-3',
+      sublineaId: 'economica-hermetica',
+      anchoCm: 100,
+      altoCm: 100,
+      cantidad: 1,
+      vidrioLabel: 'Filtrasol 6 mm',
+    },
+    {
+      id: 'j3',
+      etiqueta: 'Patio · Mosquitero abatible',
+      modeloId: 'win-abatible',
+      conMosquitero: true,
+      serieId: 'linea-3',
+      sublineaId: 'economica-hermetica',
+      anchoCm: 90,
+      altoCm: 205,
+      cantidad: 1,
+      sinVidrio: true,
+    },
+  ]);
+
+  assert.equal(res.totalTrabajos, 3);
+  assert.equal(res.totalPiezas, 4);
+  assert.equal(res.items.length, 3);
+  assert.equal(res.vidriosConsolidados.length, 2, 'Debe consolidar vidrios de Sala y Recámara y omitir el sinVidrio');
+  assert.equal(res.vidriosConsolidados[0].pzas, 4, '2 hojas × cantidad 2 = 4 vidrios en Sala');
+  assert.equal(res.vidriosConsolidados[1].pzas, 1);
+  assert.ok(res.perfilesConsolidados.length > 15);
+  assert.ok(res.totalAluminioM > 15);
+});
+
+test('67. Panel Admin: filtro baseline de reinicio de contadores a 0 conserva solo actividad posterior', () => {
+  const baseline = 1_770_000_000_000;
+  const rows = [
+    { id: 'old1', updatedAt: baseline - 5000, lastSeenAt: baseline - 5000 },
+    { id: 'old2', createdAt: baseline },
+    { id: 'new1', updatedAt: baseline + 1000 },
+  ];
+  const filtered = filterAdminRecordsByResetBaseline(rows, baseline);
+  assert.equal(filtered.length, 1);
+  assert.equal(filtered[0].id, 'new1');
+  assert.equal(filterAdminRecordsByResetBaseline(rows, 0).length, 3);
+});
+
 

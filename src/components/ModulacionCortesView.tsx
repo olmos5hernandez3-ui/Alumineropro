@@ -8,6 +8,7 @@ import {
   round2,
 } from '../utils/alumineroLogic';
 import {
+  aggregateModulacionJobs,
   buildPartidaFromModulacion,
   calcularModulacionCortes,
   getPerfilesBaseModulacion,
@@ -17,6 +18,7 @@ import {
   MODULACION_SUBLINEAS,
   ModulacionCategoria,
   ModulacionModeloId,
+  ModulacionMultiJobInput,
   ModulacionSerieId,
   ModulacionSublineaId,
   optimizarTramos1D,
@@ -26,7 +28,6 @@ import {
   formatMedidaText,
   formatPiezaSpecs,
   LEV_KEYS,
-  LEV_MAPA,
   LevantamientoDraft,
   LevantamientoPieza,
   normalizeLevantamientoDraft,
@@ -310,19 +311,55 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
     return () => window.removeEventListener('alum-mod-apply', applyPending);
   }, []);
 
+  const [selectedLevIds, setSelectedLevIds] = useState<string[]>(() => {
+    if (!activoLev) return [];
+    return activoLev.piezas
+      .filter((p) => {
+        const r = resolveLineaFromLevantamiento(p);
+        return Boolean(r.modelo && r.cat);
+      })
+      .map((p) => p.id);
+  });
+
+  useEffect(() => {
+    if (!activoLev) {
+      setSelectedLevIds([]);
+      return;
+    }
+    const supportedIds = activoLev.piezas
+      .filter((p) => {
+        const r = resolveLineaFromLevantamiento(p);
+        return Boolean(r.modelo && r.cat);
+      })
+      .map((p) => p.id);
+    setSelectedLevIds((prev) => {
+      const stillValid = prev.filter((id) => supportedIds.includes(id));
+      // If nothing selected yet or new jobs arrived, default to selecting all supported jobs
+      if (stillValid.length === 0) return supportedIds;
+      const newOnes = supportedIds.filter((id) => !prev.includes(id));
+      return [...stillValid, ...newOnes];
+    });
+  }, [activoLev]);
+
   useEffect(() => {
     const syncActivo = () => {
       try {
-        for (const key of [LEV_KEYS.activo, LEV_KEYS.draft]) {
+        const candidates: LevantamientoDraft[] = [];
+        for (const key of [LEV_KEYS.draft, LEV_KEYS.activo]) {
           const raw = window.localStorage.getItem(key);
           if (!raw) continue;
           const norm = normalizeLevantamientoDraft(JSON.parse(raw));
-          if (norm.piezas.length > 0) {
-            setActivoLev(norm);
-            return;
-          }
+          if (norm.piezas.length > 0) candidates.push(norm);
         }
-        setActivoLev(null);
+        if (candidates.length === 0) {
+          setActivoLev(null);
+          return;
+        }
+        const best =
+          candidates.length === 2 && candidates[1].piezas.length > candidates[0].piezas.length
+            ? candidates[1]
+            : candidates[0];
+        setActivoLev(best);
       } catch {
         setActivoLev(null);
       }
@@ -485,39 +522,106 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
       ? selectedSerie.mappedLineaPuerta
       : selectedSerie.mappedLineaVentana;
 
+  const supportedLevPiezas = useMemo(() => {
+    if (!activoLev) return [];
+    return activoLev.piezas.filter((p) => {
+      const r = resolveLineaFromLevantamiento(p);
+      return Boolean(r.modelo && r.cat);
+    });
+  }, [activoLev]);
+
+  const allLevSelected =
+    supportedLevPiezas.length > 0 &&
+    supportedLevPiezas.every((p) => selectedLevIds.includes(p.id));
+
+  const toggleSelectAllLev = () => {
+    if (allLevSelected) {
+      setSelectedLevIds([]);
+    } else {
+      setSelectedLevIds(supportedLevPiezas.map((p) => p.id));
+    }
+  };
+
+  const toggleSelectOneLev = (id: string) => {
+    setSelectedLevIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  const multiJobResult = useMemo(() => {
+    if (!activoLev || selectedLevIds.length === 0) return null;
+    const selectedPiezas = activoLev.piezas.filter((p) => selectedLevIds.includes(p.id));
+    if (selectedPiezas.length === 0) return null;
+    const jobInputs: ModulacionMultiJobInput[] = [];
+    selectedPiezas.forEach((p, idx) => {
+      const resolved = resolveLineaFromLevantamiento(p);
+      if (!resolved.modelo || !resolved.cat) return;
+      const vRaw = String(p.colorVidrio || 'Vidrio claro').trim();
+      const vLow = vRaw.toLowerCase();
+      const sinVidrio = vLow === 'sin vidrio' || p.tipo.toLowerCase().includes('mosquitero');
+      const vidrioLabel =
+        vLow === 'claro' || vLow === 'vidrio claro' ? 'Vidrio claro 6 mm' : `${vRaw} 6 mm`;
+      jobInputs.push({
+        id: p.id,
+        etiqueta: `#${idx + 1} ${p.area ? `${p.area} · ` : ''}${p.tipo} (${p.anchoCm}×${p.altoCm})`,
+        modeloId: resolved.modelo,
+        conMosquitero: resolveMosquiteroFromLevantamiento(p.mosquitero) || p.tipo === 'Mosquitero abatible',
+        serieId: resolved.serieMod,
+        sublineaId,
+        anchoCm: p.anchoCm,
+        altoCm: p.altoCm,
+        cantidad: Math.max(1, Number(p.cant) || 1),
+        vidrioLabel,
+        sinVidrio,
+      });
+    });
+    if (jobInputs.length === 0) return null;
+    return aggregateModulacionJobs(jobInputs);
+  }, [activoLev, selectedLevIds, sublineaId]);
+
+  const effectivePerfiles = useMemo(
+    () => (multiJobResult && multiJobResult.totalTrabajos > 0 ? multiJobResult.perfilesConsolidados : calculoCortes.perfiles),
+    [multiJobResult, calculoCortes.perfiles]
+  );
+
+  const effectiveVidrios = useMemo(
+    () => (multiJobResult && multiJobResult.totalTrabajos > 0 ? multiJobResult.vidriosConsolidados : calculoCortes.vidrios),
+    [multiJobResult, calculoCortes.vidrios]
+  );
+
   const optimizacion1D = useMemo(
     () =>
       optimizarTramos1D({
-        perfiles: calculoCortes.perfiles,
+        perfiles: effectivePerfiles,
         sobrantesInventario: sobrantes,
         lineaCompatible,
         kerfCm: Math.max(0, round2(discoKerfMm / 10)),
         minSobranteGuardableCm: Math.max(10, Math.round(umbralSobranteCm) || 45),
       }),
-    [calculoCortes.perfiles, sobrantes, lineaCompatible, discoKerfMm, umbralSobranteCm]
+    [effectivePerfiles, sobrantes, lineaCompatible, discoKerfMm, umbralSobranteCm]
   );
 
   const seccionesConFilas = useMemo(
     () =>
       MODULACION_SECCIONES_META.map((sec) => ({
         ...sec,
-        rows: calculoCortes.perfiles.filter((r) => r.seccion === sec.id),
+        rows: effectivePerfiles.filter((r) => r.seccion === sec.id),
       })).filter((s) => s.rows.length > 0),
-    [calculoCortes.perfiles]
+    [effectivePerfiles]
   );
 
   const totalPiezasRequeridas = useMemo(
-    () => calculoCortes.perfiles.reduce((acc, r) => acc + r.cantidad, 0),
-    [calculoCortes.perfiles]
+    () => effectivePerfiles.reduce((acc, r) => acc + r.cantidad, 0),
+    [effectivePerfiles]
   );
 
   const totalPiezasCortadas = useMemo(
     () =>
-      calculoCortes.perfiles.reduce(
+      effectivePerfiles.reduce(
         (acc, r) => acc + Math.min(r.cantidad, cortadosMap[r.id] || 0),
         0
       ),
-    [calculoCortes.perfiles, cortadosMap]
+    [effectivePerfiles, cortadosMap]
   );
 
   const getCutCount = (rowId: string, max: number) =>
@@ -656,80 +760,140 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
           </div>
 
           <div className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] p-3.5 sm:p-4 shadow-md">
-            <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
-              <h2 className="m-0 text-[14.5px] font-extrabold text-slate-900">
-                🪟 Trabajos a modular ({activoLev.piezas.length}) — Cálculo automático activo
-              </h2>
-              <div className="flex items-center gap-1.5">
-                <label htmlFor="sel-mod-vidrio" className="text-[11px] font-bold text-slate-600">
-                  Vidrio:
-                </label>
-                <select
-                  id="sel-mod-vidrio"
-                  value={vidrioSeleccionado}
-                  onChange={(e) => setVidrioSeleccionado(e.target.value)}
-                  className="min-h-[32px] rounded-lg border border-slate-300 bg-white px-2 text-[11.5px] font-bold text-slate-800"
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+              <div className="min-w-0">
+                <h2 className="m-0 text-[14.5px] font-extrabold text-slate-900">
+                  🪟 Trabajos a modular / Lista de cortes ({activoLev.piezas.length})
+                </h2>
+                <p className="m-0 text-[11.5px] text-slate-500 mt-0.5">
+                  Selecciona los trabajos a incluir en el cálculo completo de perfiles, tramos 6.10 m y corte de vidrio 2D
+                </p>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <label
+                  htmlFor="chk-mod-select-all"
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border border-blue-300 bg-blue-50 text-blue-900 text-[12px] font-extrabold cursor-pointer select-none"
                 >
-                  <option value="Vidrio claro 6 mm">Vidrio claro 6 mm</option>
-                  <option value="Vidrio claro 4 mm">Vidrio claro 4 mm</option>
-                  <option value="Filtrasol 6 mm">Filtrasol 6 mm</option>
-                  <option value="Tintex 6 mm">Tintex 6 mm</option>
-                  <option value="Esmerilado 6 mm">Esmerilado 6 mm</option>
-                  <option value="Reflecta 6 mm">Reflecta 6 mm</option>
-                </select>
+                  <input
+                    id="chk-mod-select-all"
+                    type="checkbox"
+                    checked={allLevSelected}
+                    onChange={toggleSelectAllLev}
+                    className="w-4 h-4 accent-blue-600 cursor-pointer"
+                  />
+                  <span>Seleccionar todos los trabajos ({selectedLevIds.length}/{supportedLevPiezas.length})</span>
+                </label>
+                {onSendVidriosToOptimizer && (
+                  <button
+                    type="button"
+                    id="btn-mod-send-selected-vidrio"
+                    disabled={effectiveVidrios.length === 0}
+                    onClick={() => {
+                      if (effectiveVidrios.length === 0) {
+                        onShowToast('Selecciona al menos un trabajo con vidrio para optimizar en 2D');
+                        return;
+                      }
+                      onSendVidriosToOptimizer(effectiveVidrios);
+                    }}
+                    className="min-h-[36px] px-3.5 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white text-[12px] font-extrabold cursor-pointer shadow-sm"
+                  >
+                    ✂️ Enviar seleccionados a Vidrio 2D ({effectiveVidrios.length})
+                  </button>
+                )}
+                <div className="flex items-center gap-1.5">
+                  <label htmlFor="sel-mod-vidrio" className="text-[11px] font-bold text-slate-600">
+                    Vidrio:
+                  </label>
+                  <select
+                    id="sel-mod-vidrio"
+                    value={vidrioSeleccionado}
+                    onChange={(e) => setVidrioSeleccionado(e.target.value)}
+                    className="min-h-[32px] rounded-lg border border-slate-300 bg-white px-2 text-[11.5px] font-bold text-slate-800"
+                  >
+                    <option value="Vidrio claro 6 mm">Vidrio claro 6 mm</option>
+                    <option value="Vidrio claro 4 mm">Vidrio claro 4 mm</option>
+                    <option value="Filtrasol 6 mm">Filtrasol 6 mm</option>
+                    <option value="Tintex 6 mm">Tintex 6 mm</option>
+                    <option value="Esmerilado 6 mm">Esmerilado 6 mm</option>
+                    <option value="Reflecta 6 mm">Reflecta 6 mm</option>
+                  </select>
+                </div>
               </div>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               {activoLev.piezas.map((p, idx) => {
-                const mapa = LEV_MAPA[p.tipo] || LEV_MAPA['Cancel / Otro'];
-                const supported = Boolean(mapa.modelo);
-                const isSelected = activeLevPiezaId === p.id;
+                const resolved = resolveLineaFromLevantamiento(p);
+                const supported = Boolean(resolved.modelo && resolved.cat);
+                const isChecked = selectedLevIds.includes(p.id);
+                const isActivePreview = activeLevPiezaId === p.id;
                 return (
                   <div
                     key={p.id}
-                    className={`rounded-xl border p-2.5 flex items-center justify-between gap-2 transition-all ${
+                    id={`mod-job-card-${p.id}`}
+                    data-selected={isChecked ? 'true' : 'false'}
+                    className={`rounded-2xl border p-3 flex items-start justify-between gap-2.5 transition-all ${
                       !supported
                         ? 'border-slate-200 bg-slate-100 opacity-75'
-                        : isSelected
-                          ? 'border-2 border-blue-600 bg-blue-50 shadow-sm'
+                        : isChecked
+                          ? 'border-2 border-blue-600 bg-blue-50/90 shadow-md ring-1 ring-blue-400/40'
                           : 'border-slate-300 bg-slate-50 hover:border-blue-400'
                     }`}
                   >
-                    <button
-                      type="button"
-                      disabled={!supported}
-                      onClick={() => handleSelectLevPieza(p)}
-                      className="flex-1 min-w-0 text-left bg-transparent border-0 p-0 cursor-pointer disabled:cursor-not-allowed"
-                    >
-                      <div className="flex items-center gap-1.5">
-                        {isSelected && (
-                          <span className="text-blue-700 font-black text-[12px]" aria-hidden="true">
-                            ▶
+                    <div className="flex items-start gap-2.5 flex-1 min-w-0">
+                      <input
+                        type="checkbox"
+                        aria-label={`Seleccionar trabajo ${idx + 1}: ${p.tipo}`}
+                        disabled={!supported}
+                        checked={supported && isChecked}
+                        onChange={() => toggleSelectOneLev(p.id)}
+                        className="mt-0.5 w-4 h-4 accent-blue-600 cursor-pointer shrink-0"
+                      />
+                      <button
+                        type="button"
+                        disabled={!supported}
+                        onClick={() => {
+                          handleSelectLevPieza(p);
+                          if (supported && !selectedLevIds.includes(p.id)) {
+                            toggleSelectOneLev(p.id);
+                          }
+                        }}
+                        className="flex-1 min-w-0 text-left bg-transparent border-0 p-0 cursor-pointer disabled:cursor-not-allowed"
+                      >
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <strong className="text-[13px] font-extrabold text-slate-900 truncate">
+                            {idx + 1}. {p.tipo}
+                          </strong>
+                          {isChecked && supported && (
+                            <span className="px-1.5 py-0.5 rounded bg-blue-600 text-white text-[10px] font-extrabold">
+                              Incluido
+                            </span>
+                          )}
+                          {isActivePreview && (
+                            <span className="px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 text-[10px] font-extrabold">
+                              En vista
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11.5px] text-slate-600 mt-0.5 truncate">
+                          {p.area ? `${p.area} · ` : ''}
+                          <span className="mono font-bold text-slate-800">{formatMedidaText(p)}</span>
+                          {` · Cant: ${p.cant}`}
+                        </div>
+                        {!supported && (
+                          <span className="inline-block mt-1 px-2 py-0.5 rounded bg-amber-100 text-amber-900 text-[10px] font-extrabold">
+                            No disponible en Modulación
                           </span>
                         )}
-                        <strong className="text-[13px] font-extrabold text-slate-900 truncate">
-                          {idx + 1}. {p.tipo}
-                        </strong>
-                      </div>
-                      <div className="text-[11.5px] text-slate-600 mt-0.5 truncate">
-                        {p.area ? `${p.area} · ` : ''}
-                        <span className="mono font-bold text-slate-800">{formatMedidaText(p)}</span>
-                        {` · Cant: ${p.cant}`}
-                      </div>
-                      {!supported && (
-                        <span className="inline-block mt-1 px-2 py-0.5 rounded bg-amber-100 text-amber-900 text-[10px] font-extrabold">
-                          No disponible en Modulación
-                        </span>
-                      )}
-                      {supported && formatPiezaSpecs(p) && (
-                        <div className="text-[10.5px] font-bold text-blue-700 mt-0.5 truncate">
-                          {formatPiezaSpecs(p)}
-                        </div>
-                      )}
-                      {supported && p.notas && (
-                        <div className="text-[11px] text-slate-500 mt-0.5 truncate">{p.notas}</div>
-                      )}
-                    </button>
+                        {supported && formatPiezaSpecs(p) && (
+                          <div className="text-[10.5px] font-bold text-blue-700 mt-0.5 truncate">
+                            {formatPiezaSpecs(p)}
+                          </div>
+                        )}
+                        {supported && p.notas && (
+                          <div className="text-[11px] text-slate-500 mt-0.5 truncate">{p.notas}</div>
+                        )}
+                      </button>
+                    </div>
                     <button
                       type="button"
                       onClick={() => handleRemoveLevPieza(p.id)}
@@ -742,6 +906,21 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
                 );
               })}
             </div>
+
+            {multiJobResult && multiJobResult.totalTrabajos > 0 && (
+              <div
+                id="mod-multi-summary"
+                className="mt-3 p-3 rounded-xl border border-blue-200 bg-blue-50/60 flex flex-wrap items-center justify-between gap-2 text-[12px]"
+              >
+                <div className="font-extrabold text-blue-950">
+                  Cálculo completo activo: {multiJobResult.totalTrabajos} trabajo(s) · {multiJobResult.totalPiezas} pza(s) ·{' '}
+                  <span className="mono">{multiJobResult.totalAluminioM.toFixed(2)} m</span> aluminio ({optimizacion1D.tramos610Totales} tramo(s) 6.10 m)
+                </div>
+                <div className="text-[11.5px] font-bold text-blue-800">
+                  {multiJobResult.vidriosConsolidados.reduce((a, v) => a + v.pzas, 0)} cristal(es) listos para corte 2D
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1493,16 +1672,18 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
                 );
               })}
 
-              {/* Medidas estimadas de vidrio calculadas */}
-              {calculoCortes.vidrios.length > 0 && (
+              {/* Medidas estimadas de vidrio calculadas (para todos los trabajos seleccionados) */}
+              {effectiveVidrios.length > 0 && (
                 <div className="p-3.5 rounded-2xl border border-sky-300 bg-sky-50/70 flex flex-wrap items-center justify-between gap-2.5">
                   <div>
                     <div className="text-[12px] font-extrabold text-sky-900 uppercase tracking-wide">
-                      Cristal calculado para esta modulación
+                      {multiJobResult && multiJobResult.totalTrabajos > 1
+                        ? `Cristales calculados (${multiJobResult.totalTrabajos} trabajos seleccionados)`
+                        : 'Cristal calculado para esta modulación'}
                     </div>
-                    {calculoCortes.vidrios.map((v, i) => (
-                      <div key={i} className="text-[13px] font-bold text-slate-800 mt-0.5 mono">
-                        • {v.pzas} pza(s) de {v.anchoCm} × {v.altoCm} cm ({v.areaM2.toFixed(2)} m²)
+                    {effectiveVidrios.map((v, i) => (
+                      <div key={i} className="text-[12.5px] font-bold text-slate-800 mt-0.5 mono">
+                        • {v.nombre}: {v.pzas} pza(s) de {v.anchoCm} × {v.altoCm} cm ({v.areaM2.toFixed(2)} m²)
                       </div>
                     ))}
                   </div>
@@ -1510,10 +1691,10 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
                     <button
                       type="button"
                       id="btn-mod-optimize-vidrio"
-                      onClick={() => onSendVidriosToOptimizer(calculoCortes.vidrios)}
+                      onClick={() => onSendVidriosToOptimizer(effectiveVidrios)}
                       className="min-h-[42px] px-4 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-[12.5px] font-extrabold cursor-pointer shrink-0 active:scale-95"
                     >
-                      ✂️ Optimizar Vidrio en 2D
+                      ✂️ Optimizar Vidrio en 2D ({effectiveVidrios.length})
                     </button>
                   )}
                 </div>
