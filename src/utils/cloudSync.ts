@@ -33,10 +33,14 @@ import {
 } from './alumineroLogic';
 import {
   loadCachedPromoCount,
+  loadTutorialVideosCache,
   saveCachedPromoCount,
+  saveTutorialVideosCache,
   type AdminKeyRecord,
   type CloudAccountBackupPayload,
   type LicenciaState,
+  type TutorialVideoCategory,
+  type TutorialVideoItem,
 } from './storageHelpers';
 import {
   activateKeyRtdb,
@@ -201,6 +205,27 @@ function buildSafeDeviceRecord(
             .trim()
             .toLowerCase()
             .slice(0, 160),
+        }
+      : {}),
+    ...(input.tallerNombre !== undefined || existing?.tallerNombre
+      ? {
+          tallerNombre: String(input.tallerNombre ?? existing?.tallerNombre ?? '')
+            .trim()
+            .slice(0, 120),
+        }
+      : {}),
+    ...(input.tallerResponsable !== undefined || existing?.tallerResponsable
+      ? {
+          tallerResponsable: String(input.tallerResponsable ?? existing?.tallerResponsable ?? '')
+            .trim()
+            .slice(0, 120),
+        }
+      : {}),
+    ...(input.tallerWhatsapp !== undefined || existing?.tallerWhatsapp
+      ? {
+          tallerWhatsapp: String(input.tallerWhatsapp ?? existing?.tallerWhatsapp ?? '')
+            .trim()
+            .slice(0, 40),
         }
       : {}),
   };
@@ -481,6 +506,9 @@ export async function syncDeviceToCloud(params: {
   trialActive?: boolean;
   trialExpiresAt?: number | null;
   licencia?: LicenciaState | null;
+  tallerNombre?: string;
+  tallerResponsable?: string;
+  tallerWhatsapp?: string;
 }): Promise<CloudSyncSnapshot | null> {
   if (FIREBASE_DB_URL.trim()) {
     return await syncDeviceRtdb(FIREBASE_DB_URL, params);
@@ -671,6 +699,18 @@ export async function syncDeviceToCloud(params: {
           params.licencia?.linkedEmail && isValidEmailFormat(normalizeEmail(params.licencia.linkedEmail))
             ? normalizeEmail(params.licencia.linkedEmail)
             : existing?.linkedEmail,
+        tallerNombre:
+          typeof params.tallerNombre === 'string' && params.tallerNombre.trim()
+            ? params.tallerNombre.trim().slice(0, 120)
+            : existing?.tallerNombre,
+        tallerResponsable:
+          typeof params.tallerResponsable === 'string' && params.tallerResponsable.trim()
+            ? params.tallerResponsable.trim().slice(0, 120)
+            : existing?.tallerResponsable,
+        tallerWhatsapp:
+          typeof params.tallerWhatsapp === 'string' && params.tallerWhatsapp.trim()
+            ? params.tallerWhatsapp.trim().slice(0, 40)
+            : existing?.tallerWhatsapp,
       },
       existing,
       now
@@ -2330,4 +2370,164 @@ export async function incrementPromocionesEnviadasCount(): Promise<number> {
     return fallback;
   }
 }
+
+// ==================== PERFIL DE MI TALLER EN FIRESTORE ====================
+
+export async function syncTallerProfileToCloud(params: {
+  deviceId: string;
+  nombre: string;
+  responsable: string;
+  tel: string;
+}): Promise<void> {
+  const normId = toSafeDocId(normalizeDeviceIdInput(params.deviceId));
+  if (!normId) return;
+  const nombre = String(params.nombre || '').trim().slice(0, 120);
+  const responsable = String(params.responsable || '').trim().slice(0, 120);
+  const tel = String(params.tel || '').trim().slice(0, 40);
+  const now = Date.now();
+
+  try {
+    const existing = await readServerDoc<CloudDeviceRecord>('devices', normId);
+    const nextRecord = buildSafeDeviceRecord(
+      {
+        ...(existing || { deviceId: normId }),
+        deviceId: normId,
+        cliente: nombre || existing?.cliente || '',
+        tallerNombre: nombre,
+        tallerResponsable: responsable,
+        tallerWhatsapp: tel,
+        lastSeenAt: now,
+        updatedAt: existing?.updatedAt ?? now,
+      },
+      existing,
+      now
+    );
+    await setDoc(doc(db, 'devices', normId), nextRecord);
+  } catch (err) {
+    if (isFirestoreOfflineError(err)) return;
+    console.warn('No se pudo sincronizar perfil de Mi Taller:', err);
+  }
+}
+
+// ==================== VIDEO TUTORIALES EN FIRESTORE ====================
+
+const VALID_VIDEO_CATS = new Set<TutorialVideoCategory>([
+  'primeros-pasos',
+  'ventanas-puertas',
+  'optimizacion-vidrio',
+  'cotizaciones-pdf',
+]);
+
+function normalizeTutorialVideoDoc(raw: Partial<TutorialVideoItem>, docId: string): TutorialVideoItem {
+  const now = Date.now();
+  const safeId = toSafeKeyRecordId(raw.id || docId);
+  const cat = VALID_VIDEO_CATS.has(raw.categoria as TutorialVideoCategory)
+    ? (raw.categoria as TutorialVideoCategory)
+    : 'primeros-pasos';
+  return {
+    id: safeId,
+    titulo: String(raw.titulo || 'Video Tutorial').trim().slice(0, 140) || 'Video Tutorial',
+    categoria: cat,
+    descripcion: String(raw.descripcion || '').trim().slice(0, 500),
+    url: String(raw.url || '').trim().slice(0, 500),
+    orden: Math.max(0, Math.min(10000, Math.round(Number(raw.orden) || 0))),
+    createdAt: Number(raw.createdAt) || now,
+    updatedAt: Number(raw.updatedAt) || now,
+  };
+}
+
+export async function fetchTutorialVideosCloud(): Promise<TutorialVideoItem[]> {
+  try {
+    const snap = await getDocs(query(collection(db, 'tutorial_videos'), limit(200)));
+    const list = snap.docs
+      .map((d) => normalizeTutorialVideoDoc(d.data() as Partial<TutorialVideoItem>, d.id))
+      .filter((v) => v.url.length >= 8)
+      .sort((a, b) => a.orden - b.orden || b.updatedAt - a.updatedAt);
+    saveTutorialVideosCache(list);
+    return list;
+  } catch (err) {
+    if (isFirestoreOfflineError(err)) {
+      return loadTutorialVideosCache();
+    }
+    console.warn('No se pudo leer tutorial_videos:', err);
+    return loadTutorialVideosCache();
+  }
+}
+
+export function subscribeTutorialVideos(
+  onUpdate: (videos: TutorialVideoItem[]) => void,
+  onError?: (err: unknown) => void
+): () => void {
+  const q = query(collection(db, 'tutorial_videos'), limit(200));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const list = snap.docs
+        .map((d) => normalizeTutorialVideoDoc(d.data() as Partial<TutorialVideoItem>, d.id))
+        .filter((v) => v.url.length >= 8)
+        .sort((a, b) => a.orden - b.orden || b.updatedAt - a.updatedAt);
+      saveTutorialVideosCache(list);
+      onUpdate(list);
+    },
+    (err) => {
+      if (!isFirestoreOfflineError(err)) {
+        console.warn('Error en suscripción tutorial_videos:', err);
+      }
+      onError?.(err);
+    }
+  );
+}
+
+export async function saveTutorialVideoCloud(input: {
+  id?: string;
+  titulo: string;
+  categoria: TutorialVideoCategory;
+  descripcion: string;
+  url: string;
+  orden?: number;
+  createdAt?: number;
+}): Promise<TutorialVideoItem> {
+  const now = Date.now();
+  const safeId = toSafeKeyRecordId(
+    input.id || `vid-${now}-${Math.random().toString(36).slice(2, 6)}`
+  );
+  const cat: TutorialVideoCategory = VALID_VIDEO_CATS.has(input.categoria)
+    ? input.categoria
+    : 'primeros-pasos';
+
+  const payload: TutorialVideoItem = {
+    id: safeId,
+    titulo: String(input.titulo || '').trim().slice(0, 140),
+    categoria: cat,
+    descripcion: String(input.descripcion || '').trim().slice(0, 500),
+    url: String(input.url || '').trim().slice(0, 500),
+    orden: Math.max(0, Math.min(10000, Math.round(Number(input.orden) || 0))),
+    createdAt: Number(input.createdAt) || now,
+    updatedAt: now,
+  };
+
+  const path = `tutorial_videos/${safeId}`;
+  try {
+    await setDoc(doc(db, 'tutorial_videos', safeId), payload);
+  } catch (err) {
+    if (!isFirestoreOfflineError(err)) {
+      handleFirestoreError(err, input.id ? OperationType.UPDATE : OperationType.CREATE, path);
+    }
+  }
+  return payload;
+}
+
+export async function deleteTutorialVideoCloud(videoId: string): Promise<void> {
+  const safeId = toSafeKeyRecordId(videoId);
+  if (!safeId) return;
+  const path = `tutorial_videos/${safeId}`;
+  try {
+    await deleteDoc(doc(db, 'tutorial_videos', safeId));
+  } catch (err) {
+    if (!isFirestoreOfflineError(err)) {
+      handleFirestoreError(err, OperationType.DELETE, path);
+    }
+  }
+}
+
 

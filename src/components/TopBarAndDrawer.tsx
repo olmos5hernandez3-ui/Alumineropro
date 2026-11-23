@@ -21,6 +21,7 @@ export type ScreenId =
   | 'vidrio'
   | 'inventario'
   | 'catalogo'
+  | 'videos'
   | 'terminos'
   | 'privacidad'
   | 'admin';
@@ -276,6 +277,8 @@ interface SideDrawerProps {
   dueRemindersCount?: number;
   onOpenReminders?: () => void;
   onOpenCotizaciones?: () => void;
+  onOpenVideos?: () => void;
+  tallerOnboardingComplete?: boolean;
 }
 
 interface SkinOptionMeta {
@@ -351,6 +354,8 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
   dueRemindersCount = 0,
   onOpenReminders,
   onOpenCotizaciones,
+  onOpenVideos,
+  tallerOnboardingComplete = true,
 }) => {
   const [skinsExpanded, setSkinsExpanded] = useState(false);
   const [missionExpanded, setMissionExpanded] = useState(false);
@@ -708,15 +713,45 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
             </button>
           )}
 
-          {/* 6. Tutorial */}
+          {/* 5.7 Video Tutoriales */}
+          {onOpenVideos && (
+            <button
+              type="button"
+              id="btn-drawer-videos"
+              onClick={onOpenVideos}
+              className="flex items-center justify-between w-full min-h-[46px] px-3.5 py-2.5 rounded-xl border border-cyan-400/45 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-100 text-[13.5px] font-extrabold text-left cursor-pointer"
+            >
+              <span>🎬 Video Tutoriales</span>
+              <span>›</span>
+            </button>
+          )}
+
+          {/* 6. Tutorial Interactivo (4 pasos — bloqueado hasta completar Mi Taller) */}
           <button
             type="button"
             id="btn-drawer-tutorial"
+            disabled={!tallerOnboardingComplete}
             onClick={onOpenTutorial}
-            className="flex items-center justify-between w-full min-h-[46px] px-3.5 py-2.5 rounded-xl border border-white/15 bg-white/5 hover:bg-white/15 text-slate-100 text-[13.5px] font-bold text-left cursor-pointer"
+            title={
+              tallerOnboardingComplete
+                ? 'Abrir tutorial interactivo paso a paso'
+                : 'Completa primero los datos de Mi Taller para desbloquear el tutorial'
+            }
+            className={`flex items-center justify-between w-full min-h-[46px] px-3.5 py-2.5 rounded-xl border text-[13.5px] font-bold text-left ${
+              tallerOnboardingComplete
+                ? 'border-white/15 bg-white/5 hover:bg-white/15 text-slate-100 cursor-pointer'
+                : 'border-white/10 bg-slate-900/60 text-slate-400 opacity-65 cursor-not-allowed'
+            }`}
           >
-            <span>📖 Tutorial / ¿Cómo cotizar?</span>
-            <span>›</span>
+            <span>📖 Tutorial Interactivo (4 pasos)</span>
+            <span className="inline-flex items-center gap-1 shrink-0">
+              {!tallerOnboardingComplete && (
+                <span className="px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-400/40 text-amber-200 text-[10px] font-extrabold">
+                  🔒 Mi Taller
+                </span>
+              )}
+              <span>›</span>
+            </span>
           </button>
 
           {showInstallApp && onInstallApp && (

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import {
   calcularCotizacion,
@@ -16,6 +16,7 @@ import {
   isFeatureProRequired,
   isOneYearProPlan,
   isProActive,
+  isTallerOnboardingComplete,
   isUnassignedAutoTrialDevice,
   LINEAS_CONFIG,
   LineaId,
@@ -43,6 +44,7 @@ import {
   registerCloudAccount,
   subscribeCloudDevices,
   syncDeviceToCloud,
+  syncTallerProfileToCloud,
   updateDeviceLicenseInCloud,
   uploadCloudAccountBackup,
   verifyDeviceStatusInCloud,
@@ -53,6 +55,7 @@ import {
   AlumineroBackupPayload,
   buildAdminKeySignature,
   captureReferredByFromSearch,
+  captureReferredByNameFromSearch,
   clearLegacyAdminKeys,
   clearTrialStart,
   CloudAccountBackupPayload,
@@ -132,6 +135,8 @@ import {
   saveTheme,
   saveTrabajosAntesDespues,
   saveTrialRevoked,
+  loadGuidedTutorialSeen,
+  saveGuidedTutorialSeen,
   loadTheme,
   SobranteItem,
   TallerConfig,
@@ -164,9 +169,8 @@ import { useOnlineStatus, usePWAInstall } from './utils/usePWAInstall';
 import { ScreenId, SideDrawer, TopBar } from './components/TopBarAndDrawer';
 import { MainMenuView } from './components/MainMenuView';
 import { TrabajoView } from './components/TrabajoView';
-import { HojaCotizacionView } from './components/HojaCotizacionView';
-import { TallerView } from './components/TallerView';
-import { AdminDashboardView } from './components/AdminDashboardView';
+import { TallerOnboardingGate } from './components/TallerOnboardingGate';
+import { InteractiveTutorialModal } from './components/InteractiveTutorialModal';
 import {
   AdminAuthModal,
   AdminModal,
@@ -179,9 +183,33 @@ import {
   PwaInstallGuideModal,
   RecomendarModal,
   SugerenciasModal,
-  TutorialModal,
 } from './components/Modals';
 import { FloatingAssistant } from './components/FloatingAssistant';
+
+const AdminDashboardView = lazy(() =>
+  import('./components/AdminDashboardView').then((m) => ({ default: m.AdminDashboardView }))
+);
+const VideoTutorialesView = lazy(() => import('./components/VideoTutorialesView'));
+const HojaCotizacionView = lazy(() =>
+  import('./components/HojaCotizacionView').then((m) => ({ default: m.HojaCotizacionView }))
+);
+const TallerView = lazy(() =>
+  import('./components/TallerView').then((m) => ({ default: m.TallerView }))
+);
+const InventarioView = lazy(() =>
+  import('./components/InventarioView').then((m) => ({ default: m.InventarioView }))
+);
+const ModulacionCortesView = lazy(() =>
+  import('./components/ModulacionCortesView').then((m) => ({ default: m.ModulacionCortesView }))
+);
+const VidrioOptimizerView = lazy(() =>
+  import('./components/VidrioOptimizerView').then((m) => ({ default: m.VidrioOptimizerView }))
+);
+const HistorialCotizacionesView = lazy(() =>
+  import('./components/HistorialCotizacionesView').then((m) => ({
+    default: m.HistorialCotizacionesView,
+  }))
+);
 import { AnnualCelebrationOverlay } from './components/AnnualCelebrationOverlay';
 import { FloatingInstallButton } from './components/FloatingInstallButton';
 import { CalculadoraModal } from './components/CalculadoraModal';
@@ -200,13 +228,9 @@ import {
 } from './utils/levantamientoLogic';
 
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { InventarioView } from './components/InventarioView';
-import { ModulacionCortesView } from './components/ModulacionCortesView';
-import { VidrioOptimizerView } from './components/VidrioOptimizerView';
 import { AntesDespuesModal } from './components/AntesDespuesModal';
 import { CatalogoView, NotasView } from './components/NotasAndCatalogoViews';
 import { AvisoPrivacidadView, TerminosCondicionesView } from './components/LegalViews';
-import { HistorialCotizacionesView } from './components/HistorialCotizacionesView';
 
 function createInitialParams(linea: LineaId = '3'): TrabajoParams {
   const cfg = LINEAS_CONFIG[linea];
@@ -324,12 +348,25 @@ export default function App() {
     subModal: null,
   };
 
-  // Rastreo persistente de referidos (?ref=[ID_DEL_USUARIO]) en localStorage bajo clave 'referred_by_id'
+  // Rastreo persistente de referidos (?ref=[ID_DEL_USUARIO]&refName=[NOMBRE_DEL_TALLER]) en localStorage
   // (ignora auto-referidos si coincide con el deviceId de este mismo equipo)
   const [referredById] = useState<string | null>(() => {
     const search = typeof window !== 'undefined' ? window.location.search : '';
     return captureReferredByFromSearch(search, deviceId);
   });
+  const [referredByName] = useState<string | null>(() => {
+    const search = typeof window !== 'undefined' ? window.location.search : '';
+    return captureReferredByNameFromSearch(search, deviceId);
+  });
+  const [autostartSkip] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      return new URLSearchParams(window.location.search).get('autostart') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [guidedTutorialAutoOpen, setGuidedTutorialAutoOpen] = useState<boolean>(false);
   const [referralHistory, setReferralHistory] = useState<ReferralHistoryRecord[]>(() =>
     loadReferralHistory()
   );
@@ -810,6 +847,9 @@ export default function App() {
       const snap = await syncDeviceToCloud({
         deviceId,
         cliente: hoja.proyecto.trim() || taller.nombre || '',
+        tallerNombre: taller.nombre || '',
+        tallerResponsable: taller.responsable || '',
+        tallerWhatsapp: taller.tel || '',
         deviceLabel: label,
         eventType: 'open',
         minutesDelta: 1,
@@ -886,9 +926,22 @@ export default function App() {
     document.documentElement.setAttribute('data-skin', effectiveSkin);
   }, [skin, licencia, proActive]);
 
+  const tallerOnboardingComplete = useMemo(
+    () => isTallerOnboardingComplete(taller),
+    [taller]
+  );
+
   useEffect(() => {
     saveTaller(taller);
-  }, [taller]);
+    if (isTallerOnboardingComplete(taller)) {
+      void syncTallerProfileToCloud({
+        deviceId,
+        nombre: taller.nombre,
+        responsable: taller.responsable || '',
+        tel: taller.tel || '',
+      });
+    }
+  }, [taller, deviceId]);
 
   useEffect(() => {
     saveHoja(hoja);
@@ -2438,10 +2491,71 @@ export default function App() {
     vidrio: 'Optimizador de Vidrio 2D',
     inventario: 'Mi Inventario de Taller',
     catalogo: 'Catálogo de Perfiles',
+    videos: 'Video Tutoriales',
     terminos: 'Términos y Condiciones',
     privacidad: 'Aviso de Privacidad',
     admin: 'Panel de Administrador',
   };
+
+  const showMandatoryOnboarding =
+    !tallerOnboardingComplete && !autostartSkip && !accessBlocked;
+
+  const isInteractiveTutorialVisible =
+    tallerOnboardingComplete && (guidedTutorialAutoOpen || tutorialOpen);
+
+  const handleCloseInteractiveTutorial = () => {
+    saveGuidedTutorialSeen(true);
+    setGuidedTutorialAutoOpen(false);
+    if (tutorialOpen) requestBack();
+  };
+
+  const currentBackupPayload: AlumineroBackupPayload = {
+    app: 'Aluminero Pro',
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    perfilFotos,
+    notas,
+    taller,
+    formulas,
+    inventario,
+    inventarioHerrajes,
+    sobrantes,
+    hojasVidrio,
+    obrasAprobadas,
+    historial,
+    sugerenciasWhatsapp,
+    trabajosAntesDespues,
+    recordatorios: cotizacionReminders,
+  };
+
+  if (showMandatoryOnboarding) {
+    return (
+      <TallerOnboardingGate
+        taller={taller}
+        referredByName={referredByName || savedColleagueReferral?.refName || referredById}
+        onSaveOnboarding={({ nombre, responsable, tel }) => {
+          const nextTaller: TallerConfig = {
+            ...taller,
+            nombre,
+            responsable,
+            tel,
+          };
+          saveTaller(nextTaller);
+          setTaller(nextTaller);
+          void syncTallerProfileToCloud({
+            deviceId,
+            nombre,
+            responsable,
+            tel,
+          });
+          showToast(`¡Bienvenido, ${nombre}! Datos de Mi Taller guardados.`, true);
+          if (!loadGuidedTutorialSeen()) {
+            setGuidedTutorialAutoOpen(true);
+          }
+        }}
+      />
+    );
+  }
 
   return (
     <div
@@ -2484,6 +2598,13 @@ export default function App() {
         )}
 
         <ErrorBoundary resetKey={currentView} onGoHome={goHome}>
+        <Suspense
+          fallback={
+            <div className="p-8 rounded-2xl border border-slate-700/70 bg-slate-900/90 text-center text-slate-300 text-[13px] font-bold">
+              Cargando módulo...
+            </div>
+          }
+        >
         <div
           key={currentView}
           className={
@@ -2505,6 +2626,7 @@ export default function App() {
             cotizacionesCount={cotizacionesCount}
             savedReferral={savedColleagueReferral}
             referredById={referredById}
+            referredByName={referredByName}
             promoColegaUsed={promoColegaUsage.promo_colega_usada}
             pendingRemindersCount={reminderSummary.pendingCount}
             dueRemindersCount={reminderSummary.dueCount}
@@ -2739,6 +2861,8 @@ export default function App() {
             proActive={proActive}
             formulas={formulas}
             historial={historial}
+            backupData={currentBackupPayload}
+            onImportBackup={handleImportBackup}
             onUpdateTaller={(patch) => setTaller((prev) => ({ ...prev, ...patch }))}
             onRestablecerTarifas={() => {
               setTaller((prev) => ({ ...prev, tarifasBase: {} }));
@@ -2967,6 +3091,18 @@ export default function App() {
           />
         )}
 
+        {currentView === 'videos' && (
+          <Suspense
+            fallback={
+              <div className="p-8 rounded-2xl border border-slate-700/70 bg-slate-900/90 text-center text-slate-300 text-[13px] font-bold">
+                Cargando Video Tutoriales...
+              </div>
+            }
+          >
+            <VideoTutorialesView onShowToast={showToast} />
+          </Suspense>
+        )}
+
         {currentView === 'terminos' && (
           <TerminosCondicionesView onBack={requestBack} />
         )}
@@ -2976,6 +3112,13 @@ export default function App() {
         )}
 
         {currentView === 'admin' && (
+          <Suspense
+            fallback={
+              <div className="p-8 rounded-2xl border border-slate-700/70 bg-slate-900/90 text-center text-slate-300 text-[13px] font-bold">
+                Cargando Panel de Administrador...
+              </div>
+            }
+          >
           <AdminDashboardView
             deviceId={deviceId}
             licencia={licencia}
@@ -3261,8 +3404,10 @@ export default function App() {
             }}
             onShowToast={showToast}
           />
+          </Suspense>
         )}
         </div>
+        </Suspense>
         </ErrorBoundary>
       </main>
 
@@ -3299,6 +3444,8 @@ export default function App() {
         dueRemindersCount={reminderSummary.dueCount}
         onOpenReminders={() => openModalFromDrawer('reminders')}
         onOpenCotizaciones={() => openScreenFromDrawer('cotizaciones')}
+        onOpenVideos={() => openScreenFromDrawer('videos')}
+        tallerOnboardingComplete={tallerOnboardingComplete}
       />
 
       <ErrorBoundary
@@ -3316,6 +3463,7 @@ export default function App() {
         trialExpiresAt={trialExpiresAt}
         whatsappNumber={sugerenciasWhatsapp}
         defaultEmail={cloudAccountSession?.email || licencia?.linkedEmail || ''}
+        tallerNombre={taller.nombre}
         referredById={referredById}
         onClose={requestBack}
         onActivateLic={async (lic) => {
@@ -3820,7 +3968,7 @@ export default function App() {
       <RecomendarModal
         open={recomendarOpen}
         deviceId={deviceId}
-        defaultSenderName={taller.nombre}
+        defaultSenderName={taller.nombre || taller.responsable || ''}
         referralHistory={referralHistory}
         onClose={requestBack}
         onShowToast={showToast}
@@ -3901,7 +4049,11 @@ export default function App() {
         </ErrorBoundary>
       )}
 
-      <TutorialModal open={tutorialOpen} onClose={requestBack} />
+      <InteractiveTutorialModal
+        open={isInteractiveTutorialVisible}
+        onClose={handleCloseInteractiveTutorial}
+        onFinish={handleCloseInteractiveTutorial}
+      />
 
       <CloudBackupModal
         open={cloudBackupOpen}
@@ -4135,6 +4287,8 @@ export default function App() {
         whatsappNumber={sugerenciasWhatsapp}
         deviceId={deviceId}
         skin={skin}
+        proActive={proActive}
+        onOpenPro={() => openGlobalModal('pro')}
         onShowToast={showToast}
       />
 

@@ -313,12 +313,7 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
 
   const [selectedLevIds, setSelectedLevIds] = useState<string[]>(() => {
     if (!activoLev) return [];
-    return activoLev.piezas
-      .filter((p) => {
-        const r = resolveLineaFromLevantamiento(p);
-        return Boolean(r.modelo && r.cat);
-      })
-      .map((p) => p.id);
+    return activoLev.piezas.map((p) => p.id);
   });
 
   useEffect(() => {
@@ -326,17 +321,11 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
       setSelectedLevIds([]);
       return;
     }
-    const supportedIds = activoLev.piezas
-      .filter((p) => {
-        const r = resolveLineaFromLevantamiento(p);
-        return Boolean(r.modelo && r.cat);
-      })
-      .map((p) => p.id);
+    const allIds = activoLev.piezas.map((p) => p.id);
     setSelectedLevIds((prev) => {
-      const stillValid = prev.filter((id) => supportedIds.includes(id));
-      // If nothing selected yet or new jobs arrived, default to selecting all supported jobs
-      if (stillValid.length === 0) return supportedIds;
-      const newOnes = supportedIds.filter((id) => !prev.includes(id));
+      const stillValid = prev.filter((id) => allIds.includes(id));
+      if (stillValid.length === 0) return allIds;
+      const newOnes = allIds.filter((id) => !prev.includes(id));
       return [...stillValid, ...newOnes];
     });
   }, [activoLev]);
@@ -455,6 +444,110 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
     onShowToast('Trabajo quitado de la lista de modulación');
   };
 
+  const handleReassignLevPiezaTipo = (id: string, nextTipo: string) => {
+    if (!activoLev || !nextTipo) return;
+    const nextPiezas = activoLev.piezas.map((item) =>
+      item.id === id ? { ...item, tipo: nextTipo } : item
+    );
+    const nextDraft: LevantamientoDraft = { ...activoLev, piezas: nextPiezas };
+    setActivoLev(nextDraft);
+    try {
+      window.localStorage.setItem(LEV_KEYS.activo, JSON.stringify(nextDraft));
+      const rawDraft = window.localStorage.getItem(LEV_KEYS.draft);
+      if (rawDraft) {
+        const parsedDraft = normalizeLevantamientoDraft(JSON.parse(rawDraft));
+        if (parsedDraft.piezas.some((x) => x.id === id)) {
+          window.localStorage.setItem(
+            LEV_KEYS.draft,
+            JSON.stringify({
+              ...parsedDraft,
+              piezas: parsedDraft.piezas.map((x) => (x.id === id ? { ...x, tipo: nextTipo } : x)),
+            })
+          );
+        }
+      }
+      window.dispatchEvent(new Event('aluminero:lev-activo-updated'));
+    } catch {
+      // ignorar
+    }
+    const updated = nextPiezas.find((x) => x.id === id);
+    if (updated) {
+      if (!selectedLevIds.includes(id)) {
+        setSelectedLevIds((prev) => [...prev, id]);
+      }
+      const res = resolveLineaFromLevantamiento(updated);
+      if (res.modelo && res.cat) {
+        handleSelectLevPieza(updated, true);
+      }
+    }
+    onShowToast(`Modelo asignado: ${nextTipo}`, true);
+  };
+
+  const handleSendDirectCancelToHoja = (p: LevantamientoPieza) => {
+    const ancho = Math.max(15, Number(p.anchoCm) || 100);
+    const alto = Math.max(15, Number(p.altoCm) || 190);
+    const cant = Math.max(1, Number(p.cant) || 1);
+    const areaM2 = round2((ancho / 100) * (alto / 100));
+    const tarifa = tarifasBase['cancel-bano'] ?? 2250;
+    const unit = round2(Math.max(0.5, areaM2) * tarifa);
+    const vRaw = String(p.colorVidrio || 'Vidrio claro').trim();
+    const vLow = vRaw.toLowerCase();
+    const sinVidrio = vLow === 'sin vidrio';
+    const vidrioLabel =
+      vLow === 'claro' || vLow === 'vidrio claro' ? 'Vidrio claro 6 mm' : `${vRaw} 6 mm`;
+    const partida: PartidaObra = {
+      id: `p-dir-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      categoria: 'ventanas',
+      linea: 'cancel-bano',
+      area: p.area || 'Cancel / Otro',
+      etiqueta: `${p.tipo} · Cotización directa (${formatMedidaText(p)})`,
+      anchoCm: ancho,
+      altoCm: alto,
+      color: resolveColorAluminioFromLevantamiento(p.colorAluminio),
+      vidrio: 'claro6',
+      hojas: 1,
+      apertura: 'fija',
+      sentidoPuerta: 'izq',
+      puertaIntermedio: false,
+      puertaEconomica: false,
+      cancelEstilo: 'semilujo',
+      invertido: false,
+      cantidad: cant,
+      modoPrecio: 'm2',
+      precioInput: tarifa,
+      cobrarMinM2: true,
+      extraPct: 0,
+      totalLinea: round2(unit * cant),
+      despiece: {
+        perfiles: [],
+        herrajes: [],
+        vidrios: sinVidrio
+          ? []
+          : [
+              {
+                nombre: `${p.area ? `${p.area} · ` : ''}${p.tipo}`,
+                tipo: 'vidrio',
+                anchoCm: ancho,
+                altoCm: alto,
+                pzas: cant,
+                espesorLabel: vidrioLabel,
+                areaM2,
+              },
+            ],
+        totalAluminioM: 0,
+        tramos610: 0,
+        escuadrasCount: 0,
+        telaMosquiteraM2: 0,
+        colaDeRataM: 0,
+        carretillasMosq: 0,
+      },
+    };
+    const ok = onSendToHoja(partida, proActive);
+    if (ok !== false) {
+      onShowToast(`"${p.tipo}" enviado directamente a Hoja de Cotización`, true);
+    }
+  };
+
   const handleClearActivoLev = () => {
     try {
       window.localStorage.removeItem(LEV_KEYS.activo);
@@ -522,23 +615,17 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
       ? selectedSerie.mappedLineaPuerta
       : selectedSerie.mappedLineaVentana;
 
-  const supportedLevPiezas = useMemo(() => {
-    if (!activoLev) return [];
-    return activoLev.piezas.filter((p) => {
-      const r = resolveLineaFromLevantamiento(p);
-      return Boolean(r.modelo && r.cat);
-    });
-  }, [activoLev]);
+  const allLevPiezas = useMemo(() => (activoLev ? activoLev.piezas : []), [activoLev]);
 
   const allLevSelected =
-    supportedLevPiezas.length > 0 &&
-    supportedLevPiezas.every((p) => selectedLevIds.includes(p.id));
+    allLevPiezas.length > 0 &&
+    allLevPiezas.every((p) => selectedLevIds.includes(p.id));
 
   const toggleSelectAllLev = () => {
     if (allLevSelected) {
       setSelectedLevIds([]);
     } else {
-      setSelectedLevIds(supportedLevPiezas.map((p) => p.id));
+      setSelectedLevIds(allLevPiezas.map((p) => p.id));
     }
   };
 
@@ -547,6 +634,34 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );
   };
+
+  const directGlassFromSelected = useMemo<CorteVidrio[]>(() => {
+    if (!activoLev || selectedLevIds.length === 0) return [];
+    const out: CorteVidrio[] = [];
+    activoLev.piezas.forEach((p, idx) => {
+      if (!selectedLevIds.includes(p.id)) return;
+      const resolved = resolveLineaFromLevantamiento(p);
+      if (resolved.modelo && resolved.cat) return;
+      const vRaw = String(p.colorVidrio || 'Vidrio claro').trim();
+      const vLow = vRaw.toLowerCase();
+      if (vLow === 'sin vidrio') return;
+      const vidrioLabel =
+        vLow === 'claro' || vLow === 'vidrio claro' ? 'Vidrio claro 6 mm' : `${vRaw} 6 mm`;
+      const aCm = Math.max(15, Number(p.anchoCm) || 100);
+      const hCm = Math.max(15, Number(p.altoCm) || 100);
+      const pzas = Math.max(1, Number(p.cant) || 1);
+      out.push({
+        nombre: `#${idx + 1} ${p.area ? `${p.area} · ` : ''}${p.tipo} (Vidrio directo)`,
+        tipo: 'vidrio',
+        anchoCm: aCm,
+        altoCm: hCm,
+        pzas,
+        espesorLabel: vidrioLabel,
+        areaM2: round2((aCm / 100) * (hCm / 100) * pzas),
+      });
+    });
+    return out;
+  }, [activoLev, selectedLevIds]);
 
   const multiJobResult = useMemo(() => {
     if (!activoLev || selectedLevIds.length === 0) return null;
@@ -584,10 +699,13 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
     [multiJobResult, calculoCortes.perfiles]
   );
 
-  const effectiveVidrios = useMemo(
-    () => (multiJobResult && multiJobResult.totalTrabajos > 0 ? multiJobResult.vidriosConsolidados : calculoCortes.vidrios),
-    [multiJobResult, calculoCortes.vidrios]
-  );
+  const effectiveVidrios = useMemo(() => {
+    if (activoLev && activoLev.piezas.length > 0) {
+      const fromMod = multiJobResult && multiJobResult.totalTrabajos > 0 ? multiJobResult.vidriosConsolidados : [];
+      return [...fromMod, ...directGlassFromSelected];
+    }
+    return calculoCortes.vidrios;
+  }, [activoLev, multiJobResult, directGlassFromSelected, calculoCortes.vidrios]);
 
   const optimizacion1D = useMemo(
     () =>
@@ -708,7 +826,7 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
   };
 
   return (
-    <section id="view-modulacion" className="screen-animate">
+    <section id="view-modulacion" className="screen-animate pb-28 sm:pb-14">
       {/* Encabezado y barra de pasos */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2.5">
         <div>
@@ -781,7 +899,7 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
                     onChange={toggleSelectAllLev}
                     className="w-4 h-4 accent-blue-600 cursor-pointer"
                   />
-                  <span>Seleccionar todos los trabajos ({selectedLevIds.length}/{supportedLevPiezas.length})</span>
+                  <span>Seleccionar todos los trabajos ({selectedLevIds.length}/{allLevPiezas.length})</span>
                 </label>
                 {onSendVidriosToOptimizer && (
                   <button
@@ -831,93 +949,141 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
                     key={p.id}
                     id={`mod-job-card-${p.id}`}
                     data-selected={isChecked ? 'true' : 'false'}
-                    className={`rounded-2xl border p-3 flex items-start justify-between gap-2.5 transition-all ${
-                      !supported
-                        ? 'border-slate-200 bg-slate-100 opacity-75'
-                        : isChecked
+                    className={`rounded-2xl border p-3 flex flex-col gap-2 transition-all ${
+                      isChecked
+                        ? supported
                           ? 'border-2 border-blue-600 bg-blue-50/90 shadow-md ring-1 ring-blue-400/40'
-                          : 'border-slate-300 bg-slate-50 hover:border-blue-400'
+                          : 'border-2 border-amber-500 bg-amber-50/85 shadow-md ring-1 ring-amber-400/35'
+                        : 'border-slate-300 bg-slate-50 hover:border-blue-400'
                     }`}
                   >
-                    <div className="flex items-start gap-2.5 flex-1 min-w-0">
-                      <input
-                        type="checkbox"
-                        aria-label={`Seleccionar trabajo ${idx + 1}: ${p.tipo}`}
-                        disabled={!supported}
-                        checked={supported && isChecked}
-                        onChange={() => toggleSelectOneLev(p.id)}
-                        className="mt-0.5 w-4 h-4 accent-blue-600 cursor-pointer shrink-0"
-                      />
+                    <div className="flex items-start justify-between gap-2.5">
+                      <div className="flex items-start gap-2.5 flex-1 min-w-0">
+                        <input
+                          type="checkbox"
+                          aria-label={`Seleccionar trabajo ${idx + 1}: ${p.tipo}`}
+                          checked={isChecked}
+                          onChange={() => toggleSelectOneLev(p.id)}
+                          className="mt-0.5 w-4 h-4 accent-blue-600 cursor-pointer shrink-0"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (supported) {
+                              handleSelectLevPieza(p);
+                            } else {
+                              onShowToast('Puedes asignar un modelo o enviar este trabajo directo a Vidrio 2D / Cotización.');
+                            }
+                            if (!selectedLevIds.includes(p.id)) {
+                              toggleSelectOneLev(p.id);
+                            }
+                          }}
+                          className="flex-1 min-w-0 text-left bg-transparent border-0 p-0 cursor-pointer"
+                        >
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <strong className="text-[13px] font-extrabold text-slate-900 truncate">
+                              {idx + 1}. {p.tipo}
+                            </strong>
+                            {isChecked && (
+                              <span
+                                className={`px-1.5 py-0.5 rounded text-white text-[10px] font-extrabold ${
+                                  supported ? 'bg-blue-600' : 'bg-amber-600'
+                                }`}
+                              >
+                                Incluido
+                              </span>
+                            )}
+                            {isActivePreview && (
+                              <span className="px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 text-[10px] font-extrabold">
+                                En vista
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11.5px] text-slate-600 mt-0.5 truncate">
+                            {p.area ? `${p.area} · ` : ''}
+                            <span className="mono font-bold text-slate-800">{formatMedidaText(p)}</span>
+                            {` · Cant: ${p.cant}`}
+                          </div>
+                          {!supported && (
+                            <span className="inline-block mt-1 px-2 py-0.5 rounded bg-amber-100 border border-amber-300 text-amber-900 text-[10px] font-extrabold">
+                              Cálculo de vidrio y cotización directa
+                            </span>
+                          )}
+                          {supported && formatPiezaSpecs(p) && (
+                            <div className="text-[10.5px] font-bold text-blue-700 mt-0.5 truncate">
+                              {formatPiezaSpecs(p)}
+                            </div>
+                          )}
+                          {p.notas && (
+                            <div className="text-[11px] text-slate-500 mt-0.5 truncate">{p.notas}</div>
+                          )}
+                        </button>
+                      </div>
                       <button
                         type="button"
-                        disabled={!supported}
-                        onClick={() => {
-                          handleSelectLevPieza(p);
-                          if (supported && !selectedLevIds.includes(p.id)) {
-                            toggleSelectOneLev(p.id);
-                          }
-                        }}
-                        className="flex-1 min-w-0 text-left bg-transparent border-0 p-0 cursor-pointer disabled:cursor-not-allowed"
+                        onClick={() => handleRemoveLevPieza(p.id)}
+                        aria-label={`Quitar ${p.tipo}`}
+                        className="min-h-[32px] px-2.5 py-1 rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-[11px] font-extrabold cursor-pointer shrink-0"
                       >
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <strong className="text-[13px] font-extrabold text-slate-900 truncate">
-                            {idx + 1}. {p.tipo}
-                          </strong>
-                          {isChecked && supported && (
-                            <span className="px-1.5 py-0.5 rounded bg-blue-600 text-white text-[10px] font-extrabold">
-                              Incluido
-                            </span>
-                          )}
-                          {isActivePreview && (
-                            <span className="px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 text-[10px] font-extrabold">
-                              En vista
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-[11.5px] text-slate-600 mt-0.5 truncate">
-                          {p.area ? `${p.area} · ` : ''}
-                          <span className="mono font-bold text-slate-800">{formatMedidaText(p)}</span>
-                          {` · Cant: ${p.cant}`}
-                        </div>
-                        {!supported && (
-                          <span className="inline-block mt-1 px-2 py-0.5 rounded bg-amber-100 text-amber-900 text-[10px] font-extrabold">
-                            No disponible en Modulación
-                          </span>
-                        )}
-                        {supported && formatPiezaSpecs(p) && (
-                          <div className="text-[10.5px] font-bold text-blue-700 mt-0.5 truncate">
-                            {formatPiezaSpecs(p)}
-                          </div>
-                        )}
-                        {supported && p.notas && (
-                          <div className="text-[11px] text-slate-500 mt-0.5 truncate">{p.notas}</div>
-                        )}
+                        Quitar
                       </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveLevPieza(p.id)}
-                      aria-label={`Quitar ${p.tipo}`}
-                      className="min-h-[32px] px-2.5 py-1 rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-[11px] font-extrabold cursor-pointer shrink-0"
-                    >
-                      Quitar
-                    </button>
+
+                    {!supported && (
+                      <div className="pt-2 border-t border-amber-200/80 flex flex-wrap items-center gap-2">
+                        <label
+                          htmlFor={`sel-assign-model-${p.id}`}
+                          className="text-[11px] font-extrabold text-amber-950"
+                        >
+                          Asignar modelo:
+                        </label>
+                        <select
+                          id={`sel-assign-model-${p.id}`}
+                          defaultValue=""
+                          onChange={(e) => {
+                            if (e.target.value) {
+                              handleReassignLevPiezaTipo(p.id, e.target.value);
+                            }
+                          }}
+                          className="min-h-[32px] flex-1 min-w-[155px] rounded-lg border border-amber-300 bg-white px-2 text-[11.5px] font-bold text-slate-900 cursor-pointer"
+                        >
+                          <option value="">Elegir modelo de aluminio...</option>
+                          <option value="Ventana Corrediza">Ventana Corrediza</option>
+                          <option value="Ventana Fija">Ventana Fija</option>
+                          <option value="Puerta Abatible">Puerta Abatible</option>
+                          <option value="Cancel de Baño">Cancel de Baño</option>
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => handleSendDirectCancelToHoja(p)}
+                          className="min-h-[32px] px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-extrabold cursor-pointer shrink-0"
+                        >
+                          Cotizar directo
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               })}
             </div>
 
-            {multiJobResult && multiJobResult.totalTrabajos > 0 && (
+            {((multiJobResult && multiJobResult.totalTrabajos > 0) || directGlassFromSelected.length > 0) && (
               <div
                 id="mod-multi-summary"
                 className="mt-3 p-3 rounded-xl border border-blue-200 bg-blue-50/60 flex flex-wrap items-center justify-between gap-2 text-[12px]"
               >
                 <div className="font-extrabold text-blue-950">
-                  Cálculo completo activo: {multiJobResult.totalTrabajos} trabajo(s) · {multiJobResult.totalPiezas} pza(s) ·{' '}
-                  <span className="mono">{multiJobResult.totalAluminioM.toFixed(2)} m</span> aluminio ({optimizacion1D.tramos610Totales} tramo(s) 6.10 m)
+                  Cálculo completo activo: {selectedLevIds.length} trabajo(s) seleccionado(s)
+                  {multiJobResult && multiJobResult.totalTrabajos > 0 ? (
+                    <>
+                      {' '}· <span className="mono">{multiJobResult.totalAluminioM.toFixed(2)} m</span> aluminio ({optimizacion1D.tramos610Totales} tramo(s) 6.10 m)
+                    </>
+                  ) : (
+                    ' · Vidrio 2D y cotización directa'
+                  )}
                 </div>
                 <div className="text-[11.5px] font-bold text-blue-800">
-                  {multiJobResult.vidriosConsolidados.reduce((a, v) => a + v.pzas, 0)} cristal(es) listos para corte 2D
+                  {effectiveVidrios.reduce((a, v) => a + v.pzas, 0)} cristal(es) listos para corte 2D
                 </div>
               </div>
             )}

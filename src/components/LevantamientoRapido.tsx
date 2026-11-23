@@ -27,10 +27,13 @@ import {
 import {
   formatClientPhoneInput,
   generateRandomMxPhonePlaceholder,
+  LEV_MAX_CM,
+  LEV_MIN_CM,
   MEXICO_ALUMINUM_CATEGORIES,
   MEXICO_ALUMINUM_SYSTEMS,
   MexicoAluminumCategoryId,
   validateLevantamientoRequiredFields,
+  validateLevantamientoStrictRange,
   validateRealisticOpeningDimensions,
 } from '../utils/alumineroLogic';
 import {
@@ -692,6 +695,17 @@ export const LevantamientoRapido: React.FC<Props> = ({
 
   const handleLaunchDestino = (dest: LevantamientoDestino) => {
     const normalized = normalizeLevantamientoDraft(draft);
+    const outOfRange = normalized.piezas.find(
+      (p) => !validateLevantamientoStrictRange(p.anchoCm, p.altoCm).valid
+    );
+    if (outOfRange) {
+      const msg =
+        validateLevantamientoStrictRange(outOfRange.anchoCm, outOfRange.altoCm).error ||
+        `Todas las medidas deben estar entre ${LEV_MIN_CM} cm y ${LEV_MAX_CM} cm.`;
+      setLocalError(msg);
+      notify(msg);
+      return;
+    }
     const piecesCopy = normalized.piezas.slice();
     const clienteCopy = normalized.cliente.trim();
     applyClienteToHoja(clienteCopy, normalized.telefono, normalized.direccion);
@@ -975,9 +989,38 @@ export const LevantamientoRapido: React.FC<Props> = ({
                   </button>
                 </div>
               </div>
-              <div className="pv" id="lv-pv">
-                {previewText}
-              </div>
+              {(() => {
+                const aCm = cmFromUnit(form.ancho, form.u);
+                const hCm = cmFromUnit(form.alto, form.u);
+                const aOut = aCm > 0 && (aCm < LEV_MIN_CM || aCm > LEV_MAX_CM);
+                const hOut = hCm > 0 && (hCm < LEV_MIN_CM || hCm > LEV_MAX_CM);
+                if (aOut || hOut) {
+                  return (
+                    <div
+                      id="lv-range-alert"
+                      role="alert"
+                      style={{
+                        marginTop: '8px',
+                        padding: '10px 12px',
+                        borderRadius: '12px',
+                        background: 'rgba(153, 27, 27, 0.25)',
+                        border: '1.5px solid rgba(248, 113, 113, 0.75)',
+                        color: '#fecaca',
+                        fontSize: '12.5px',
+                        fontWeight: 800,
+                        lineHeight: 1.35,
+                      }}
+                    >
+                      ⚠️ Error de rango: las medidas deben estar entre {LEV_MIN_CM} cm y {LEV_MAX_CM} cm (cálculo bloqueado hasta corregir ancho/alto).
+                    </div>
+                  );
+                }
+                return (
+                  <div className="pv" id="lv-pv">
+                    {previewText}
+                  </div>
+                );
+              })()}
 
               <label>Cantidad</label>
               <div className="qty">

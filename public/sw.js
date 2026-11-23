@@ -1,4 +1,4 @@
-const CACHE_NAME = 'aluminero-pro-v42-20261122';
+const CACHE_NAME = 'aluminero-pro-v43-20261123';
 const APP_SHELL_ASSETS = [
   '/',
   '/index.html',
@@ -221,6 +221,29 @@ self.addEventListener('fetch', (event) => {
             (await cache.match('/'))
           );
         })
+    );
+    return;
+  }
+
+  // Chunks con hash inmutable (/assets/*) y pdf.worker.min.mjs: Cache-first con actualización en red
+  if (
+    url.origin === self.location.origin &&
+    (url.pathname.startsWith('/assets/') || url.pathname === '/pdf.worker.min.mjs')
+  ) {
+    event.respondWith(
+      caches.open(CACHE_NAME).then(async (cache) => {
+        const cached = await cache.match(request);
+        if (cached) return cached;
+        try {
+          const response = await fetch(request);
+          if (response && response.ok) {
+            cache.put(request, response.clone()).catch(() => {});
+          }
+          return response;
+        } catch {
+          return cached || Response.error();
+        }
+      })
     );
     return;
   }

@@ -558,6 +558,23 @@ export const PdfHeaderCustomizer: React.FC<CustomizerProps> = ({
           />
         </div>
 
+        <div className="sm:col-span-2">
+          <label
+            htmlFor={compact ? 'inp-pdf-taller-responsable' : 'inp-taller-responsable'}
+            className="block text-[12px] font-bold text-slate-500 mb-1"
+          >
+            Nombre del responsable del taller
+          </label>
+          <input
+            id={compact ? 'inp-pdf-taller-responsable' : 'inp-taller-responsable'}
+            type="text"
+            value={taller.responsable || ''}
+            onChange={(e) => onUpdateTaller({ responsable: e.target.value })}
+            placeholder="Ej. Mtro. Roberto Hernández"
+            className="w-full min-h-[42px] rounded-xl border border-slate-200 px-3 text-[13.5px] font-semibold"
+          />
+        </div>
+
         <div>
           <label
             htmlFor={compact ? 'inp-pdf-eslogan' : 'inp-taller-eslogan'}

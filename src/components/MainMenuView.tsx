@@ -21,6 +21,7 @@ interface Props {
   cotizacionesCount?: number;
   savedReferral?: SavedColleagueReferral | null;
   referredById?: string | null;
+  referredByName?: string | null;
   promoColegaUsed?: boolean;
   pendingRemindersCount?: number;
   dueRemindersCount?: number;
@@ -62,6 +63,7 @@ export const MainMenuView: React.FC<Props> = ({
   cotizacionesCount = 0,
   savedReferral = null,
   referredById = null,
+  referredByName = null,
   promoColegaUsed = false,
   pendingRemindersCount = 0,
   dueRemindersCount = 0,
@@ -93,24 +95,27 @@ export const MainMenuView: React.FC<Props> = ({
     }
   };
 
+  const inviterDisplayName = (referredByName || savedReferral?.refName || referredById || '').trim();
+  const hasReferral = Boolean(inviterDisplayName);
+
   return (
     <section
       id="view-menu"
       data-pro-active={proActive ? 'true' : 'false'}
-      className="screen-animate pb-20 sm:pb-10"
+      className="screen-animate pb-28 sm:pb-14"
     >
       {/* Título principal centrado */}
       <div className="mb-2.5 sm:mb-4 flex flex-col items-center justify-center text-center gap-1.5">
         <h1 className="m-0 text-[clamp(1.5rem,4.9vw,2.15rem)] font-extrabold text-white leading-[1.1] tracking-[-0.02em] drop-shadow-[0_2px_10px_rgba(0,0,0,0.45)] [text-wrap:balance]">
           ¿Qué vamos a trabajar?
         </h1>
-        {referredById && (
+        {hasReferral && (
           <span
             id="badge-menu-referred-by"
-            className="mono inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-300/95 bg-emerald-500/12 border border-emerald-400/35 rounded-full px-3 py-1 leading-none"
+            className="inline-flex items-center gap-1.5 text-[11.5px] font-bold text-emerald-300/95 bg-emerald-500/12 border border-emerald-400/35 rounded-full px-3.5 py-1 leading-none"
           >
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" aria-hidden="true" />
-            Invitado por colega: {referredById}
+            Invitado por: {inviterDisplayName}
           </span>
         )}
       </div>
@@ -180,8 +185,8 @@ export const MainMenuView: React.FC<Props> = ({
         );
       })()}
 
-      {/* 2. Banner horizontal verde esmeralda: Invitación de un colega + Pedir PIN */}
-      {!proActive && (
+      {/* 2. Banner horizontal verde esmeralda: SOLO visible cuando el usuario llegó por invitación de un colega */}
+      {!proActive && hasReferral && (
         <div
           id="card-menu-colleague-promo"
           className={`mb-2.5 sm:mb-3.5 w-full rounded-[16px] px-3.5 py-2.5 text-left transition-all ${
@@ -226,14 +231,14 @@ export const MainMenuView: React.FC<Props> = ({
                     }
                   }}
                 >
-                  <span className="block text-[15.5px] sm:text-[17px] font-extrabold text-[#78F5BA] tracking-[-0.01em] leading-tight drop-shadow-[0_1px_2px_rgba(0,0,0,0.45)]">
-                    Invitación de un colega
+                  <span className="block text-[15px] sm:text-[16.5px] font-extrabold text-[#78F5BA] tracking-[-0.01em] leading-tight drop-shadow-[0_1px_2px_rgba(0,0,0,0.45)] truncate">
+                    Invitado por: {inviterDisplayName}
                   </span>
-                  {savedReferral && (
-                    <span className="block text-[11px] font-semibold text-emerald-100/90 mt-0.5 truncate">
-                      {savedReferral.refName} · Promo #{savedReferral.promoNumber} · 3 días gratis
-                    </span>
-                  )}
+                  <span className="block text-[11px] font-semibold text-emerald-100/90 mt-0.5 truncate">
+                    {savedReferral
+                      ? `Promo #${savedReferral.promoNumber} · 3 días PRO gratis`
+                      : '3 días PRO gratis por invitación de colega'}
+                  </span>
                 </div>
                 <button
                   type="button"
@@ -612,6 +617,34 @@ export const MainMenuView: React.FC<Props> = ({
               Enviadas, aprobadas y seguimiento
             </span>
           </div>
+        </button>
+
+        {/* 11. VIDEO TUTORIALES */}
+        <button
+          type="button"
+          id="btn-menu-videos"
+          onClick={() => onGoToView('videos')}
+          className="col-span-2 menu-grid-card metal-grid-card flex items-center justify-between gap-3 w-full min-h-[82px] p-3.5 sm:p-4 rounded-[18px] text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-[0.985]"
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="metal-icon-btn w-11 h-11 rounded-xl flex items-center justify-center shrink-0 text-sky-300">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <rect x="2" y="4" width="20" height="16" rx="3" />
+                <polygon points="10 9 16 12 10 15 10 9" fill="currentColor" />
+              </svg>
+            </div>
+            <div className="min-w-0">
+              <span className="block text-[15px] sm:text-[16px] font-extrabold text-white leading-tight">
+                Video Tutoriales
+              </span>
+              <span className="menu-card-sub block text-[11.5px] sm:text-[12.5px] mt-0.5 leading-snug">
+                Guías rápidas de ventanas, cortes 6.10 m, vidrio 2D y PDF
+              </span>
+            </div>
+          </div>
+          <span className="metal-emerald-pill inline-flex items-center justify-center px-3 py-1 rounded-full text-[10.5px] font-extrabold leading-none whitespace-nowrap shrink-0">
+            Academia
+          </span>
         </button>
       </div>
     </section>

@@ -47,6 +47,9 @@ export const KEYS = {
   REFERRALS_HISTORY: 'aluminero_referrals_history_v1',
   SKIN: 'aluminero_skin_v1',
   PROMO_COLEGA_USAGE: 'aluminero_promo_colega_usage_v1',
+  TUTORIAL_SEEN: 'aluminero_guided_tutorial_seen_v1',
+  ASSISTANT_QUOTA: 'aluminero_assistant_daily_quota_v1',
+  TUTORIAL_VIDEOS_CACHE: 'aluminero_tutorial_videos_cache_v1',
 };
 
 export const REFERRED_BY_ID_STORAGE_KEY = 'referred_by_id';
@@ -118,6 +121,7 @@ export interface PdfHeaderConfig {
 
 export interface TallerConfig {
   nombre: string;
+  responsable?: string;
   tel: string;
   ubicacion?: string;
   clienteDefault: string;
@@ -354,6 +358,7 @@ export const DEFAULT_PDF_HEADER: Required<PdfHeaderConfig> = {
 
 export const DEFAULT_TALLER: TallerConfig = {
   nombre: '',
+  responsable: '',
   tel: '',
   ubicacion: '',
   clienteDefault: '',
@@ -1471,6 +1476,58 @@ export function captureReferredByFromSearch(
   return loadReferredById(currentDeviceId);
 }
 
+const REFERRED_BY_NAME_STORAGE_KEY = 'referred_by_name';
+
+export function loadReferredByName(): string | null {
+  if (typeof localStorage === 'undefined') return null;
+  try {
+    const raw = (localStorage.getItem(REFERRED_BY_NAME_STORAGE_KEY) || '').trim().slice(0, 80);
+    return raw || null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveReferredByName(name: string | null): string | null {
+  const clean = String(name || '').replace(/[\r\n\t]+/g, ' ').trim().slice(0, 80);
+  if (typeof localStorage === 'undefined') return clean || null;
+  try {
+    if (!clean) {
+      localStorage.removeItem(REFERRED_BY_NAME_STORAGE_KEY);
+      return null;
+    }
+    localStorage.setItem(REFERRED_BY_NAME_STORAGE_KEY, clean);
+  } catch {
+    // ignore storage quota errors
+  }
+  return clean || null;
+}
+
+export function captureReferredByNameFromSearch(
+  search: string,
+  currentDeviceId: string
+): string | null {
+  try {
+    const cleanSearch = String(search || '').trim();
+    if (cleanSearch) {
+      const params = new URLSearchParams(
+        cleanSearch.startsWith('?') ? cleanSearch.slice(1) : cleanSearch
+      );
+      const rawRef = sanitizeReferredById(params.get('ref'));
+      const normSelf = String(currentDeviceId || '').trim().toUpperCase();
+      if (rawRef && (!normSelf || rawRef.toUpperCase() !== normSelf)) {
+        const rawName = (params.get('refName') || params.get('taller') || '').trim();
+        if (rawName) {
+          return saveReferredByName(rawName);
+        }
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return loadReferredByName();
+}
+
 export function loadReferralHistory(): ReferralHistoryRecord[] {
   if (typeof localStorage === 'undefined') return [];
   const raw = safeJsonParse<unknown>(localStorage.getItem(KEYS.REFERRALS_HISTORY), []);
@@ -1679,5 +1736,92 @@ export function formatDateTimeExact(ts: number | null | undefined): string {
   const min = String(d.getMinutes()).padStart(2, '0');
   return `${dd}/${mm}/${yyyy} ${hh}:${min}`;
 }
+
+// ==================== TUTORIAL GUIADO & CUOTA ASISTENTE & VIDEO TUTORIALES ====================
+
+export function loadGuidedTutorialSeen(): boolean {
+  if (typeof localStorage === 'undefined') return false;
+  return localStorage.getItem(KEYS.TUTORIAL_SEEN) === '1';
+}
+
+export function saveGuidedTutorialSeen(seen: boolean): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(KEYS.TUTORIAL_SEEN, seen ? '1' : '0');
+  } catch {
+    // ignorar
+  }
+}
+
+export function getTodayDateKey(now = Date.now()): string {
+  const d = new Date(now);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+export function loadAssistantDailyQuota(): { dateKey: string; count: number } {
+  const today = getTodayDateKey();
+  if (typeof localStorage === 'undefined') return { dateKey: today, count: 0 };
+  const parsed = safeJsonParse<{ dateKey?: string; count?: number }>(
+    localStorage.getItem(KEYS.ASSISTANT_QUOTA),
+    {}
+  );
+  if (parsed.dateKey === today && typeof parsed.count === 'number' && Number.isFinite(parsed.count)) {
+    return { dateKey: today, count: Math.max(0, Math.floor(parsed.count)) };
+  }
+  return { dateKey: today, count: 0 };
+}
+
+export function incrementAssistantDailyQuota(): { dateKey: string; count: number } {
+  const cur = loadAssistantDailyQuota();
+  const next = { dateKey: cur.dateKey, count: cur.count + 1 };
+  if (typeof localStorage !== 'undefined') {
+    try {
+      localStorage.setItem(KEYS.ASSISTANT_QUOTA, JSON.stringify(next));
+    } catch {
+      // ignorar
+    }
+  }
+  return next;
+}
+
+export type TutorialVideoCategory =
+  | 'primeros-pasos'
+  | 'ventanas-puertas'
+  | 'optimizacion-vidrio'
+  | 'cotizaciones-pdf';
+
+export interface TutorialVideoItem {
+  id: string;
+  titulo: string;
+  categoria: TutorialVideoCategory;
+  descripcion: string;
+  url: string;
+  orden: number;
+  createdAt: number;
+  updatedAt: number;
+  isLocalOnly?: boolean;
+}
+
+export function loadTutorialVideosCache(): TutorialVideoItem[] {
+  if (typeof localStorage === 'undefined') return [];
+  const raw = safeJsonParse<unknown[]>(localStorage.getItem(KEYS.TUTORIAL_VIDEOS_CACHE), []);
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((item): item is TutorialVideoItem => Boolean(item && typeof item === 'object' && typeof (item as TutorialVideoItem).id === 'string'))
+    .sort((a, b) => (a.orden ?? 999) - (b.orden ?? 999) || b.updatedAt - a.updatedAt);
+}
+
+export function saveTutorialVideosCache(videos: TutorialVideoItem[]): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(KEYS.TUTORIAL_VIDEOS_CACHE, JSON.stringify(videos.slice(0, 200)));
+  } catch {
+    // ignorar si cuota llena
+  }
+}
+
 
 

@@ -85,7 +85,10 @@ service cloud.firestore {
         'linkedEmail',
         'status',
         'promo_colega_usada',
-        'fecha_activacion_colega'
+        'fecha_activacion_colega',
+        'tallerNombre',
+        'tallerResponsable',
+        'tallerWhatsapp'
       ])
       && isValidId(data.deviceId)
       && data.deviceId.size() <= 64
@@ -113,7 +116,10 @@ service cloud.firestore {
       && data.adminAssigned is bool
       && (!('linkedEmail' in data) || data.linkedEmail == null || isBoundedString(data.linkedEmail, 0, 160))
       && (!('promo_colega_usada' in data) || data.promo_colega_usada is bool)
-      && (!('fecha_activacion_colega' in data) || isNullableEpochMs(data.fecha_activacion_colega));
+      && (!('fecha_activacion_colega' in data) || isNullableEpochMs(data.fecha_activacion_colega))
+      && (!('tallerNombre' in data) || isBoundedString(data.tallerNombre, 0, 120))
+      && (!('tallerResponsable' in data) || isBoundedString(data.tallerResponsable, 0, 120))
+      && (!('tallerWhatsapp' in data) || isBoundedString(data.tallerWhatsapp, 0, 40));
     }
 
     // ==================== VALIDACIÓN: ADMIN KEY ====================
@@ -220,6 +226,39 @@ service cloud.firestore {
       && isValidEpochMs(data.updatedAt);
     }
 
+    // ==================== VALIDACIÓN: TUTORIAL VIDEO ====================
+    function isValidTutorialVideo(data) {
+      return data.keys().hasAll([
+        'id',
+        'titulo',
+        'categoria',
+        'descripcion',
+        'url',
+        'orden',
+        'createdAt',
+        'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'id',
+        'titulo',
+        'categoria',
+        'descripcion',
+        'url',
+        'orden',
+        'createdAt',
+        'updatedAt'
+      ])
+      && isValidId(data.id)
+      && isBoundedString(data.titulo, 2, 140)
+      && isBoundedString(data.categoria, 3, 40)
+      && data.categoria in ['primeros-pasos', 'ventanas-puertas', 'optimizacion-vidrio', 'cotizaciones-pdf']
+      && isBoundedString(data.descripcion, 0, 500)
+      && isBoundedString(data.url, 8, 500)
+      && isNonNegNumber(data.orden, 10000)
+      && isValidEpochMs(data.createdAt)
+      && isValidEpochMs(data.updatedAt);
+    }
+
     // ==================== COLECCIÓN DE VERIFICACIÓN DE CONEXIÓN ====================
     match /test/connection {
       allow get: if resource == null || resource.data is map;
@@ -258,7 +297,10 @@ service cloud.firestore {
           'linkedEmail',
           'status',
           'promo_colega_usada',
-          'fecha_activacion_colega'
+          'fecha_activacion_colega',
+          'tallerNombre',
+          'tallerResponsable',
+          'tallerWhatsapp'
         ]);
       allow delete: if isValidId(deviceId) && (resource == null || existing().deviceId == deviceId);
     }
@@ -361,6 +403,27 @@ service cloud.firestore {
         && incoming().total == existing().total + 1
         && incoming().diff(existing()).affectedKeys().hasOnly(['total', 'updatedAt']);
       allow delete: if false;
+    }
+
+    match /tutorial_videos/{videoId} {
+      allow get: if isValidId(videoId);
+      allow list: if request.query.limit <= 200;
+      allow create: if isValidId(videoId)
+        && isValidTutorialVideo(incoming())
+        && incoming().id == videoId;
+      allow update: if isValidId(videoId)
+        && isValidTutorialVideo(incoming())
+        && incoming().id == existing().id
+        && incoming().createdAt == existing().createdAt
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'titulo',
+          'categoria',
+          'descripcion',
+          'url',
+          'orden',
+          'updatedAt'
+        ]);
+      allow delete: if isValidId(videoId) && (resource == null || existing().id == videoId);
     }
   }
 }

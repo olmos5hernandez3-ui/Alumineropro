@@ -19,17 +19,7 @@ import {
   Trash2,
   Users,
 } from 'lucide-react';
-import {
-  Area,
-  AreaChart,
-  Bar,
-  BarChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
+const AdminMiniCharts = React.lazy(() => import('./AdminMiniCharts'));
 import {
   buildDailyUsageSeries30d,
   CATALOGO_PERFILES,
@@ -125,6 +115,7 @@ interface ProModalProps {
   trialExpiresAt?: number | null;
   whatsappNumber?: string;
   defaultEmail?: string;
+  tallerNombre?: string;
   referredById?: string | null;
   onClose: () => void;
   onActivateLic: (lic: LicenciaState) => Promise<{ ok: boolean; error?: string } | void> | void;
@@ -141,6 +132,7 @@ export const ProModal: React.FC<ProModalProps> = ({
   trialExpiresAt = null,
   whatsappNumber = '',
   defaultEmail = '',
+  tallerNombre = '',
   referredById = null,
   onClose,
   onActivateLic,
@@ -231,8 +223,11 @@ export const ProModal: React.FC<ProModalProps> = ({
             mpLink: PRO_PAYMENT_CONFIG.mpLink365,
           };
 
+  const cleanTallerName = String(tallerNombre || '').trim();
   const waBaseLines = [
-    `Hola, ya realicé mi pago del ${selectedPlanMeta.name} (${selectedPlanMeta.price}) para Aluminero Pro.`,
+    `Hola, quiero activar mi licencia de Aluminero Pro por Transferencia SPEI / OXXO.`,
+    `Plan elegido: ${selectedPlanMeta.name} (${selectedPlanMeta.price})`,
+    ...(cleanTallerName ? [`Nombre del Taller: ${cleanTallerName}`] : []),
     `ID de Equipo: ${safeDeviceId}`,
   ];
   if (cleanReferredById) {
@@ -298,7 +293,7 @@ export const ProModal: React.FC<ProModalProps> = ({
   return (
     <div
       id="modal-pro"
-      className="fixed inset-0 z-50 bg-slate-950/75 overflow-y-auto flex items-start sm:items-center justify-center p-3 sm:p-4"
+      className="fixed inset-0 z-50 bg-slate-950/80 overflow-y-auto flex items-start justify-center px-3 pt-6 pb-8 sm:p-6"
       role="dialog"
       aria-modal="true"
       aria-label="Licencia Aluminero Pro"
@@ -306,7 +301,7 @@ export const ProModal: React.FC<ProModalProps> = ({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-[480px] my-auto bg-white text-slate-900 rounded-[20px] p-5 shadow-2xl">
+      <div className="w-full max-w-[480px] my-2 sm:my-auto bg-white text-slate-900 rounded-[20px] p-5 shadow-2xl">
         <div className="flex items-start justify-between gap-2">
           <div>
             <h2 className="m-0 text-[18px] font-extrabold">Estado de Licencia PRO</h2>
@@ -615,10 +610,10 @@ export const ProModal: React.FC<ProModalProps> = ({
             href={waPaymentUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="w-full min-h-[46px] px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[13.5px] flex items-center justify-center gap-2 no-underline shadow-md transition-colors"
+            className="w-full min-h-[48px] px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[13px] flex items-center justify-center gap-2 no-underline shadow-md transition-colors text-center leading-tight"
           >
             <CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden="true" />
-            <span>Enviar comprobante por WhatsApp</span>
+            <span>Activar por WhatsApp (Transferencia SPEI / OXXO)</span>
           </a>
         </div>
 
@@ -3453,79 +3448,15 @@ export const AdminModal: React.FC<AdminModalProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-2.5">
-              <div
-                id="chart-active-users-30d"
-                className="p-2.5 rounded-xl border border-slate-200 bg-slate-50"
-              >
-                <div className="text-[11px] font-extrabold text-slate-700 mb-1.5">
-                  Usuarios activos por día (30 días)
+            <React.Suspense
+              fallback={
+                <div className="mt-2.5 p-3 rounded-xl border border-slate-200 bg-slate-50 text-[11.5px] text-slate-500 text-center">
+                  Cargando gráficas de uso...
                 </div>
-                <div style={{ width: '100%', height: 135 }}>
-                  <ResponsiveContainer width="100%" height={135}>
-                    <BarChart data={dailySeries30d} margin={{ top: 4, right: 6, left: -24, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.22)" vertical={false} />
-                      <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#94A3B8' }} interval={6} axisLine={false} tickLine={false} />
-                      <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: '#94A3B8' }} axisLine={false} tickLine={false} />
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: '#0F172A',
-                          border: '1px solid rgba(96,165,250,0.35)',
-                          borderRadius: 10,
-                          color: '#F8FAFC',
-                          fontSize: 11,
-                        }}
-                        formatter={(value) => [`${value} usuarios`, 'Activos']}
-                      />
-                      <Bar dataKey="activeUsers" name="Activos" fill="#3B82F6" radius={[3, 3, 0, 0]} isAnimationActive={false} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              <div
-                id="chart-avg-usage-30d"
-                className="p-2.5 rounded-xl border border-slate-200 bg-slate-50"
-              >
-                <div className="text-[11px] font-extrabold text-slate-700 mb-1.5">
-                  Uso promedio diario (min/usuario)
-                </div>
-                <div style={{ width: '100%', height: 135 }}>
-                  <ResponsiveContainer width="100%" height={135}>
-                    <AreaChart data={dailySeries30d} margin={{ top: 4, right: 6, left: -24, bottom: 0 }}>
-                      <defs>
-                        <linearGradient id="gradAvgMin" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#10B981" stopOpacity={0.45} />
-                          <stop offset="95%" stopColor="#10B981" stopOpacity={0.02} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.22)" vertical={false} />
-                      <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#94A3B8' }} interval={6} axisLine={false} tickLine={false} />
-                      <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: '#94A3B8' }} axisLine={false} tickLine={false} />
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: '#0F172A',
-                          border: '1px solid rgba(52,211,153,0.35)',
-                          borderRadius: 10,
-                          color: '#F8FAFC',
-                          fontSize: 11,
-                        }}
-                        formatter={(value) => [`${value} min`, 'Promedio']}
-                      />
-                      <Area
-                        type="monotone"
-                        dataKey="avgMinutes"
-                        name="Promedio (min)"
-                        stroke="#10B981"
-                        strokeWidth={2}
-                        fill="url(#gradAvgMin)"
-                        isAnimationActive={false}
-                      />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            </div>
+              }
+            >
+              <AdminMiniCharts dailySeries30d={dailySeries30d} />
+            </React.Suspense>
 
             {/* Lista detallada de dispositivos / usuarios registrados */}
             <div id="admin-stats-devices-list" className="mt-3 pt-2.5 border-t border-slate-200">
@@ -4153,11 +4084,14 @@ export const RecomendarModal: React.FC<RecomendarModalProps> = ({
     []
   );
 
-  // Enlace personalizado con ID de Equipo para compartir por WhatsApp
-  const whatsappReferralUrl = useMemo(
-    () => `${qrTargetUrl}/?ref=${encodeURIComponent(safeDeviceId)}`,
-    [qrTargetUrl, safeDeviceId]
-  );
+  // Enlace personalizado con ID de Equipo y Nombre del Taller para compartir por WhatsApp
+  const whatsappReferralUrl = useMemo(() => {
+    const cleanSender = sanitizeReferralSenderName(senderName || defaultSenderName);
+    const params = new URLSearchParams();
+    params.set('ref', safeDeviceId);
+    if (cleanSender) params.set('refName', cleanSender);
+    return `${qrTargetUrl}/?${params.toString()}`;
+  }, [qrTargetUrl, safeDeviceId, senderName, defaultSenderName]);
 
   const myReferralsCount = useMemo(
     () =>
@@ -4456,7 +4390,7 @@ export const ColleagueReferralWelcomeModal: React.FC<ColleagueReferralWelcomeMod
   if (!open || !referral) return null;
 
   const displayReferredBy =
-    (referredById && String(referredById).trim()) || referral.refName;
+    (referral.refName && String(referral.refName).trim()) || (referredById && String(referredById).trim());
 
   return (
     <div

@@ -1,11 +1,13 @@
-import React from 'react';
-import { FileDown } from 'lucide-react';
+import React, { useRef } from 'react';
+import { Download, FileDown, Upload } from 'lucide-react';
 import { COLORES_CONFIG, LINEAS_CONFIG, LineaId } from '../utils/alumineroLogic';
 import { generarPdfHistorialCotizaciones } from '../utils/pdfExport';
 import {
+  AlumineroBackupPayload,
   formatMXN,
   FormulaPersonalizada,
   HistorialItem,
+  parseBackupPayload,
   TallerConfig,
 } from '../utils/storageHelpers';
 import { PdfHeaderCustomizer } from './PdfHeaderCustomizer';
@@ -15,6 +17,8 @@ interface Props {
   proActive: boolean;
   formulas: FormulaPersonalizada[];
   historial: HistorialItem[];
+  backupData?: AlumineroBackupPayload;
+  onImportBackup?: (payload: AlumineroBackupPayload) => void;
   onUpdateTaller: (patch: Partial<TallerConfig>) => void;
   onRestablecerTarifas: () => void;
   onOpenPro: () => void;
@@ -34,6 +38,8 @@ export const TallerView: React.FC<Props> = ({
   proActive,
   formulas,
   historial,
+  backupData,
+  onImportBackup,
   onUpdateTaller,
   onRestablecerTarifas,
   onOpenPro,
@@ -47,8 +53,43 @@ export const TallerView: React.FC<Props> = ({
   pendingRemindersCount = 0,
   onShowToast,
 }) => {
+  const importBackupRef = useRef<HTMLInputElement | null>(null);
+
+  const handleExportTallerJson = () => {
+    if (!backupData) return;
+    const json = JSON.stringify(backupData, null, 2);
+    const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `aluminero-respaldo-taller-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+    onShowToast('Respaldo JSON del taller exportado', true);
+  };
+
+  const handleImportTallerJson = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !onImportBackup) return;
+    try {
+      const text = await file.text();
+      const parsed = parseBackupPayload(text);
+      if (!parsed) {
+        onShowToast('Archivo de respaldo JSON inválido.');
+        return;
+      }
+      onImportBackup(parsed);
+      onShowToast('Respaldo JSON restaurado correctamente', true);
+    } catch {
+      onShowToast('No se pudo leer el archivo JSON.');
+    }
+  };
+
   return (
-    <section id="view-taller" className="screen-animate">
+    <section id="view-taller" className="screen-animate pb-28 sm:pb-14">
       <div className="mb-4">
         <h1 className="m-0 text-[21px] font-extrabold text-white">Mi Taller y Precios</h1>
         <p className="m-0 text-[12.5px] text-slate-300">
@@ -186,6 +227,45 @@ export const TallerView: React.FC<Props> = ({
               Abrir Mi Inventario de Taller
             </button>
           </div>
+
+          {backupData && onImportBackup && (
+            <div
+              id="card-taller-backup-json"
+              className="bg-white text-[#1E293B] border-[1.5px] border-emerald-300 rounded-[18px] p-4 sm:p-5 shadow-xl"
+            >
+              <h2 className="m-0 text-[17px] font-extrabold">Respaldo Local de Datos (JSON)</h2>
+              <p className="m-0 text-[12px] text-slate-500 mt-0.5 mb-3">
+                Exporta o restaura tus datos de Mi Taller, tarifas, clientes, inventario e historial en un archivo JSON.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  id="btn-taller-export-json"
+                  onClick={handleExportTallerJson}
+                  className="min-h-[44px] px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[13px] inline-flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Download className="w-4 h-4 shrink-0" aria-hidden="true" />
+                  <span>Exportar respaldo JSON</span>
+                </button>
+                <button
+                  type="button"
+                  id="btn-taller-import-json"
+                  onClick={() => importBackupRef.current?.click()}
+                  className="min-h-[44px] px-3.5 rounded-xl border border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-800 font-extrabold text-[13px] inline-flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Upload className="w-4 h-4 shrink-0" aria-hidden="true" />
+                  <span>Importar respaldo JSON</span>
+                </button>
+                <input
+                  ref={importBackupRef}
+                  type="file"
+                  accept="application/json"
+                  onChange={handleImportTallerJson}
+                  className="hidden"
+                />
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

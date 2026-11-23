@@ -9,9 +9,12 @@ import {
   Copy,
   Crown,
   Download,
+  Edit3,
+  ExternalLink,
   Gift,
   KeyRound,
   PieChart as PieChartIcon,
+  Plus,
   RefreshCw,
   RotateCcw,
   Search,
@@ -19,8 +22,10 @@ import {
   ShieldCheck,
   Trash2,
   TrendingUp,
+  Upload,
   UserCheck,
   Users,
+  Video,
 } from 'lucide-react';
 import {
   Area,
@@ -51,7 +56,10 @@ import {
   LineaId,
   LINEAS_CONFIG,
   normalizeDeviceIdInput,
+  parseTutorialVideoUrl,
   PLANS,
+  TUTORIAL_VIDEO_CATEGORIES,
+  TutorialVideoCategoryId,
   UsageStats30d,
 } from '../utils/alumineroLogic';
 import {
@@ -63,11 +71,19 @@ import {
   FormulaPersonalizada,
   LicenciaState,
   loadCotizacionesGuardadas,
+  loadTutorialVideosCache,
   parseBackupPayload,
   ReferralHistoryRecord,
+  saveTutorialVideosCache,
   TrabajoAntesDespuesItem,
+  TutorialVideoItem,
   validateWhatsappNumber,
 } from '../utils/storageHelpers';
+import {
+  deleteTutorialVideoCloud,
+  saveTutorialVideoCloud,
+  subscribeTutorialVideos,
+} from '../utils/cloudSync';
 import {
   CLOUDFLARE_HEADERS_TXT,
   CLOUDFLARE_REDIRECTS_TXT,
@@ -128,7 +144,7 @@ export interface AdminDashboardViewProps {
 
 const ADMIN_COUNTERS_RESET_KEY = 'aluminero_admin_counters_reset_at_v1';
 
-type AdminTabId = 'dashboard' | 'graficas' | 'ventas' | 'claves' | 'referidos' | 'herramientas';
+type AdminTabId = 'dashboard' | 'graficas' | 'ventas' | 'claves' | 'referidos' | 'herramientas' | 'videos';
 type PlanFilterId = 'todos' | 'gratis' | 'colega3d' | '30d' | '90d' | '365d' | 'bloqueados';
 type ChartGranularity = 'week' | 'month';
 
@@ -315,6 +331,24 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const importBackupRef = useRef<HTMLInputElement>(null);
   const adminAntesRef = useRef<HTMLInputElement>(null);
   const adminDespuesRef = useRef<HTMLInputElement>(null);
+  const importVideosJsonRef = useRef<HTMLInputElement>(null);
+
+  // Video Tutoriales Firestore state
+  const [adminVideos, setAdminVideos] = useState<TutorialVideoItem[]>(() => loadTutorialVideosCache());
+  const [vidEditingId, setVidEditingId] = useState<string | null>(null);
+  const [vidTitle, setVidTitle] = useState('');
+  const [vidDesc, setVidDesc] = useState('');
+  const [vidCategory, setVidCategory] = useState<TutorialVideoCategoryId>('primeros-pasos');
+  const [vidUrl, setVidUrl] = useState('');
+  const [vidSaving, setVidSaving] = useState(false);
+
+  useEffect(() => {
+    const unsub = subscribeTutorialVideos((items) => {
+      setAdminVideos(items);
+      saveTutorialVideosCache(items);
+    });
+    return () => unsub();
+  }, []);
 
   useEffect(() => {
     void onRefreshCloud();
@@ -1187,7 +1221,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   return (
     <section
       id="view-admin-dashboard"
-      className="w-full max-w-[1400px] mx-auto pb-24 text-slate-100 screen-animate"
+      className="w-full max-w-[1400px] mx-auto pb-28 sm:pb-16 text-slate-100 screen-animate"
     >
       {/* Cabecera Full-Screen del Panel de Administrador */}
       <div className="rounded-2xl border border-slate-700/80 bg-slate-900/95 p-5 sm:p-6 shadow-xl mb-6">
@@ -1201,7 +1235,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 Panel de Administrador
               </h1>
               <p className="m-0 mt-1 text-[12.5px] sm:text-[13.5px] text-slate-300 leading-snug">
-                Espacio completo de gestión: auditoría de usuarios, página dedicada de gráficas, licencias PRO y control de Promo Colega
+                Gestión centralizada de licencias PRO, usuarios, gráficas, métricas, respaldos y video tutoriales
               </p>
               <div className="mt-2 flex flex-wrap items-center gap-2.5 text-[11.5px] text-slate-400">
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 font-semibold">
@@ -1221,36 +1255,6 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           </div>
 
           <div className="flex items-center gap-2 shrink-0 flex-wrap">
-            {!confirmResetCounters ? (
-              <button
-                type="button"
-                id="btn-admin-reset-counters"
-                onClick={() => setConfirmResetCounters(true)}
-                className="min-h-[42px] px-3.5 py-2 rounded-xl border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-200 font-bold text-[12px] inline-flex items-center gap-1.5 cursor-pointer transition-colors"
-              >
-                <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />
-                <span>Reiniciar contadores a 0</span>
-              </button>
-            ) : (
-              <div className="inline-flex items-center gap-1.5 rounded-xl border border-rose-500/50 bg-rose-950/60 px-2.5 py-1.5">
-                <span className="text-[11.5px] font-bold text-rose-100">¿Poner todo en 0?</span>
-                <button
-                  type="button"
-                  id="btn-admin-reset-counters-confirm"
-                  onClick={handleConfirmResetCounters}
-                  className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-[11.5px] cursor-pointer border-0"
-                >
-                  Sí, reiniciar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmResetCounters(false)}
-                  className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-[11.5px] cursor-pointer border border-slate-600"
-                >
-                  No
-                </button>
-              </div>
-            )}
             <button
               type="button"
               id="btn-admin-refresh-cloud"
@@ -1295,30 +1299,31 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 <span className="block text-[16px] sm:text-[17px] font-black tracking-tight leading-tight text-slate-950">
                   Generar Claves PRO
                 </span>
-                <span className="block text-[12px] font-bold text-slate-900/90 mt-0.5 truncate">
-                  Acción principal · Emitir PINs de 3 días (Colega), 30 días, 90 días o 1 Año al instante
+                <span className="block text-[12px] font-bold text-slate-900/90 mt-0.5">
+                  Emitir PINs de 3 días (Colega), 30 días, 90 días o 1 Año al instante
                 </span>
               </span>
             </span>
             <span className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-950 text-amber-300 text-[12px] font-extrabold">
-              <span>{activeTab === 'claves' ? 'Abierto' : 'Abrir generador'}</span>
+              <span>{activeTab === 'claves' ? 'Abierto' : 'Abrir'}</span>
               <ArrowRight className="w-4 h-4" aria-hidden="true" />
             </span>
           </button>
 
-          {/* Navegación secundaria ordenada y simétrica */}
+          {/* Navegación secundaria con etiquetas cortas y legibles (cero truncamiento) */}
           <div
             role="tablist"
             aria-label="Páginas secundarias de administración"
-            className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5"
+            className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2"
           >
             {(
               [
-                { id: 'dashboard', label: 'Usuarios y Auditoría', icon: Users },
-                { id: 'graficas', label: 'Gráficas y Analíticas', icon: BarChart3 },
-                { id: 'ventas', label: 'Análisis de Ventas', icon: TrendingUp },
+                { id: 'dashboard', label: 'Usuarios', icon: Users },
+                { id: 'graficas', label: 'Gráficas', icon: BarChart3 },
+                { id: 'ventas', label: 'Métricas', icon: TrendingUp },
                 { id: 'referidos', label: `Referidos (${activeReferralHistory.length})`, icon: Gift },
-                { id: 'herramientas', label: 'Respaldo y Ajustes', icon: Settings },
+                { id: 'herramientas', label: 'Respaldos', icon: Settings },
+                { id: 'videos', label: 'Video Tutoriales', icon: Video },
               ] as const
             ).map((tab) => {
               const Icon = tab.icon;
@@ -1331,14 +1336,14 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   id={`tab-admin-${tab.id}`}
                   aria-selected={active}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`min-h-[46px] px-3.5 py-2.5 rounded-xl border text-[12.5px] font-extrabold inline-flex items-center justify-center gap-2 cursor-pointer transition-all ${
+                  className={`min-h-[44px] px-2.5 py-2 rounded-xl border text-[12px] font-extrabold inline-flex items-center justify-center gap-1.5 cursor-pointer transition-all text-center leading-tight ${
                     active
                       ? 'border-blue-500 bg-blue-600 text-white shadow-md'
-                      : 'border-slate-700/80 bg-slate-800/70 hover:bg-slate-800 text-slate-300'
+                      : 'border-slate-700/80 bg-slate-800/70 hover:bg-slate-800 text-slate-200'
                   }`}
                 >
                   <Icon className="w-4 h-4 shrink-0" aria-hidden="true" />
-                  <span className="truncate">{tab.label}</span>
+                  <span>{tab.label}</span>
                 </button>
               );
             })}
@@ -2904,6 +2909,51 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 </p>
               )}
             </div>
+
+            {/* Zona de mantenimiento: Reiniciar contadores estadísticos a 0 (con confirmación de seguridad) */}
+            <div className="pt-3 mt-1 border-t border-slate-800">
+              <div className="rounded-xl border border-amber-500/35 bg-amber-500/5 p-3 flex flex-col gap-2">
+                <div className="text-[12px] font-extrabold text-amber-200 flex items-center gap-1.5">
+                  <RotateCcw className="w-4 h-4 shrink-0" aria-hidden="true" />
+                  <span>Reinicio de contadores del panel</span>
+                </div>
+                <p className="m-0 text-[11.5px] text-slate-300 leading-snug">
+                  Reinicia la línea base de métricas estadísticas en este panel a 0 sin borrar datos de tus clientes en Firestore.
+                </p>
+                {!confirmResetCounters ? (
+                  <button
+                    type="button"
+                    id="btn-admin-reset-counters"
+                    onClick={() => setConfirmResetCounters(true)}
+                    className="self-start min-h-[38px] px-3.5 py-1.5 rounded-xl border border-amber-500/45 bg-amber-500/15 hover:bg-amber-500/25 text-amber-100 font-bold text-[12px] inline-flex items-center gap-1.5 cursor-pointer transition-colors"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />
+                    <span>Reiniciar contadores a 0</span>
+                  </button>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-2 rounded-xl border border-rose-500/50 bg-rose-950/60 px-3 py-2">
+                    <span className="text-[11.5px] font-bold text-rose-100">
+                      ¿Confirmas poner todos los contadores en 0?
+                    </span>
+                    <button
+                      type="button"
+                      id="btn-admin-reset-counters-confirm"
+                      onClick={handleConfirmResetCounters}
+                      className="px-3 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-[11.5px] cursor-pointer border-0"
+                    >
+                      Sí, reiniciar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmResetCounters(false)}
+                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-[11.5px] cursor-pointer border border-slate-600"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* Galería Antes y Después */}
@@ -3025,6 +3075,314 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== TAB 5: GESTIÓN DE VIDEO TUTORIALES (FIRESTORE) ==================== */}
+      {activeTab === 'videos' && (
+        <div id="admin-tab-videos-content" className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+          <div className="lg:col-span-5 rounded-2xl border border-slate-700/80 bg-slate-900/95 p-4 sm:p-5 flex flex-col gap-3">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="m-0 text-[15px] font-extrabold text-white flex items-center gap-2">
+                <Video className="w-4 h-4 text-sky-400" aria-hidden="true" />
+                <span>{vidEditingId ? 'Editar Video Tutorial' : 'Publicar Video Tutorial'}</span>
+              </h2>
+              {vidEditingId && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setVidEditingId(null);
+                    setVidTitle('');
+                    setVidDesc('');
+                    setVidUrl('');
+                  }}
+                  className="text-[11.5px] font-bold text-slate-300 underline cursor-pointer bg-transparent border-0"
+                >
+                  Cancelar edición
+                </button>
+              )}
+            </div>
+            <p className="m-0 text-[12px] text-slate-400 leading-snug">
+              Los videos publicados aquí se sincronizan en tiempo real con Firestore (<span className="mono">tutorial_videos</span>) para todos los usuarios.
+            </p>
+
+            <div>
+              <label htmlFor="admin-vid-title" className="block text-[11.5px] font-bold text-slate-300 mb-1">
+                Título del video *
+              </label>
+              <input
+                id="admin-vid-title"
+                type="text"
+                value={vidTitle}
+                onChange={(e) => setVidTitle(e.target.value)}
+                placeholder="Ej. Cómo cotizar una ventana 3 pulgadas"
+                className="w-full min-h-[40px] px-3 py-2 rounded-xl border border-slate-700 bg-slate-950 text-white text-[13px]"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="admin-vid-category" className="block text-[11.5px] font-bold text-slate-300 mb-1">
+                Categoría *
+              </label>
+              <select
+                id="admin-vid-category"
+                value={vidCategory}
+                onChange={(e) => setVidCategory(e.target.value as TutorialVideoCategoryId)}
+                className="w-full min-h-[40px] px-3 py-2 rounded-xl border border-slate-700 bg-slate-950 text-white text-[13px]"
+              >
+                {TUTORIAL_VIDEO_CATEGORIES.map((cat) => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="admin-vid-url" className="block text-[11.5px] font-bold text-slate-300 mb-1">
+                Enlace de YouTube, Vimeo, Google Drive o MP4 *
+              </label>
+              <input
+                id="admin-vid-url"
+                type="url"
+                value={vidUrl}
+                onChange={(e) => setVidUrl(e.target.value)}
+                placeholder="https://www.youtube.com/watch?v=..."
+                className="w-full min-h-[40px] px-3 py-2 rounded-xl border border-slate-700 bg-slate-950 text-white text-[13px]"
+              />
+              {vidUrl.trim() && (
+                <div className="mt-1 text-[11px] font-bold">
+                  {parseTutorialVideoUrl(vidUrl).valid ? (
+                    <span className="text-emerald-400">
+                      ✓ Fuente válida detectada ({parseTutorialVideoUrl(vidUrl).provider.toUpperCase()})
+                    </span>
+                  ) : (
+                    <span className="text-rose-400">
+                      ✕ Ingresa un enlace válido de YouTube, Vimeo, Google Drive o archivo MP4/WebM
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label htmlFor="admin-vid-desc" className="block text-[11.5px] font-bold text-slate-300 mb-1">
+                Descripción breve
+              </label>
+              <textarea
+                id="admin-vid-desc"
+                rows={2}
+                value={vidDesc}
+                onChange={(e) => setVidDesc(e.target.value)}
+                placeholder="Resumen práctico de lo que aprenderá el aluminero..."
+                className="w-full px-3 py-2 rounded-xl border border-slate-700 bg-slate-950 text-white text-[12.5px]"
+              />
+            </div>
+
+            <button
+              type="button"
+              id="btn-admin-save-video"
+              disabled={vidSaving}
+              onClick={async () => {
+                if (!vidTitle.trim()) {
+                  onShowToast('Escribe el título del video tutorial');
+                  return;
+                }
+                const parsed = parseTutorialVideoUrl(vidUrl);
+                if (!parsed.valid) {
+                  onShowToast('Ingresa una URL válida de YouTube, Vimeo, Google Drive o MP4');
+                  return;
+                }
+                setVidSaving(true);
+                try {
+                  const id = vidEditingId || `vid_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+                  const nextItem: TutorialVideoItem = {
+                    id,
+                    titulo: vidTitle.trim(),
+                    descripcion: vidDesc.trim(),
+                    categoria: vidCategory,
+                    url: vidUrl.trim(),
+                    orden: adminVideos.length + 1,
+                    createdAt: Date.now(),
+                    updatedAt: Date.now(),
+                  };
+                  const ok = await saveTutorialVideoCloud(nextItem);
+                  setAdminVideos((prev) => {
+                    const updated = [nextItem, ...prev.filter((v) => v.id !== id)];
+                    saveTutorialVideosCache(updated);
+                    return updated;
+                  });
+                  setVidEditingId(null);
+                  setVidTitle('');
+                  setVidDesc('');
+                  setVidUrl('');
+                  onShowToast(
+                    ok
+                      ? 'Video publicado y sincronizado en Firestore'
+                      : 'Video guardado localmente (sincronizará al volver la red)',
+                    true
+                  );
+                } finally {
+                  setVidSaving(false);
+                }
+              }}
+              className="min-h-[44px] px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-[13px] inline-flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <Plus className="w-4 h-4" aria-hidden="true" />
+              <span>{vidSaving ? 'Guardando...' : vidEditingId ? 'Actualizar Video' : 'Publicar en Video Tutoriales'}</span>
+            </button>
+
+            <div className="pt-2 border-t border-slate-800 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const blob = new Blob([JSON.stringify(adminVideos, null, 2)], { type: 'application/json' });
+                  const u = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = u;
+                  a.download = 'aluminero-video-tutoriales.json';
+                  document.body.appendChild(a);
+                  a.click();
+                  a.remove();
+                  window.setTimeout(() => URL.revokeObjectURL(u), 1500);
+                  onShowToast(`Exportados ${adminVideos.length} video(s)`, true);
+                }}
+                className="flex-1 min-h-[36px] px-3 py-1.5 rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11.5px] font-bold inline-flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Exportar JSON</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => importVideosJsonRef.current?.click()}
+                className="flex-1 min-h-[36px] px-3 py-1.5 rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11.5px] font-bold inline-flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Upload className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Importar JSON</span>
+              </button>
+              <input
+                ref={importVideosJsonRef}
+                type="file"
+                accept=".json,application/json"
+                className="hidden"
+                onChange={async (e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = '';
+                  if (!f) return;
+                  try {
+                    const arr = JSON.parse(await f.text()) as unknown;
+                    if (!Array.isArray(arr)) {
+                      onShowToast('Formato JSON inválido');
+                      return;
+                    }
+                    let count = 0;
+                    for (const raw of arr) {
+                      if (!raw || typeof raw !== 'object') continue;
+                      const obj = raw as Record<string, unknown>;
+                      const titulo = String(obj.titulo || obj.title || '').trim();
+                      const url = String(obj.url || '').trim();
+                      if (!titulo || !parseTutorialVideoUrl(url).valid) continue;
+                      const rawCat = obj.categoria ?? obj.category;
+                      const matchedCat = TUTORIAL_VIDEO_CATEGORIES.find(
+                        (c) => c.id === rawCat || c.label === rawCat
+                      );
+                      const categoria: TutorialVideoCategoryId = matchedCat ? matchedCat.id : 'primeros-pasos';
+                      await saveTutorialVideoCloud({
+                        id: String(obj.id || `vid_${Date.now()}_${count}`),
+                        titulo,
+                        descripcion: String(obj.descripcion || obj.description || '').trim(),
+                        categoria,
+                        url,
+                        orden: Number(obj.orden) || count + 1,
+                        createdAt: Date.now(),
+                      });
+                      count++;
+                    }
+                    onShowToast(`Importados ${count} video(s) tutoriales`, true);
+                  } catch {
+                    onShowToast('No se pudo leer el JSON de videos');
+                  }
+                }}
+              />
+            </div>
+          </div>
+
+          <div className="lg:col-span-7 rounded-2xl border border-slate-700/80 bg-slate-900/95 p-4 sm:p-5 flex flex-col gap-3">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="m-0 text-[15px] font-extrabold text-white">
+                Catálogo Publicado ({adminVideos.length})
+              </h2>
+              <span className="text-[11px] font-bold text-slate-400">
+                Sincronización en vivo Firestore
+              </span>
+            </div>
+
+            {adminVideos.length === 0 ? (
+              <div className="p-6 rounded-xl border border-slate-800 bg-slate-950/60 text-center text-[12.5px] text-slate-400">
+                Aún no hay videos tutoriales publicados. Agrega tu primer enlace en el formulario izquierdo.
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2.5 max-h-[460px] overflow-y-auto pr-1">
+                {adminVideos.map((v) => (
+                  <div
+                    key={v.id}
+                    className="rounded-xl border border-slate-800 bg-slate-950/75 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <span className="inline-block px-2 py-0.5 rounded bg-sky-500/15 border border-sky-400/35 text-sky-300 text-[10px] font-extrabold mb-1">
+                        {TUTORIAL_VIDEO_CATEGORIES.find((c) => c.id === v.categoria)?.label || v.categoria}
+                      </span>
+                      <strong className="block text-[13.5px] text-white truncate">{v.titulo}</strong>
+                      {v.descripcion && (
+                        <p className="m-0 mt-0.5 text-[11.5px] text-slate-400 line-clamp-2">{v.descripcion}</p>
+                      )}
+                      <a
+                        href={v.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 mt-1 text-[11px] text-sky-400 hover:underline break-all"
+                      >
+                        <ExternalLink className="w-3 h-3 shrink-0" aria-hidden="true" />
+                        <span>{v.url}</span>
+                      </a>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setVidEditingId(v.id);
+                          setVidTitle(v.titulo);
+                          setVidDesc(v.descripcion || '');
+                          setVidCategory(v.categoria);
+                          setVidUrl(v.url);
+                        }}
+                        className="min-h-[34px] px-2.5 py-1 rounded-lg border border-slate-600 bg-slate-800 hover:bg-slate-700 text-slate-100 text-[11.5px] font-bold inline-flex items-center gap-1 cursor-pointer"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" aria-hidden="true" />
+                        <span>Editar</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await deleteTutorialVideoCloud(v.id);
+                          setAdminVideos((prev) => {
+                            const updated = prev.filter((item) => item.id !== v.id);
+                            saveTutorialVideosCache(updated);
+                            return updated;
+                          });
+                          onShowToast('Video eliminado del catálogo');
+                        }}
+                        className="min-h-[34px] px-2.5 py-1 rounded-lg border border-red-500/40 bg-red-500/15 hover:bg-red-500/25 text-red-200 text-[11.5px] font-bold inline-flex items-center gap-1 cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                        <span>Eliminar</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

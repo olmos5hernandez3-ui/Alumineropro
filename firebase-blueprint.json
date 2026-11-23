@@ -110,6 +110,21 @@
         "fecha_activacion_colega": {
           "type": "number",
           "description": "Marca de tiempo en milisegundos (o null) en que se activó por primera vez la promoción Colega de 3 días."
+        },
+        "tallerNombre": {
+          "type": "string",
+          "description": "Nombre del taller guardado por el usuario en Mi Taller.",
+          "maxLength": 120
+        },
+        "tallerResponsable": {
+          "type": "string",
+          "description": "Nombre del responsable del taller.",
+          "maxLength": 120
+        },
+        "tallerWhatsapp": {
+          "type": "string",
+          "description": "Teléfono o WhatsApp del taller.",
+          "maxLength": 40
         }
       },
       "required": [
@@ -342,6 +357,56 @@
         }
       },
       "required": ["total", "updatedAt"]
+    },
+    "TutorialVideo": {
+      "title": "TutorialVideo",
+      "description": "Video tutorial gestionado por el administrador para la academia integrada de Aluminero Pro.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Identificador único del video tutorial.",
+          "minLength": 3,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "titulo": {
+          "type": "string",
+          "description": "Título del video tutorial.",
+          "minLength": 2,
+          "maxLength": 140
+        },
+        "categoria": {
+          "type": "string",
+          "description": "Categoría (primeros-pasos, ventanas-puertas, optimizacion-vidrio, cotizaciones-pdf).",
+          "minLength": 3,
+          "maxLength": 40
+        },
+        "descripcion": {
+          "type": "string",
+          "description": "Descripción breve del video tutorial.",
+          "maxLength": 500
+        },
+        "url": {
+          "type": "string",
+          "description": "URL externa de YouTube, Vimeo, Google Drive o MP4.",
+          "minLength": 8,
+          "maxLength": 500
+        },
+        "orden": {
+          "type": "number",
+          "description": "Posición numérica para ordenar videos dentro de la categoría."
+        },
+        "createdAt": {
+          "type": "number",
+          "description": "Marca de tiempo de creación en milisegundos."
+        },
+        "updatedAt": {
+          "type": "number",
+          "description": "Marca de tiempo de actualización en milisegundos."
+        }
+      },
+      "required": ["id", "titulo", "categoria", "descripcion", "url", "orden", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
@@ -372,6 +437,10 @@
     "/stats/{statId}": {
       "schema": { "$ref": "#/entities/PromoStats" },
       "description": "Contadores globales públicos de promociones compartidas por la comunidad."
+    },
+    "/tutorial_videos/{videoId}": {
+      "schema": { "$ref": "#/entities/TutorialVideo" },
+      "description": "Catálogo en tiempo real de video tutoriales para la academia de Aluminero Pro."
     }
   }
 }

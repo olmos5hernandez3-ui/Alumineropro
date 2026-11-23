@@ -37,6 +37,16 @@ import {
   validateLevantamientoRequiredFields,
   filterAdminRecordsByResetBaseline,
   VIDRIOS_CONFIG,
+  LEV_MIN_CM,
+  LEV_MAX_CM,
+  validateLevantamientoStrictRange,
+  isTallerOnboardingComplete,
+  GUIDED_TUTORIAL_STEPS,
+  parseTutorialVideoUrl,
+  TUTORIAL_VIDEO_CATEGORIES,
+  FREE_ASSISTANT_DAILY_LIMIT,
+  computeAssistantDailyQuotaState,
+  parseReferralFromSearch,
   type AperturaVentanaId,
 } from './alumineroLogic';
 import {
@@ -2452,5 +2462,114 @@ test('67. Panel Admin: filtro baseline de reinicio de contadores a 0 conserva so
   assert.equal(filtered[0].id, 'new1');
   assert.equal(filterAdminRecordsByResetBaseline(rows, 0).length, 3);
 });
+
+test('68. Levantamiento Rápido: validación estricta de rango [15 cm, 500 cm]', () => {
+  assert.equal(LEV_MIN_CM, 15);
+  assert.equal(LEV_MAX_CM, 500);
+
+  assert.equal(validateLevantamientoStrictRange(15, 15).valid, true);
+  assert.equal(validateLevantamientoStrictRange(120, 210).valid, true);
+  assert.equal(validateLevantamientoStrictRange(500, 500).valid, true);
+
+  const tooSmallW = validateLevantamientoStrictRange(14.9, 120);
+  assert.equal(tooSmallW.valid, false);
+  assert.match(tooSmallW.error || '', /15 cm/);
+
+  const tooSmallH = validateLevantamientoStrictRange(120, 10);
+  assert.equal(tooSmallH.valid, false);
+  assert.match(tooSmallH.error || '', /15 cm/);
+
+  const tooLargeW = validateLevantamientoStrictRange(501, 120);
+  assert.equal(tooLargeW.valid, false);
+  assert.match(tooLargeW.error || '', /500 cm/);
+
+  const tooLargeH = validateLevantamientoStrictRange(120, 550);
+  assert.equal(tooLargeH.valid, false);
+  assert.match(tooLargeH.error || '', /500 cm/);
+
+  // También integrada dentro de validateRealisticOpeningDimensions
+  assert.equal(validateRealisticOpeningDimensions(10, 100, 'Ventana Corrediza').valid, false);
+  assert.equal(validateRealisticOpeningDimensions(100, 520, 'Puerta Abatible').valid, false);
+});
+
+test('69. Onboarding obligatorio de Mi Taller y parseo dinámico de referidos (?ref & ?refName)', () => {
+  assert.equal(isTallerOnboardingComplete({ nombre: '', responsable: '', tel: '' }), false);
+  assert.equal(isTallerOnboardingComplete({ nombre: 'Aluminios Sur', responsable: '', tel: '5512345678' }), false);
+  assert.equal(isTallerOnboardingComplete({ nombre: 'Aluminios Sur', responsable: 'Carlos', tel: '123' }), false);
+  assert.equal(
+    isTallerOnboardingComplete({ nombre: 'Aluminios Sur', responsable: 'Carlos Ruiz', tel: '55 1234 5678' }),
+    true
+  );
+
+  const refWithTaller = parseReferralFromSearch('?ref=ALM-REF1&refName=Taller%20Norte&promo=3');
+  assert.ok(refWithTaller);
+  assert.equal(refWithTaller.refName, 'Taller Norte');
+  assert.equal(refWithTaller.promoNumber, 3);
+});
+
+test('70. Tutorial interactivo de 4 pasos conserva los textos exactos solicitados', () => {
+  assert.equal(GUIDED_TUTORIAL_STEPS.length, 4);
+  assert.equal(GUIDED_TUTORIAL_STEPS[0].title, 'Levantamiento rápido en campo');
+  assert.equal(GUIDED_TUTORIAL_STEPS[1].title, 'Modulación y cortes exactos');
+  assert.equal(GUIDED_TUTORIAL_STEPS[2].title, 'Control de inventario y pedacería');
+  assert.equal(GUIDED_TUTORIAL_STEPS[3].title, 'Presupuestos en PDF por WhatsApp');
+});
+
+test('71. Video Tutoriales: parser de YouTube, Vimeo, Google Drive y MP4 directo + 4 categorías', () => {
+  assert.equal(TUTORIAL_VIDEO_CATEGORIES.length, 4);
+
+  const yt = parseTutorialVideoUrl('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+  assert.equal(yt.valid, true);
+  assert.equal(yt.provider, 'youtube');
+  assert.match(yt.embedUrl, /youtube\.com\/embed\/dQw4w9WgXcQ/);
+
+  const ytShort = parseTutorialVideoUrl('https://youtu.be/dQw4w9WgXcQ');
+  assert.equal(ytShort.valid, true);
+  assert.equal(ytShort.provider, 'youtube');
+
+  const vimeo = parseTutorialVideoUrl('https://vimeo.com/123456789');
+  assert.equal(vimeo.valid, true);
+  assert.equal(vimeo.provider, 'vimeo');
+  assert.match(vimeo.embedUrl, /player\.vimeo\.com\/video\/123456789/);
+
+  const drive = parseTutorialVideoUrl('https://drive.google.com/file/d/1AbCdEfGhIjKlMnOpQrStUvWxYz/view?usp=sharing');
+  assert.equal(drive.valid, true);
+  assert.equal(drive.provider, 'gdrive');
+  assert.match(drive.embedUrl, /\/preview$/);
+
+  const mp4 = parseTutorialVideoUrl('https://cdn.ejemplo.com/videos/corte-linea-3.mp4');
+  assert.equal(mp4.valid, true);
+  assert.equal(mp4.provider, 'mp4');
+
+  const bad = parseTutorialVideoUrl('javascript:alert(1)');
+  assert.equal(bad.valid, false);
+});
+
+test('72. Asistente flotante: límite diario gratuito (3 consultas/día) e ilimitado para PRO', () => {
+  assert.equal(FREE_ASSISTANT_DAILY_LIMIT, 3);
+  const today = '2026-11-23';
+
+  const freeStart = computeAssistantDailyQuotaState(null, today, false);
+  assert.equal(freeStart.remaining, 3);
+  assert.equal(freeStart.isLimited, true);
+  assert.equal(freeStart.canSend, true);
+
+  const freeTwo = computeAssistantDailyQuotaState({ dateKey: today, count: 2 }, today, false);
+  assert.equal(freeTwo.remaining, 1);
+  assert.equal(freeTwo.canSend, true);
+
+  const freeExhausted = computeAssistantDailyQuotaState({ dateKey: today, count: 3 }, today, false);
+  assert.equal(freeExhausted.remaining, 0);
+  assert.equal(freeExhausted.canSend, false);
+
+  const nextDayReset = computeAssistantDailyQuotaState({ dateKey: '2026-11-22', count: 3 }, today, false);
+  assert.equal(nextDayReset.remaining, 3);
+  assert.equal(nextDayReset.canSend, true);
+
+  const proState = computeAssistantDailyQuotaState({ dateKey: today, count: 99 }, today, true);
+  assert.equal(proState.isLimited, false);
+  assert.equal(proState.canSend, true);
+});
+
 
 

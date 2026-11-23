@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CATALOGO_PERFILES,
+  computeAssistantDailyQuotaState,
+  FREE_ASSISTANT_DAILY_LIMIT,
   PerfilCatalogoItem,
   PerfilFamilia,
 } from '../utils/alumineroLogic';
@@ -8,6 +10,9 @@ import {
   AppSkin,
   compressImageToDataUrl,
   formatWhatsappUrlDigits,
+  getTodayDateKey,
+  incrementAssistantDailyQuota,
+  loadAssistantDailyQuota,
   sanitizeWhatsappNumber,
 } from '../utils/storageHelpers';
 import { PhotoPickerButtons } from './PhotoPickerButtons';
@@ -17,6 +22,8 @@ interface FloatingAssistantProps {
   whatsappNumber: string;
   deviceId: string;
   skin?: AppSkin;
+  proActive?: boolean;
+  onOpenPro?: () => void;
   onShowToast: (msg: string, topSuccess?: boolean) => void;
 }
 
@@ -75,6 +82,8 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
   whatsappNumber,
   deviceId,
   skin = 'basica',
+  proActive = false,
+  onOpenPro,
   onShowToast,
 }) => {
   const [open, setOpen] = useState(false);
@@ -82,6 +91,18 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
   const [morphedAtCenter, setMorphedAtCenter] = useState(false);
   const travelTimerRef = useRef<number | null>(null);
   const [activeOption, setActiveOption] = useState<'A' | 'B'>('A');
+  const [quotaRec, setQuotaRec] = useState(() => loadAssistantDailyQuota());
+
+  const quotaState = useMemo(
+    () =>
+      computeAssistantDailyQuotaState(
+        quotaRec,
+        getTodayDateKey(),
+        proActive,
+        FREE_ASSISTANT_DAILY_LIMIT
+      ),
+    [quotaRec, proActive]
+  );
 
   useEffect(() => {
     return () => {
@@ -173,6 +194,10 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
 
   const handleSendOptionA = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!quotaState.canSend) {
+      setErrorA(`Alcanzaste tu límite de ${quotaState.limit} consultas diarias en la Versión Gratuita. Actualiza a PRO para consultas ilimitadas.`);
+      return;
+    }
     const cleanText = sugerenciaTexto.trim();
     if (!cleanText) {
       setErrorA('Escribe qué marca, línea, perfil o herraje hace falta.');
@@ -181,6 +206,9 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
 
     setSending(true);
     setErrorA('');
+    if (!proActive) {
+      setQuotaRec(incrementAssistantDailyQuota());
+    }
 
     const messageLines = [
       '*Asistente Aluminero Pro — Sugerencia*',
@@ -224,6 +252,10 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
 
   const handleSendOptionB = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!quotaState.canSend) {
+      setErrorB(`Alcanzaste tu límite de ${quotaState.limit} envíos diarios en la Versión Gratuita. Actualiza a PRO para envíos ilimitados.`);
+      return;
+    }
     const cleanCustom = customPerfilNombre.trim();
     if (!selectedPerfil && !cleanCustom) {
       setErrorB('Selecciona un perfil existente o escribe su nombre.');
@@ -236,6 +268,9 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
 
     setSending(true);
     setErrorB('');
+    if (!proActive) {
+      setQuotaRec(incrementAssistantDailyQuota());
+    }
 
     const perfilResumen = selectedPerfil
       ? `${selectedPerfil.nombre} (${selectedPerfil.codigoRef})`
@@ -386,6 +421,39 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
             >
               ✕
             </button>
+          </div>
+
+          {/* Indicador de consultas diarias (Plan Gratuito vs PRO ilimitado) */}
+          <div
+            id="assistant-quota-bar"
+            className={`mb-3 px-3 py-2 rounded-xl border text-[11.5px] font-bold flex items-center justify-between gap-2 ${
+              !quotaState.isLimited
+                ? 'border-emerald-400/40 bg-emerald-500/12 text-emerald-200'
+                : quotaState.canSend
+                  ? 'border-sky-400/40 bg-sky-500/12 text-sky-100'
+                  : 'border-amber-400/60 bg-amber-500/18 text-amber-100'
+            }`}
+          >
+            <span>
+              {!quotaState.isLimited
+                ? '⚡ Plan PRO · Consultas ilimitadas'
+                : quotaState.canSend
+                  ? `Plan Gratuito · ${quotaState.remaining} de ${quotaState.limit} consultas hoy`
+                  : `Límite diario alcanzado (${quotaState.usedToday}/${quotaState.limit})`}
+            </span>
+            {quotaState.isLimited && onOpenPro && (
+              <button
+                type="button"
+                id="btn-assistant-upgrade-pro"
+                onClick={() => {
+                  handleCloseAssistant();
+                  onOpenPro();
+                }}
+                className="px-2.5 py-1 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold text-[11px] cursor-pointer shrink-0"
+              >
+                Ver PRO
+              </button>
+            )}
           </div>
 
           {/* Selector de 2 opciones rápidas */}

@@ -3189,6 +3189,9 @@ export interface CloudDeviceRecord {
   linkedEmail?: string;
   promo_colega_usada?: boolean;
   fecha_activacion_colega?: number | null;
+  tallerNombre?: string;
+  tallerResponsable?: string;
+  tallerWhatsapp?: string;
 }
 
 export const PROMO_COLEGA_ALREADY_USED_ERROR =
@@ -3650,7 +3653,8 @@ export function parseReferralFromSearch(search: string): ParsedColleagueReferral
     const params = new URLSearchParams(cleanSearch.startsWith('?') ? cleanSearch.slice(1) : cleanSearch);
     const rawRef = params.get('ref');
     if (!rawRef) return null;
-    const refName = sanitizeReferralSenderName(rawRef);
+    const explicitName = params.get('refName') || params.get('taller') || '';
+    const refName = sanitizeReferralSenderName(explicitName || rawRef);
     if (!refName) return null;
     const rawPromo = params.get('promo');
     const parsedPromo = rawPromo ? parseInt(rawPromo, 10) : 1;
@@ -3996,10 +4000,12 @@ export const MEXICO_ALUMINUM_SYSTEMS: MexicoAluminumSystemItem[] = [
 
 // ==================== VALIDACIÓN REALISTA DE MEDIDAS (LEVANTAMIENTO) ====================
 
-export function validateRealisticOpeningDimensions(
+export const LEV_MIN_CM = 15;
+export const LEV_MAX_CM = 500;
+
+export function validateLevantamientoStrictRange(
   anchoCm: number,
-  altoCm: number,
-  tipo: string = 'Ventana Corrediza'
+  altoCm: number
 ): DimensionValidationResult {
   const ancho = Number(anchoCm);
   const alto = Number(altoCm);
@@ -4009,37 +4015,56 @@ export function validateRealisticOpeningDimensions(
       error: 'Medidas inválidas: ingresa ancho y alto numéricos mayores a 0 cm.',
     };
   }
+  if (ancho < LEV_MIN_CM || alto < LEV_MIN_CM) {
+    return {
+      valid: false,
+      error: `Error de rango (${ancho} × ${alto} cm): las medidas no pueden ser menores a ${LEV_MIN_CM} cm. Verifica ancho y alto (rango permitido: ${LEV_MIN_CM} cm a ${LEV_MAX_CM} cm).`,
+    };
+  }
+  if (ancho > LEV_MAX_CM || alto > LEV_MAX_CM) {
+    return {
+      valid: false,
+      error: `Error de rango (${ancho} × ${alto} cm): las medidas no pueden superar ${LEV_MAX_CM} cm. Verifica ancho y alto (rango permitido: ${LEV_MIN_CM} cm a ${LEV_MAX_CM} cm).`,
+    };
+  }
+  return { valid: true };
+}
 
+export function validateRealisticOpeningDimensions(
+  anchoCm: number,
+  altoCm: number,
+  tipo: string = 'Ventana Corrediza'
+): DimensionValidationResult {
+  const strictRange = validateLevantamientoStrictRange(anchoCm, altoCm);
+  if (!strictRange.valid) {
+    return strictRange;
+  }
+
+  const ancho = Number(anchoCm);
+  const alto = Number(altoCm);
   const tipoLower = String(tipo || '').trim().toLowerCase();
   const isPuerta = tipoLower.includes('puerta');
   const isCancel = tipoLower.includes('cancel');
-
-  if (ancho > 600 || alto > 450) {
-    return {
-      valid: false,
-      error: `Medidas fuera de rango (${ancho} × ${alto} cm): el máximo permitido es 600 cm de ancho por 450 cm de alto.`,
-    };
-  }
 
   if (isPuerta) {
     if (ancho < 50 || alto < 150) {
       return {
         valid: false,
-        error: `Medida inválida para puerta (${ancho} × ${alto} cm): una puerta real debe medir al menos 50 cm de ancho × 150 cm de alto.`,
+        error: `Medida inválida para puerta (${ancho} × ${alto} cm): una puerta real debe medir al menos 50 cm de ancho × 150 cm de alto (máximo ${LEV_MAX_CM} cm).`,
       };
     }
   } else if (isCancel) {
     if (ancho < 30 || alto < 40) {
       return {
         valid: false,
-        error: `Medida inválida para cancel (${ancho} × ${alto} cm): verifica las dimensiones reales (mínimo 30 × 40 cm).`,
+        error: `Medida inválida para cancel (${ancho} × ${alto} cm): verifica las dimensiones reales (mínimo 30 × 40 cm, máximo ${LEV_MAX_CM} cm).`,
       };
     }
   } else {
     if (ancho < 25 || alto < 25 || ancho * alto < 900) {
       return {
         valid: false,
-        error: `Medida irreal o inválida (${ancho} × ${alto} cm): una ventana real debe medir al menos 30 × 30 cm (mínimo 25 cm por lado). Verifica si ingresaste metros en lugar de centímetros.`,
+        error: `Medida irreal o inválida (${ancho} × ${alto} cm): una ventana real debe medir al menos 30 × 30 cm (rango permitido: ${LEV_MIN_CM} cm a ${LEV_MAX_CM} cm). Verifica si ingresaste metros en lugar de centímetros.`,
       };
     }
   }
@@ -4375,6 +4400,203 @@ export function filterAdminRecordsByResetBaseline<
     return ts > baseline;
   });
 }
+
+// ==================== ONBOARDING OBLIGATORIO "MI TALLER" ====================
+
+export function isTallerOnboardingComplete(
+  taller: { nombre?: string; responsable?: string; tel?: string } | null | undefined
+): boolean {
+  if (!taller) return false;
+  const nombre = String(taller.nombre || '').trim();
+  const responsable = String(taller.responsable || '').trim();
+  const tel = String(taller.tel || '').trim();
+  const telDigits = tel.replace(/\D/g, '');
+  return nombre.length >= 2 && responsable.length >= 2 && (telDigits.length >= 7 || tel.length >= 7);
+}
+
+// ==================== TUTORIAL INTERACTIVO (4 PASOS) ====================
+
+export interface GuidedTutorialStep {
+  step: number;
+  badge: string;
+  title: string;
+  description: string;
+  icon: 'levantamiento' | 'modulacion' | 'inventario' | 'pdf';
+}
+
+export const GUIDED_TUTORIAL_STEPS: GuidedTutorialStep[] = [
+  {
+    step: 1,
+    badge: 'Paso 1 de 4 · En obra',
+    title: 'Levantamiento rápido en campo',
+    description:
+      'Registra medidas, notas y fotos directamente desde la obra. Olvídate de perder papeles o confundir anchos con altos antes de llegar al taller.',
+    icon: 'levantamiento',
+  },
+  {
+    step: 2,
+    badge: 'Paso 2 de 4 · Despiece exacto',
+    title: 'Modulación y cortes exactos',
+    description:
+      'Selecciona la línea (3", 2", Europea, Batiente) y obtén el despiece al milímetro, optimización de tramos de 6.10 m y cortes de vidrio en 2D.',
+    icon: 'modulacion',
+  },
+  {
+    step: 3,
+    badge: 'Paso 3 de 4 · Bodega inteligente',
+    title: 'Control de inventario y pedacería',
+    description:
+      'Registra tus tramos completos, sobrantes y herrajes. Antes de comprar material nuevo, revisa lo que ya tienes disponible en tu taller.',
+    icon: 'inventario',
+  },
+  {
+    step: 4,
+    badge: 'Paso 4 de 4 · Cierre de ventas',
+    title: 'Presupuestos en PDF por WhatsApp',
+    description:
+      'Genera hojas de cotización con el logo de tu taller, tarifas actualizadas y envíalas al instante a tu cliente para aprobar trabajos más rápido.',
+    icon: 'pdf',
+  },
+];
+
+// ==================== VIDEO TUTORIALES (CATEGORÍAS Y PARSER URL) ====================
+
+export type TutorialVideoCategoryId =
+  | 'primeros-pasos'
+  | 'ventanas-puertas'
+  | 'optimizacion-vidrio'
+  | 'cotizaciones-pdf';
+
+export interface TutorialVideoCategoryMeta {
+  id: TutorialVideoCategoryId;
+  label: string;
+  shortLabel: string;
+}
+
+export const TUTORIAL_VIDEO_CATEGORIES: TutorialVideoCategoryMeta[] = [
+  { id: 'primeros-pasos', label: 'Primeros Pasos', shortLabel: 'Primeros Pasos' },
+  { id: 'ventanas-puertas', label: 'Ventanas y Puertas', shortLabel: 'Ventanas/Puertas' },
+  { id: 'optimizacion-vidrio', label: 'Optimización 6.10m y Vidrio', shortLabel: '6.10m y Vidrio' },
+  { id: 'cotizaciones-pdf', label: 'Cotizaciones PDF', shortLabel: 'Cotizaciones PDF' },
+];
+
+export type TutorialVideoProvider = 'youtube' | 'vimeo' | 'gdrive' | 'mp4' | 'local' | 'unknown';
+
+export interface ParsedTutorialVideoUrl {
+  valid: boolean;
+  provider: TutorialVideoProvider;
+  embedUrl: string;
+  thumbnailUrl?: string;
+  originalUrl: string;
+}
+
+export function parseTutorialVideoUrl(rawUrl: string): ParsedTutorialVideoUrl {
+  const trimmed = String(rawUrl || '').trim();
+  if (!trimmed) {
+    return { valid: false, provider: 'unknown', embedUrl: '', originalUrl: '' };
+  }
+  if (trimmed.startsWith('idb://')) {
+    return { valid: true, provider: 'local', embedUrl: trimmed, originalUrl: trimmed };
+  }
+
+  // YouTube: youtube.com/watch?v=, youtu.be/, youtube.com/shorts/, youtube.com/embed/
+  const ytMatch = trimmed.match(
+    /(?:youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/i
+  );
+  if (ytMatch && ytMatch[1]) {
+    const id = ytMatch[1];
+    return {
+      valid: true,
+      provider: 'youtube',
+      embedUrl: `https://www.youtube.com/embed/${id}?rel=0&modestbranding=1`,
+      thumbnailUrl: `https://img.youtube.com/vi/${id}/hqdefault.jpg`,
+      originalUrl: trimmed,
+    };
+  }
+
+  // Vimeo: vimeo.com/123456789 or player.vimeo.com/video/123456789
+  const vimeoMatch = trimmed.match(/(?:player\.)?vimeo\.com\/(?:video\/)?(\d{6,12})/i);
+  if (vimeoMatch && vimeoMatch[1]) {
+    const id = vimeoMatch[1];
+    return {
+      valid: true,
+      provider: 'vimeo',
+      embedUrl: `https://player.vimeo.com/video/${id}?dnt=1`,
+      originalUrl: trimmed,
+    };
+  }
+
+  // Google Drive: drive.google.com/file/d/{ID}/view or open?id={ID}
+  const driveMatch =
+    trimmed.match(/drive\.google\.com\/file\/d\/([A-Za-z0-9_-]{10,})/i) ||
+    trimmed.match(/drive\.google\.com\/open\?id=([A-Za-z0-9_-]{10,})/i);
+  if (driveMatch && driveMatch[1]) {
+    const id = driveMatch[1];
+    return {
+      valid: true,
+      provider: 'gdrive',
+      embedUrl: `https://drive.google.com/file/d/${id}/preview`,
+      originalUrl: trimmed,
+    };
+  }
+
+  // Direct MP4 / WebM / MOV / OGG URL
+  if (/^https?:\/\/.+\.(mp4|webm|mov|m4v|ogg)(\?.*)?$/i.test(trimmed)) {
+    return {
+      valid: true,
+      provider: 'mp4',
+      embedUrl: trimmed,
+      originalUrl: trimmed,
+    };
+  }
+
+  return { valid: false, provider: 'unknown', embedUrl: trimmed, originalUrl: trimmed };
+}
+
+// ==================== LÍMITE DIARIO ASISTENTE (PLAN GRATUITO) ====================
+
+export const FREE_ASSISTANT_DAILY_LIMIT = 3;
+
+export interface AssistantDailyQuotaRecord {
+  dateKey: string;
+  count: number;
+}
+
+export interface AssistantDailyQuotaState {
+  usedToday: number;
+  remaining: number;
+  limit: number;
+  isLimited: boolean;
+  canSend: boolean;
+}
+
+export function computeAssistantDailyQuotaState(
+  record: AssistantDailyQuotaRecord | null | undefined,
+  todayKey: string,
+  proActive: boolean,
+  dailyLimit: number = FREE_ASSISTANT_DAILY_LIMIT
+): AssistantDailyQuotaState {
+  if (proActive) {
+    return {
+      usedToday: 0,
+      remaining: 999,
+      limit: dailyLimit,
+      isLimited: false,
+      canSend: true,
+    };
+  }
+  const sameDay = record && record.dateKey === todayKey;
+  const usedToday = sameDay ? Math.max(0, Math.floor(Number(record.count) || 0)) : 0;
+  const remaining = Math.max(0, dailyLimit - usedToday);
+  return {
+    usedToday,
+    remaining,
+    limit: dailyLimit,
+    isLimited: true,
+    canSend: remaining > 0,
+  };
+}
+
 
 
 

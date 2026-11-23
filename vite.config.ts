@@ -133,15 +133,14 @@ function createStandaloneDevEndpoint(): Plugin {
 }
 
 export default defineConfig(() => {
+  const isSingleFile = process.env.SINGLE_FILE === '1';
   return {
     plugins: [
       react(),
       tailwindcss(),
-      ...(process.env.SINGLE_FILE === '0' ? [] : [createSingleFilePlugin()]),
+      ...(isSingleFile ? [createSingleFilePlugin()] : []),
       createStandaloneDevEndpoint(),
-      // Copies src/assets into dist/ so root-relative URLs like
-      // "/src/assets/images/..." (e.g. generate_image output) still resolve
-      // in production builds. Do not remove.
+      // Copies src/assets into dist/ and removes unused AI Studio upload scratch files from dist/
       {
         name: 'copy-unbundled-src-assets',
         apply: 'build',
@@ -155,9 +154,59 @@ export default defineConfig(() => {
           if (fs.existsSync(distDir) && fs.existsSync(srcAssets)) {
             fs.cpSync(srcAssets, distAssets, {recursive: true, force: true});
           }
+          const aiStudioJunk = path.resolve(distDir, 'assets/aistudio');
+          if (fs.existsSync(aiStudioJunk)) {
+            fs.rmSync(aiStudioJunk, {recursive: true, force: true});
+          }
         },
       },
     ],
+    build: isSingleFile
+      ? {
+          sourcemap: false,
+          target: 'es2020',
+        }
+      : {
+          sourcemap: false,
+          target: 'es2020',
+          assetsInlineLimit: 4096,
+          cssCodeSplit: true,
+          chunkSizeWarningLimit: 750,
+          modulePreload: {
+            resolveDependencies(_filename, deps) {
+              return deps.filter(
+                (dep) =>
+                  !dep.includes('vendor-pdf') &&
+                  !dep.includes('vendor-charts') &&
+                  !dep.includes('AdminDashboardView') &&
+                  !dep.includes('VideoTutorialesView')
+              );
+            },
+          },
+          rollupOptions: {
+            output: {
+              manualChunks(id) {
+                if (!id.includes('node_modules')) return undefined;
+                if (id.includes('react-dom') || id.includes('react/') || id.includes('scheduler')) {
+                  return 'vendor-react';
+                }
+                if (id.includes('firebase') || id.includes('@firebase')) {
+                  return 'vendor-firebase';
+                }
+                if (id.includes('jspdf') || id.includes('pdfjs-dist') || id.includes('html2canvas')) {
+                  return 'vendor-pdf';
+                }
+                if (id.includes('recharts') || id.includes('d3-')) {
+                  return 'vendor-charts';
+                }
+                if (id.includes('lucide-react') || id.includes('qrcode')) {
+                  return 'vendor-ui';
+                }
+                return undefined;
+              },
+            },
+          },
+        },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

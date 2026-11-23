@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { CotizacionPdfBlobResult, generarPdfClienteBlob } from '../utils/pdfExport';
 import {
   ContratoClienteInfo,
@@ -212,7 +211,7 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
     (async () => {
       try {
         const pdfjsLib = await import('pdfjs-dist');
-        pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+        pdfjsLib.GlobalWorkerOptions.workerSrc = './pdf.worker.min.mjs';
         const arrayBuf = await previewResult.blob.arrayBuffer();
         const loadingTask = pdfjsLib.getDocument({ data: arrayBuf });
         const pdf = await loadingTask.promise;
