@@ -129,8 +129,129 @@ export const PLANS: PlanDefinicion[] = [
   },
 ];
 
+export const APP_VERSION = 'v1.0.2';
+
 export const TRAMO_STD_CM = 610;
 export const TRAMO_STD_M = 6.1;
+
+export const PRE_CUT_WARNING_TEXT =
+  '⚠️ Aviso: Las fórmulas son referenciales y varían según el extrusor. Verifica siempre todas las medidas antes de realizar cualquier corte.';
+
+export const LEGAL_DISCLAIMER_TEXT = `AVISO LEGAL Y DESLINDE DE RESPONSABILIDAD — ALUMINERO PRO
+
+1. Naturaleza Referencial de Cálculos y Fórmulas:
+Las medidas de corte, descuentos en centímetros, optimizaciones de tramos de 6.10 m, cortes de vidrio en 2D y estimaciones de precios generadas por Aluminero Pro son estrictamente orientativas y de apoyo administrativo y técnico. Las dimensiones reales de los perfiles varían según el fabricante o extrusor (Alumer, Cuprum, Indalum, Extrusiones Metálicas, etc.), calibres, tolerancias del disco de corte, plomos de obra y tipo de herraje utilizado.
+
+2. Obligación de Verificación Previa al Corte:
+El usuario (maestro aluminero, instalador o responsable del taller) asume la responsabilidad total de verificar físicamente cada vano en obra y confirmar todas las medidas y descuentos antes de cortar aluminio, vidrio, acrílico o duela. Aluminero Pro y sus desarrolladores NO asumen responsabilidad alguna por pérdidas de material, errores de fabricación, desperdicios, retrasos de obra o reclamaciones de clientes derivadas del uso de la aplicación.
+
+3. Precios de Referencia y Cotizaciones:
+Los precios sugeridos de aluminio, vidrio y herrajes son valores promedio de mercado con carácter meramente informativo. El taller debe validar precios vigentes con su proveedor local antes de emitir o confirmar un presupuesto definitivo.
+
+4. Propiedad de Datos y Licencias:
+Los proyectos, cotizaciones, inventarios y respaldos pertenecen íntegramente al usuario y se almacenan localmente en su dispositivo (con sincronización opcional en nube según plan). El uso continuado de la aplicación implica la aceptación plena de este Aviso Legal y Deslinde.`;
+
+export interface AjusteDescuentosConfig {
+  // Línea 2"
+  l2JambaAlto: number;
+  l2HojaFijaAlto: number;
+  l2HojaCorredizaAlto: number;
+  l2Zoclo2HojasAncho: number;
+  l2Zoclo3HojasAncho: number;
+  // Línea 3"
+  l3JambaAlto: number;
+  l3RielAdicionalAncho: number;
+  l3HojaFijaAlto: number;
+  l3HojaCorredizaAlto: number;
+  l3Zoclo2HojasAncho: number;
+  l3Zoclo3HojasAncho: number;
+  // Cancel Baño & Cancel Corredizo
+  cancelBanoJambaAlto: number;
+  cancelCorrMarcoAlto: number;
+  cancelCorrHojaAlto: number;
+  // Puertas Abatibles (1 hoja y 2 hojas)
+  puertaJambaAlto: number;
+  puertaLargueroAlto: number;
+  puerta1HojaHorizAncho: number;
+  puerta2HojasHorizAncho: number;
+  puertaVidrioExtraAncho: number;
+  duelaAnchoUtilCm: number;
+}
+
+export const DEFAULT_AJUSTE_DESCUENTOS: AjusteDescuentosConfig = {
+  l2JambaAlto: 1.6,
+  l2HojaFijaAlto: 2.8,
+  l2HojaCorredizaAlto: 3.8,
+  l2Zoclo2HojasAncho: 16.0,
+  l2Zoclo3HojasAncho: 21.0,
+  l3JambaAlto: 2.6,
+  l3RielAdicionalAncho: 2.8,
+  l3HojaFijaAlto: 2.7,
+  l3HojaCorredizaAlto: 3.7,
+  l3Zoclo2HojasAncho: 18.0,
+  l3Zoclo3HojasAncho: 24.0,
+  cancelBanoJambaAlto: 4.0,
+  cancelCorrMarcoAlto: 2.6,
+  cancelCorrHojaAlto: 3.6,
+  puertaJambaAlto: 2.6,
+  puertaLargueroAlto: 4.0,
+  puerta1HojaHorizAncho: 18.0,
+  puerta2HojasHorizAncho: 33.5,
+  puertaVidrioExtraAncho: 1.4,
+  duelaAnchoUtilCm: 10.0,
+};
+
+export interface OptimizadorConfig {
+  largoBarraCm: number;
+  despuntePorExtremoCm: number;
+  kerfCm: number;
+  umbralSobranteUsableCm: number;
+}
+
+export const DEFAULT_OPTIMIZADOR_CONFIG: OptimizadorConfig = {
+  largoBarraCm: 610,
+  despuntePorExtremoCm: 2.5,
+  kerfCm: 0.4,
+  umbralSobranteUsableCm: 60,
+};
+
+export function resolveAjusteDescuentos(
+  partial?: Partial<AjusteDescuentosConfig> | null
+): AjusteDescuentosConfig {
+  if (!partial) return { ...DEFAULT_AJUSTE_DESCUENTOS };
+  const out: AjusteDescuentosConfig = { ...DEFAULT_AJUSTE_DESCUENTOS };
+  (Object.keys(DEFAULT_AJUSTE_DESCUENTOS) as Array<keyof AjusteDescuentosConfig>).forEach((k) => {
+    const val = Number(partial[k]);
+    if (Number.isFinite(val) && val >= 0) {
+      out[k] = val;
+    }
+  });
+  return out;
+}
+
+export function resolveOptimizadorConfig(
+  partial?: Partial<OptimizadorConfig> | null
+): OptimizadorConfig {
+  if (!partial) return { ...DEFAULT_OPTIMIZADOR_CONFIG };
+  return {
+    largoBarraCm:
+      Number.isFinite(Number(partial.largoBarraCm)) && Number(partial.largoBarraCm) >= 100
+        ? Number(partial.largoBarraCm)
+        : DEFAULT_OPTIMIZADOR_CONFIG.largoBarraCm,
+    despuntePorExtremoCm:
+      Number.isFinite(Number(partial.despuntePorExtremoCm)) && Number(partial.despuntePorExtremoCm) >= 0
+        ? Number(partial.despuntePorExtremoCm)
+        : DEFAULT_OPTIMIZADOR_CONFIG.despuntePorExtremoCm,
+    kerfCm:
+      Number.isFinite(Number(partial.kerfCm)) && Number(partial.kerfCm) >= 0
+        ? Number(partial.kerfCm)
+        : DEFAULT_OPTIMIZADOR_CONFIG.kerfCm,
+    umbralSobranteUsableCm:
+      Number.isFinite(Number(partial.umbralSobranteUsableCm)) && Number(partial.umbralSobranteUsableCm) >= 10
+        ? Number(partial.umbralSobranteUsableCm)
+        : DEFAULT_OPTIMIZADOR_CONFIG.umbralSobranteUsableCm,
+  };
+}
 
 export interface LineaConfig {
   id: LineaId;
@@ -1215,7 +1336,7 @@ export interface CortePerfil {
 }
 
 export interface CorteVidrio {
-  tipo: 'vidrio' | 'malla';
+  tipo: 'vidrio' | 'malla' | 'duela';
   nombre: string;
   pzas: number;
   anchoCm: number;
@@ -1244,6 +1365,8 @@ export interface DespieceCalculado {
   carretillasMosq: number;
 }
 
+export type PuertaRellenoModo = 'vidrio' | 'mixta_duela' | 'ciega_duela';
+
 export interface TrabajoParams {
   linea: LineaId;
   anchoCm: number;
@@ -1256,9 +1379,14 @@ export interface TrabajoParams {
   sentidoPuerta: 'izq' | 'der';
   puertaIntermedio: boolean;
   puertaEconomica: boolean;
+  puertaDobleHoja?: boolean;
+  puertaRellenoModo?: PuertaRellenoModo;
+  duelaAnchoUtilCm?: number;
+  dobleCorrediza?: boolean;
   cancelEstilo?: CancelEstiloId;
   invertido: boolean;
   cantidad: number;
+  ajusteDescuentos?: Partial<AjusteDescuentosConfig>;
   tolerancias: {
     marcoH: number;
     hojaV: number;
@@ -1348,14 +1476,20 @@ export function calcularDespiece(params: TrabajoParams): DespieceCalculado {
     apertura,
     puertaIntermedio,
     puertaEconomica,
+    puertaDobleHoja,
+    puertaRellenoModo,
+    duelaAnchoUtilCm,
+    dobleCorrediza = false,
     cancelEstilo = 'semilujo',
     cantidad,
+    ajusteDescuentos,
     tolerancias,
   } = params;
 
+  const adj = resolveAjusteDescuentos(ajusteDescuentos);
   const qty = Math.max(1, Math.round(cantidad || 1));
-  const A = Math.max(20, Number(anchoCm) || 120);
-  const H = Math.max(20, Number(altoCm) || 100);
+  const A = Math.max(15, Number(anchoCm) || 120);
+  const H = Math.max(15, Number(altoCm) || 100);
   const vidLabel = relleno ? getRellenoLabel(relleno, vidrio) : (VIDRIOS_CONFIG[vidrio]?.nombre || 'Claro 6 mm');
   const permitirRotacionPanel = relleno
     ? !(getRellenoItem(relleno.materialId, vidrio).esDireccional || esMaterialDireccional(vidLabel))
@@ -1632,12 +1766,14 @@ export function calcularDespiece(params: TrabajoParams): DespieceCalculado {
       }
     );
   } else if (linea === 'cancel-bano') {
-    const rielSup = round1(Math.max(30, A - tolerancias.marcoH));
+    const rielSup = round1(Math.max(20, A));
     const guiaInf = rielSup;
-    const jambaH = round1(H);
+    // Cancel de Baño: Jambas (2) Alto - 4.0 cm (editable en Mi Taller)
+    const jambaH = round1(Math.max(15, H - adj.cancelBanoJambaAlto));
     const numHojas = Math.max(2, Math.min(3, hojas || 2));
-    const hojaV = round1(Math.max(30, H - tolerancias.hojaV));
-    const hojaH = round1(Math.max(20, (A - tolerancias.hojaH) / numHojas + 2.0));
+    // Cancel Corredizo: Hojas Alto - 3.6 cm
+    const hojaV = round1(Math.max(15, H - adj.cancelCorrHojaAlto));
+    const hojaH = round1(Math.max(15, (A - tolerancias.hojaH) / numHojas + 2.0));
     const marcoId: PerfilCatalogoId =
       cancelEstilo === 'economico'
         ? 'alumer_11035'
@@ -1856,60 +1992,73 @@ export function calcularDespiece(params: TrabajoParams): DespieceCalculado {
       }
     );
   } else if (linea === 'puerta-2' || linea === 'puerta-abatible') {
-    const marcoH = round1(Math.max(20, A - tolerancias.marcoH));
-    const marcoV = round1(H);
-    const hojaV = round1(Math.max(20, H - tolerancias.hojaV));
-    const hojaH = round1(Math.max(20, A - tolerancias.hojaH));
+    // Fórmulas exactas de taller para Puerta Abatible 1 Hoja y Puerta Doble Abatible (2 Hojas)
+    const esDobleHoja = Boolean(puertaDobleHoja) || hojas === 2;
+    const numHojasPuerta = esDobleHoja ? 2 : 1;
+    const marcoH = round1(Math.max(15, A));
+    const marcoV = round1(Math.max(15, H - adj.puertaJambaAlto));
+    const hojaV = round1(Math.max(15, H - adj.puertaLargueroAlto));
+    const hojaH = round1(
+      esDobleHoja
+        ? Math.max(10, (A - adj.puerta2HojasHorizAncho) / 2)
+        : Math.max(10, A - adj.puerta1HojaHorizAncho)
+    );
+    const rellenoEfectivo: 'vidrio' | 'mixta_duela' | 'ciega_duela' =
+      puertaRellenoModo ||
+      (relleno?.categoria === 'duela' ? 'ciega_duela' : 'vidrio');
+    const duelaAncho = Number(duelaAnchoUtilCm) > 0 ? Number(duelaAnchoUtilCm) : adj.duelaAnchoUtilCm;
 
     if (linea === 'puerta-abatible') {
       perfiles.push(
         {
           perfilId: 'alumer_5844',
-          nombre: 'Batiente Lujo PP Vert. (5844)',
-          funcion: 'Laterales de marco abatible PP',
+          nombre: 'Batiente Lujo PP Vert. / Jambas (5844)',
+          funcion: `Jambas laterales marco (Alto - ${adj.puertaJambaAlto.toFixed(1)} cm)`,
           pzas: 2 * qty,
           angulo: '90°',
           medidaCm: marcoV,
         },
         {
           perfilId: 'alumer_5060',
-          nombre: 'Batiente Superior Mini (5060)',
-          funcion: 'Marco superior con tope de cierre',
+          nombre: 'Cabezal Marco Superior (5060)',
+          funcion: 'Marco superior a medida de vano (Ancho)',
           pzas: 1 * qty,
           angulo: '90°',
           medidaCm: marcoH,
         },
         {
           perfilId: 'alumer_9204',
-          nombre: 'Cerco Curvo (9204)',
-          funcion: 'Largueros verticales de hoja abatible',
-          pzas: 2 * qty,
+          nombre: 'Cerco Curvo / Largueros (9204)',
+          funcion: `Largueros verticales ${esDobleHoja ? '2 hojas (4 pzas)' : '1 hoja (2 pzas)'} · Alto - ${adj.puertaLargueroAlto.toFixed(1)} cm`,
+          pzas: 2 * numHojasPuerta * qty,
           angulo: '90°',
           medidaCm: hojaV,
         },
         {
           perfilId: 'alumer_9207',
-          nombre: 'Cabezal PP (9207)',
-          funcion: 'Horizontal superior de hoja PP',
-          pzas: 1 * qty,
+          nombre: 'Cabezal Hoja PP (9207)',
+          funcion: esDobleHoja
+            ? `Horizontal sup. ×2 hojas ((Ancho - ${adj.puerta2HojasHorizAncho.toFixed(1)}) / 2)`
+            : `Horizontal sup. hoja (Ancho - ${adj.puerta1HojaHorizAncho.toFixed(1)} cm)`,
+          pzas: numHojasPuerta * qty,
           angulo: '90°',
           medidaCm: hojaH,
         },
         {
           perfilId: puertaEconomica ? 'zoclo1v' : 'alumer_9187',
-          nombre: puertaEconomica ? 'Zoclo 1 Vena (7835-1V)' : 'Zoclo PP Reforzado (9187)',
-          funcion: 'Horizontal inferior de hoja',
-          pzas: 1 * qty,
+          nombre: puertaEconomica ? 'Zoclo 1 Vena (7835-1V)' : 'Zoclo Puerta PP (9187)',
+          funcion: `Horizontal inferior (${numHojasPuerta} hoja${numHojasPuerta > 1 ? 's' : ''})`,
+          pzas: numHojasPuerta * qty,
           angulo: '90°',
           medidaCm: hojaH,
         }
       );
-      if (puertaIntermedio) {
+      if (puertaIntermedio || rellenoEfectivo === 'mixta_duela') {
         perfiles.push({
           perfilId: 'alumer_9183',
-          nombre: 'Intermedio PP (9183)',
-          funcion: 'División central de puerta',
-          pzas: 1 * qty,
+          nombre: 'Peinazo / Intermedio PP (9183)',
+          funcion: `División intermedia (${numHojasPuerta} hoja${numHojasPuerta > 1 ? 's' : ''})`,
+          pzas: numHojasPuerta * qty,
           angulo: '90°',
           medidaCm: hojaH,
         });
@@ -1918,7 +2067,7 @@ export function calcularDespiece(params: TrabajoParams): DespieceCalculado {
         perfilId: 'alumer_6370',
         nombre: 'Junquillo PP (6370)',
         funcion: 'Sujeción interior de vidrio / duela',
-        pzas: 4 * qty,
+        pzas: 4 * numHojasPuerta * qty,
         angulo: '45°',
         medidaCm: round1(Math.max(10, (hojaV + hojaH) / 2 - 12)),
       });
@@ -1926,8 +2075,8 @@ export function calcularDespiece(params: TrabajoParams): DespieceCalculado {
       perfiles.push(
         {
           perfilId: 'jamba',
-          nombre: 'Canal Liso 2" (7825 / Marco Vert.)',
-          funcion: 'Laterales de marco abatible',
+          nombre: 'Canal Liso 2" / Jambas (7825)',
+          funcion: `Jambas laterales marco (Alto - ${adj.puertaJambaAlto.toFixed(1)} cm)`,
           pzas: 2 * qty,
           angulo: '90°',
           medidaCm: marcoV,
@@ -1935,86 +2084,136 @@ export function calcularDespiece(params: TrabajoParams): DespieceCalculado {
         {
           perfilId: 'batiente',
           nombre: 'Batiente / Cabezal Marco Sup. (BAT-76)',
-          funcion: 'Marco superior con tope de cierre',
+          funcion: 'Marco superior a medida de vano (Ancho)',
           pzas: 1 * qty,
           angulo: '90°',
           medidaCm: marcoH,
         },
         {
           perfilId: 'cerco',
-          nombre: 'Cerco Chapa (7847 / Verticales Hoja)',
-          funcion: 'Largueros de hoja abatible',
-          pzas: 2 * qty,
+          nombre: 'Cerco Chapa / Largueros (7847)',
+          funcion: `Largueros verticales ${esDobleHoja ? '2 hojas (4 pzas)' : '1 hoja (2 pzas)'} · Alto - ${adj.puertaLargueroAlto.toFixed(1)} cm`,
+          pzas: 2 * numHojasPuerta * qty,
           angulo: '90°',
           medidaCm: hojaV,
         },
         {
           perfilId: 'cabecero',
-          nombre: 'Cabecero de Hoja (7835)',
-          funcion: 'Horizontal superior de puerta',
-          pzas: 1 * qty,
+          nombre: 'Cabezal de Hoja (7835)',
+          funcion: esDobleHoja
+            ? `Horizontal sup. ×2 hojas ((Ancho - ${adj.puerta2HojasHorizAncho.toFixed(1)}) / 2)`
+            : `Horizontal sup. hoja (Ancho - ${adj.puerta1HojaHorizAncho.toFixed(1)} cm)`,
+          pzas: numHojasPuerta * qty,
           angulo: '90°',
           medidaCm: hojaH,
         },
         {
           perfilId: puertaEconomica ? 'zoclo1v' : 'zoclo2v',
-          nombre: puertaEconomica ? 'Zoclo 1V (7835-1V)' : 'Zoclo 2 Venas (7842)',
-          funcion: 'Horizontal inferior de hoja',
-          pzas: 1 * qty,
+          nombre: puertaEconomica ? 'Zoclo 1V (7835-1V)' : 'Zoclo Puerta 2 Venas (7842)',
+          funcion: `Horizontal inferior (${numHojasPuerta} hoja${numHojasPuerta > 1 ? 's' : ''})`,
+          pzas: numHojasPuerta * qty,
           angulo: '90°',
           medidaCm: hojaH,
         }
       );
-      if (puertaIntermedio) {
+      if (puertaIntermedio || rellenoEfectivo === 'mixta_duela') {
         perfiles.push({
           perfilId: 'alumer_9382',
           nombre: 'Peinazo Intermedio (9382)',
-          funcion: 'División central de puerta',
-          pzas: 1 * qty,
+          funcion: `División central (${numHojasPuerta} hoja${numHojasPuerta > 1 ? 's' : ''})`,
+          pzas: numHojasPuerta * qty,
           angulo: '90°',
           medidaCm: hojaH,
         });
       }
     }
 
-    const vidW = round1(Math.max(10, A - tolerancias.vidAncho));
-    const vidH = round1(
-      Math.max(10, puertaIntermedio ? (H - tolerancias.vidAlto) / 2 : H - tolerancias.vidAlto)
-    );
-    const vidPzas = (puertaIntermedio ? 2 : 1) * qty;
-    vidrios.push({
-      tipo: 'vidrio',
-      nombre: `Cristal Puerta (${vidLabel})`,
-      pzas: vidPzas,
-      anchoCm: vidW,
-      altoCm: vidH,
-      areaM2: round2(((vidW * vidH) / 10000) * vidPzas),
-      espesorLabel: vidLabel,
-    });
+    // Cálculo de vidrio y/o duela en puertas (con validación >= 5 cm para nunca dar valores negativos)
+    const anchoVidrioHoja = round1(Math.max(5, hojaH + adj.puertaVidrioExtraAncho));
+    const perfilHorizSumCm = linea === 'puerta-abatible' ? 13.1 : 12.4; // cabezal (~5.2) + zoclo (~7.9)
+    const peinazoCm = 4.2;
+    const altoLibreTotal = round1(Math.max(5, hojaV - perfilHorizSumCm));
+
+    if (rellenoEfectivo === 'ciega_duela') {
+      const tirasPorHoja = Math.max(1, Math.ceil(hojaH / duelaAncho));
+      const totalTiras = tirasPorHoja * numHojasPuerta * qty;
+      vidrios.push({
+        tipo: 'duela',
+        nombre: `Duela Aluminio 100% Ciega (${duelaAncho} cm útil · ${tirasPorHoja} tiras/hoja)`,
+        pzas: totalTiras,
+        anchoCm: round1(duelaAncho),
+        altoCm: altoLibreTotal,
+        areaM2: round2(((duelaAncho * altoLibreTotal) / 10000) * totalTiras),
+        espesorLabel: `Duela ${duelaAncho} cm (${totalTiras} tiras de ${altoLibreTotal} cm)`,
+        permitirRotacion: false,
+      });
+    } else if (rellenoEfectivo === 'mixta_duela') {
+      const altoMitad = round1(Math.max(5, (altoLibreTotal - peinazoCm) / 2));
+      const vidPzas = numHojasPuerta * qty;
+      vidrios.push({
+        tipo: 'vidrio',
+        nombre: `Cristal Superior Puerta (${vidLabel})`,
+        pzas: vidPzas,
+        anchoCm: anchoVidrioHoja,
+        altoCm: altoMitad,
+        areaM2: round2(((anchoVidrioHoja * altoMitad) / 10000) * vidPzas),
+        espesorLabel: vidLabel,
+      });
+      const tirasPorHoja = Math.max(1, Math.ceil(hojaH / duelaAncho));
+      const totalTiras = tirasPorHoja * numHojasPuerta * qty;
+      vidrios.push({
+        tipo: 'duela',
+        nombre: `Duela Inferior Puerta (${duelaAncho} cm útil · ${tirasPorHoja} tiras/hoja)`,
+        pzas: totalTiras,
+        anchoCm: round1(duelaAncho),
+        altoCm: altoMitad,
+        areaM2: round2(((duelaAncho * altoMitad) / 10000) * totalTiras),
+        espesorLabel: `Duela ${duelaAncho} cm (${totalTiras} tiras de ${altoMitad} cm)`,
+        permitirRotacion: false,
+      });
+    } else {
+      const vidH = round1(
+        Math.max(5, puertaIntermedio ? (altoLibreTotal - peinazoCm) / 2 : altoLibreTotal)
+      );
+      const vidPzas = (puertaIntermedio ? 2 : 1) * numHojasPuerta * qty;
+      vidrios.push({
+        tipo: 'vidrio',
+        nombre: `Cristal Puerta ${esDobleHoja ? 'Doble ' : ''}(${vidLabel})`,
+        pzas: vidPzas,
+        anchoCm: anchoVidrioHoja,
+        altoCm: vidH,
+        areaM2: round2(((anchoVidrioHoja * vidH) / 10000) * vidPzas),
+        espesorLabel: vidLabel,
+      });
+    }
+
+    const totalVidrioPerimetroM = vidrios
+      .filter((v) => v.tipo === 'vidrio')
+      .reduce((acc, v) => acc + ((v.anchoCm + v.altoCm) * 2 * v.pzas) / 100, 0);
 
     herrajes.push(
       {
         nombre: 'Bisagras reforzadas para puerta',
-        detalle: '3 bisagras libro o tubulares por puerta',
-        cantidad: 3 * qty,
+        detalle: `3 bisagras libro o tubulares por hoja (${numHojasPuerta} hoja${numHojasPuerta > 1 ? 's' : ''})`,
+        cantidad: 3 * numHojasPuerta * qty,
         unidad: 'pzas',
       },
       {
         nombre: 'Chapa / Cerradura de manija o pomo',
-        detalle: 'Incluye contra en batiente',
+        detalle: esDobleHoja ? 'Incluye chapa principal + pasadores de canto en hoja pasiva' : 'Incluye contra en batiente',
         cantidad: 1 * qty,
         unidad: 'jgo',
       },
       {
         nombre: 'Pijas armado #10 × 1 1/2" y #10 × 2"',
         detalle: 'Armado de zoclo, cabecero y marco',
-        cantidad: 18 * qty,
+        cantidad: (esDobleHoja ? 28 : 18) * qty,
         unidad: 'pzas',
       },
       {
         nombre: 'Vinil pata / cuña para cristal',
         detalle: 'Acristalamiento perimetral',
-        cantidad: round2(((vidW + vidH) * 2 * (puertaIntermedio ? 2 : 1)) / 100 * qty),
+        cantidad: round2(totalVidrioPerimetroM),
         unidad: 'm',
       }
     );
@@ -2417,73 +2616,198 @@ export function calcularDespiece(params: TrabajoParams): DespieceCalculado {
         }
       );
     } else {
-      // Corrediza estándar (3" Alumer, 2", Europea, Panorámica)
+      // Corrediza estándar con fórmulas exactas de taller (Línea 2", Línea 3", Europea)
       const numHojas = Math.max(2, Math.min(4, hojas || 2));
-      const hojaVert = round1(Math.max(15, H - tolerancias.hojaV));
-      const hojaHoriz = round1(
-        Math.max(15, (A - tolerancias.hojaH) / numHojas + (numHojas >= 2 ? 1.5 : 0))
-      );
+      const esL2 = linea === '2';
+      const esL3 = linea === '3';
+
+      const cabezalMed = esL2 || esL3 ? round1(A) : marcoHoriz;
+      const rielMed = esL2 || esL3 ? round1(A) : marcoHoriz;
+      const jambaMed = esL2
+        ? round1(Math.max(10, H - adj.l2JambaAlto))
+        : esL3
+          ? round1(Math.max(10, H - adj.l3JambaAlto))
+          : marcoVert;
+
+      const hojaFijaVert = esL2
+        ? round1(Math.max(10, H - adj.l2HojaFijaAlto))
+        : esL3
+          ? round1(Math.max(10, H - adj.l3HojaFijaAlto))
+          : round1(Math.max(10, H - tolerancias.hojaV));
+
+      const hojaCorrVert = esL2
+        ? round1(Math.max(10, H - adj.l2HojaCorredizaAlto))
+        : esL3
+          ? round1(Math.max(10, H - adj.l3HojaCorredizaAlto))
+          : round1(Math.max(10, H - tolerancias.hojaV));
+
+      let hojaHoriz: number;
+      let zocloFormulaNote: string;
+      if (esL2) {
+        if (numHojas === 3) {
+          hojaHoriz = round1(Math.max(10, (A - adj.l2Zoclo3HojasAncho) / 3));
+          zocloFormulaNote = `(Ancho - ${adj.l2Zoclo3HojasAncho.toFixed(1)}) / 3`;
+        } else if (numHojas === 4) {
+          const d4 = round1(adj.l2Zoclo3HojasAncho + 5.0);
+          hojaHoriz = round1(Math.max(10, (A - d4) / 4));
+          zocloFormulaNote = `(Ancho - ${d4.toFixed(1)}) / 4`;
+        } else {
+          hojaHoriz = round1(Math.max(10, (A - adj.l2Zoclo2HojasAncho) / 2));
+          zocloFormulaNote = `(Ancho - ${adj.l2Zoclo2HojasAncho.toFixed(1)}) / 2`;
+        }
+      } else if (esL3) {
+        if (numHojas === 3) {
+          hojaHoriz = round1(Math.max(10, (A - adj.l3Zoclo3HojasAncho) / 3));
+          zocloFormulaNote = `(Ancho - ${adj.l3Zoclo3HojasAncho.toFixed(1)}) / 3`;
+        } else if (numHojas === 4) {
+          const d4 = round1(adj.l3Zoclo3HojasAncho + 6.0);
+          hojaHoriz = round1(Math.max(10, (A - d4) / 4));
+          zocloFormulaNote = `(Ancho - ${d4.toFixed(1)}) / 4`;
+        } else {
+          hojaHoriz = round1(Math.max(10, (A - adj.l3Zoclo2HojasAncho) / 2));
+          zocloFormulaNote = `(Ancho - ${adj.l3Zoclo2HojasAncho.toFixed(1)}) / 2`;
+        }
+      } else {
+        hojaHoriz = round1(
+          Math.max(15, (A - tolerancias.hojaH) / numHojas + (numHojas >= 2 ? 1.5 : 0))
+        );
+        zocloFormulaNote = `Horizontales de ${numHojas} hojas`;
+      }
+
+      const hojasMoviles = dobleCorrediza
+        ? numHojas
+        : numHojas === 4
+          ? 2
+          : numHojas === 3 && params.invertido
+            ? 2
+            : 1;
+      const hojasFijas = Math.max(0, numHojas - hojasMoviles);
 
       perfiles.push(
         {
           perfilId: 'cabezal',
-          nombre: `Cabezal (${linea === '3' ? '7836' : linea.toUpperCase()})`,
-          funcion: 'Marco superior doble vía',
+          nombre: `Cabezal (${esL3 ? '7836' : linea.toUpperCase()})`,
+          funcion: esL2 || esL3 ? 'Marco superior (Ancho exacto)' : 'Marco superior doble vía',
           pzas: 1 * qty,
           angulo: es45 ? '45°' : '90°',
-          medidaCm: marcoHoriz,
+          medidaCm: cabezalMed,
         },
         {
           perfilId: 'riel',
-          nombre: `Riel (${linea === '3' ? '7857' : linea.toUpperCase()})`,
-          funcion: 'Marco inferior doble vía',
+          nombre: `Riel (${esL3 ? '7857' : linea.toUpperCase()})`,
+          funcion: esL2 || esL3 ? 'Marco inferior (Ancho exacto)' : 'Marco inferior doble vía',
           pzas: 1 * qty,
           angulo: es45 ? '45°' : '90°',
-          medidaCm: marcoHoriz,
+          medidaCm: rielMed,
         },
         {
           perfilId: 'jamba',
-          nombre: `Jamba (${linea === '3' ? '7825' : linea.toUpperCase()})`,
-          funcion: 'Marcos laterales verticales',
+          nombre: `Jamba (${esL3 ? '7825' : linea.toUpperCase()})`,
+          funcion: esL2
+            ? `Marcos laterales (Alto - ${adj.l2JambaAlto.toFixed(1)} cm)`
+            : esL3
+              ? `Marcos laterales (Alto - ${adj.l3JambaAlto.toFixed(1)} cm)`
+              : 'Marcos laterales verticales',
           pzas: 2 * qty,
           angulo: es45 ? '45°' : '90°',
-          medidaCm: marcoVert,
-        },
-        {
-          perfilId: 'cerco',
-          nombre: `Cerco (${linea === '3' ? '7847' : linea.toUpperCase()})`,
-          funcion: 'Vertical exterior de hojas',
-          pzas: 2 * qty,
-          angulo: es45 ? '45°' : '90°',
-          medidaCm: hojaVert,
-        },
-        {
-          perfilId: 'traslape',
-          nombre: `Traslape (${linea === '3' ? '7848' : linea.toUpperCase()})`,
-          funcion: 'Vertical cruce entre hojas',
-          pzas: (numHojas === 2 ? 2 : numHojas === 3 ? 4 : 6) * qty,
-          angulo: es45 ? '45°' : '90°',
-          medidaCm: hojaVert,
-        },
+          medidaCm: jambaMed,
+        }
+      );
+
+      if (esL3 && dobleCorrediza) {
+        perfiles.push({
+          perfilId: 'alumer_7828',
+          nombre: 'Riel Adicional (7828)',
+          funcion: `Doble corrediza 3" (Ancho - ${adj.l3RielAdicionalAncho.toFixed(1)} cm)`,
+          pzas: 1 * qty,
+          angulo: '90°',
+          medidaCm: round1(Math.max(10, A - adj.l3RielAdicionalAncho)),
+        });
+      }
+
+      if (esL2 || esL3) {
+        // Verticales diferenciados: Hoja Fija vs Hoja Corrediza
+        if (hojasFijas > 0) {
+          perfiles.push(
+            {
+              perfilId: 'cerco',
+              nombre: `Cerco Hoja Fija (${esL3 ? '7847' : '2"'})`,
+              funcion: `Hoja fija · Alto - ${(esL2 ? adj.l2HojaFijaAlto : adj.l3HojaFijaAlto).toFixed(1)} cm`,
+              pzas: hojasFijas * qty,
+              angulo: '90°',
+              medidaCm: hojaFijaVert,
+            },
+            {
+              perfilId: 'traslape',
+              nombre: `Traslape Hoja Fija (${esL3 ? '7848' : '2"'})`,
+              funcion: `Encuentro hoja fija · Alto - ${(esL2 ? adj.l2HojaFijaAlto : adj.l3HojaFijaAlto).toFixed(1)} cm`,
+              pzas: hojasFijas * qty,
+              angulo: '90°',
+              medidaCm: hojaFijaVert,
+            }
+          );
+        }
+        if (hojasMoviles > 0) {
+          perfiles.push(
+            {
+              perfilId: 'cerco',
+              nombre: `Cerco Hoja Corrediza (${esL3 ? '7847' : '2"'})`,
+              funcion: `Hoja corrediza · Alto - ${(esL2 ? adj.l2HojaCorredizaAlto : adj.l3HojaCorredizaAlto).toFixed(1)} cm`,
+              pzas: hojasMoviles * qty,
+              angulo: '90°',
+              medidaCm: hojaCorrVert,
+            },
+            {
+              perfilId: 'traslape',
+              nombre: `Traslape Hoja Corrediza (${esL3 ? '7848' : '2"'})`,
+              funcion: `Encuentro hoja corrediza · Alto - ${(esL2 ? adj.l2HojaCorredizaAlto : adj.l3HojaCorredizaAlto).toFixed(1)} cm`,
+              pzas: (numHojas === 3 ? hojasMoviles + 1 : hojasMoviles) * qty,
+              angulo: '90°',
+              medidaCm: hojaCorrVert,
+            }
+          );
+        }
+      } else {
+        perfiles.push(
+          {
+            perfilId: 'cerco',
+            nombre: `Cerco (${linea.toUpperCase()})`,
+            funcion: 'Vertical exterior de hojas',
+            pzas: 2 * qty,
+            angulo: es45 ? '45°' : '90°',
+            medidaCm: hojaCorrVert,
+          },
+          {
+            perfilId: 'traslape',
+            nombre: `Traslape (${linea.toUpperCase()})`,
+            funcion: 'Vertical cruce entre hojas',
+            pzas: (numHojas === 2 ? 2 : numHojas === 3 ? 4 : 6) * qty,
+            angulo: es45 ? '45°' : '90°',
+            medidaCm: hojaCorrVert,
+          }
+        );
+      }
+
+      perfiles.push(
         {
           perfilId: 'cabecero',
-          nombre: `Zoclo / Cabecero (${linea === '3' ? '7835' : linea.toUpperCase()})`,
-          funcion: `Horizontales superior de ${numHojas} hojas`,
+          nombre: `Cabezal de Hoja (${esL3 ? '7835' : linea.toUpperCase()})`,
+          funcion: `${zocloFormulaNote} · ${numHojas} hojas`,
           pzas: numHojas * qty,
           angulo: es45 ? '45°' : '90°',
           medidaCm: hojaHoriz,
         },
         {
           perfilId: 'zoclo2v',
-          nombre: `Zoclo Inferior (${linea === '3' ? '7842' : linea.toUpperCase()})`,
-          funcion: `Inferior reforzado de ${numHojas} hojas`,
+          nombre: `Zoclo Inferior (${esL3 ? '7842' : linea.toUpperCase()})`,
+          funcion: `${zocloFormulaNote} · ${numHojas} hojas`,
           pzas: numHojas * qty,
           angulo: es45 ? '45°' : '90°',
           medidaCm: hojaHoriz,
         }
       );
 
-      if (H >= 165 && linea === '3') {
+      if (H >= 165 && esL3) {
         perfiles.push({
           perfilId: 'alumer_9382',
           nombre: 'Intermedio (9382)',
@@ -2494,8 +2818,8 @@ export function calcularDespiece(params: TrabajoParams): DespieceCalculado {
         });
       }
 
-      const vidW = round1(Math.max(10, hojaHoriz - tolerancias.vidAncho + 2.0));
-      const vidH = round1(Math.max(10, H - tolerancias.vidAlto));
+      const vidW = round1(Math.max(10, hojaHoriz + 1.4));
+      const vidH = round1(Math.max(10, hojaCorrVert - (esL2 ? 10.5 : 12.5)));
       const vidPzas = numHojas * qty;
       vidrios.push({
         tipo: 'vidrio',
@@ -2507,7 +2831,6 @@ export function calcularDespiece(params: TrabajoParams): DespieceCalculado {
         espesorLabel: vidLabel,
       });
 
-      const hojasMoviles = numHojas === 4 ? 2 : 1;
       if (es45) {
         escuadrasCount = (4 + 4 * numHojas) * qty;
         herrajes.push({
@@ -2519,7 +2842,7 @@ export function calcularDespiece(params: TrabajoParams): DespieceCalculado {
       }
       herrajes.push(
         {
-          nombre: linea === '3' ? 'Carretilla doble/tándem 3"' : `Carretilla ${LINEAS_CONFIG[linea].nombre}`,
+          nombre: esL3 ? 'Carretilla doble/tándem 3"' : `Carretilla ${LINEAS_CONFIG[linea].nombre}`,
           detalle: '2 por cada hoja corrediza',
           cantidad: 2 * hojasMoviles * qty,
           unidad: 'pzas',
@@ -2533,7 +2856,7 @@ export function calcularDespiece(params: TrabajoParams): DespieceCalculado {
         {
           nombre: 'Felpa guardapolvo',
           detalle: 'Perímetro de traslapes y cercos',
-          cantidad: round2(((hojaVert * (numHojas * 2)) / 100) * qty),
+          cantidad: round2(((hojaCorrVert * (numHojas * 2)) / 100) * qty),
           unidad: 'm',
         },
         {
@@ -2995,6 +3318,7 @@ export function consolidarMaterialesObra(
   >();
 
   for (const item of partidas) {
+    if (!item?.despiece || !Array.isArray(item.despiece.perfiles)) continue;
     for (const p of item.despiece.perfiles) {
       const key = `${item.linea}__${p.perfilId}__${item.color}`;
       const prev = map.get(key);
@@ -3192,6 +3516,9 @@ export interface CloudDeviceRecord {
   tallerNombre?: string;
   tallerResponsable?: string;
   tallerWhatsapp?: string;
+  termsAcceptedAt?: number | null;
+  preferredTheme?: 'dark' | 'light';
+  preferredSkin?: 'basica' | 'ejecutiva' | 'industrial';
 }
 
 export const PROMO_COLEGA_ALREADY_USED_ERROR =
@@ -3665,14 +3992,35 @@ export function parseReferralFromSearch(search: string): ParsedColleagueReferral
   }
 }
 
+export interface ColleaguePromoTallerMeta {
+  tallerNombre?: string;
+  tallerTel?: string;
+  referredById?: string | null;
+}
+
 export function buildColleaguePromoWhatsappMessage(
   refName: string,
   deviceId: string,
-  promoNumber: number
+  promoNumber: number,
+  tallerMeta?: ColleaguePromoTallerMeta
 ): string {
   const cleanRef = sanitizeReferralSenderName(refName) || 'Un colega';
   const cleanDev = String(deviceId || '').trim().toUpperCase() || 'SIN-ID';
   const safePromo = Math.max(1, Math.round(Number(promoNumber) || 1));
+
+  if (tallerMeta && (tallerMeta.tallerNombre || tallerMeta.tallerTel || tallerMeta.referredById)) {
+    const tName = String(tallerMeta.tallerNombre || '').trim() || 'Mi Taller';
+    const tTel = formatMxPhoneDashed(String(tallerMeta.tallerTel || '')) || String(tallerMeta.tallerTel || '').trim() || 'Sin teléfono';
+    const refIdPart = tallerMeta.referredById ? `${tallerMeta.referredById} · ` : '';
+    return [
+      'Hola, solicito mi clave de prueba de 3 días (Promoción Colega) para Aluminero Pro.',
+      `Taller / Cliente: ${tName}`,
+      `WhatsApp: ${tTel}`,
+      `ID de equipo: ${cleanDev}`,
+      `Invitado por: ${cleanRef} (${refIdPart}Promo #${safePromo})`,
+    ].join('\n');
+  }
+
   return `Hola, me llegó este mensaje de un colega (${cleanRef}) para probar Aluminero Pro. Mi ID de equipo es: ${cleanDev} (Promoción enviada #${safePromo}). ¿Me compartes mi código de 3 días gratis?`;
 }
 
@@ -3680,7 +4028,8 @@ export function buildColleaguePromoWhatsappUrl(
   whatsappDigitsRaw: string,
   refName: string,
   deviceId: string,
-  promoNumber: number
+  promoNumber: number,
+  tallerMeta?: ColleaguePromoTallerMeta
 ): string {
   const digits = String(whatsappDigitsRaw || '').replace(/\D+/g, '');
   const fullNumber =
@@ -3689,7 +4038,7 @@ export function buildColleaguePromoWhatsappUrl(
       : digits.length > 10
         ? digits
         : '';
-  const msg = buildColleaguePromoWhatsappMessage(refName, deviceId, promoNumber);
+  const msg = buildColleaguePromoWhatsappMessage(refName, deviceId, promoNumber, tallerMeta);
   return fullNumber
     ? `https://wa.me/${fullNumber}?text=${encodeURIComponent(msg)}`
     : `https://wa.me/?text=${encodeURIComponent(msg)}`;
@@ -4596,6 +4945,324 @@ export function computeAssistantDailyQuotaState(
     canSend: remaining > 0,
   };
 }
+
+// ==================== FORMATO TELÉFONO XXX-XXX-XX-XX ====================
+export function formatMxPhoneDashed(rawValue: string, previousFormatted?: string): string {
+  let digits = String(rawValue || '').replace(/\D/g, '').slice(0, 10);
+
+  if (
+    previousFormatted !== undefined &&
+    String(rawValue || '').length < previousFormatted.length &&
+    digits === previousFormatted.replace(/\D/g, '').slice(0, 10) &&
+    digits.length > 0
+  ) {
+    digits = digits.slice(0, -1);
+  }
+
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 6) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+  if (digits.length <= 8) return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+  return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6, 8)}-${digits.slice(8, 10)}`;
+}
+
+// ==================== BADGE SUPERIOR DE ESTADO + CUENTA REGRESIVA ====================
+export interface LicenseCountdownBadgeResult {
+  text: string;
+  isPro: boolean;
+  isTrial: boolean;
+  days: number;
+  hours: number;
+}
+
+export function formatLicenseCountdownBadge(
+  licencia: { active: boolean; planCode?: string; planLabel?: string; expiresAt: number | null } | null | undefined,
+  trialExpiresAt: number | null | undefined,
+  nowTs: number = Date.now()
+): LicenseCountdownBadgeResult {
+  if (licencia?.active) {
+    if (licencia.expiresAt === null) {
+      return { text: 'PRO · Vitalicia', isPro: true, isTrial: false, days: 9999, hours: 0 };
+    }
+    if (licencia.expiresAt > nowTs) {
+      const remMs = Math.max(0, licencia.expiresAt - nowTs);
+      const totalHours = Math.floor(Math.max(0, remMs - 1) / (60 * 60 * 1000));
+      const days = Math.floor(totalHours / 24);
+      const hours = totalHours % 24;
+      const code = String(licencia.planCode || '').trim().toUpperCase();
+      const shortPlan =
+        code === 'A'
+          ? '1 Año'
+          : code === 'Q'
+            ? '90d'
+            : code === 'M'
+              ? '30d'
+              : code === 'G'
+                ? '3d'
+                : /^D\d+$/i.test(code)
+                  ? `${code.slice(1)}d`
+                  : '';
+      return {
+        text: shortPlan ? `PRO · ${shortPlan} · ${days}d ${hours}h` : `PRO · ${days}d ${hours}h`,
+        isPro: true,
+        isTrial: code === 'G' || code === 'D3',
+        days,
+        hours,
+      };
+    }
+  }
+
+  if (typeof trialExpiresAt === 'number' && trialExpiresAt > nowTs) {
+    const remMs = Math.max(0, trialExpiresAt - nowTs);
+    const totalHours = Math.floor(Math.max(0, remMs - 1) / (60 * 60 * 1000));
+    const days = Math.floor(totalHours / 24);
+    const hours = totalHours % 24;
+    return {
+      text: `Prueba PRO · ${days}d ${hours}h`,
+      isPro: true,
+      isTrial: true,
+      days,
+      hours,
+    };
+  }
+
+  return {
+    text: 'Versión Gratuita',
+    isPro: false,
+    isTrial: false,
+    days: 0,
+    hours: 0,
+  };
+}
+
+// ==================== PARSER 1-CLIC DE SOLICITUD WHATSAPP (ADMIN) ====================
+export interface ParsedWhatsappKeyRequest {
+  cliente: string;
+  telefono: string;
+  telefonoDigits: string;
+  deviceId: string;
+  planCode: 'G' | 'M' | 'Q' | 'A';
+  planIdx: number;
+  hasValidDeviceId: boolean;
+}
+
+export function parseWhatsappKeyRequestMessage(raw: string): ParsedWhatsappKeyRequest {
+  const text = String(raw || '').trim();
+  const idMatch = text.match(/\b(ALM-[A-Z0-9]{3,12})\b/i);
+  const deviceId = idMatch ? idMatch[1].toUpperCase() : '';
+
+  const clientMatch = text.match(
+    /(?:taller\s*\/\s*cliente|taller|cliente|nombre)\s*:\s*([^\n\r]+)/i
+  );
+  const cliente = clientMatch ? clientMatch[1].trim().slice(0, 80) : '';
+
+  const phoneLineMatch = text.match(
+    /(?:whatsapp|tel[eé]fono|tel\.?|cel(?:ular)?)\s*:\s*([^\n\r]+)/i
+  );
+  let phoneDigits = '';
+  if (phoneLineMatch) {
+    const cleaned = phoneLineMatch[1].replace(/\D/g, '');
+    phoneDigits = cleaned.length > 10 && cleaned.startsWith('52')
+      ? cleaned.slice(-10)
+      : cleaned.slice(0, 10);
+  } else {
+    const anyTen = text.match(/(?<!\d)(\d{3}[-\s]?\d{3}[-\s]?\d{2}[-\s]?\d{2}|\d{10})(?!\d)/);
+    if (anyTen) {
+      phoneDigits = anyTen[1].replace(/\D/g, '').slice(0, 10);
+    }
+  }
+  const telefono = phoneDigits ? formatMxPhoneDashed(phoneDigits) : '';
+
+  const lower = text.toLowerCase();
+  let planCode: 'G' | 'M' | 'Q' | 'A' = 'M';
+  let planIdx = 1;
+  if (/promoci[oó]n\s*colega|promo\s*colega|3\s*d[ií]as|prueba\s*de\s*3|regalo/.test(lower)) {
+    planCode = 'G';
+    planIdx = 0;
+  } else if (/1\s*a[ñn]o|365\s*d[ií]as|anual/.test(lower)) {
+    planCode = 'A';
+    planIdx = 3;
+  } else if (/90\s*d[ií]as|trimestral/.test(lower)) {
+    planCode = 'Q';
+    planIdx = 2;
+  } else if (/30\s*d[ií]as|mensual/.test(lower)) {
+    planCode = 'M';
+    planIdx = 1;
+  }
+
+  return {
+    cliente,
+    telefono,
+    telefonoDigits: phoneDigits,
+    deviceId,
+    planCode,
+    planIdx,
+    hasValidDeviceId: Boolean(deviceId),
+  };
+}
+
+export function buildAdminWelcomeMessage(params: {
+  cliente: string;
+  deviceId: string;
+  planCode: string;
+  planLabel: string;
+  dias: number | null;
+}): string {
+  const nombre = String(params.cliente || '').split('·')[0].trim() || 'Colega';
+  const isColleague = isColleaguePromoPlan(params.planCode, params.dias);
+  if (isColleague) {
+    return [
+      `¡Hola ${nombre}! 👋 Bienvenido a *Aluminero Pro*.`,
+      `Aquí tienes tu *Regalo de 3 días PRO* por invitación de un colega para tu equipo *${params.deviceId}*.`,
+      '',
+      'En el siguiente mensaje te envío *únicamente tu clave* para que solo la copies y la pegues directo en la app (Menú → Activar PRO).',
+      '¡Mucho éxito en tus cotizaciones y cortes! 🛠️',
+    ].join('\n');
+  }
+  const diasLabel = params.dias ? `${params.dias} días` : params.planLabel;
+  return [
+    `¡Hola ${nombre}! 👋 Gracias por activar *Aluminero Pro* (${params.planLabel || diasLabel}).`,
+    `Tu licencia PRO quedó ligada a tu ID de equipo *${params.deviceId}*.`,
+    '',
+    'En el siguiente mensaje te envío *únicamente tu clave de activación* para que la copies con un toque y la pegues directo en la app (Menú → Activar PRO).',
+    '¡Gracias por tu confianza! 🛠️',
+  ].join('\n');
+}
+
+export function buildWhatsAppDirectUrl(phoneRaw: string, message: string): string {
+  const digits = String(phoneRaw || '').replace(/\D+/g, '');
+  const fullNumber =
+    digits.length === 10
+      ? `52${digits}`
+      : digits.length > 10
+        ? digits
+        : '';
+  return fullNumber
+    ? `https://wa.me/${fullNumber}?text=${encodeURIComponent(message)}`
+    : `https://wa.me/?text=${encodeURIComponent(message)}`;
+}
+
+// ==================== PRECIOS DE REFERENCIA Y AJUSTE MASIVO (%) ====================
+export type ReferencePriceCategory = 'aluminio' | 'vidrio' | 'herrajes';
+
+export interface ReferencePriceItem {
+  id: string;
+  categoria: ReferencePriceCategory;
+  nombre: string;
+  unidad: string;
+  precioSugerido: number;
+  lineaId?: LineaId;
+  rellenoKey?: string;
+}
+
+export interface ReferencePricesDoc {
+  updatedAt: number;
+  updatedLabel: string;
+  nota: string;
+  items: ReferencePriceItem[];
+}
+
+export const DEFAULT_REFERENCE_PRICES: ReferencePricesDoc = {
+  updatedAt: Date.now(),
+  updatedLabel: 'Actualizado esta semana',
+  nota: 'Valores promedio de referencia. Verifica con tu proveedor local antes de confirmar.',
+  items: [
+    { id: 'ref-alu-tramo', categoria: 'aluminio', nombre: 'Tramo Aluminio 6.10 m (Precio Lista Prom.)', unidad: 'tramo', precioSugerido: 890 },
+    { id: 'ref-alu-l3', categoria: 'aluminio', nombre: 'Ventana Línea Nacional 3" (Tarifa m²)', unidad: 'm²', precioSugerido: 2950, lineaId: '3' },
+    { id: 'ref-alu-l2', categoria: 'aluminio', nombre: 'Ventana Línea 2" Tradicional (Tarifa m²)', unidad: 'm²', precioSugerido: 2350, lineaId: '2' },
+    { id: 'ref-alu-eu', categoria: 'aluminio', nombre: 'Ventana Línea Europea (Tarifa m²)', unidad: 'm²', precioSugerido: 4250, lineaId: 'europea' },
+    { id: 'ref-alu-pb', categoria: 'aluminio', nombre: 'Puerta Batiente Alumer (Tarifa m²)', unidad: 'm²', precioSugerido: 4050, lineaId: 'puerta-abatible' },
+    { id: 'ref-alu-cb', categoria: 'aluminio', nombre: 'Cancel de Baño Semilujo (Tarifa m²)', unidad: 'm²', precioSugerido: 2550, lineaId: 'cancel-bano' },
+    { id: 'ref-vid-c4', categoria: 'vidrio', nombre: 'Vidrio Claro 4 mm', unidad: 'm²', precioSugerido: 310, rellenoKey: 'flot-claro__4' },
+    { id: 'ref-vid-c6', categoria: 'vidrio', nombre: 'Vidrio Claro 6 mm', unidad: 'm²', precioSugerido: 460, rellenoKey: 'flot-claro__6' },
+    { id: 'ref-vid-f6', categoria: 'vidrio', nombre: 'Vidrio Filtrasol 6 mm', unidad: 'm²', precioSugerido: 750, rellenoKey: 'flot-filtrasol__6' },
+    { id: 'ref-vid-t6', categoria: 'vidrio', nombre: 'Vidrio Tintex Verde 6 mm', unidad: 'm²', precioSugerido: 790, rellenoKey: 'flot-tintex__6' },
+    { id: 'ref-vid-temp9', categoria: 'vidrio', nombre: 'Vidrio Templado Claro 9.5 mm', unidad: 'm²', precioSugerido: 1520, rellenoKey: 'temp-claro__9.5' },
+    { id: 'ref-her-carr3', categoria: 'herrajes', nombre: 'Carretilla doble/tándem 3"', unidad: 'pza', precioSugerido: 85 },
+    { id: 'ref-her-jal', categoria: 'herrajes', nombre: 'Jaladera / Seguro automático', unidad: 'pza', precioSugerido: 110 },
+    { id: 'ref-her-chapa', categoria: 'herrajes', nombre: 'Cerradura de manija residencial', unidad: 'jgo', precioSugerido: 480 },
+    { id: 'ref-her-bis', categoria: 'herrajes', nombre: 'Bisagra reforzada para puerta', unidad: 'pza', precioSugerido: 95 },
+  ],
+};
+
+export function applyBulkPriceAdjustment(params: {
+  category: 'aluminio' | 'vidrio' | 'herrajes' | 'todo';
+  pct: number;
+  precioListaTramo: number;
+  tarifasBase: Partial<Record<LineaId, number>>;
+  rellenoPreciosM2: Record<string, number>;
+  herrajesPrecios: Record<string, number>;
+}): {
+  precioListaTramo: number;
+  tarifasBase: Partial<Record<LineaId, number>>;
+  rellenoPreciosM2: Record<string, number>;
+  herrajesPrecios: Record<string, number>;
+  updatedCount: number;
+} {
+  const safePct = Math.max(-80, Math.min(200, Number(params.pct) || 0));
+  const factor = 1 + safePct / 100;
+  let updatedCount = 0;
+
+  let nextTramo = params.precioListaTramo;
+  const nextTarifas: Partial<Record<LineaId, number>> = { ...params.tarifasBase };
+  const nextRellenos: Record<string, number> = { ...params.rellenoPreciosM2 };
+  const nextHerrajes: Record<string, number> = { ...params.herrajesPrecios };
+
+  if (params.category === 'aluminio' || params.category === 'todo') {
+    nextTramo = Math.max(10, Math.round(params.precioListaTramo * factor));
+    updatedCount += 1;
+    (Object.keys(LINEAS_CONFIG) as LineaId[]).forEach((lid) => {
+      const current = nextTarifas[lid] ?? LINEAS_CONFIG[lid].tarifaBaseDefault;
+      nextTarifas[lid] = Math.max(10, Math.round(current * factor));
+      updatedCount += 1;
+    });
+  }
+
+  if (params.category === 'vidrio' || params.category === 'todo') {
+    for (const item of PANEL_RELLENO_CATALOGO) {
+      for (const esp of item.espesoresMm) {
+        const key = getRellenoPriceKey(item.id, esp);
+        const baseVal =
+          typeof nextRellenos[key] === 'number'
+            ? nextRellenos[key]
+            : item.espesorPreciosM2?.[esp] ?? item.precioBaseM2;
+        nextRellenos[key] = Math.max(10, Math.round(baseVal * factor));
+        updatedCount += 1;
+      }
+    }
+  }
+
+  if (params.category === 'herrajes' || params.category === 'todo') {
+    const defaultHerrajes = DEFAULT_REFERENCE_PRICES.items.filter((i) => i.categoria === 'herrajes');
+    for (const h of defaultHerrajes) {
+      const cur = typeof nextHerrajes[h.id] === 'number' ? nextHerrajes[h.id] : h.precioSugerido;
+      nextHerrajes[h.id] = Math.max(5, Math.round(cur * factor));
+      updatedCount += 1;
+    }
+  }
+
+  return {
+    precioListaTramo: nextTramo,
+    tarifasBase: nextTarifas,
+    rellenoPreciosM2: nextRellenos,
+    herrajesPrecios: nextHerrajes,
+    updatedCount,
+  };
+}
+
+// ==================== MENSAJES / AVISOS DEL ADMINISTRADOR ====================
+export type AdminMessageType = 'aviso' | 'promo' | 'soporte';
+
+export interface AdminMessageItem {
+  id: string;
+  titulo: string;
+  cuerpo: string;
+  tipo: AdminMessageType;
+  targetMode: 'all' | 'individual';
+  targetDeviceId?: string;
+  targetLabel?: string;
+  createdAt: number;
+}
+
 
 
 

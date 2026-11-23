@@ -28,6 +28,33 @@
   --radius: 18px;
   --font-sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Global Theme Tokens (Light Mode Default) */
+  --bg-app: #F1F5F9;
+  --bg-card: #FFFFFF;
+  --bg-input: #FFFFFF;
+  --text-main: #0F172A;
+  --text-muted-app: #475569;
+  --border-card: #CBD5E1;
+  --accent-primary: #2563EB;
+  --accent-secondary: #059669;
+}
+
+html[data-theme="dark"],
+html[data-color-mode="dark"] {
+  --bg-app: #07131B;
+  --bg-card: #0F2230;
+  --bg-input: #0B1924;
+  --text-main: #FFFFFF;
+  --text-muted-app: #B0C4D4;
+  --border-card: rgba(74, 96, 114, 0.72);
+  --accent-primary: #38BDF8;
+  --accent-secondary: #10B981;
+}
+
+html[data-skin="industrial"] {
+  --accent-primary: #10B981;
+  --accent-secondary: #059669;
 }
 
 * { box-sizing: border-box; }
@@ -46,8 +73,8 @@ html {
 body {
   margin: 0;
   min-height: 100vh;
-  background: var(--navy-deep);
-  color: var(--text-light);
+  background: var(--bg-app);
+  color: var(--text-main);
   -webkit-font-smoothing: antialiased;
   padding-bottom: 36px;
   overscroll-behavior-x: none;
@@ -1889,11 +1916,14 @@ html[data-skin="basica"][data-theme="dark"] #root {
 }
 
 .metal-brand-text {
-  background: linear-gradient(180deg, #F6E9D0 0%, #D9C6A2 52%, #B5A17D 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.65));
+  color: #FFFFFF;
+  text-shadow: 0 1px 10px rgba(56, 189, 248, 0.28), 0 1px 2px rgba(0, 0, 0, 0.55);
+}
+
+html[data-theme="light"] .metal-brand-text,
+html[data-color-mode="light"] .metal-brand-text {
+  color: #0F172A;
+  text-shadow: none;
 }
 
 .metal-icon-btn {
@@ -2089,245 +2119,603 @@ html[data-theme="dark"] #view-menu .menu-card-sub {
   }
 }
 
-/* 2. EJECUTIVA AZUL (INTERMEDIA) - PRO 30d / 90d */
+/* ==================== SISTEMA GLOBAL DE 3 CARÁTULAS + SUB-VARIANTES ==================== */
+
+/* 1. CARÁTULA BÁSICA — MODO CLARO (DÍA) */
+html[data-skin="basica"][data-theme="light"],
+html[data-skin="basica"][data-theme="light"] body,
+html[data-skin="basica"][data-theme="light"] #root,
+html[data-theme="light"],
+html[data-theme="light"] body,
+html[data-theme="light"] #root {
+  background-color: #F8FAFC !important;
+  background-image: linear-gradient(180deg, #F8FAFC 0%, #F1F5F9 100%) !important;
+  color: #0F172A !important;
+}
+
+html[data-skin="basica"][data-theme="light"] header,
+html[data-skin="basica"][data-theme="light"] .metal-topbar-dark,
+html[data-theme="light"] header,
+html[data-theme="light"] .metal-topbar-dark {
+  background: rgba(255, 255, 255, 0.97) !important;
+  border-bottom: 1.5px solid #CBD5E1 !important;
+  box-shadow: 0 3px 14px rgba(15, 23, 42, 0.06) !important;
+  color: #0F172A !important;
+}
+
+html[data-theme="light"] .metal-icon-btn {
+  background: #F1F5F9 !important;
+  border: 1px solid #CBD5E1 !important;
+  color: #0F172A !important;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.05) !important;
+}
+html[data-theme="light"] .metal-icon-btn:hover {
+  background: #E2E8F0 !important;
+  border-color: #94A3B8 !important;
+}
+
+html[data-theme="light"] #drawer-panel-surface {
+  background: #FFFFFF !important;
+  border-left: 1.5px solid #CBD5E1 !important;
+  color: #0F172A !important;
+}
+
+html[data-theme="light"] #view-menu h1,
+html[data-theme="light"] #view-menu h2 {
+  color: #0F172A !important;
+  text-shadow: none !important;
+}
+
+html[data-theme="light"] #lev-entry {
+  background: #FFFFFF !important;
+  border: 2px solid #F97316 !important;
+  box-shadow: 0 6px 18px rgba(249, 115, 22, 0.14) !important;
+  color: #0F172A !important;
+}
+html[data-theme="light"] #lev-entry small {
+  color: #475569 !important;
+}
+
+html[data-theme="light"] #view-menu .menu-hero-card,
+html[data-theme="light"] #view-menu .metal-hero-card {
+  background: #1D4ED8 !important;
+  border: 1.5px solid #1E40AF !important;
+  box-shadow: 0 10px 26px rgba(29, 78, 216, 0.24) !important;
+  color: #FFFFFF !important;
+}
+html[data-theme="light"] #view-menu .menu-hero-card p {
+  color: #DBEAFE !important;
+}
+
+html[data-theme="light"] #view-menu .menu-grid-card,
+html[data-theme="light"] #view-menu .metal-grid-card {
+  background: #FFFFFF !important;
+  border: 1.5px solid #E2E8F0 !important;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06) !important;
+  color: #0F172A !important;
+}
+html[data-theme="light"] #view-menu .menu-grid-card .menu-card-sub {
+  color: #475569 !important;
+}
+
+html[data-theme="light"] #view-menu .menu-icon-box {
+  background: #EFF6FF !important;
+  border: 1px solid #BFDBFE !important;
+  color: #1D4ED8 !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="light"] .metal-bronze-free-badge {
+  background: #ECFDF5 !important;
+  border: 1px solid #6EE7B7 !important;
+  color: #065F46 !important;
+  box-shadow: none !important;
+}
+html[data-theme="light"] .metal-gold-pro-badge {
+  background: #EFF6FF !important;
+  border: 1px solid #93C5FD !important;
+  color: #1D4ED8 !important;
+  box-shadow: none !important;
+}
+html[data-theme="light"] .metal-colleague-banner {
+  background: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%) !important;
+  border: 1.5px solid #34D399 !important;
+  box-shadow: 0 6px 18px rgba(16, 185, 129, 0.14) !important;
+  color: #064E3B !important;
+}
+
+html[data-theme="light"] #lev-root .shell {
+  background: #F8FAFC !important;
+  border: 1px solid #CBD5E1 !important;
+  color: #0F172A !important;
+}
+html[data-theme="light"] #lev-root .card {
+  background: #FFFFFF !important;
+  border: 1px solid #CBD5E1 !important;
+  color: #0F172A !important;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06) !important;
+}
+html[data-theme="light"] #lev-root input,
+html[data-theme="light"] #lev-root select,
+html[data-theme="light"] #lev-root textarea {
+  background: #FFFFFF !important;
+  border-color: #CBD5E1 !important;
+  color: #0F172A !important;
+}
+
+/* 1B. CARÁTULA BÁSICA — MODO OSCURO (NOCHE: #0B1120 / #131C31) */
+html[data-skin="basica"][data-theme="dark"],
+html[data-skin="basica"][data-theme="dark"] body,
+html[data-skin="basica"][data-theme="dark"] #root {
+  background-color: #0B1120 !important;
+  background-image: linear-gradient(180deg, #0B1120 0%, #090E1B 100%) !important;
+  color: #F8FAFC !important;
+}
+html[data-skin="basica"][data-theme="dark"] header {
+  background: rgba(15, 23, 42, 0.96) !important;
+  border-bottom: 1.5px solid rgba(51, 65, 85, 0.9) !important;
+}
+html[data-skin="basica"][data-theme="dark"] #lev-entry {
+  background: #131C31 !important;
+  border: 1.5px solid #F97316 !important;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45) !important;
+  color: #FFFFFF !important;
+}
+html[data-skin="basica"][data-theme="dark"] #view-menu .menu-hero-card,
+html[data-skin="basica"][data-theme="dark"] #view-menu .metal-hero-card {
+  background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%) !important;
+  border: 1.5px solid #3B82F6 !important;
+  box-shadow: 0 12px 28px rgba(29, 78, 216, 0.32) !important;
+  color: #FFFFFF !important;
+}
+html[data-skin="basica"][data-theme="dark"] #view-menu .menu-grid-card,
+html[data-skin="basica"][data-theme="dark"] #view-menu .metal-grid-card {
+  background: #131C31 !important;
+  border: 1.5px solid rgba(71, 85, 105, 0.65) !important;
+  box-shadow: 0 6px 16px rgba(2, 6, 23, 0.5) !important;
+  color: #F8FAFC !important;
+}
+
+/* ============================================================================
+   2. CARÁTULA EJECUTIVA (PRO 30d & 90d) — METÁLICA CON TEXTURA LINEAL SUTIL
+   Sub-variante por defecto: AZUL (#071324, #38BDF8, #F59E0B)
+   ============================================================================ */
 html[data-skin="ejecutiva"],
 html[data-skin="ejecutiva"] body,
 html[data-skin="ejecutiva"] #root {
-  background-color: #061024 !important;
+  background-color: #071324 !important;
   background-image:
-    radial-gradient(ellipse 85% 50% at 50% -10%, rgba(56, 189, 248, 0.18), transparent 65%),
-    radial-gradient(circle at 90% 88%, rgba(217, 119, 6, 0.1), transparent 45%),
-    linear-gradient(180deg, #07152e 0%, #050d1e 100%) !important;
+    repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.018) 0px, rgba(255, 255, 255, 0.018) 1px, transparent 1px, transparent 7px),
+    radial-gradient(ellipse 85% 50% at 50% -10%, rgba(56, 189, 248, 0.22), transparent 65%),
+    radial-gradient(circle at 90% 88%, rgba(245, 158, 11, 0.13), transparent 45%),
+    linear-gradient(180deg, #071324 0%, #050C18 100%) !important;
   background-attachment: fixed !important;
+  color: #F8FAFC !important;
 }
 
-html[data-skin="ejecutiva"] header {
-  background: linear-gradient(180deg, rgba(10, 26, 56, 0.96) 0%, rgba(7, 19, 43, 0.96) 100%) !important;
-  border-bottom: 1.5px solid rgba(56, 189, 248, 0.42) !important;
-  box-shadow: 0 6px 24px rgba(2, 12, 32, 0.65), inset 0 -1px 0 rgba(245, 158, 11, 0.25) !important;
+html[data-skin="ejecutiva"] header,
+html[data-skin="ejecutiva"] .metal-topbar-dark {
+  background: linear-gradient(180deg, rgba(11, 28, 58, 0.96) 0%, rgba(7, 19, 36, 0.97) 100%) !important;
+  border-bottom: 1px solid rgba(56, 189, 248, 0.55) !important;
+  box-shadow: 0 6px 24px rgba(2, 12, 32, 0.65), inset 0 -1px 0 rgba(245, 158, 11, 0.3) !important;
+  color: #FFFFFF !important;
+}
+
+html[data-skin="ejecutiva"] #view-menu h1,
+html[data-skin="ejecutiva"] #view-menu h2 {
+  color: #FFFFFF !important;
 }
 
 html[data-skin="ejecutiva"] #drawer-panel-surface {
-  background: linear-gradient(180deg, #0b1f44 0%, #07142d 100%) !important;
-  border-left: 1.5px solid rgba(56, 189, 248, 0.45) !important;
+  background: linear-gradient(180deg, #0C2146 0%, #071324 100%) !important;
+  border-left: 1px solid rgba(56, 189, 248, 0.52) !important;
+  color: #F8FAFC !important;
+}
+
+html[data-skin="ejecutiva"] .metal-icon-btn {
+  background: linear-gradient(145deg, rgba(24, 54, 96, 0.92), rgba(10, 26, 52, 0.95)) !important;
+  border: 1px solid rgba(56, 189, 248, 0.45) !important;
+  color: #E0F2FE !important;
 }
 
 html[data-skin="ejecutiva"] #lev-entry {
   position: relative;
   overflow: hidden;
-  background: linear-gradient(145deg, #143260 0%, #0d2347 55%, #091a36 100%) !important;
-  border: 1.5px solid rgba(56, 189, 248, 0.6) !important;
+  background:
+    repeating-linear-gradient(120deg, rgba(255, 255, 255, 0.024) 0px, rgba(255, 255, 255, 0.024) 1px, transparent 1px, transparent 6px),
+    linear-gradient(145deg, #153463 0%, #0E2448 55%, #091832 100%) !important;
+  border: 1px solid rgba(56, 189, 248, 0.72) !important;
   box-shadow:
     0 10px 26px rgba(2, 12, 32, 0.55),
-    0 0 18px rgba(56, 189, 248, 0.14),
-    inset 0 3px 0 #d97706 !important;
-  color: #ffffff !important;
+    0 0 18px rgba(56, 189, 248, 0.16),
+    inset 0 2.5px 0 #F59E0B !important;
+  color: #FFFFFF !important;
 }
-
 html[data-skin="ejecutiva"] #lev-entry small {
-  color: #bae6fd !important;
+  color: #BAE6FD !important;
 }
 
-html[data-skin="ejecutiva"] #view-menu .menu-hero-card {
+html[data-skin="ejecutiva"] #view-menu .menu-hero-card,
+html[data-skin="ejecutiva"] #view-menu .metal-hero-card {
   position: relative;
   overflow: hidden;
-  background: linear-gradient(140deg, #163d75 0%, #0f2c59 52%, #0a1f42 100%) !important;
-  border: 1.5px solid rgba(56, 189, 248, 0.68) !important;
+  background:
+    repeating-linear-gradient(120deg, rgba(255, 255, 255, 0.025) 0px, rgba(255, 255, 255, 0.025) 1px, transparent 1px, transparent 6px),
+    linear-gradient(140deg, #18427D 0%, #102F60 52%, #0A1E40 100%) !important;
+  border: 1px solid rgba(56, 189, 248, 0.78) !important;
   box-shadow:
     0 14px 34px rgba(3, 15, 38, 0.72),
-    0 0 24px rgba(56, 189, 248, 0.2),
-    inset 0 3.5px 0 #d97706 !important;
+    0 0 24px rgba(56, 189, 248, 0.22),
+    inset 0 3px 0 #F59E0B !important;
+  color: #FFFFFF !important;
 }
 
-html[data-skin="ejecutiva"] #view-menu .menu-grid-card {
+html[data-skin="ejecutiva"] #view-menu .menu-grid-card,
+html[data-skin="ejecutiva"] #view-menu .metal-grid-card {
   position: relative;
   overflow: hidden;
-  background: linear-gradient(155deg, #142f5c 0%, #0d2244 55%, #091934 100%) !important;
-  border: 1.5px solid rgba(56, 189, 248, 0.45) !important;
+  background:
+    repeating-linear-gradient(125deg, rgba(255, 255, 255, 0.02) 0px, rgba(255, 255, 255, 0.02) 1px, transparent 1px, transparent 7px),
+    linear-gradient(155deg, #142F5C 0%, #0D2244 55%, #091833 100%) !important;
+  border: 1px solid rgba(56, 189, 248, 0.55) !important;
   box-shadow:
     0 8px 22px rgba(2, 11, 28, 0.55),
-    0 0 12px rgba(56, 189, 248, 0.1),
-    inset 0 2.5px 0 rgba(217, 119, 6, 0.85) !important;
-  color: #f8fafc !important;
+    0 0 12px rgba(56, 189, 248, 0.12),
+    inset 0 2px 0 rgba(245, 158, 11, 0.85) !important;
+  color: #F8FAFC !important;
 }
-
-html[data-skin="ejecutiva"] #view-menu .menu-grid-card:hover {
-  border-color: rgba(125, 211, 252, 0.85) !important;
-  box-shadow:
-    0 12px 28px rgba(2, 11, 28, 0.68),
-    0 0 20px rgba(56, 189, 248, 0.25),
-    inset 0 2.5px 0 #f59e0b !important;
+html[data-skin="ejecutiva"] #view-menu .menu-grid-card span:first-of-type {
+  color: #FFFFFF;
 }
-
 html[data-skin="ejecutiva"] #view-menu .menu-grid-card .menu-card-sub {
-  color: #cbd5e1 !important;
+  color: #CBD5E1 !important;
 }
 
 html[data-skin="ejecutiva"] #view-menu .menu-icon-box {
-  background: linear-gradient(145deg, rgba(186, 230, 253, 0.22) 0%, rgba(14, 116, 144, 0.4) 100%) !important;
-  border: 1px solid rgba(186, 230, 253, 0.45) !important;
-  color: #e0f2fe !important;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 4px 10px rgba(2, 12, 32, 0.4) !important;
+  background: linear-gradient(145deg, rgba(186, 230, 253, 0.22) 0%, rgba(14, 116, 144, 0.42) 100%) !important;
+  border: 1px solid rgba(56, 189, 248, 0.55) !important;
+  color: #E0F2FE !important;
 }
 
-html[data-skin="ejecutiva"] #view-menu .menu-badge-free,
-html[data-skin="ejecutiva"] #view-menu .menu-badge-info,
-html[data-skin="ejecutiva"] #view-menu .menu-badge-violet,
-html[data-skin="ejecutiva"] #view-menu .menu-badge-cyan {
-  background: rgba(14, 116, 144, 0.28) !important;
-  border: 1px solid rgba(56, 189, 248, 0.5) !important;
-  color: #e0f2fe !important;
-}
-
-html[data-skin="ejecutiva"] #view-menu .menu-badge-pro-pill {
-  background: linear-gradient(135deg, rgba(180, 83, 9, 0.35), rgba(217, 119, 6, 0.45)) !important;
-  border: 1px solid rgba(251, 191, 36, 0.65) !important;
-  color: #fef3c7 !important;
-}
-
-/* Propagación global Ejecutiva Azul a vistas internas, Levantamiento y Modales */
-html[data-skin="ejecutiva"][data-theme="dark"] main .bg-white,
-html[data-skin="ejecutiva"][data-theme="dark"] main .bg-slate-900,
-html[data-skin="ejecutiva"][data-theme="dark"] [role="dialog"] > div.bg-white {
-  background: linear-gradient(160deg, #122a52 0%, #0b1d3a 100%) !important;
-  border-color: rgba(56, 189, 248, 0.4) !important;
+html[data-skin="ejecutiva"] main .bg-white,
+html[data-skin="ejecutiva"] main .bg-slate-900,
+html[data-skin="ejecutiva"] [role="dialog"] > div.bg-white {
+  background: linear-gradient(160deg, #122A52 0%, #0B1D3A 100%) !important;
+  border-color: rgba(56, 189, 248, 0.45) !important;
+  color: #F8FAFC !important;
 }
 
 html[data-skin="ejecutiva"] #lev-root .shell {
-  background: linear-gradient(180deg, #0b1f44 0%, #07142c 100%) !important;
-  border: 1px solid rgba(56, 189, 248, 0.35) !important;
+  background: linear-gradient(180deg, #0B1F44 0%, #071324 100%) !important;
+  border: 1px solid rgba(56, 189, 248, 0.42) !important;
+  color: #F8FAFC !important;
 }
-
 html[data-skin="ejecutiva"] #lev-root .card {
-  background: linear-gradient(155deg, #132d59 0%, #0c1f40 100%) !important;
-  border: 1px solid rgba(56, 189, 248, 0.4) !important;
-  box-shadow: inset 0 2px 0 rgba(217, 119, 6, 0.75) !important;
+  background: linear-gradient(155deg, #132D59 0%, #0C1F40 100%) !important;
+  border: 1px solid rgba(56, 189, 248, 0.45) !important;
+  box-shadow: inset 0 2px 0 rgba(245, 158, 11, 0.78) !important;
+  color: #F8FAFC !important;
 }
 
-/* 3. INDUSTRIAL PRO (EXCLUSIVA) - PRO ANUAL (1 AÑO) */
+/* 2B. CARÁTULA EJECUTIVA — VARIANTE ANARANJADA (#140D07, #F97316, #FB923C) */
+html[data-skin="ejecutiva"][data-skin-variant="naranja"],
+html[data-skin="ejecutiva"][data-skin-variant="naranja"] body,
+html[data-skin="ejecutiva"][data-skin-variant="naranja"] #root {
+  background-color: #140D07 !important;
+  background-image:
+    repeating-linear-gradient(115deg, rgba(251, 146, 60, 0.028) 0px, rgba(251, 146, 60, 0.028) 1px, transparent 1px, transparent 7px),
+    radial-gradient(ellipse 85% 50% at 50% -10%, rgba(249, 115, 22, 0.26), transparent 65%),
+    radial-gradient(circle at 88% 88%, rgba(251, 146, 60, 0.14), transparent 48%),
+    linear-gradient(180deg, #181008 0%, #0F0905 100%) !important;
+}
+
+html[data-skin="ejecutiva"][data-skin-variant="naranja"] header,
+html[data-skin="ejecutiva"][data-skin-variant="naranja"] .metal-topbar-dark {
+  background: linear-gradient(180deg, rgba(38, 22, 11, 0.96) 0%, rgba(20, 13, 7, 0.97) 100%) !important;
+  border-bottom: 1px solid rgba(249, 115, 22, 0.6) !important;
+  box-shadow: 0 6px 24px rgba(10, 5, 2, 0.72), inset 0 -1px 0 rgba(251, 146, 60, 0.35) !important;
+}
+
+html[data-skin="ejecutiva"][data-skin-variant="naranja"] #drawer-panel-surface {
+  background: linear-gradient(180deg, #21140B 0%, #140D07 100%) !important;
+  border-left: 1px solid rgba(249, 115, 22, 0.58) !important;
+}
+
+html[data-skin="ejecutiva"][data-skin-variant="naranja"] .metal-icon-btn {
+  background: linear-gradient(145deg, rgba(64, 34, 15, 0.92), rgba(29, 17, 9, 0.95)) !important;
+  border: 1px solid rgba(251, 146, 60, 0.55) !important;
+  color: #FFEDD5 !important;
+}
+
+html[data-skin="ejecutiva"][data-skin-variant="naranja"] #lev-entry {
+  background:
+    repeating-linear-gradient(120deg, rgba(255, 237, 213, 0.025) 0px, rgba(255, 237, 213, 0.025) 1px, transparent 1px, transparent 6px),
+    linear-gradient(145deg, #3A1F0E 0%, #261409 55%, #1A0E06 100%) !important;
+  border: 1px solid rgba(249, 115, 22, 0.78) !important;
+  box-shadow:
+    0 10px 26px rgba(12, 6, 2, 0.65),
+    0 0 18px rgba(249, 115, 22, 0.2),
+    inset 0 2.5px 0 #FB923C !important;
+}
+html[data-skin="ejecutiva"][data-skin-variant="naranja"] #lev-entry small {
+  color: #FED7AA !important;
+}
+
+html[data-skin="ejecutiva"][data-skin-variant="naranja"] #view-menu .menu-hero-card,
+html[data-skin="ejecutiva"][data-skin-variant="naranja"] #view-menu .metal-hero-card {
+  background:
+    repeating-linear-gradient(120deg, rgba(255, 237, 213, 0.028) 0px, rgba(255, 237, 213, 0.028) 1px, transparent 1px, transparent 6px),
+    linear-gradient(140deg, #522810 0%, #361A0A 52%, #221006 100%) !important;
+  border: 1px solid rgba(251, 146, 60, 0.82) !important;
+  box-shadow:
+    0 14px 34px rgba(15, 7, 2, 0.76),
+    0 0 24px rgba(249, 115, 22, 0.24),
+    inset 0 3px 0 #FB923C !important;
+}
+
+html[data-skin="ejecutiva"][data-skin-variant="naranja"] #view-menu .menu-grid-card,
+html[data-skin="ejecutiva"][data-skin-variant="naranja"] #view-menu .metal-grid-card {
+  background:
+    repeating-linear-gradient(125deg, rgba(255, 237, 213, 0.02) 0px, rgba(255, 237, 213, 0.02) 1px, transparent 1px, transparent 7px),
+    linear-gradient(155deg, #2D190C 0%, #1F1209 55%, #160D06 100%) !important;
+  border: 1px solid rgba(249, 115, 22, 0.6) !important;
+  box-shadow:
+    0 8px 22px rgba(10, 5, 2, 0.62),
+    0 0 12px rgba(249, 115, 22, 0.14),
+    inset 0 2px 0 rgba(251, 146, 60, 0.85) !important;
+}
+html[data-skin="ejecutiva"][data-skin-variant="naranja"] #view-menu .menu-grid-card .menu-card-sub {
+  color: #FED7AA !important;
+}
+
+html[data-skin="ejecutiva"][data-skin-variant="naranja"] main .bg-white,
+html[data-skin="ejecutiva"][data-skin-variant="naranja"] main .bg-slate-900,
+html[data-skin="ejecutiva"][data-skin-variant="naranja"] [role="dialog"] > div.bg-white,
+html[data-skin="ejecutiva"][data-skin-variant="naranja"] #lev-root .shell,
+html[data-skin="ejecutiva"][data-skin-variant="naranja"] #lev-root .card {
+  background: linear-gradient(160deg, #28160B 0%, #170D06 100%) !important;
+  border-color: rgba(249, 115, 22, 0.5) !important;
+}
+
+/* ============================================================================
+   3. CARÁTULA INDUSTRIAL PRO (EXCLUSIVO PRO 1 AÑO)
+   Sub-variante por defecto: VERDE ESMERALDA (#061A14, #0D2B22, #10B981)
+   ============================================================================ */
 html[data-skin="industrial"],
 html[data-skin="industrial"] body,
 html[data-skin="industrial"] #root {
-  background-color: #070a10 !important;
+  background-color: #061A14 !important;
   background-image:
-    radial-gradient(ellipse 90% 45% at 50% -8%, rgba(16, 185, 129, 0.14), transparent 62%),
-    radial-gradient(circle at 85% 90%, rgba(212, 175, 55, 0.11), transparent 48%),
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'%3E%3Cg fill='none' stroke='%2394a3b8' stroke-opacity='0.08' stroke-width='1'%3E%3Cpath d='M0 20h160M0 60h160M0 100h160M0 140h160'/%3E%3Cpath d='M20 0v160M60 0v160M100 0v160M140 0v160'/%3E%3Cpath d='M0 160L160 0' stroke='%23e2e8f0' stroke-opacity='0.04'/%3E%3C/g%3E%3Crect x='22' y='22' width='36' height='36' fill='%2338bdf8' fill-opacity='0.035'/%3E%3Crect x='102' y='62' width='36' height='76' fill='%2310b981' fill-opacity='0.03'/%3E%3Crect x='62' y='102' width='36' height='36' fill='%23fbbf24' fill-opacity='0.025'/%3E%3C/svg%3E"),
-    linear-gradient(180deg, #0b0f17 0%, #070a10 100%) !important;
+    radial-gradient(ellipse 90% 45% at 50% -8%, rgba(16, 185, 129, 0.26), transparent 62%),
+    radial-gradient(circle at 85% 90%, rgba(5, 150, 105, 0.18), transparent 48%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140' viewBox='0 0 140 140'%3E%3Cg fill='none' stroke='%2310b981' stroke-opacity='0.09' stroke-width='1'%3E%3Cpath d='M0 20h140M0 60h140M0 100h140'/%3E%3Cpath d='M20 0v140M60 0v140M100 0v140'/%3E%3C/g%3E%3C/svg%3E"),
+    linear-gradient(180deg, #061A14 0%, #04110D 100%) !important;
   background-attachment: fixed !important;
+  color: #F8FAFC !important;
 }
 
-html[data-skin="industrial"] header {
-  background:
-    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.015) 0px, rgba(255, 255, 255, 0.015) 1px, transparent 1px, transparent 3px),
-    linear-gradient(180deg, rgba(28, 34, 46, 0.96) 0%, rgba(16, 20, 28, 0.97) 100%) !important;
-  border-bottom: 1.5px solid rgba(212, 175, 55, 0.48) !important;
-  box-shadow: 0 6px 26px rgba(0, 0, 0, 0.72), inset 0 1px 0 rgba(226, 232, 240, 0.18) !important;
+html[data-skin="industrial"] header,
+html[data-skin="industrial"] .metal-topbar-dark {
+  background: linear-gradient(180deg, rgba(13, 43, 34, 0.96) 0%, rgba(6, 26, 20, 0.97) 100%) !important;
+  border-bottom: 1.5px solid rgba(16, 185, 129, 0.58) !important;
+  box-shadow: 0 6px 26px rgba(0, 0, 0, 0.72), inset 0 1px 0 rgba(167, 243, 208, 0.22) !important;
+  color: #FFFFFF !important;
+}
+
+html[data-skin="industrial"] #view-menu h1,
+html[data-skin="industrial"] #view-menu h2 {
+  color: #FFFFFF !important;
 }
 
 html[data-skin="industrial"] #drawer-panel-surface {
-  background:
-    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.015) 0px, rgba(255, 255, 255, 0.015) 1px, transparent 1px, transparent 3px),
-    linear-gradient(180deg, #1b212d 0%, #0e121a 100%) !important;
-  border-left: 1.5px solid rgba(212, 175, 55, 0.5) !important;
+  background: linear-gradient(180deg, #0D2B22 0%, #061A14 100%) !important;
+  border-left: 1.5px solid rgba(16, 185, 129, 0.55) !important;
+  color: #F8FAFC !important;
+}
+
+html[data-skin="industrial"] .metal-icon-btn {
+  background: linear-gradient(145deg, #0D3528, #072018) !important;
+  border: 1px solid rgba(16, 185, 129, 0.55) !important;
+  color: #A7F3D0 !important;
 }
 
 html[data-skin="industrial"] #lev-entry {
-  background:
-    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.02) 0px, rgba(255, 255, 255, 0.02) 1px, transparent 1px, transparent 3px),
-    linear-gradient(145deg, #252d3b 0%, #161c26 52%, #0f141c 100%) !important;
-  border: 1.5px solid rgba(212, 175, 55, 0.58) !important;
+  background: linear-gradient(145deg, #113C2E 0%, #0D2B22 52%, #071B15 100%) !important;
+  border: 1.5px solid rgba(16, 185, 129, 0.68) !important;
   box-shadow:
-    inset 0 1px 0 rgba(241, 245, 249, 0.3),
-    inset 0 -1px 0 rgba(16, 185, 129, 0.45),
+    inset 0 1px 0 rgba(209, 250, 229, 0.3),
+    inset 0 -1px 0 rgba(16, 185, 129, 0.5),
     0 10px 26px rgba(0, 0, 0, 0.65) !important;
-  color: #f8fafc !important;
+  color: #F8FAFC !important;
 }
-
 html[data-skin="industrial"] #lev-entry small {
-  color: #a7f3d0 !important;
+  color: #A7F3D0 !important;
 }
 
-html[data-skin="industrial"] #view-menu .menu-hero-card {
-  background:
-    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.022) 0px, rgba(255, 255, 255, 0.022) 1px, transparent 1px, transparent 3px),
-    linear-gradient(135deg, #064e3b 0%, #14282b 45%, #1d2432 100%) !important;
-  border: 1.5px solid rgba(212, 175, 55, 0.68) !important;
+html[data-skin="industrial"] #view-menu .menu-hero-card,
+html[data-skin="industrial"] #view-menu .metal-hero-card {
+  background: linear-gradient(135deg, #065F46 0%, #0D2B22 54%, #082018 100%) !important;
+  border: 1.5px solid rgba(16, 185, 129, 0.78) !important;
   box-shadow:
-    inset 0 1px 0 rgba(254, 243, 199, 0.35),
+    inset 0 1px 0 rgba(209, 250, 229, 0.35),
     inset 0 -1px 0 rgba(16, 185, 129, 0.55),
     0 14px 36px rgba(0, 0, 0, 0.72),
-    0 0 22px rgba(16, 185, 129, 0.16) !important;
+    0 0 22px rgba(16, 185, 129, 0.24) !important;
+  color: #FFFFFF !important;
 }
 
-html[data-skin="industrial"] #view-menu .menu-grid-card {
-  background:
-    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.018) 0px, rgba(255, 255, 255, 0.018) 1px, transparent 1px, transparent 3px),
-    linear-gradient(155deg, #252c38 0%, #171c25 55%, #10141c 100%) !important;
-  border: 1.5px solid rgba(212, 175, 55, 0.42) !important;
+html[data-skin="industrial"] #view-menu .menu-grid-card,
+html[data-skin="industrial"] #view-menu .metal-grid-card {
+  background: linear-gradient(155deg, #0F3429 0%, #0D2B22 55%, #071B15 100%) !important;
+  border: 1.5px solid rgba(16, 185, 129, 0.54) !important;
   box-shadow:
-    inset 0 1px 0 rgba(226, 232, 240, 0.28),
-    inset 0 0 0 1px rgba(148, 163, 184, 0.14),
+    inset 0 1px 0 rgba(167, 243, 208, 0.25),
     0 10px 24px rgba(0, 0, 0, 0.62) !important;
-  color: #f8fafc !important;
+  color: #F8FAFC !important;
 }
-
-html[data-skin="industrial"] #view-menu .menu-grid-card:hover {
-  border-color: rgba(251, 191, 36, 0.8) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(254, 243, 199, 0.42),
-    0 12px 28px rgba(0, 0, 0, 0.72),
-    0 0 16px rgba(212, 175, 55, 0.18) !important;
-}
-
 html[data-skin="industrial"] #view-menu .menu-grid-card .menu-card-sub {
-  color: #cbd5e1 !important;
+  color: #D1FAE5 !important;
 }
 
-html[data-skin="industrial"] #view-menu .menu-icon-box {
-  background: linear-gradient(145deg, #334155 0%, #1e293b 55%, #0f172a 100%) !important;
-  border: 1px solid rgba(212, 175, 55, 0.55) !important;
-  color: #fde68a !important;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 4px 10px rgba(0, 0, 0, 0.48) !important;
-}
-
-html[data-skin="industrial"] #view-menu .menu-badge-free,
-html[data-skin="industrial"] #view-menu .menu-badge-info,
-html[data-skin="industrial"] #view-menu .menu-badge-violet,
-html[data-skin="industrial"] #view-menu .menu-badge-cyan {
-  background: rgba(6, 78, 59, 0.55) !important;
-  border: 1px solid rgba(52, 211, 153, 0.55) !important;
-  color: #a7f3d0 !important;
-}
-
-html[data-skin="industrial"] #view-menu .menu-badge-pro-pill {
-  background: linear-gradient(135deg, rgba(161, 98, 7, 0.55), rgba(217, 119, 6, 0.45)) !important;
-  border: 1px solid rgba(251, 191, 36, 0.78) !important;
-  color: #fef3c7 !important;
-}
-
-/* Propagación global Industrial Pro a vistas internas, Levantamiento y Modales */
-html[data-skin="industrial"][data-theme="dark"] main .bg-white,
-html[data-skin="industrial"][data-theme="dark"] main .bg-slate-900,
-html[data-skin="industrial"][data-theme="dark"] [role="dialog"] > div.bg-white {
-  background:
-    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.015) 0px, rgba(255, 255, 255, 0.015) 1px, transparent 1px, transparent 3px),
-    linear-gradient(160deg, #1f2633 0%, #121720 100%) !important;
-  border-color: rgba(212, 175, 55, 0.42) !important;
-}
-
-html[data-skin="industrial"] #lev-root .shell {
-  background: linear-gradient(180deg, #1a202c 0%, #0e121a 100%) !important;
-  border: 1px solid rgba(212, 175, 55, 0.42) !important;
-}
-
+html[data-skin="industrial"] main .bg-white,
+html[data-skin="industrial"] main .bg-slate-900,
+html[data-skin="industrial"] [role="dialog"] > div.bg-white,
+html[data-skin="industrial"] #lev-root .shell,
 html[data-skin="industrial"] #lev-root .card {
-  background:
-    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.015) 0px, rgba(255, 255, 255, 0.015) 1px, transparent 1px, transparent 3px),
-    linear-gradient(155deg, #222936 0%, #131822 100%) !important;
-  border: 1px solid rgba(212, 175, 55, 0.4) !important;
-  box-shadow: inset 0 1px 0 rgba(226, 232, 240, 0.2) !important;
+  background: linear-gradient(160deg, #0D2B22 0%, #061A14 100%) !important;
+  border-color: rgba(16, 185, 129, 0.48) !important;
+  color: #F8FAFC !important;
 }
+
+/* 3B. CARÁTULA INDUSTRIAL PRO — VARIANTE PLATEADA / ACERO (#090E17, #162030, #94A3B8/#E2E8F0) */
+html[data-skin="industrial"][data-skin-variant="plateada"],
+html[data-skin="industrial"][data-skin-variant="plateada"] body,
+html[data-skin="industrial"][data-skin-variant="plateada"] #root {
+  background-color: #090E17 !important;
+  background-image:
+    radial-gradient(ellipse 90% 45% at 50% -8%, rgba(226, 232, 240, 0.16), transparent 62%),
+    radial-gradient(circle at 85% 90%, rgba(148, 163, 184, 0.14), transparent 48%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140' viewBox='0 0 140 140'%3E%3Cg fill='none' stroke='%23cbd5e1' stroke-opacity='0.07' stroke-width='1'%3E%3Cpath d='M0 20h140M0 60h140M0 100h140'/%3E%3Cpath d='M20 0v140M60 0v140M100 0v140'/%3E%3C/g%3E%3C/svg%3E"),
+    linear-gradient(180deg, #0B111C 0%, #070B12 100%) !important;
+}
+
+html[data-skin="industrial"][data-skin-variant="plateada"] header,
+html[data-skin="industrial"][data-skin-variant="plateada"] .metal-topbar-dark {
+  background: linear-gradient(180deg, rgba(22, 32, 48, 0.96) 0%, rgba(11, 17, 28, 0.97) 100%) !important;
+  border-bottom: 1.5px solid rgba(203, 213, 225, 0.5) !important;
+  box-shadow: 0 6px 26px rgba(0, 0, 0, 0.72), inset 0 1px 0 rgba(248, 250, 252, 0.25) !important;
+}
+
+html[data-skin="industrial"][data-skin-variant="plateada"] #drawer-panel-surface {
+  background: linear-gradient(180deg, #162030 0%, #090E17 100%) !important;
+  border-left: 1.5px solid rgba(148, 163, 184, 0.55) !important;
+}
+
+html[data-skin="industrial"][data-skin-variant="plateada"] .metal-icon-btn {
+  background: linear-gradient(145deg, #273549, #131C2B) !important;
+  border: 1px solid rgba(226, 232, 240, 0.45) !important;
+  color: #F1F5F9 !important;
+}
+
+html[data-skin="industrial"][data-skin-variant="plateada"] #lev-entry {
+  background:
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.025) 0px, rgba(255, 255, 255, 0.025) 1px, transparent 1px, transparent 5px),
+    linear-gradient(145deg, #223045 0%, #162030 52%, #0E1521 100%) !important;
+  border: 1.5px solid rgba(226, 232, 240, 0.65) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -1px 0 rgba(148, 163, 184, 0.45),
+    0 10px 26px rgba(0, 0, 0, 0.65) !important;
+}
+html[data-skin="industrial"][data-skin-variant="plateada"] #lev-entry small {
+  color: #CBD5E1 !important;
+}
+
+html[data-skin="industrial"][data-skin-variant="plateada"] #view-menu .menu-hero-card,
+html[data-skin="industrial"][data-skin-variant="plateada"] #view-menu .metal-hero-card {
+  background: linear-gradient(135deg, #334155 0%, #1E293B 50%, #111827 100%) !important;
+  border: 1.5px solid rgba(226, 232, 240, 0.78) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.42),
+    inset 0 -1px 0 rgba(148, 163, 184, 0.55),
+    0 14px 36px rgba(0, 0, 0, 0.75) !important;
+}
+
+html[data-skin="industrial"][data-skin-variant="plateada"] #view-menu .menu-grid-card,
+html[data-skin="industrial"][data-skin-variant="plateada"] #view-menu .metal-grid-card {
+  background: linear-gradient(155deg, #1E2A3D 0%, #162030 55%, #0E1521 100%) !important;
+  border: 1.5px solid rgba(148, 163, 184, 0.6) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(226, 232, 240, 0.3),
+    0 10px 24px rgba(0, 0, 0, 0.62) !important;
+}
+html[data-skin="industrial"][data-skin-variant="plateada"] #view-menu .menu-grid-card .menu-card-sub {
+  color: #CBD5E1 !important;
+}
+
+html[data-skin="industrial"][data-skin-variant="plateada"] main .bg-white,
+html[data-skin="industrial"][data-skin-variant="plateada"] main .bg-slate-900,
+html[data-skin="industrial"][data-skin-variant="plateada"] [role="dialog"] > div.bg-white,
+html[data-skin="industrial"][data-skin-variant="plateada"] #lev-root .shell,
+html[data-skin="industrial"][data-skin-variant="plateada"] #lev-root .card {
+  background: linear-gradient(160deg, #162030 0%, #0B111C 100%) !important;
+  border-color: rgba(148, 163, 184, 0.5) !important;
+}
+
+/* 3C. CARÁTULA INDUSTRIAL PRO — VARIANTE DORADA (#0B0A08, #181510, #D4AF37/#FACC15) */
+html[data-skin="industrial"][data-skin-variant="dorada"],
+html[data-skin="industrial"][data-skin-variant="dorada"] body,
+html[data-skin="industrial"][data-skin-variant="dorada"] #root {
+  background-color: #0B0A08 !important;
+  background-image:
+    radial-gradient(ellipse 90% 45% at 50% -8%, rgba(212, 175, 55, 0.22), transparent 62%),
+    radial-gradient(circle at 85% 90%, rgba(250, 204, 21, 0.12), transparent 48%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140' viewBox='0 0 140 140'%3E%3Cg fill='none' stroke='%23d4af37' stroke-opacity='0.08' stroke-width='1'%3E%3Cpath d='M0 20h140M0 60h140M0 100h140'/%3E%3Cpath d='M20 0v140M60 0v140M100 0v140'/%3E%3C/g%3E%3C/svg%3E"),
+    linear-gradient(180deg, #0D0B08 0%, #070604 100%) !important;
+}
+
+html[data-skin="industrial"][data-skin-variant="dorada"] header,
+html[data-skin="industrial"][data-skin-variant="dorada"] .metal-topbar-dark {
+  background: linear-gradient(180deg, rgba(28, 24, 16, 0.97) 0%, rgba(11, 10, 8, 0.98) 100%) !important;
+  border-bottom: 1.5px solid rgba(212, 175, 55, 0.65) !important;
+  box-shadow: 0 6px 26px rgba(0, 0, 0, 0.78), inset 0 1px 0 rgba(250, 204, 21, 0.25) !important;
+}
+
+html[data-skin="industrial"][data-skin-variant="dorada"] #drawer-panel-surface {
+  background: linear-gradient(180deg, #181510 0%, #0B0A08 100%) !important;
+  border-left: 1.5px solid rgba(212, 175, 55, 0.65) !important;
+}
+
+html[data-skin="industrial"][data-skin-variant="dorada"] .metal-icon-btn {
+  background: linear-gradient(145deg, #2B2416, #14110B) !important;
+  border: 1px solid rgba(212, 175, 55, 0.62) !important;
+  color: #FEF08A !important;
+}
+
+html[data-skin="industrial"][data-skin-variant="dorada"] #lev-entry {
+  background: linear-gradient(145deg, #272115 0%, #181510 52%, #100E0A 100%) !important;
+  border: 1.5px solid rgba(212, 175, 55, 0.78) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(254, 240, 138, 0.38),
+    inset 0 -1px 0 rgba(212, 175, 55, 0.55),
+    0 10px 26px rgba(0, 0, 0, 0.72) !important;
+}
+html[data-skin="industrial"][data-skin-variant="dorada"] #lev-entry small {
+  color: #FDE68A !important;
+}
+
+html[data-skin="industrial"][data-skin-variant="dorada"] #view-menu .menu-hero-card,
+html[data-skin="industrial"][data-skin-variant="dorada"] #view-menu .metal-hero-card {
+  background: linear-gradient(135deg, #3A2E14 0%, #221C10 48%, #14110A 100%) !important;
+  border: 1.5px solid rgba(250, 204, 21, 0.82) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(254, 249, 195, 0.42),
+    inset 0 -1px 0 rgba(212, 175, 55, 0.65),
+    0 14px 36px rgba(0, 0, 0, 0.8),
+    0 0 22px rgba(212, 175, 55, 0.2) !important;
+}
+
+html[data-skin="industrial"][data-skin-variant="dorada"] #view-menu .menu-grid-card,
+html[data-skin="industrial"][data-skin-variant="dorada"] #view-menu .metal-grid-card {
+  background: linear-gradient(155deg, #221D14 0%, #181510 55%, #110F0B 100%) !important;
+  border: 1.5px solid rgba(212, 175, 55, 0.62) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(254, 240, 138, 0.28),
+    0 10px 24px rgba(0, 0, 0, 0.7) !important;
+}
+html[data-skin="industrial"][data-skin-variant="dorada"] #view-menu .menu-grid-card .menu-card-sub {
+  color: #FDE68A !important;
+}
+
+html[data-skin="industrial"][data-skin-variant="dorada"] main .bg-white,
+html[data-skin="industrial"][data-skin-variant="dorada"] main .bg-slate-900,
+html[data-skin="industrial"][data-skin-variant="dorada"] [role="dialog"] > div.bg-white,
+html[data-skin="industrial"][data-skin-variant="dorada"] #lev-root .shell,
+html[data-skin="industrial"][data-skin-variant="dorada"] #lev-root .card {
+  background: linear-gradient(160deg, #181510 0%, #0B0A08 100%) !important;
+  border-color: rgba(212, 175, 55, 0.55) !important;
+}
+
 
 /* ==================== ROBOT 1 AÑO (CARÁTULA INDUSTRIAL PRO): BRINCO LENTO + RECORRIDO + MORPH ==================== */
 @keyframes assistantRobotHop1Yr {

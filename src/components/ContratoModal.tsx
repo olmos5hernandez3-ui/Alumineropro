@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { COLORES_CONFIG, getRellenoLabel, LINEAS_CONFIG, round2 } from '../utils/alumineroLogic';
-import { generarPdfContratoServicio } from '../utils/pdfExport';
+import { buildPdfContratoServicioFile, ContratoPdfFileResult } from '../utils/pdfExport';
 import {
   pushHistoryOverlay,
   removeHistoryOverlay,
@@ -39,6 +39,20 @@ const APERTURA_DESC: Record<string, string> = {
   plegable: 'Plegable',
 };
 
+const GENERATE_FIRST_WARNING =
+  "Primero debes presionar 'Generar Contrato' para crear el documento";
+
+function triggerBlobDownload(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 2500);
+}
+
 export const ContratoModal: React.FC<ContratoModalProps> = ({
   open,
   hoja,
@@ -54,8 +68,12 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
   const [cleanPreview, setCleanPreview] = useState(false);
   const [folioActivo, setFolioActivo] = useState<string>(() => peekNextContratoFolio());
   const [editarClausulas, setEditarClausulas] = useState(false);
-  const [signaturePadOpen, setSignaturePadOpen] = useState(false);
+  const [signatureTarget, setSignatureTarget] = useState<'provider' | 'client' | null>(null);
+  const [providerSignatureUrl, setProviderSignatureUrl] = useState<string>('');
   const [clientSignatureUrl, setClientSignatureUrl] = useState<string>('');
+  const [generatedContract, setGeneratedContract] = useState<ContratoPdfFileResult | null>(null);
+  const [generatingContract, setGeneratingContract] = useState<boolean>(false);
+  const [gateAlertMsg, setGateAlertMsg] = useState<string | null>(null);
   const previewCardRef = useRef<HTMLDivElement | null>(null);
   const previewOverlayTokenRef = useRef<number | null>(null);
 
@@ -64,11 +82,38 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
       setPhase('setup');
       setCleanPreview(false);
       setEditarClausulas(false);
-      setSignaturePadOpen(false);
+      setSignatureTarget(null);
+      setProviderSignatureUrl('');
       setClientSignatureUrl('');
+      setGeneratedContract(null);
+      setGeneratingContract(false);
+      setGateAlertMsg(null);
       setFolioActivo(peekNextContratoFolio());
     }
   }, [open]);
+
+  // Invalidar el contrato generado si cambian datos, partidas o firmas
+  useEffect(() => {
+    setGeneratedContract(null);
+  }, [
+    folioActivo,
+    clientSignatureUrl,
+    providerSignatureUrl,
+    cliente.nombre,
+    cliente.telefono,
+    cliente.direccion,
+    cliente.fechaEntregaEstimada,
+    cliente.anticipoPct,
+    cliente.anticipoRecibido,
+    cliente.clausulaAnticipo,
+    cliente.clausulaEntrega,
+    cliente.clausulaCondicionesVano,
+    cliente.clausulaGarantia,
+    hoja.proyecto,
+    hoja.incluirIva,
+    hoja.descuentoPct,
+    hoja.partidas.length,
+  ]);
 
   // Registrar capa de historial local para que Atrás regrese 1 paso (Vista previa -> Configuración -> Hoja)
   useEffect(() => {
@@ -79,8 +124,8 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
     }
     previewOverlayTokenRef.current = pushHistoryOverlay('contrato-preview', () => {
       previewOverlayTokenRef.current = null;
-      if (signaturePadOpen) {
-        setSignaturePadOpen(false);
+      if (signatureTarget !== null) {
+        setSignatureTarget(null);
         return;
       }
       if (cleanPreview) {
@@ -93,7 +138,7 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
       removeHistoryOverlay(previewOverlayTokenRef.current);
       previewOverlayTokenRef.current = null;
     };
-  }, [open, phase, cleanPreview, signaturePadOpen]);
+  }, [open, phase, cleanPreview, signatureTarget]);
 
   useEffect(() => {
     if (open && phase === 'preview' && previewCardRef.current) {
@@ -136,8 +181,7 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
   const proyectoRaw = String(hoja?.proyecto ?? '').trim();
   const partidasSafe = Array.isArray(hoja?.partidas) ? hoja.partidas : [];
 
-  const cliNombreFinal =
-    cliNombreRaw || proyectoRaw || 'Cliente por confirmar';
+  const cliNombreFinal = cliNombreRaw || proyectoRaw || 'Cliente por confirmar';
 
   const clausulaAnticipoText =
     String(cliente?.clausulaAnticipo ?? '').trim() || DEFAULT_CONTRATO_CLAUSES.anticipo;
@@ -160,6 +204,7 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
     setFolioActivo(folioNuevo);
     onUpdateCliente({ folio: folioNuevo });
     setCleanPreview(false);
+    setGateAlertMsg(null);
     setPhase('preview');
   };
 
@@ -168,10 +213,57 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
     setFolioActivo(folioNuevo);
     setEditarClausulas(false);
     setCleanPreview(true);
+    setGateAlertMsg(null);
     setPhase('preview');
   };
 
+  const handleGenerateContractPdf = async () => {
+    if (partidasSafe.length === 0) {
+      onShowToast('Agrega al menos una partida para generar el contrato');
+      return;
+    }
+    setGeneratingContract(true);
+    setGateAlertMsg(null);
+    try {
+      const result = await buildPdfContratoServicioFile(
+        hoja,
+        taller,
+        cliente,
+        folioActivo,
+        clientSignatureUrl || undefined,
+        providerSignatureUrl || undefined
+      );
+      setGeneratedContract(result);
+      onShowToast(`Contrato ${folioActivo} generado. Ya puedes Guardar PDF o enviar por WhatsApp.`, true);
+    } catch {
+      setGeneratedContract(null);
+      onShowToast('No se pudo generar el documento del contrato');
+    } finally {
+      setGeneratingContract(false);
+    }
+  };
+
+  const requireGeneratedContractOrWarn = (): ContratoPdfFileResult | null => {
+    if (!generatedContract) {
+      setGateAlertMsg(GENERATE_FIRST_WARNING);
+      onShowToast(GENERATE_FIRST_WARNING);
+      return null;
+    }
+    setGateAlertMsg(null);
+    return generatedContract;
+  };
+
+  const handleSaveGeneratedPdf = () => {
+    const docReady = requireGeneratedContractOrWarn();
+    if (!docReady) return;
+    triggerBlobDownload(docReady.blob, docReady.filename);
+    onShowToast(`PDF Contrato ${folioActivo} descargado`, true);
+  };
+
   const handleShareWhatsApp = async () => {
+    const docReady = requireGeneratedContractOrWarn();
+    if (!docReady) return;
+
     const lines = [
       `*CONTRATO DE SERVICIOS — ${folioActivo}*`,
       `*Taller:* ${taller?.nombre || 'Aluminero Pro'}`,
@@ -199,22 +291,29 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
     ].filter(Boolean);
 
     const text = lines.join('\n');
-    const cleanPhone = cliTelRaw.replace(/\D/g, '');
-    const waUrl = cleanPhone
-      ? `https://wa.me/${cleanPhone.length === 10 ? `52${cleanPhone}` : cleanPhone}?text=${encodeURIComponent(text)}`
-      : `https://wa.me/?text=${encodeURIComponent(text)}`;
+    const title = `Contrato ${folioActivo} — ${cliNombreFinal}`;
 
-    if (typeof navigator !== 'undefined' && navigator.share) {
+    // Compartir el archivo PDF directamente (nativo móvil / Web Share Level 2)
+    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
       try {
-        await navigator.share({
-          title: `Contrato ${folioActivo} — ${cliNombreFinal}`,
-          text,
-        });
-        return;
+        const shareFilesPayload = { files: [docReady.file], title, text };
+        if (typeof navigator.canShare === 'function' && navigator.canShare({ files: [docReady.file] })) {
+          await navigator.share(shareFilesPayload);
+          onShowToast('Contrato PDF compartido correctamente', true);
+          return;
+        }
       } catch (err) {
         if ((err as Error)?.name === 'AbortError') return;
       }
     }
+
+    // Fallback: descargar el PDF generado y abrir WhatsApp con el resumen listo para adjuntar
+    triggerBlobDownload(docReady.blob, docReady.filename);
+
+    const cleanPhone = cliTelRaw.replace(/\D/g, '');
+    const waUrl = cleanPhone
+      ? `https://wa.me/${cleanPhone.length === 10 ? `52${cleanPhone}` : cleanPhone}?text=${encodeURIComponent(text)}`
+      : `https://wa.me/?text=${encodeURIComponent(text)}`;
 
     const link = document.createElement('a');
     link.href = waUrl;
@@ -226,10 +325,10 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
 
     try {
       await navigator.clipboard.writeText(text);
-      onShowToast('Resumen copiado y enviado a WhatsApp', true);
     } catch {
-      onShowToast('Abriendo resumen en WhatsApp', true);
+      // ignorar si portapapeles bloqueado
     }
+    onShowToast('PDF descargado y WhatsApp abierto para adjuntar el contrato', true);
   };
 
   return (
@@ -245,17 +344,21 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
     >
       {/* ==================== PASO 1: CONFIGURACIÓN RÁPIDA ANTES DE GENERAR ==================== */}
       {phase === 'setup' ? (
-        <div className="contrato-no-print w-full max-w-[560px] bg-white text-[#1E293B] border border-slate-300 rounded-[22px] p-5 sm:p-6 shadow-2xl max-h-[94vh] overflow-y-auto my-auto">
+        <div
+          data-preserve-light="true"
+          style={{ backgroundColor: '#ffffff', color: '#0f172a' }}
+          className="contrato-no-print w-full max-w-[560px] bg-white text-[#1E293B] border border-slate-300 rounded-[22px] p-5 sm:p-6 shadow-2xl max-h-[94vh] overflow-y-auto my-auto"
+        >
           <div className="flex items-start justify-between gap-2 pb-3 mb-4 border-b border-slate-200">
             <div>
               <span className="inline-block px-2.5 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-[10.5px] font-extrabold uppercase tracking-wide mb-1">
                 Paso 1 de 2 · Configuración Rápida
               </span>
-              <h2 className="m-0 text-[18px] font-extrabold text-slate-900">
+              <h2 className="m-0 text-[18px] font-extrabold text-slate-900" style={{ color: '#0f172a' }}>
                 Preparar Contrato Legal
               </h2>
-              <p className="m-0 text-[12px] text-slate-600 mt-0.5">
-                Confirma cliente, obra, anticipo, entrega e IVA antes de generar el documento Carta
+              <p className="m-0 text-[12px] text-slate-600 mt-0.5" style={{ color: '#475569' }}>
+                Confirma cliente, obra, anticipo, entrega e IVA antes de revisar y generar el contrato
               </p>
             </div>
             <button
@@ -263,6 +366,7 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
               onClick={handleCloseModal}
               aria-label="Cerrar configuración de contrato"
               className="min-w-[36px] min-h-[36px] rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold cursor-pointer shrink-0"
+              style={{ backgroundColor: '#f1f5f9', color: '#0f172a' }}
             >
               ✕
             </button>
@@ -271,7 +375,7 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
           <form onSubmit={handleConfirmSetupAndGenerate} className="flex flex-col gap-3.5">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="sm:col-span-2">
-                <label htmlFor="inp-contrato-nombre" className="block text-[11.5px] font-extrabold text-slate-700 mb-1">
+                <label htmlFor="inp-contrato-nombre" className="block text-[11.5px] font-extrabold text-slate-700 mb-1" style={{ color: '#334155' }}>
                   Nombre completo del Cliente *
                 </label>
                 <input
@@ -280,13 +384,14 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
                   required
                   value={cliente.nombre}
                   onChange={(e) => onUpdateCliente({ nombre: e.target.value })}
-                  placeholder="Ej. Arq. Carlos Mendoza López"
+                  placeholder="Ejemplo Cliente"
+                  style={{ backgroundColor: '#ffffff', color: '#0f172a' }}
                   className="w-full min-h-[42px] rounded-xl border border-slate-300 px-3 text-[13.5px] font-semibold bg-white"
                 />
               </div>
 
               <div className="sm:col-span-2">
-                <label htmlFor="inp-contrato-dir" className="block text-[11.5px] font-extrabold text-slate-700 mb-1">
+                <label htmlFor="inp-contrato-dir" className="block text-[11.5px] font-extrabold text-slate-700 mb-1" style={{ color: '#334155' }}>
                   Dirección de la obra / instalación *
                 </label>
                 <input
@@ -296,12 +401,13 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
                   value={cliente.direccion}
                   onChange={(e) => onUpdateCliente({ direccion: e.target.value })}
                   placeholder="Calle, número, colonia y municipio"
+                  style={{ backgroundColor: '#ffffff', color: '#0f172a' }}
                   className="w-full min-h-[42px] rounded-xl border border-slate-300 px-3 text-[13.5px] font-semibold bg-white"
                 />
               </div>
 
               <div>
-                <label htmlFor="inp-contrato-tel" className="block text-[11.5px] font-extrabold text-slate-700 mb-1">
+                <label htmlFor="inp-contrato-tel" className="block text-[11.5px] font-extrabold text-slate-700 mb-1" style={{ color: '#334155' }}>
                   WhatsApp / Teléfono del Cliente
                 </label>
                 <input
@@ -309,13 +415,14 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
                   type="tel"
                   value={cliente.telefono}
                   onChange={(e) => onUpdateCliente({ telefono: e.target.value })}
-                  placeholder="Ej. 55 1234 5678"
+                  placeholder="333-333-4444"
+                  style={{ backgroundColor: '#ffffff', color: '#0f172a' }}
                   className="w-full min-h-[42px] rounded-xl border border-slate-300 px-3 mono text-[13px] font-semibold bg-white"
                 />
               </div>
 
               <div>
-                <label htmlFor="inp-contrato-entrega" className="block text-[11.5px] font-extrabold text-slate-700 mb-1">
+                <label htmlFor="inp-contrato-entrega" className="block text-[11.5px] font-extrabold text-slate-700 mb-1" style={{ color: '#334155' }}>
                   Fecha estimada de entrega
                 </label>
                 <input
@@ -323,15 +430,16 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
                   type="date"
                   value={cliente.fechaEntregaEstimada || ''}
                   onChange={(e) => onUpdateCliente({ fechaEntregaEstimada: e.target.value })}
+                  style={{ backgroundColor: '#ffffff', color: '#0f172a' }}
                   className="w-full min-h-[42px] rounded-xl border border-slate-300 px-3 text-[13px] font-bold bg-white"
                 />
               </div>
             </div>
 
             {/* Anticipo recibido ($) + cálculo automático de saldo restante */}
-            <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-300 flex flex-col gap-2.5">
+            <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-300 flex flex-col gap-2.5" style={{ backgroundColor: '#f8fafc', color: '#0f172a' }}>
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <label htmlFor="inp-contrato-anticipo-mxn" className="text-[12px] font-extrabold text-slate-800">
+                <label htmlFor="inp-contrato-anticipo-mxn" className="text-[12px] font-extrabold text-slate-800" style={{ color: '#1e293b' }}>
                   Anticipo recibido ($ MXN)
                 </label>
                 <div className="flex flex-wrap gap-1.5">
@@ -380,12 +488,13 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
                         anticipoPct: pct,
                       });
                     }}
+                    style={{ backgroundColor: '#ffffff', color: '#0f172a' }}
                     className="w-full min-h-[44px] rounded-xl border border-slate-300 pl-7 pr-3 mono text-[15px] font-extrabold bg-white"
                   />
                 </div>
-                <div className="p-2.5 rounded-xl bg-white border border-slate-200 flex items-center justify-between text-[12px]">
-                  <span className="font-bold text-slate-600">Saldo Restante:</span>
-                  <strong id="contrato-setup-saldo" className="mono text-[15px] font-black text-[#0B2545]">
+                <div className="p-2.5 rounded-xl bg-white border border-slate-200 flex items-center justify-between text-[12px]" style={{ backgroundColor: '#ffffff' }}>
+                  <span className="font-bold text-slate-600" style={{ color: '#475569' }}>Saldo Restante:</span>
+                  <strong id="contrato-setup-saldo" className="mono text-[15px] font-black text-[#0B2545]" style={{ color: '#0B2545' }}>
                     {formatMXN(saldoMonto)}
                   </strong>
                 </div>
@@ -394,10 +503,10 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
               {/* Interruptor opcional Incluir IVA (16%) */}
               <div className="flex items-center justify-between gap-3 pt-2 border-t border-slate-200">
                 <div>
-                  <span className="block text-[12.5px] font-extrabold text-slate-800">
+                  <span className="block text-[12.5px] font-extrabold text-slate-800" style={{ color: '#1e293b' }}>
                     Incluir IVA (16%)
                   </span>
-                  <span className="block text-[11px] text-slate-500">
+                  <span className="block text-[11px] text-slate-500" style={{ color: '#64748b' }}>
                     Desactivado por defecto para presupuestos netos
                   </span>
                 </div>
@@ -421,16 +530,16 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
 
               <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-200 text-center text-[11.5px]">
                 <div>
-                  <span className="block text-slate-500">Subtotal</span>
-                  <strong className="mono text-slate-800">{formatMXN(baseDesc)}</strong>
+                  <span className="block text-slate-500" style={{ color: '#64748b' }}>Subtotal</span>
+                  <strong className="mono text-slate-800" style={{ color: '#1e293b' }}>{formatMXN(baseDesc)}</strong>
                 </div>
                 <div>
-                  <span className="block text-slate-500">IVA (16%)</span>
-                  <strong className="mono text-slate-800">{formatMXN(ivaVal)}</strong>
+                  <span className="block text-slate-500" style={{ color: '#64748b' }}>IVA (16%)</span>
+                  <strong className="mono text-slate-800" style={{ color: '#1e293b' }}>{formatMXN(ivaVal)}</strong>
                 </div>
                 <div>
-                  <span className="block text-blue-700 font-bold">Gran Total</span>
-                  <strong className="mono text-blue-700 font-black">{formatMXN(total)}</strong>
+                  <span className="block text-blue-700 font-bold" style={{ color: '#1d4ed8' }}>Gran Total</span>
+                  <strong className="mono text-blue-700 font-black" style={{ color: '#1d4ed8' }}>{formatMXN(total)}</strong>
                 </div>
               </div>
             </div>
@@ -440,6 +549,7 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
                 type="button"
                 id="btn-contrato-cancelar"
                 onClick={handleCloseModal}
+                style={{ backgroundColor: '#ffffff', color: '#334155' }}
                 className="w-full min-h-[44px] px-4 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-[13px] font-bold cursor-pointer"
               >
                 Cancelar
@@ -457,7 +567,7 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
                 id="btn-contrato-generar-vista"
                 className="w-full min-h-[44px] px-4 rounded-xl bg-[#0B2545] hover:bg-[#133866] text-white text-[13px] font-extrabold cursor-pointer shadow-md"
               >
-                Generar Contrato →
+                Continuar al Documento →
               </button>
             </div>
           </form>
@@ -467,10 +577,12 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
         <div
           ref={previewCardRef}
           id="contrato-preview-container"
-          className="w-full max-w-[880px] bg-white text-[#1E293B] border border-slate-300 rounded-[20px] p-3 sm:p-6 shadow-2xl max-h-[94vh] overflow-y-auto my-auto flex flex-col gap-4"
+          data-preserve-light="true"
+          style={{ backgroundColor: '#f8fafc', color: '#0f172a' }}
+          className="w-full max-w-[880px] bg-slate-50 text-[#1E293B] border border-slate-300 rounded-[20px] p-3 sm:p-6 shadow-2xl max-h-[94vh] overflow-y-auto my-auto flex flex-col gap-4"
         >
-          {/* Barra superior de edición rápida (oculta al imprimir) */}
-          <div className="contrato-no-print flex items-start justify-between gap-2 pb-3 border-b border-slate-200">
+          {/* Barra superior de edición rápida */}
+          <div className="contrato-no-print flex items-start justify-between gap-2 pb-3 border-b border-slate-300">
             <div className="flex flex-wrap items-center gap-2 min-w-0 flex-1">
               <button
                 type="button"
@@ -482,7 +594,8 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
                     setPhase('setup');
                   }
                 }}
-                className="min-h-[38px] px-3 rounded-xl border border-slate-300 bg-slate-100 hover:bg-slate-200 text-slate-800 text-[12px] font-extrabold cursor-pointer"
+                style={{ backgroundColor: '#e2e8f0', color: '#0f172a' }}
+                className="min-h-[38px] px-3 rounded-xl border border-slate-300 bg-slate-200 hover:bg-slate-300 text-slate-900 text-[12px] font-extrabold cursor-pointer"
               >
                 {cleanPreview ? '← Salir de vista previa' : '← Ajustar datos'}
               </button>
@@ -490,32 +603,47 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setEditarClausulas((p) => !p)}
-                  className="min-h-[38px] px-3 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-800 text-[12px] font-extrabold cursor-pointer"
+                  style={{ backgroundColor: '#eff6ff', color: '#1e40af' }}
+                  className="min-h-[38px] px-3 rounded-xl border border-blue-300 bg-blue-50 hover:bg-blue-100 text-blue-800 text-[12px] font-extrabold cursor-pointer"
                 >
-                  {editarClausulas ? 'Ocultar editor de cláusulas' : '✏️ Editar cláusulas'}
+                  {editarClausulas ? 'Ocultar cláusulas' : '✏️ Editar cláusulas'}
                 </button>
               )}
-              {cleanPreview && (
-                <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-indigo-600/20 border border-indigo-400/50 text-indigo-200 text-[11px] font-extrabold">
-                  👁 Vista previa lista ({partidasSafe.length} partida{partidasSafe.length === 1 ? '' : 's'})
-                </span>
-              )}
+              <button
+                type="button"
+                id="btn-contrato-vista-previa-doc"
+                onClick={() => {
+                  setEditarClausulas(false);
+                  setCleanPreview((prev) => !prev);
+                  if (previewCardRef.current) {
+                    previewCardRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+                  }
+                }}
+                style={{ backgroundColor: '#eef2ff', color: '#3730a3' }}
+                className="min-h-[38px] px-3 rounded-xl border border-indigo-300 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 text-[12px] font-extrabold cursor-pointer"
+              >
+                {cleanPreview ? '✏️ Editar vista' : '👁 Vista limpia'}
+              </button>
             </div>
             <button
               type="button"
               onClick={handleCloseModal}
               aria-label="Cerrar modal de contrato"
-              className="min-w-[36px] min-h-[36px] rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold cursor-pointer shrink-0"
+              style={{ backgroundColor: '#e2e8f0', color: '#0f172a' }}
+              className="min-w-[36px] min-h-[36px] rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-900 font-bold cursor-pointer shrink-0"
             >
               ✕
             </button>
           </div>
 
-          {/* Editor opcional de proyecto y 4 cláusulas (oculto al imprimir) */}
+          {/* Editor opcional de proyecto y 4 cláusulas */}
           {editarClausulas && (
-            <div className="contrato-no-print p-3.5 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col gap-2.5">
+            <div
+              className="contrato-no-print p-3.5 rounded-2xl bg-white border border-slate-300 flex flex-col gap-2.5"
+              style={{ backgroundColor: '#ffffff', color: '#0f172a' }}
+            >
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <strong className="text-[12.5px] text-[#0B2545]">
+                <strong className="text-[12.5px] text-[#0B2545]" style={{ color: '#0B2545' }}>
                   Editar Proyecto y Cláusulas Legales (1 a 4)
                 </strong>
                 <button
@@ -534,7 +662,7 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
                 </button>
               </div>
               <div>
-                <label htmlFor="inp-contrato-proyecto" className="block text-[11px] font-bold text-slate-600 mb-1">
+                <label htmlFor="inp-contrato-proyecto" className="block text-[11px] font-bold text-slate-700 mb-1" style={{ color: '#334155' }}>
                   Referencia / Nombre del Proyecto
                 </label>
                 <input
@@ -542,13 +670,14 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
                   type="text"
                   value={hoja.proyecto}
                   onChange={(e) => onUpdateProyecto(e.target.value)}
-                  placeholder="Ej. Ventanería Residencial"
+                  placeholder="Ejemplo Cliente"
+                  style={{ backgroundColor: '#ffffff', color: '#0f172a' }}
                   className="w-full min-h-[38px] rounded-xl border border-slate-300 px-3 text-[12.5px] font-semibold bg-white"
                 />
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 <div>
-                  <label htmlFor="txt-clausula-anticipo" className="block text-[11px] font-bold text-slate-600 mb-1">
+                  <label htmlFor="txt-clausula-anticipo" className="block text-[11px] font-bold text-slate-700 mb-1" style={{ color: '#334155' }}>
                     1) Anticipo y Fabricación
                   </label>
                   <textarea
@@ -556,11 +685,12 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
                     rows={3}
                     value={cliente.clausulaAnticipo ?? ''}
                     onChange={(e) => onUpdateCliente({ clausulaAnticipo: e.target.value })}
+                    style={{ backgroundColor: '#ffffff', color: '#0f172a' }}
                     className="w-full rounded-xl border border-slate-300 p-2 text-[11.5px] bg-white"
                   />
                 </div>
                 <div>
-                  <label htmlFor="txt-clausula-entrega" className="block text-[11px] font-bold text-slate-600 mb-1">
+                  <label htmlFor="txt-clausula-entrega" className="block text-[11px] font-bold text-slate-700 mb-1" style={{ color: '#334155' }}>
                     2) Entrega e Instalación
                   </label>
                   <textarea
@@ -568,11 +698,12 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
                     rows={3}
                     value={cliente.clausulaEntrega ?? ''}
                     onChange={(e) => onUpdateCliente({ clausulaEntrega: e.target.value })}
+                    style={{ backgroundColor: '#ffffff', color: '#0f172a' }}
                     className="w-full rounded-xl border border-slate-300 p-2 text-[11.5px] bg-white"
                   />
                 </div>
                 <div>
-                  <label htmlFor="txt-clausula-vano" className="block text-[11px] font-bold text-slate-600 mb-1">
+                  <label htmlFor="txt-clausula-vano" className="block text-[11px] font-bold text-slate-700 mb-1" style={{ color: '#334155' }}>
                     3) Condiciones del Vano
                   </label>
                   <textarea
@@ -580,11 +711,12 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
                     rows={3}
                     value={cliente.clausulaCondicionesVano ?? ''}
                     onChange={(e) => onUpdateCliente({ clausulaCondicionesVano: e.target.value })}
+                    style={{ backgroundColor: '#ffffff', color: '#0f172a' }}
                     className="w-full rounded-xl border border-slate-300 p-2 text-[11.5px] bg-white"
                   />
                 </div>
                 <div>
-                  <label htmlFor="txt-clausula-garantia" className="block text-[11px] font-bold text-slate-600 mb-1">
+                  <label htmlFor="txt-clausula-garantia" className="block text-[11px] font-bold text-slate-700 mb-1" style={{ color: '#334155' }}>
                     4) Garantía
                   </label>
                   <textarea
@@ -592,6 +724,7 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
                     rows={3}
                     value={cliente.clausulaGarantia ?? ''}
                     onChange={(e) => onUpdateCliente({ clausulaGarantia: e.target.value })}
+                    style={{ backgroundColor: '#ffffff', color: '#0f172a' }}
                     className="w-full rounded-xl border border-slate-300 p-2 text-[11.5px] bg-white"
                   />
                 </div>
@@ -599,10 +732,11 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
             </div>
           )}
 
-          {/* ==================== DOCUMENTO LEGAL TAMAÑO CARTA ==================== */}
+          {/* ==================== DOCUMENTO LEGAL TAMAÑO CARTA (SIEMPRE PAPEL BLANCO ALTO CONTRASTE) ==================== */}
           <div
             id="contrato-print-area"
             data-preserve-light="true"
+            style={{ backgroundColor: '#ffffff', color: '#0f172a' }}
             className="w-full bg-white text-slate-900 border border-slate-300 rounded-2xl p-4 sm:p-7 shadow-sm"
           >
             {/* Encabezado Ejecutivo del Taller + Folio Único */}
@@ -615,22 +749,39 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
                     className="w-16 h-16 rounded-xl object-contain border border-slate-200 bg-white shrink-0"
                   />
                 ) : (
-                  <div className="w-14 h-14 rounded-xl bg-[#0B2545] text-white flex items-center justify-center font-black text-[18px] shrink-0">
+                  <div
+                    style={{ backgroundColor: '#0B2545', color: '#ffffff' }}
+                    className="w-14 h-14 rounded-xl bg-[#0B2545] text-white flex items-center justify-center font-black text-[18px] shrink-0"
+                  >
                     AP
                   </div>
                 )}
                 <div className="flex-1 min-w-0">
-                  <div className="text-[11px] font-extrabold text-blue-700 uppercase tracking-wider">
+                  <div
+                    style={{ color: '#1d4ed8' }}
+                    className="text-[11px] font-extrabold text-blue-700 uppercase tracking-wider"
+                  >
                     Contrato de Prestación de Servicios
                   </div>
-                  <h1 className="m-0 text-[18px] sm:text-[19px] font-black text-[#0B2545] leading-snug break-normal">
+                  <h1
+                    id="contrato-header-taller-nombre"
+                    style={{ color: '#0B2545' }}
+                    className="m-0 text-[18px] sm:text-[19px] font-black text-[#0B2545] leading-snug break-normal"
+                  >
                     {taller.nombre || 'Taller de Aluminio y Vidrio'}
                   </h1>
-                  <div className="text-[12px] text-slate-700 font-semibold mt-0.5">
+                  <div
+                    id="contrato-header-taller-tel"
+                    style={{ color: '#1e293b' }}
+                    className="text-[12.5px] text-slate-800 font-bold mt-0.5"
+                  >
                     Tel: <span className="mono">{taller.tel || 'Sin especificar'}</span>
                   </div>
                   {taller.ubicacion && (
-                    <div className="text-[11.5px] text-slate-600">
+                    <div
+                      style={{ color: '#334155' }}
+                      className="text-[11.5px] text-slate-700 font-semibold"
+                    >
                       Ubicación: {taller.ubicacion}
                     </div>
                   )}
@@ -639,29 +790,43 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
 
               <div
                 id="contrato-folio-card"
+                style={{ backgroundColor: '#0B2545', color: '#ffffff' }}
                 className="contrato-folio-dark w-full sm:w-auto sm:min-w-[215px] sm:max-w-[295px] text-left sm:text-right bg-[#0B2545] border border-sky-400/40 rounded-xl px-4 py-3 shrink-0 shadow-sm"
               >
-                <div className="contrato-folio-label text-[10.5px] font-extrabold uppercase tracking-wider text-sky-200">
+                <div
+                  style={{ color: '#bae6fd' }}
+                  className="contrato-folio-label text-[10.5px] font-extrabold uppercase tracking-wider text-sky-200"
+                >
                   Folio de Contrato
                 </div>
-                <div id="contrato-folio-badge" className="mono text-[16px] font-black text-white mt-0.5">
+                <div
+                  id="contrato-folio-badge"
+                  style={{ color: '#ffffff' }}
+                  className="mono text-[16px] font-black text-white mt-0.5"
+                >
                   {folioActivo}
                 </div>
-                <div className="text-[11.5px] text-white mt-1.5 leading-snug">
-                  Fecha: <strong className="text-white font-extrabold">{fechaHoy}</strong>
+                <div style={{ color: '#f8fafc' }} className="text-[11.5px] text-white mt-1.5 leading-snug">
+                  Fecha: <strong style={{ color: '#ffffff' }} className="text-white font-extrabold">{fechaHoy}</strong>
                 </div>
-                <div className="text-[11.5px] text-white mt-0.5 leading-snug">
-                  Entrega est.: <strong className="text-white font-extrabold">{fechaEntregaTexto}</strong>
+                <div style={{ color: '#f8fafc' }} className="text-[11.5px] text-white mt-0.5 leading-snug">
+                  Entrega est.: <strong style={{ color: '#ffffff' }} className="text-white font-extrabold">{fechaEntregaTexto}</strong>
                 </div>
               </div>
             </div>
 
             {/* Datos del Cliente y Obra */}
-            <div className="mt-4 p-3.5 rounded-xl bg-slate-50 border border-slate-300 text-[12px]">
-              <div className="font-extrabold text-[#0B2545] uppercase tracking-wide text-[11px] mb-1.5">
+            <div
+              style={{ backgroundColor: '#f8fafc', color: '#0f172a' }}
+              className="mt-4 p-3.5 rounded-xl bg-slate-50 border border-slate-300 text-[12px]"
+            >
+              <div
+                style={{ color: '#0B2545' }}
+                className="font-extrabold text-[#0B2545] uppercase tracking-wide text-[11px] mb-1.5"
+              >
                 Datos del Cliente y Lugar de Obra
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-1 gap-x-4 text-slate-800">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-1 gap-x-4 text-slate-800" style={{ color: '#1e293b' }}>
                 <div className="break-words">
                   <strong>Cliente:</strong> {cliNombreFinal}
                 </div>
@@ -683,7 +848,7 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
             <div className="mt-4 overflow-x-auto border border-slate-300 rounded-xl">
               <table className="w-full border-collapse text-[12px] min-w-[560px]">
                 <thead>
-                  <tr className="bg-[#0B2545] text-white text-left">
+                  <tr style={{ backgroundColor: '#0B2545', color: '#ffffff' }} className="bg-[#0B2545] text-white text-left">
                     <th className="p-2.5 w-[124px]">Dibujo Acotado</th>
                     <th className="p-2.5">Descripción Técnica (Línea, Color y Vidrio/Espesor)</th>
                     <th className="p-2.5 text-center w-[68px]">Cant.</th>
@@ -701,34 +866,38 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
                         : '';
                     const unitPrice = item.cantidad > 0 ? item.totalLinea / item.cantidad : item.totalLinea;
                     return (
-                      <tr key={item.id || `part-${idx}`} className="border-b border-slate-200 last:border-b-0 bg-white">
+                      <tr
+                        key={item.id || `part-${idx}`}
+                        style={{ backgroundColor: '#ffffff', color: '#0f172a' }}
+                        className="border-b border-slate-200 last:border-b-0 bg-white"
+                      >
                         <td className="p-2 align-middle">
                           <PartidaMiniSvg partida={item} width={112} height={84} />
                         </td>
                         <td className="p-2.5 align-middle">
-                          <div className="font-extrabold text-slate-900 text-[12.5px]">
+                          <div style={{ color: '#0f172a' }} className="font-extrabold text-slate-900 text-[12.5px]">
                             {idx + 1}. {item.etiqueta ? `${item.etiqueta} · ` : ''}
                             {linea.nombre}
                             {apTxt}
                           </div>
-                          <div className="text-[11.5px] text-slate-700 mt-0.5">
+                          <div style={{ color: '#334155' }} className="text-[11.5px] text-slate-700 mt-0.5">
                             Medidas: <strong className="mono">{item.anchoCm} × {item.altoCm} cm</strong>
                             {item.area ? ` · Área: ${item.area}` : ''}
                           </div>
-                          <div className="text-[11.5px] text-slate-600">
+                          <div style={{ color: '#475569' }} className="text-[11.5px] text-slate-600">
                             Color: <strong>{color.nombre}</strong> ·{' '}
                             {linea.esMosquitero ? 'Malla mosquitera' : `Vidrio / Panel: ${panelDesc}`}
                           </div>
                         </td>
-                        <td className="p-2.5 text-center align-middle mono font-bold text-slate-900">
+                        <td style={{ color: '#0f172a' }} className="p-2.5 text-center align-middle mono font-bold text-slate-900">
                           {item.cantidad} pza
                         </td>
                         <td className="p-2.5 text-right align-middle">
-                          <strong className="mono font-extrabold text-[#0B2545] block">
+                          <strong style={{ color: '#0B2545' }} className="mono font-extrabold text-[#0B2545] block">
                             {formatMXN(item.totalLinea)}
                           </strong>
                           {item.cantidad > 1 && (
-                            <span className="mono text-[10.5px] text-slate-500">
+                            <span style={{ color: '#64748b' }} className="mono text-[10.5px] text-slate-500">
                               {formatMXN(unitPrice)} c/u
                             </span>
                           )}
@@ -742,164 +911,254 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
 
             {/* Resumen de Pagos bien visible + Cláusulas Legales */}
             <div className="mt-4 grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
-              <div className="md:col-span-7 p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-[11.3px] text-slate-700 leading-relaxed flex flex-col gap-1.5">
-                <strong className="block text-[#0B2545] text-[12px] uppercase tracking-wide">
+              <div
+                style={{ backgroundColor: '#f8fafc', color: '#334155' }}
+                className="md:col-span-7 p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-[11.3px] text-slate-700 leading-relaxed flex flex-col gap-1.5"
+              >
+                <strong style={{ color: '#0B2545' }} className="block text-[#0B2545] text-[12px] uppercase tracking-wide">
                   Cláusulas del Contrato
                 </strong>
                 <div>
-                  <strong>1) Anticipo y Fabricación:</strong> {clausulaAnticipoText}
+                  <strong style={{ color: '#0f172a' }}>1) Anticipo y Fabricación:</strong> {clausulaAnticipoText}
                 </div>
                 <div>
-                  <strong>2) Entrega e Instalación:</strong> {clausulaEntregaText}
+                  <strong style={{ color: '#0f172a' }}>2) Entrega e Instalación:</strong> {clausulaEntregaText}
                 </div>
                 <div>
-                  <strong>3) Condiciones del Vano:</strong> {clausulaVanoText}
+                  <strong style={{ color: '#0f172a' }}>3) Condiciones del Vano:</strong> {clausulaVanoText}
                 </div>
                 <div>
-                  <strong>4) Garantía:</strong> {clausulaGarantiaText}
+                  <strong style={{ color: '#0f172a' }}>4) Garantía:</strong> {clausulaGarantiaText}
                 </div>
               </div>
 
-              <div className="md:col-span-5 p-4 rounded-xl bg-slate-50 border-[1.5px] border-slate-300 text-[12.5px]">
-                <div className="text-[11px] font-extrabold text-[#0B2545] uppercase tracking-wide mb-2">
+              <div
+                style={{ backgroundColor: '#f8fafc', color: '#0f172a' }}
+                className="md:col-span-5 p-4 rounded-xl bg-slate-50 border-[1.5px] border-slate-300 text-[12.5px]"
+              >
+                <div style={{ color: '#0B2545' }} className="text-[11px] font-extrabold text-[#0B2545] uppercase tracking-wide mb-2">
                   Resumen de Pagos
                 </div>
-                <div className="flex justify-between py-0.5 text-slate-700">
+                <div className="flex justify-between py-0.5 text-slate-700" style={{ color: '#334155' }}>
                   <span>Subtotal</span>
-                  <strong className="mono text-slate-900">{formatMXN(subtotal)}</strong>
+                  <strong className="mono text-slate-900" style={{ color: '#0f172a' }}>{formatMXN(subtotal)}</strong>
                 </div>
                 {descuentoVal > 0 && (
-                  <div className="flex justify-between py-0.5 text-emerald-700">
+                  <div className="flex justify-between py-0.5 text-emerald-700" style={{ color: '#047857' }}>
                     <span>Descuento ({hoja.descuentoPct}%)</span>
                     <strong className="mono">-{formatMXN(descuentoVal)}</strong>
                   </div>
                 )}
                 {ivaVal > 0 && (
-                  <div className="flex justify-between py-0.5 text-slate-700">
+                  <div className="flex justify-between py-0.5 text-slate-700" style={{ color: '#334155' }}>
                     <span>IVA (16%)</span>
-                    <strong className="mono text-slate-900">{formatMXN(ivaVal)}</strong>
+                    <strong className="mono text-slate-900" style={{ color: '#0f172a' }}>{formatMXN(ivaVal)}</strong>
                   </div>
                 )}
-                <div className="flex justify-between items-baseline pt-2 mt-1.5 border-t border-slate-300 font-black text-[15px] text-[#0B2545]">
+                <div
+                  style={{ color: '#0B2545' }}
+                  className="flex justify-between items-baseline pt-2 mt-1.5 border-t border-slate-300 font-black text-[15px] text-[#0B2545]"
+                >
                   <span>GRAN TOTAL</span>
                   <span className="mono text-[17px]">{formatMXN(total)}</span>
                 </div>
                 <div className="mt-2.5 pt-2.5 border-t border-dashed border-slate-300 text-[12px] flex flex-col gap-1.5">
-                  <div className="flex justify-between text-emerald-800">
+                  <div className="flex justify-between text-emerald-800" style={{ color: '#065f46' }}>
                     <span>Anticipo Recibido ({anticipoPctDisplay}%)</span>
                     <strong className="mono">{formatMXN(anticipoMonto)}</strong>
                   </div>
-                  <div className="flex justify-between items-center p-2 rounded-lg bg-white border border-slate-300 text-slate-900 font-extrabold">
+                  <div
+                    style={{ backgroundColor: '#ffffff', color: '#0f172a' }}
+                    className="flex justify-between items-center p-2 rounded-lg bg-white border border-slate-300 text-slate-900 font-extrabold"
+                  >
                     <span className="text-[11.5px]">Saldo a liquidar contra entrega</span>
-                    <strong className="mono text-[14.5px] text-[#0B2545]">{formatMXN(saldoMonto)}</strong>
+                    <strong className="mono text-[14.5px] text-[#0B2545]" style={{ color: '#0B2545' }}>
+                      {formatMXN(saldoMonto)}
+                    </strong>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Pie de página con dos bloques de firma */}
-            <div className="contrato-signatures mt-10 pt-4 grid grid-cols-2 gap-6 text-center text-[11.5px] text-slate-700">
-              <div>
-                <div className="h-14 border-b border-slate-600 mx-4 mb-1.5" />
-                <strong className="block text-slate-900 uppercase">El Prestador del Servicio</strong>
-                <span className="break-words">{taller.nombre || 'Taller de Aluminio y Vidrio'}</span>
+            {/* Pie de página con DOS bloques interactivos de firma (Prestador + Cliente) */}
+            <div className="contrato-signatures mt-8 pt-4 grid grid-cols-1 sm:grid-cols-2 gap-6 text-center text-[11.5px] text-slate-700">
+              <div className="flex flex-col items-center">
+                <button
+                  type="button"
+                  id="btn-contrato-box-firma-prestador"
+                  onClick={() => setSignatureTarget('provider')}
+                  style={{ backgroundColor: '#f8fafc' }}
+                  className="w-full max-w-[260px] h-16 border-b-2 border-slate-600 rounded-t-lg hover:bg-slate-100 flex items-center justify-center px-2 mb-1.5 cursor-pointer transition-colors"
+                >
+                  {providerSignatureUrl ? (
+                    <img
+                      src={providerSignatureUrl}
+                      alt="Firma del prestador de servicios"
+                      className="max-h-14 max-w-[200px] object-contain"
+                    />
+                  ) : (
+                    <span style={{ color: '#64748b' }} className="text-[11px] font-bold italic">
+                      Toca aquí para firmar (Prestador)
+                    </span>
+                  )}
+                </button>
+                <strong style={{ color: '#0f172a' }} className="block text-slate-900 uppercase">
+                  El Prestador del Servicio
+                </strong>
+                <span style={{ color: '#334155' }} className="break-words font-semibold">
+                  {taller.nombre || 'Taller de Aluminio y Vidrio'}
+                </span>
               </div>
-              <div>
-                <div className="h-14 border-b border-slate-600 mx-4 mb-1.5 flex items-end justify-center pb-1">
+
+              <div className="flex flex-col items-center">
+                <button
+                  type="button"
+                  id="btn-contrato-box-firma-cliente"
+                  onClick={() => setSignatureTarget('client')}
+                  style={{ backgroundColor: '#f8fafc' }}
+                  className="w-full max-w-[260px] h-16 border-b-2 border-slate-600 rounded-t-lg hover:bg-slate-100 flex items-center justify-center px-2 mb-1.5 cursor-pointer transition-colors"
+                >
                   {clientSignatureUrl ? (
                     <img
                       src={clientSignatureUrl}
                       alt="Firma del cliente"
-                      className="max-h-12 max-w-[160px] object-contain"
+                      className="max-h-14 max-w-[200px] object-contain"
                     />
-                  ) : null}
-                </div>
-                <strong className="block text-slate-900 uppercase">El Cliente</strong>
-                <span className="break-words">{cliNombreFinal}</span>
+                  ) : (
+                    <span style={{ color: '#64748b' }} className="text-[11px] font-bold italic">
+                      Toca aquí para firmar (Cliente)
+                    </span>
+                  )}
+                </button>
+                <strong style={{ color: '#0f172a' }} className="block text-slate-900 uppercase">
+                  El Cliente
+                </strong>
+                <span style={{ color: '#334155' }} className="break-words font-semibold">
+                  {cliNombreFinal}
+                </span>
               </div>
             </div>
           </div>
 
-          {/* Botones flotantes inferiores bien ordenados y con alto contraste (ocultos al imprimir) */}
-          <div className="contrato-no-print sticky bottom-0 z-10 -mx-3 sm:-mx-6 -mb-3 sm:-mb-6 px-3 sm:px-6 pt-3 pb-4 rounded-b-[19px] bg-[#0f172a] border-t border-slate-700 grid grid-cols-2 sm:grid-cols-5 gap-2">
-            <button
-              type="button"
-              id="btn-contrato-vista-previa-doc"
-              onClick={() => {
-                setEditarClausulas(false);
-                setCleanPreview((prev) => !prev);
-                if (previewCardRef.current) {
-                  previewCardRef.current.scrollTo({ top: 0, behavior: 'smooth' });
-                }
-              }}
-              className="min-h-[44px] px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 border border-indigo-400/60 text-white text-[12px] sm:text-[12.5px] font-extrabold cursor-pointer shadow-sm"
-            >
-              {cleanPreview ? '✏️ Editar vista' : '👁 Vista previa'}
-            </button>
-            <button
-              type="button"
-              id="btn-contrato-firmar"
-              onClick={() => setSignaturePadOpen(true)}
-              className="min-h-[44px] px-3 rounded-xl border border-amber-300 bg-amber-500 hover:bg-amber-400 text-slate-950 text-[12px] sm:text-[12.5px] font-black cursor-pointer shadow-sm"
-            >
-              {clientSignatureUrl ? '✍️ Cambiar firma' : '✍️ Firmar'}
-            </button>
-            <button
-              type="button"
-              id="btn-contrato-whatsapp"
-              onClick={handleShareWhatsApp}
-              className="min-h-[44px] px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[12px] sm:text-[12.5px] font-extrabold cursor-pointer shadow-sm"
-            >
-              💬 WhatsApp
-            </button>
-            <button
-              type="button"
-              id="btn-contrato-pdf"
-              onClick={() => {
-                if (partidasSafe.length === 0) {
-                  onShowToast('Agrega al menos una partida para generar el contrato PDF');
-                  return;
-                }
-                void generarPdfContratoServicio(
-                  hoja,
-                  taller,
-                  cliente,
-                  folioActivo,
-                  clientSignatureUrl || undefined
-                )
-                  .then(() => {
-                    onShowToast(`PDF Contrato ${folioActivo} descargado`, true);
-                  })
-                  .catch(() => {
-                    onShowToast('No se pudo descargar el PDF del contrato');
-                  });
-              }}
-              className="min-h-[44px] px-3 rounded-xl border border-blue-400/60 bg-blue-600 hover:bg-blue-500 text-white text-[12px] sm:text-[12.5px] font-extrabold cursor-pointer shadow-sm"
-            >
-              📄 PDF
-            </button>
-            <button
-              type="button"
-              id="btn-contrato-print"
-              onClick={() => window.print()}
-              className="col-span-2 sm:col-span-1 min-h-[44px] px-3 rounded-xl border border-sky-400/40 bg-[#0B2545] hover:bg-[#133866] text-white text-[12px] sm:text-[12.5px] font-extrabold cursor-pointer shadow-md"
-            >
-              🖨️ Imprimir
-            </button>
+          {/* Barra inferior fija: Firmas + Generar Contrato (Naranja -> Verde) + Guardar PDF + WhatsApp (sin Imprimir) */}
+          <div className="contrato-no-print sticky bottom-0 z-10 -mx-3 sm:-mx-6 -mb-3 sm:-mb-6 px-3 sm:px-6 pt-3 pb-4 rounded-b-[19px] bg-[#0f172a] border-t border-slate-700 flex flex-col gap-2.5">
+            {gateAlertMsg && (
+              <div
+                id="contrato-gate-alert"
+                role="alert"
+                className="px-3 py-2 rounded-xl border border-amber-400/70 bg-amber-500/20 text-amber-100 text-[12px] font-extrabold text-center"
+              >
+                ⚠️ {gateAlertMsg}
+              </div>
+            )}
+
+            {/* Fila de firmas (Prestador y Cliente) */}
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                id="btn-contrato-firmar-prestador"
+                onClick={() => setSignatureTarget('provider')}
+                className={`min-h-[40px] px-3 rounded-xl border text-[11.5px] sm:text-[12px] font-extrabold cursor-pointer transition-colors ${
+                  providerSignatureUrl
+                    ? 'border-emerald-400/60 bg-emerald-500/20 text-emerald-100 hover:bg-emerald-500/30'
+                    : 'border-amber-400/60 bg-amber-500/20 text-amber-100 hover:bg-amber-500/30'
+                }`}
+              >
+                {providerSignatureUrl ? '✓ Firma Prestador' : '✍️ Firma Prestador'}
+              </button>
+              <button
+                type="button"
+                id="btn-contrato-firmar-cliente"
+                onClick={() => setSignatureTarget('client')}
+                className={`min-h-[40px] px-3 rounded-xl border text-[11.5px] sm:text-[12px] font-extrabold cursor-pointer transition-colors ${
+                  clientSignatureUrl
+                    ? 'border-emerald-400/60 bg-emerald-500/20 text-emerald-100 hover:bg-emerald-500/30'
+                    : 'border-amber-400/60 bg-amber-500/20 text-amber-100 hover:bg-amber-500/30'
+                }`}
+              >
+                {clientSignatureUrl ? '✓ Firma Cliente' : '✍️ Firma Cliente'}
+              </button>
+            </div>
+
+            {/* Fila principal de acciones: Generar Contrato -> Guardar PDF -> WhatsApp */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <button
+                type="button"
+                id="btn-contrato-generar"
+                disabled={generatingContract}
+                data-generated={generatedContract ? 'true' : 'false'}
+                onClick={() => void handleGenerateContractPdf()}
+                className={`min-h-[46px] px-3.5 rounded-xl border text-[13px] font-black cursor-pointer transition-all shadow-sm disabled:opacity-60 ${
+                  generatedContract
+                    ? 'bg-emerald-500/20 border-emerald-500/65 hover:bg-emerald-500/30 text-emerald-100'
+                    : 'bg-orange-500/20 border-orange-500/65 hover:bg-orange-500/30 text-orange-100'
+                }`}
+              >
+                {generatingContract
+                  ? '⏳ Generando...'
+                  : generatedContract
+                    ? '✓ Contrato Generado'
+                    : '📝 Generar Contrato'}
+              </button>
+
+              <button
+                type="button"
+                id="btn-contrato-pdf"
+                aria-disabled={!generatedContract}
+                onClick={handleSaveGeneratedPdf}
+                className={`min-h-[46px] px-3.5 rounded-xl border text-[13px] font-extrabold cursor-pointer transition-all shadow-sm ${
+                  generatedContract
+                    ? 'border-blue-400/65 bg-blue-600 hover:bg-blue-500 text-white'
+                    : 'border-slate-600 bg-slate-800/70 text-slate-400 opacity-65'
+                }`}
+              >
+                📄 Guardar PDF
+              </button>
+
+              <button
+                type="button"
+                id="btn-contrato-whatsapp"
+                aria-disabled={!generatedContract}
+                onClick={() => void handleShareWhatsApp()}
+                className={`min-h-[46px] px-3.5 rounded-xl border text-[13px] font-extrabold cursor-pointer transition-all shadow-sm ${
+                  generatedContract
+                    ? 'border-emerald-400/65 bg-emerald-600 hover:bg-emerald-500 text-white'
+                    : 'border-slate-600 bg-slate-800/70 text-slate-400 opacity-65'
+                }`}
+              >
+                💬 WhatsApp
+              </button>
+            </div>
           </div>
         </div>
       )}
 
       <SignaturePadModal
-        open={signaturePadOpen}
-        title="Firma del Cliente en Contrato"
-        subtitle="La firma se incluirá en el documento y en el PDF del contrato."
-        initialSignature={clientSignatureUrl}
+        open={signatureTarget !== null}
+        title={
+          signatureTarget === 'provider'
+            ? 'Firma del Prestador de Servicios'
+            : 'Firma del Cliente en Contrato'
+        }
+        subtitle={
+          signatureTarget === 'provider'
+            ? 'Esta firma aparecerá del lado del taller/prestador en el contrato y en el PDF.'
+            : 'Esta firma aparecerá del lado del cliente en el contrato y en el PDF.'
+        }
+        initialSignature={
+          signatureTarget === 'provider' ? providerSignatureUrl : clientSignatureUrl
+        }
         onApply={(croppedPng) => {
-          setClientSignatureUrl(croppedPng);
-          onShowToast('Firma agregada al contrato', true);
+          if (signatureTarget === 'provider') {
+            setProviderSignatureUrl(croppedPng);
+            onShowToast('Firma del Prestador agregada al contrato', true);
+          } else if (signatureTarget === 'client') {
+            setClientSignatureUrl(croppedPng);
+            onShowToast('Firma del Cliente agregada al contrato', true);
+          }
+          setSignatureTarget(null);
         }}
-        onClose={() => setSignaturePadOpen(false)}
+        onClose={() => setSignatureTarget(null)}
         onShowToast={onShowToast}
       />
     </div>

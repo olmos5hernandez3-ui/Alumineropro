@@ -1,6 +1,7 @@
 import React from 'react';
+import { LEGAL_DISCLAIMER_TEXT, PRE_CUT_WARNING_TEXT } from '../utils/alumineroLogic';
 
-export type LegalDocType = 'terminos' | 'privacidad' | null;
+export type LegalDocType = 'terminos' | 'privacidad' | 'deslinde' | null;
 
 interface LegalModalProps {
   docType: LegalDocType;
@@ -12,6 +13,14 @@ export const LegalModal: React.FC<LegalModalProps> = ({ docType, onClose, onSwit
   if (!docType) return null;
 
   const isTerms = docType === 'terminos';
+  const isPrivacy = docType === 'privacidad';
+  const isDeslinde = docType === 'deslinde';
+
+  const modalTitle = isTerms
+    ? 'Términos y Condiciones de Uso'
+    : isDeslinde
+      ? 'Aviso Legal y Deslinde de Responsabilidad'
+      : 'Aviso de Privacidad';
 
   return (
     <div
@@ -19,19 +28,19 @@ export const LegalModal: React.FC<LegalModalProps> = ({ docType, onClose, onSwit
       className="fixed inset-0 z-50 bg-slate-950/75 flex items-center justify-center p-4 overflow-y-auto"
       role="dialog"
       aria-modal="true"
-      aria-label={isTerms ? 'Términos y Condiciones' : 'Aviso de Privacidad'}
+      aria-label={modalTitle}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-[600px] max-h-[90vh] overflow-y-auto bg-white text-slate-900 border-[1.5px] border-slate-300 rounded-[22px] p-5 sm:p-6 shadow-2xl my-auto">
+      <div className="w-full max-w-[620px] max-h-[90vh] overflow-y-auto bg-white text-slate-900 border-[1.5px] border-slate-300 rounded-[22px] p-5 sm:p-6 shadow-2xl my-auto">
         <div className="flex items-start justify-between gap-3 pb-3 mb-4 border-b border-slate-200">
           <div>
             <span className="inline-block px-2.5 py-0.5 rounded-lg bg-blue-50 border border-blue-200 text-blue-800 text-[11px] font-extrabold mb-1">
               Aluminero Pro · Documento Legal
             </span>
             <h2 className="m-0 text-[19px] font-extrabold text-slate-900">
-              {isTerms ? 'Términos y Condiciones de Uso' : 'Aviso de Privacidad'}
+              {modalTitle}
             </h2>
           </div>
           <button
@@ -45,32 +54,62 @@ export const LegalModal: React.FC<LegalModalProps> = ({ docType, onClose, onSwit
           </button>
         </div>
 
-        <div className="flex gap-2 mb-4">
+        <div className="grid grid-cols-3 gap-1.5 mb-4">
           <button
             type="button"
             onClick={() => onSwitchDoc('terminos')}
-            className={`flex-1 min-h-[38px] px-3 rounded-xl text-[12.5px] font-extrabold border cursor-pointer transition-colors ${
+            className={`min-h-[38px] px-2 rounded-xl text-[12px] font-extrabold border cursor-pointer transition-colors ${
               isTerms
                 ? 'bg-[#0B2545] text-white border-[#0B2545]'
                 : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
             }`}
           >
-            Términos y Condiciones
+            Términos
           </button>
           <button
             type="button"
-            onClick={() => onSwitchDoc('privacidad')}
-            className={`flex-1 min-h-[38px] px-3 rounded-xl text-[12.5px] font-extrabold border cursor-pointer transition-colors ${
-              !isTerms
+            onClick={() => onSwitchDoc('deslinde')}
+            className={`min-h-[38px] px-2 rounded-xl text-[12px] font-extrabold border cursor-pointer transition-colors ${
+              isDeslinde
                 ? 'bg-[#0B2545] text-white border-[#0B2545]'
                 : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
             }`}
           >
-            Aviso de Privacidad
+            Aviso Legal y Deslinde
+          </button>
+          <button
+            type="button"
+            onClick={() => onSwitchDoc('privacidad')}
+            className={`min-h-[38px] px-2 rounded-xl text-[12px] font-extrabold border cursor-pointer transition-colors ${
+              isPrivacy
+                ? 'bg-[#0B2545] text-white border-[#0B2545]'
+                : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
+            }`}
+          >
+            Privacidad
           </button>
         </div>
 
-        {isTerms ? (
+        {isDeslinde ? (
+          <div className="space-y-3.5 text-[13px] text-slate-700 leading-relaxed">
+            <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-950 font-semibold text-[12.5px]">
+              {PRE_CUT_WARNING_TEXT}
+            </div>
+            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 whitespace-pre-line">
+              {LEGAL_DISCLAIMER_TEXT}
+            </div>
+            <div>
+              <h3 className="m-0 text-[14px] font-extrabold text-slate-900 mb-1">
+                Buenas prácticas antes de cortar en taller
+              </h3>
+              <ul className="m-0 pl-5 space-y-1.5 text-[12.5px]">
+                <li>Confirma el extrusor y catálogo real de tus perfiles (Cuprum, Indalum, Alumer, Extrusiones Metálicas, etc.).</li>
+                <li>Verifica escuadras, plomos y vanos reales en obra antes de cortar perfiles o pedir vidrio templado.</li>
+                <li>Si tu taller maneja descuentos propios, puedes calibrarlos en <strong>Mi Taller → Ajuste fino de descuentos (cm)</strong>.</li>
+              </ul>
+            </div>
+          </div>
+        ) : isTerms ? (
           <div className="space-y-3.5 text-[13px] text-slate-700 leading-relaxed">
             <p className="m-0 text-[12px] text-slate-500 font-semibold">
               Última actualización: Noviembre 2026 · Aplicación Aluminero Pro

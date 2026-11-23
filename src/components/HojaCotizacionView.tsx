@@ -1,14 +1,20 @@
 import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import {
+  buildWhatsAppDirectUrl,
   COLORES_CONFIG,
   consolidarMaterialesObra,
   formatClientPhoneInput,
-  generateRandomMxPhonePlaceholder,
   getRellenoLabel,
   LINEAS_CONFIG,
   PartidaObra,
+  PRE_CUT_WARNING_TEXT,
+  round2,
 } from '../utils/alumineroLogic';
-import { CotizacionPdfBlobResult } from '../utils/pdfExport';
+import { optimizarPartidasTramos1D } from '../utils/modulacionLogic';
+import {
+  CotizacionPdfBlobResult,
+  generarPdfOrdenProduccionTaller,
+} from '../utils/pdfExport';
 import {
   ClienteGuardado,
   ContratoClienteInfo,
@@ -68,6 +74,7 @@ interface Props {
   onAgregarPieza: () => void;
   onApartarStockObra: (rows: ReturnType<typeof consolidarMaterialesObra>) => void;
   onDescontarInventarioObra: (rows: ReturnType<typeof consolidarMaterialesObra>) => void;
+  onAddSobrante?: (item: Omit<SobranteItem, 'id' | 'fecha'>) => void;
   onOpenGlassOptimizer?: () => void;
   onPushSubModal?: (sub: 'contrato') => void;
   onRequestBack?: () => void;
@@ -102,6 +109,7 @@ export const HojaCotizacionView: React.FC<Props> = ({
   onAgregarPieza,
   onApartarStockObra,
   onDescontarInventarioObra,
+  onAddSobrante,
   onOpenGlassOptimizer,
   onPushSubModal,
   onRequestBack,
@@ -123,7 +131,6 @@ export const HojaCotizacionView: React.FC<Props> = ({
   const [pdfHeaderModalOpen, setPdfHeaderModalOpen] = useState(false);
   const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
   const [currentFolio, setCurrentFolio] = useState<string>(() => peekNextCotizacionFolio());
-  const randomPhonePlaceholder = useMemo(() => generateRandomMxPhonePlaceholder(), []);
   const [clientesGuardados, setClientesGuardados] = useState<ClienteGuardado[]>(() => loadClientes());
   const [showClientSuggestions, setShowClientSuggestions] = useState(false);
 
@@ -167,11 +174,22 @@ export const HojaCotizacionView: React.FC<Props> = ({
 
   const consolidado = consolidarMaterialesObra(hoja.partidas, inventario, comprometidosMap, sobrantes);
 
+  const opt1D = useMemo(
+    () => optimizarPartidasTramos1D(hoja.partidas, sobrantes, taller.optimizador),
+    [hoja.partidas, sobrantes, taller.optimizador]
+  );
+
   const subtotal = hoja.partidas.reduce((acc, p) => acc + p.totalLinea, 0);
   const descuentoVal = subtotal * ((hoja.descuentoPct || 0) / 100);
   const baseDesc = subtotal - descuentoVal;
   const ivaVal = hoja.incluirIva ? baseDesc * 0.16 : 0;
   const grandTotal = baseDesc + ivaVal;
+  const anticipoPctVal =
+    typeof hoja.anticipoPct === 'number' && hoja.anticipoPct >= 0 && hoja.anticipoPct <= 100
+      ? Math.round(hoja.anticipoPct)
+      : 60;
+  const anticipoMonto = round2(grandTotal * (anticipoPctVal / 100));
+  const saldoMonto = Math.max(0, round2(grandTotal - anticipoMonto));
 
   const groupedByArea = hoja.partidas.reduce<Record<string, PartidaObra[]>>((acc, p) => {
     const key = p.area || 'General';
@@ -180,19 +198,11 @@ export const HojaCotizacionView: React.FC<Props> = ({
     return acc;
   }, {});
 
-  const copiarPresupuestoWhatsApp = async () => {
-    if (hoja.partidas.length === 0) {
-      onShowToast('Agrega al menos una pieza primero');
-      return;
-    }
+  const buildResumenWhatsAppText = (): string => {
     const vigencia =
       typeof hoja.vigenciaDias === 'number' && hoja.vigenciaDias > 0
         ? Math.round(hoja.vigenciaDias)
-        : DEFAULT_HOJA_CONDITIONS.vigenciaDias;
-    const anticipo =
-      typeof hoja.anticipoPct === 'number' && hoja.anticipoPct >= 0
-        ? Math.round(hoja.anticipoPct)
-        : DEFAULT_HOJA_CONDITIONS.anticipoPct;
+        : 7;
     const entrega =
       (hoja.tiempoEntrega || '').trim() || DEFAULT_HOJA_CONDITIONS.tiempoEntrega;
     const lines = [
@@ -213,15 +223,44 @@ export const HojaCotizacionView: React.FC<Props> = ({
       descuentoVal > 0 ? `Descuento (${hoja.descuentoPct}%): -${formatMXN(descuentoVal)}` : '',
       ivaVal > 0 ? `IVA (16%): ${formatMXN(ivaVal)}` : '',
       `*TOTAL FINAL: ${formatMXN(grandTotal)}*`,
+      `Anticipo (${anticipoPctVal}%): ${formatMXN(anticipoMonto)}`,
+      `Saldo contra entrega (${100 - anticipoPctVal}%): ${formatMXN(saldoMonto)}`,
       '',
-      `Vigencia: ${vigencia} días · Anticipo: ${anticipo}% · Entrega: ${entrega}. Garantía: 30 días en mano de obra.`,
+      `Cotización válida por ${vigencia} días. Se requiere ${anticipoPctVal}% de anticipo para iniciar fabricación. Entrega: ${entrega}. No incluye albañilería salvo especificación.`,
     ].filter(Boolean);
+    return lines.join('\n');
+  };
 
+  const enviarResumenWhatsApp = async () => {
+    if (hoja.partidas.length === 0) {
+      onShowToast('Agrega al menos una pieza primero');
+      return;
+    }
+    const text = buildResumenWhatsAppText();
     try {
-      await navigator.clipboard.writeText(lines.join('\n'));
-      onShowToast('Presupuesto copiado para WhatsApp', true);
+      await navigator.clipboard.writeText(text);
     } catch {
-      onShowToast('No se pudo copiar al portapapeles');
+      // ignorar si portapapeles bloqueado
+    }
+    const waUrl = buildWhatsAppDirectUrl(hoja.clienteTel || contratoCliente.telefono || '', text);
+    const link = document.createElement('a');
+    link.href = waUrl;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    onShowToast('Resumen listo y abierto en WhatsApp', true);
+  };
+
+  const handleDescargarOrdenProduccion = async () => {
+    if (hoja.partidas.length === 0) {
+      onShowToast('Agrega al menos una pieza primero');
+      return;
+    }
+    const ok = await generarPdfOrdenProduccionTaller(hoja, taller, opt1D);
+    if (ok) {
+      onShowToast('PDF Orden de Producción (Para Taller) descargado sin precios', true);
     }
   };
 
@@ -293,7 +332,7 @@ export const HojaCotizacionView: React.FC<Props> = ({
                 onUpdateHoja({ proyecto: e.target.value });
                 setShowClientSuggestions(true);
               }}
-              placeholder="Ej. Casa del Sr. García o Residencial Lomas"
+              placeholder="Ejemplo Cliente"
               className="w-full min-h-[44px] rounded-xl border border-slate-300 px-3 text-[14px] font-semibold"
             />
             {showClientSuggestions && clientesGuardados.length > 0 && (() => {
@@ -351,7 +390,7 @@ export const HojaCotizacionView: React.FC<Props> = ({
                 const formatted = formatClientPhoneInput(e.target.value, hoja.clienteTel ?? '');
                 onUpdateHoja({ clienteTel: formatted });
               }}
-              placeholder={randomPhonePlaceholder}
+              placeholder="333-333-4444"
               className="w-full min-h-[44px] rounded-xl border border-slate-300 px-3 mono text-[13.5px] font-semibold"
             />
           </div>
@@ -550,9 +589,23 @@ export const HojaCotizacionView: React.FC<Props> = ({
               )}
             </div>
 
-            <div className="flex justify-between items-baseline font-extrabold mb-4">
+            <div className="flex justify-between items-baseline font-extrabold mb-2">
               <span>Gran Total Final</span>
               <span className="mono text-[25px] text-blue-600">{formatMXN(grandTotal)}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 mb-4 p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-[12px]">
+              <div>
+                <span className="block text-[10.5px] font-bold text-emerald-800 uppercase">
+                  Anticipo ({anticipoPctVal}%)
+                </span>
+                <strong className="mono text-[14px] text-emerald-900">{formatMXN(anticipoMonto)}</strong>
+              </div>
+              <div className="text-right">
+                <span className="block text-[10.5px] font-bold text-slate-600 uppercase">
+                  Saldo contra entrega ({100 - anticipoPctVal}%)
+                </span>
+                <strong className="mono text-[14px] text-slate-900">{formatMXN(saldoMonto)}</strong>
+              </div>
             </div>
 
             <div className="mb-3.5 p-3 rounded-[12px] bg-slate-50 border border-slate-200 text-[11.8px] text-slate-600 leading-relaxed flex flex-col gap-2">
@@ -661,16 +714,25 @@ export const HojaCotizacionView: React.FC<Props> = ({
                 type="button"
                 id="btn-generar-pdf-cliente"
                 onClick={handleOpenPdfPreview}
-                className="w-full min-h-[50px] px-4 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 hover:from-amber-400 hover:via-orange-400 hover:to-amber-400 text-slate-950 border border-amber-300 font-black text-[14.5px] cursor-pointer shadow-lg"
+                className="w-full min-h-[50px] px-4 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 hover:from-amber-400 hover:via-orange-400 hover:to-amber-400 text-slate-950 border border-amber-300 font-black text-[14px] cursor-pointer shadow-lg"
               >
-                👁 Vista Previa y Descargar PDF
+                📄 PDF Cotización (Para Cliente)
               </button>
               <button
                 type="button"
-                onClick={copiarPresupuestoWhatsApp}
-                className="w-full min-h-[46px] px-4 rounded-xl bg-green-600 hover:bg-green-700 text-white font-bold text-[14px] cursor-pointer"
+                id="btn-generar-pdf-orden-taller"
+                onClick={() => void handleDescargarOrdenProduccion()}
+                className="w-full min-h-[48px] px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white border border-slate-700 font-extrabold text-[13.5px] cursor-pointer shadow-md"
               >
-                Copiar Presupuesto para WhatsApp
+                🛠️ PDF Orden de Producción (Para Taller)
+              </button>
+              <button
+                type="button"
+                id="btn-hoja-whatsapp-resumen"
+                onClick={() => void enviarResumenWhatsApp()}
+                className="w-full min-h-[46px] px-4 rounded-xl bg-green-600 hover:bg-green-700 text-white font-extrabold text-[14px] cursor-pointer shadow-sm"
+              >
+                💬 Enviar resumen por WhatsApp
               </button>
               {onOpenGlassOptimizer && (
                 <button
@@ -756,6 +818,113 @@ export const HojaCotizacionView: React.FC<Props> = ({
                       </tbody>
                     </table>
                   </div>
+
+                  {/* Diagrama visual de optimización 6.10 m barra por barra */}
+                  {opt1D.grupos.length > 0 && (
+                    <div id="hoja-optimizador-610" className="mt-4 pt-4 border-t border-slate-200 flex flex-col gap-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <h3 className="m-0 text-[14.5px] font-extrabold text-slate-900">
+                            Optimización Barra por Barra (6.10 m)
+                          </h3>
+                          <p className="m-0 text-[11.5px] text-slate-500">
+                            Aprovechamiento: <strong className="mono text-emerald-700">{opt1D.aprovechamientoGlobalPct}%</strong> · Merma real (&lt;{opt1D.grupos[0]?.barras[0] ? (taller.optimizador?.umbralSobranteUsableCm ?? 60) : 60} cm):{' '}
+                            <strong className="mono text-rose-700">{opt1D.mermaRealPct}%</strong> ({(opt1D.mermaTotalCm / 100).toFixed(2)} m)
+                          </p>
+                        </div>
+                        <span className="px-2.5 py-1 rounded-lg bg-blue-50 border border-blue-200 text-blue-800 mono text-[11.5px] font-extrabold">
+                          {opt1D.tramos610Totales} tramo(s) 6.10 m
+                        </span>
+                      </div>
+
+                      <div className="px-3 py-2 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-[11px] font-semibold">
+                        {PRE_CUT_WARNING_TEXT}
+                      </div>
+
+                      {opt1D.grupos.map((g) => (
+                        <div key={g.perfilId} className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex flex-col gap-2">
+                          <div className="flex items-center justify-between gap-2 text-[12px]">
+                            <strong className="text-slate-900 truncate">
+                              {g.codigo} · {g.perfilNombre}
+                            </strong>
+                            <span className="mono font-bold text-blue-700 shrink-0">
+                              {g.tramos610Requeridos} barra(s) · {g.aprovechamientoPct}%
+                            </span>
+                          </div>
+                          {g.barras.map((barra) => (
+                            <div key={barra.id} className="flex flex-col gap-1">
+                              <div className="flex items-center justify-between gap-2 text-[11px] text-slate-600">
+                                <span className="font-bold">{barra.etiquetaOrigen}</span>
+                                <span className="mono">
+                                  {barra.esMerma ? (
+                                    <strong className="text-rose-700">Merma ({barra.sobranteCm.toFixed(1)} cm)</strong>
+                                  ) : (
+                                    <strong className="text-emerald-700">Sobrante usable ({barra.sobranteCm.toFixed(1)} cm)</strong>
+                                  )}
+                                </span>
+                              </div>
+                              <div className="w-full h-6 rounded-md border border-slate-300 bg-slate-100 overflow-hidden flex">
+                                {barra.cortes.map((c, cIdx) => {
+                                  const wPct = Math.max(4, (c.medidaCm / Math.max(1, barra.largoTotalCm)) * 100);
+                                  const segColors = ['#2563EB', '#0D9488', '#4F46E5', '#0284C7', '#D97706'];
+                                  return (
+                                    <div
+                                      key={`${barra.id}-${cIdx}`}
+                                      style={{ width: `${wPct}%`, backgroundColor: segColors[cIdx % segColors.length] }}
+                                      title={`${c.nombre}: ${c.medidaCm.toFixed(1)} cm`}
+                                      className="h-full border-r border-white/80 flex items-center justify-center text-white text-[9.5px] font-extrabold mono px-0.5 truncate"
+                                    >
+                                      {c.medidaCm.toFixed(0)}
+                                    </div>
+                                  );
+                                })}
+                                {barra.sobranteCm > 0 && (
+                                  <div
+                                    style={{ width: `${Math.max(3, (barra.sobranteCm / Math.max(1, barra.largoTotalCm)) * 100)}%` }}
+                                    className={`h-full flex items-center justify-center text-[9.5px] font-extrabold mono px-0.5 truncate border-l border-dashed ${
+                                      barra.esMerma
+                                        ? 'bg-rose-100 text-rose-900 border-rose-400'
+                                        : 'bg-emerald-100 text-emerald-900 border-emerald-400'
+                                    }`}
+                                  >
+                                    {barra.sobranteCm >= 15 ? `${barra.sobranteCm.toFixed(0)}` : ''}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+
+                      {onAddSobrante && opt1D.sobrantesGeneradosGuardables.length > 0 && (
+                        <button
+                          type="button"
+                          id="btn-hoja-save-sobrantes"
+                          onClick={() => {
+                            const mainPartida = hoja.partidas[0];
+                            opt1D.sobrantesGeneradosGuardables.forEach((s) => {
+                              onAddSobrante({
+                                marca: 'Alumer',
+                                linea: mainPartida?.linea || '3',
+                                perfilId: s.perfilId,
+                                color: mainPartida?.color || 'natural',
+                                largoM: s.largoM,
+                                cantidad: s.cantidad,
+                                nota: `Sobrante usable de obra (${hoja.proyecto || 'Cotización'})`,
+                              });
+                            });
+                            onShowToast(
+                              `${opt1D.sobrantesGeneradosGuardables.length} sobrante(s) usable(s) guardado(s) en Mi Inventario`,
+                              true
+                            );
+                          }}
+                          className="w-full min-h-[42px] px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[12.5px] cursor-pointer"
+                        >
+                          + Guardar en Mi Inventario ({opt1D.sobrantesGeneradosGuardables.length} sobrante(s) ≥ {taller.optimizador?.umbralSobranteUsableCm ?? 60} cm)
+                        </button>
+                      )}
+                    </div>
+                  )}
 
                   <div className="flex flex-col gap-2 mt-3">
                     <button

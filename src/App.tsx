@@ -1,6 +1,8 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import {
+  AdminMessageItem,
+  buildColleaguePromoWhatsappUrl,
   calcularCotizacion,
   calcularDespiece,
   CategoriaTrabajo,
@@ -27,6 +29,7 @@ import {
   PartidaObra,
   PerfilCatalogoId,
   PROMO_COLEGA_ALREADY_USED_ERROR,
+  ReferencePricesDoc,
   round2,
   TrabajoParams,
   UsageStats30d,
@@ -42,7 +45,9 @@ import {
   loginCloudAccount,
   logoutCloudAccount,
   registerCloudAccount,
+  subscribeAdminMessages,
   subscribeCloudDevices,
+  subscribeReferencePrices,
   syncDeviceToCloud,
   syncTallerProfileToCloud,
   updateDeviceLicenseInCloud,
@@ -110,11 +115,20 @@ import {
   saveDeletedAdminKeySigs,
   SavedColleagueReferral,
   AppSkin,
+  AppSkinVariant,
   AppTheme,
+  getUnlockedSkinsForLicense,
   isSkinUnlockedForLicense,
+  loadAdminMessagesCache,
   loadPromoColegaUsage,
+  loadReadAdminMessageIds,
+  loadReferencePricesCache,
   loadSkin,
+  loadSkinVariant,
+  markAdminMessageIdRead,
+  normalizeSkinVariant,
   PromoColegaUsageRecord,
+  saveAdminMessagesCache,
   saveFormulas,
   saveHistorial,
   saveHoja,
@@ -126,12 +140,16 @@ import {
   saveObrasAprobadas,
   savePerfilFotos,
   savePromoColegaUsage,
+  saveReferencePricesCache,
   saveReferralHistory,
   saveRevokedDevicesMap,
   saveSkin,
+  saveSkinVariant,
+  SKIN_VARIANTS_BY_SKIN,
   saveSobrantes,
   saveSugerenciasWhatsapp,
   saveTaller,
+  saveTermsAcceptedAt,
   saveTheme,
   saveTrabajosAntesDespues,
   saveTrialRevoked,
@@ -231,6 +249,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { AntesDespuesModal } from './components/AntesDespuesModal';
 import { CatalogoView, NotasView } from './components/NotasAndCatalogoViews';
 import { AvisoPrivacidadView, TerminosCondicionesView } from './components/LegalViews';
+import { LegalDocType, LegalModal } from './components/LegalModal';
 
 function createInitialParams(linea: LineaId = '3'): TrabajoParams {
   const cfg = LINEAS_CONFIG[linea];
@@ -461,7 +480,7 @@ export default function App() {
     () => taller.tarifasBase['3'] ?? LINEAS_CONFIG['3'].tarifaBaseDefault
   );
   const [cobrarMinM2, setCobrarMinM2] = useState(false);
-  const [incluirIva, setIncluirIva] = useState(false);
+  const [incluirIva, setIncluirIva] = useState<boolean>(() => Boolean(taller.ivaPorDefecto));
   const [areaText, setAreaText] = useState('');
   const [etiquetaPieza, setEtiquetaPieza] = useState('');
   const [extraPct, setExtraPct] = useState(0);
@@ -471,10 +490,24 @@ export default function App() {
   // Modals & UI (controlados desde la pila unificada NavFrame + popstate)
   const [theme, setTheme] = useState<AppTheme>(() => loadTheme());
   const [skin, setSkin] = useState<AppSkin>(() => loadSkin());
+  const [skinVariant, setSkinVariant] = useState<AppSkinVariant>(() => loadSkinVariant(loadSkin()));
+  const [homePage, setHomePage] = useState<0 | 1>(0);
   const [annualCelebrationOpen, setAnnualCelebrationOpen] = useState(false);
   const [promoColegaUsage, setPromoColegaUsage] = useState<PromoColegaUsageRecord>(() =>
     loadPromoColegaUsage(deviceId)
   );
+  const [referencePrices, setReferencePrices] = useState<ReferencePricesDoc | null>(() =>
+    loadReferencePricesCache()
+  );
+  const [adminMessages, setAdminMessages] = useState<AdminMessageItem[]>(() =>
+    loadAdminMessagesCache()
+  );
+  const [readAdminMessageIds, setReadAdminMessageIds] = useState<string[]>(() =>
+    loadReadAdminMessageIds()
+  );
+  const [legalModalDoc, setLegalModalDoc] = useState<LegalDocType>(null);
+  const [exitConfirmOpen, setExitConfirmOpen] = useState<boolean>(false);
+  const [sessionEnded, setSessionEnded] = useState<boolean>(false);
   const pwa = usePWAInstall();
   const isOnline = useOnlineStatus();
   const [installFabDismissed, setInstallFabDismissed] = useState(false);
@@ -524,12 +557,71 @@ export default function App() {
     referralWelcomeOpen && !proActive && Boolean(savedColleagueReferral);
 
   const handleClaimColleaguePromo = () => {
-    if (!savedColleagueReferral) return;
-    const msg = `Hola Administrador, solicito mi PIN de promoción colega de 3 días para Aluminero Pro. Mi ID de equipo es: ${deviceId} (Invitación de ${savedColleagueReferral.refName} · Promo #${savedColleagueReferral.promoNumber}).`;
-    const url = `https://wa.me/527351631532?text=${encodeURIComponent(msg)}`;
+    const refName = savedColleagueReferral?.refName || referredByName || 'Colega';
+    const promoNumber = savedColleagueReferral?.promoNumber || 1;
+    const url = buildColleaguePromoWhatsappUrl('527351631532', refName, deviceId, promoNumber, {
+      tallerNombre: taller.nombre,
+      tallerTel: taller.tel,
+      referredById: referredById || savedColleagueReferral?.refName || null,
+    });
     openExternalLinkSafe(url);
     showToast('Abriendo WhatsApp con el Administrador para solicitar tu PIN...', true);
   };
+
+  const unlockedSkins = useMemo(
+    () => getUnlockedSkinsForLicense(licencia, proActive),
+    [licencia, proActive]
+  );
+
+  const unreadAdminMessages = useMemo(() => {
+    const normDev = deviceId.trim().toUpperCase();
+    return adminMessages.filter((m) => {
+      if (readAdminMessageIds.includes(m.id)) return false;
+      if (m.targetMode === 'individual') {
+        return Boolean(m.targetDeviceId && m.targetDeviceId.trim().toUpperCase() === normDev);
+      }
+      return true;
+    });
+  }, [adminMessages, readAdminMessageIds, deviceId]);
+
+  const handleMarkAdminMessageRead = useCallback((id: string) => {
+    const next = markAdminMessageIdRead(id);
+    setReadAdminMessageIds(next);
+  }, []);
+
+  const handleToggleHomePage = useCallback(() => {
+    setHomePage((prev) => (prev === 0 ? 1 : 0));
+  }, []);
+
+  const handleToggleTheme = useCallback(() => {
+    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  }, []);
+
+  const handleSelectSkin = useCallback((nextSkin: AppSkin) => {
+    const nextVariant = normalizeSkinVariant(nextSkin, loadSkinVariant(nextSkin));
+    setSkin(nextSkin);
+    setSkinVariant(nextVariant);
+    saveSkinVariant(nextSkin, nextVariant);
+    const skinNames: Record<AppSkin, string> = {
+      basica: 'Básica',
+      ejecutiva: 'Ejecutiva',
+      industrial: 'Industrial Pro',
+    };
+    showToastRef.current(`Carátula "${skinNames[nextSkin]}" aplicada en toda la app`, true);
+  }, []);
+
+  const handleSelectSkinVariant = useCallback(
+    (nextVariant: AppSkinVariant) => {
+      const normalized = normalizeSkinVariant(skin, nextVariant);
+      setSkinVariant(normalized);
+      saveSkinVariant(skin, normalized);
+      const found = SKIN_VARIANTS_BY_SKIN[skin]?.find((v) => v.id === normalized);
+      if (found) {
+        showToastRef.current(`Estilo "${found.label}" aplicado en toda la app`, true);
+      }
+    },
+    [skin]
+  );
 
   const [toast, setToast] = useState<{ msg: string; topSuccess: boolean } | null>(null);
   const toastTimerRef = useRef<number | null>(null);
@@ -911,8 +1003,28 @@ export default function App() {
   }, [deviceId]);
 
   useEffect(() => {
+    let active = true;
+    const unsubPrices = subscribeReferencePrices((doc) => {
+      if (!active || !doc) return;
+      setReferencePrices(doc);
+      saveReferencePricesCache(doc);
+    });
+    const unsubMsgs = subscribeAdminMessages((items) => {
+      if (!active) return;
+      setAdminMessages(items);
+      saveAdminMessagesCache(items);
+    });
+    return () => {
+      active = false;
+      unsubPrices();
+      unsubMsgs();
+    };
+  }, []);
+
+  useEffect(() => {
     saveTheme(theme);
     document.documentElement.setAttribute('data-theme', theme);
+    document.documentElement.setAttribute('data-color-mode', theme);
     document.documentElement.classList.toggle('dark', theme === 'dark');
   }, [theme]);
 
@@ -922,9 +1034,15 @@ export default function App() {
     if (effectiveSkin !== skin) {
       setSkin('basica');
     }
+    const effectiveVariant = normalizeSkinVariant(effectiveSkin, skinVariant);
+    if (effectiveVariant !== skinVariant) {
+      setSkinVariant(effectiveVariant);
+    }
     saveSkin(effectiveSkin);
+    saveSkinVariant(effectiveSkin, effectiveVariant);
     document.documentElement.setAttribute('data-skin', effectiveSkin);
-  }, [skin, licencia, proActive]);
+    document.documentElement.setAttribute('data-skin-variant', effectiveVariant);
+  }, [skin, skinVariant, licencia, proActive]);
 
   const tallerOnboardingComplete = useMemo(
     () => isTallerOnboardingComplete(taller),
@@ -939,9 +1057,12 @@ export default function App() {
         nombre: taller.nombre,
         responsable: taller.responsable || '',
         tel: taller.tel || '',
+        termsAcceptedAt: taller.termsAcceptedAt ?? null,
+        preferredTheme: theme,
+        preferredSkin: skin,
       });
     }
-  }, [taller, deviceId]);
+  }, [taller, deviceId, theme, skin]);
 
   useEffect(() => {
     saveHoja(hoja);
@@ -1142,7 +1263,10 @@ export default function App() {
     formulas,
   ]);
 
-  const despiece = useMemo(() => calcularDespiece(params), [params]);
+  const despiece = useMemo(
+    () => calcularDespiece({ ...params, ajusteDescuentos: taller.ajusteDescuentos }),
+    [params, taller.ajusteDescuentos]
+  );
   const cot = useMemo(
     () =>
       calcularCotizacion({
@@ -2145,7 +2269,10 @@ export default function App() {
           cantidad: qty,
           tolerancias: { ...lineaCfg.toleranciasDefault },
         };
-        const pieceDespiece = calcularDespiece(pieceParams);
+        const pieceDespiece = calcularDespiece({
+          ...pieceParams,
+          ajusteDescuentos: taller.ajusteDescuentos,
+        });
         const piecePrecioInput = taller.tarifasBase[resolved.linea] ?? lineaCfg.tarifaBaseDefault;
         const pieceCot = calcularCotizacion({
           linea: resolved.linea,
@@ -2220,6 +2347,7 @@ export default function App() {
       openGlobalModal,
       proActive,
       showToast,
+      taller.ajusteDescuentos,
       taller.descDistribuidorPct,
       taller.precioListaTramo,
       taller.rellenoPreciosM2,
@@ -2528,17 +2656,58 @@ export default function App() {
     recordatorios: cotizacionReminders,
   };
 
+  if (sessionEnded) {
+    return (
+      <div
+        id="view-session-ended"
+        className={`min-h-screen w-full flex items-center justify-center p-5 ${
+          theme === 'light' ? 'bg-[#F1F5F9] text-slate-900' : 'bg-[#0B1120] text-slate-100'
+        }`}
+      >
+        <div
+          className={`w-full max-w-[400px] rounded-2xl border p-6 text-center shadow-2xl ${
+            theme === 'light'
+              ? 'bg-white border-slate-200 text-slate-900'
+              : 'bg-slate-900/95 border-slate-700 text-slate-100'
+          }`}
+        >
+          <div className="w-14 h-14 mx-auto mb-3 rounded-2xl bg-emerald-500/15 border border-emerald-400/40 text-emerald-400 flex items-center justify-center text-[26px]">
+            ✓
+          </div>
+          <h1 className="m-0 text-[20px] font-extrabold">Sesión finalizada</h1>
+          <p className="m-0 mt-2 text-[13.5px] opacity-80 leading-relaxed">
+            Ya puedes cerrar la aplicación de forma segura. Tus datos de taller, inventario y cotizaciones quedan guardados en tu equipo.
+          </p>
+          <button
+            type="button"
+            id="btn-reenter-app"
+            onClick={() => {
+              setExitConfirmOpen(false);
+              setSessionEnded(false);
+            }}
+            className="mt-5 w-full min-h-[46px] rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-[14px] cursor-pointer shadow-lg"
+          >
+            Volver a entrar
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (showMandatoryOnboarding) {
     return (
       <TallerOnboardingGate
         taller={taller}
         referredByName={referredByName || savedColleagueReferral?.refName || referredById}
-        onSaveOnboarding={({ nombre, responsable, tel }) => {
+        onSaveOnboarding={({ nombre, responsable, tel, termsAcceptedAt }) => {
+          const acceptedTs = termsAcceptedAt || Date.now();
+          saveTermsAcceptedAt(acceptedTs);
           const nextTaller: TallerConfig = {
             ...taller,
             nombre,
             responsable,
             tel,
+            termsAcceptedAt: acceptedTs,
           };
           saveTaller(nextTaller);
           setTaller(nextTaller);
@@ -2547,6 +2716,9 @@ export default function App() {
             nombre,
             responsable,
             tel,
+            termsAcceptedAt: acceptedTs,
+            preferredTheme: theme,
+            preferredSkin: skin,
           });
           showToast(`¡Bienvenido, ${nombre}! Datos de Mi Taller guardados.`, true);
           if (!loadGuidedTutorialSeen()) {
@@ -2560,11 +2732,11 @@ export default function App() {
   return (
     <div
       className={`min-h-screen w-full max-w-[100vw] overflow-x-hidden box-border transition-colors ${
-        skin !== 'basica'
-          ? 'bg-transparent text-slate-100'
-          : theme === 'dark'
-            ? 'bg-[#0B1120] text-slate-100'
-            : 'bg-[#EEF3F9] text-slate-900'
+        theme === 'light'
+          ? 'bg-[#F1F5F9] text-slate-900'
+          : skin !== 'basica'
+            ? 'bg-transparent text-slate-100'
+            : 'bg-[#0B1120] text-slate-100'
       }`}
     >
       <TopBar
@@ -2574,12 +2746,22 @@ export default function App() {
         licencia={licencia}
         trialExpiresAt={trialExpiresAt}
         theme={theme}
+        unreadMessagesCount={unreadAdminMessages.length}
+        homePage={homePage}
+        onHomePrev={handleToggleHomePage}
+        onHomeNext={handleToggleHomePage}
         onBack={requestBack}
         onGoHome={goHome}
         onLogoClick={handleLogoClick}
         onOpenPro={() => openGlobalModal('pro')}
         onOpenDrawer={() => openGlobalModal('drawer')}
         onOpenCalculadora={() => openGlobalModal('calculadora')}
+        onOpenMessages={() => {
+          if (currentView !== 'menu') goHome();
+          if (typeof window !== 'undefined') {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }
+        }}
       />
 
       <main
@@ -2617,6 +2799,8 @@ export default function App() {
         >
         {currentView === 'menu' && (
           <MainMenuView
+            homePage={homePage}
+            onChangeHomePage={setHomePage}
             proActive={proActive}
             hojaPiezasCount={hojaPiezasCount}
             hojaTotal={hojaTotalAprox}
@@ -2631,6 +2815,8 @@ export default function App() {
             pendingRemindersCount={reminderSummary.pendingCount}
             dueRemindersCount={reminderSummary.dueCount}
             pushPermission={pushPermission}
+            unreadAdminMessages={unreadAdminMessages}
+            onMarkAdminMessageRead={handleMarkAdminMessageRead}
             onClaimColleaguePromo={handleClaimColleaguePromo}
             onOpenColleagueInvite={() => openGlobalModal('recomendar')}
             onOpenPro={() => openGlobalModal('pro')}
@@ -2777,7 +2963,13 @@ export default function App() {
             onEliminarPartida={(id) =>
               setHoja((prev) => ({ ...prev, partidas: prev.partidas.filter((p) => p.id !== id) }))
             }
-            onVaciarHoja={() => setHoja((prev) => ({ ...prev, partidas: [] }))}
+            onVaciarHoja={() =>
+              setHoja((prev) => ({
+                ...prev,
+                partidas: [],
+                incluirIva: Boolean(taller.ivaPorDefecto),
+              }))
+            }
             onAgregarPieza={() => handleEntrarTrabajo('ventanas')}
             onApartarStockObra={(rows) => {
               const nombreObra = hoja.proyecto.trim() || `Obra ${new Date().toLocaleDateString('es-MX')}`;
@@ -2809,6 +3001,17 @@ export default function App() {
                 return next;
               });
               showToast('Material descontado de tu inventario', true);
+            }}
+            onAddSobrante={(item) => {
+              setSobrantes((prev) => [
+                {
+                  ...item,
+                  id: `sob-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                  fecha: new Date().toLocaleDateString('es-MX'),
+                },
+                ...prev,
+              ]);
+              showToast(`Sobrante de ${item.largoM.toFixed(2)} m guardado en Mi Inventario`, true);
             }}
             onOpenGlassOptimizer={() => {
               const imported: PiezaVidrioInput[] = [];
@@ -2877,6 +3080,14 @@ export default function App() {
             onScheduleHistorialReminder={handleScheduleHistorialReminder}
             onOpenReminders={() => openGlobalModal('reminders')}
             pendingRemindersCount={reminderSummary.pendingCount}
+            skin={skin}
+            skinVariant={skinVariant}
+            unlockedSkins={unlockedSkins}
+            onSelectSkin={handleSelectSkin}
+            onSelectSkinVariant={handleSelectSkinVariant}
+            colorMode={theme}
+            onToggleColorMode={handleToggleTheme}
+            referencePrices={referencePrices}
             onShowToast={showToast}
           />
         )}
@@ -2997,6 +3208,8 @@ export default function App() {
               tarifasBase={taller.tarifasBase}
               proActive={proActive}
               sobrantes={sobrantes}
+              ajusteDescuentos={taller.ajusteDescuentos}
+              optimizadorConfig={taller.optimizador}
               step={modStep}
               paso5Tab={modPaso5Tab}
               mosquiteroModalOpen={modMosqOpen}
@@ -3419,25 +3632,26 @@ export default function App() {
         deviceId={deviceId}
         theme={theme}
         skin={skin}
+        skinVariant={skinVariant}
         cloudAccountEmail={cloudAccountSession?.email || null}
         isCloudBackupEligible={isCloudBackupEligible}
-        onToggleTheme={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
-        onSelectSkin={(nextSkin) => {
-          setSkin(nextSkin);
-          const skinNames: Record<AppSkin, string> = {
-            basica: 'Básica (Actual)',
-            ejecutiva: 'Ejecutiva Azul',
-            industrial: 'Industrial Pro',
-          };
-          showToast(`Carátula "${skinNames[nextSkin]}" aplicada en toda la app`, true);
-        }}
+        onToggleTheme={handleToggleTheme}
+        onSelectSkin={handleSelectSkin}
+        onSelectSkinVariant={handleSelectSkinVariant}
         onClose={requestBack}
         onOpenPro={() => openModalFromDrawer('pro')}
         onOpenCloudBackup={() => openModalFromDrawer('cloudBackup')}
         onOpenRecomendar={() => openModalFromDrawer('recomendar')}
         onOpenSugerencias={() => openModalFromDrawer('sugerencias')}
         onOpenTutorial={() => openModalFromDrawer('tutorial')}
-        onOpenLegal={(doc) => openScreenFromDrawer(doc)}
+        onOpenLegal={(doc) => {
+          if (doc === 'deslinde') {
+            requestBack();
+            setLegalModalDoc('deslinde');
+          } else {
+            openScreenFromDrawer(doc);
+          }
+        }}
         showInstallApp={!pwa.isInstalled}
         onInstallApp={() => void handleInstallApp(true)}
         pendingRemindersCount={reminderSummary.pendingCount}
@@ -3447,6 +3661,60 @@ export default function App() {
         onOpenVideos={() => openScreenFromDrawer('videos')}
         tallerOnboardingComplete={tallerOnboardingComplete}
       />
+
+      <LegalModal
+        docType={legalModalDoc}
+        onClose={() => setLegalModalDoc(null)}
+        onSwitchDoc={(next) => setLegalModalDoc(next)}
+      />
+
+      {exitConfirmOpen && (
+        <div
+          id="modal-exit-confirm"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Confirmar salida de Aluminero Pro"
+          className="fixed inset-0 z-[9985] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setExitConfirmOpen(false);
+          }}
+        >
+          <div className="w-full max-w-[360px] rounded-2xl bg-white text-slate-900 p-5 shadow-2xl border border-slate-200 text-center">
+            <h2 className="m-0 text-[18px] font-extrabold text-slate-900">
+              ¿Deseas salir de Aluminero Pro?
+            </h2>
+            <p className="m-0 mt-2 text-[13px] text-slate-600 leading-relaxed">
+              Tus cotizaciones, inventario y datos de taller permanecen guardados en tu equipo.
+            </p>
+            <div className="mt-4 grid grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                id="btn-exit-cancel"
+                onClick={() => setExitConfirmOpen(false)}
+                className="min-h-[44px] rounded-xl border border-slate-300 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-[13.5px] cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                id="btn-exit-confirm"
+                onClick={() => {
+                  setExitConfirmOpen(false);
+                  try {
+                    window.close();
+                  } catch {
+                    // ignorar si el navegador bloquea window.close()
+                  }
+                  setSessionEnded(true);
+                }}
+                className="min-h-[44px] rounded-xl bg-red-600 hover:bg-red-700 text-white font-extrabold text-[13.5px] cursor-pointer shadow"
+              >
+                Salir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <ErrorBoundary
         isModal
@@ -3464,6 +3732,7 @@ export default function App() {
         whatsappNumber={sugerenciasWhatsapp}
         defaultEmail={cloudAccountSession?.email || licencia?.linkedEmail || ''}
         tallerNombre={taller.nombre}
+        tallerTel={taller.tel}
         referredById={referredById}
         onClose={requestBack}
         onActivateLic={async (lic) => {
@@ -4287,6 +4556,7 @@ export default function App() {
         whatsappNumber={sugerenciasWhatsapp}
         deviceId={deviceId}
         skin={skin}
+        skinVariant={skinVariant}
         proActive={proActive}
         onOpenPro={() => openGlobalModal('pro')}
         onShowToast={showToast}
@@ -4296,8 +4566,11 @@ export default function App() {
         open={annualCelebrationOpen}
         onClose={() => setAnnualCelebrationOpen(false)}
         onApplyIndustrialSkin={() => {
+          const indVar = normalizeSkinVariant('industrial', loadSkinVariant('industrial'));
           setSkin('industrial');
+          setSkinVariant(indVar);
           saveSkin('industrial');
+          saveSkinVariant('industrial', indVar);
           showToast('¡Carátula Industrial Pro (1 Año) activada en toda la app!', true);
         }}
       />

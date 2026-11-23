@@ -6,9 +6,14 @@ import {
   getRellenoLabel,
   LINEAS_CONFIG,
   PartidaObra,
+  PRE_CUT_WARNING_TEXT,
   round2,
   TrabajoParams,
 } from './alumineroLogic';
+import {
+  OptimizacionTramos1DResult,
+  optimizarPartidasTramos1D,
+} from './modulacionLogic';
 import {
   ContratoClienteInfo,
   DEFAULT_HOJA_CONDITIONS,
@@ -788,15 +793,27 @@ export async function generarPdfClienteBlob(
   const vigenciaDias =
     typeof hoja.vigenciaDias === 'number' && hoja.vigenciaDias > 0
       ? Math.round(hoja.vigenciaDias)
-      : DEFAULT_HOJA_CONDITIONS.vigenciaDias;
+      : 7;
   const anticipoPct =
     typeof hoja.anticipoPct === 'number' && hoja.anticipoPct >= 0 && hoja.anticipoPct <= 100
       ? Math.round(hoja.anticipoPct)
-      : DEFAULT_HOJA_CONDITIONS.anticipoPct;
+      : 60;
+  const saldoPct = Math.max(0, 100 - anticipoPct);
+  const anticipoMonto = round2(total * (anticipoPct / 100));
+  const saldoMonto = Math.max(0, round2(total - anticipoMonto));
   const tiempoEntrega =
     (hoja.tiempoEntrega || '').trim() || DEFAULT_HOJA_CONDITIONS.tiempoEntrega;
 
-  y += 12;
+  y += 6.5;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9.4);
+  doc.setTextColor(4, 120, 87);
+  doc.text(`Anticipo (${anticipoPct}%): ${formatMXN(anticipoMonto)}`, 200, y, { align: 'right' });
+  y += 5.2;
+  doc.setTextColor(15, 23, 42);
+  doc.text(`Saldo contra entrega (${saldoPct}%): ${formatMXN(saldoMonto)}`, 200, y, { align: 'right' });
+
+  y += 10;
   if (y + 30 > 240) {
     doc.addPage();
     y = 20;
@@ -807,24 +824,20 @@ export async function generarPdfClienteBlob(
   doc.setTextColor(15, 23, 42);
   doc.text('Notas y Condiciones:', 14, y);
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.8);
+  doc.setFontSize(8.6);
   doc.setTextColor(51, 65, 85);
+  const condLines = doc.splitTextToSize(
+    `• Cotización válida por ${vigenciaDias} días. Se requiere ${anticipoPct}% de anticipo para iniciar fabricación. No incluye albañilería salvo especificación.`,
+    186
+  ) as string[];
+  doc.text(condLines, 14, y + 5.5);
+  const afterCondY = y + 5.5 + condLines.length * 4.3;
   doc.text(
-    `• Vigencia de esta cotización: ${vigenciaDias} día(s) natural(es) (sujeta a variación por precio de materiales).`,
+    `• Tiempo estimado de entrega: ${tiempoEntrega} · Garantía de 30 días en mano de obra y sellado.`,
     14,
-    y + 5.5
+    afterCondY + 1.5
   );
-  doc.text(
-    `• Anticipo requerido para iniciar fabricación: ${anticipoPct}% · Tiempo estimado de entrega: ${tiempoEntrega}.`,
-    14,
-    y + 10.5
-  );
-  doc.text(
-    '• Garantía de 30 días en mano de obra, sellado hermético y funcionamiento de herrajes.',
-    14,
-    y + 15.5
-  );
-  y += 22;
+  y = afterCondY + 9;
 
   // Bloque de firma de aceptación siempre al pie de la última página
   const neededSigSpace = options?.signatureDataUrl ? 34 : 24;
@@ -894,13 +907,20 @@ export async function generarPdfClienteLimpio(
   return res;
 }
 
-export async function generarPdfContratoServicio(
+export interface ContratoPdfFileResult {
+  blob: Blob;
+  file: File;
+  filename: string;
+}
+
+export async function buildPdfContratoServicioFile(
   hoja: HojaState,
   taller: TallerConfig,
   cliente: ContratoClienteInfo,
   folioOverride?: string,
-  clientSignatureDataUrl?: string
-): Promise<void> {
+  clientSignatureDataUrl?: string,
+  providerSignatureDataUrl?: string
+): Promise<ContratoPdfFileResult> {
   const doc = await createLetterDoc();
   const fechaHoy = new Date().toLocaleDateString('es-MX', {
     year: 'numeric',
@@ -1259,6 +1279,9 @@ export async function generarPdfContratoServicio(
   }
 
   doc.setDrawColor(71, 85, 105);
+  if (providerSignatureDataUrl) {
+    drawSignatureImageProportional(doc, providerSignatureDataUrl, 58, targetSigY, 64, 20);
+  }
   if (clientSignatureDataUrl) {
     drawSignatureImageProportional(doc, clientSignatureDataUrl, 158, targetSigY, 64, 20);
   }
@@ -1274,7 +1297,43 @@ export async function generarPdfContratoServicio(
   doc.text(taller.nombre || 'Taller de Aluminio y Vidrio', 58, targetSigY + 9.5, { align: 'center' });
   doc.text(cliNombre, 158, targetSigY + 9.5, { align: 'center' });
 
-  doc.save(`contrato-${folio.toLowerCase()}-${(cliNombre || 'cliente').toLowerCase().replace(/\s+/g, '-')}.pdf`);
+  const safeClientSlug = (cliNombre || 'cliente')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'cliente';
+  const filename = `contrato-${folio.toLowerCase()}-${safeClientSlug}.pdf`;
+  const blob = doc.output('blob');
+  const file = new File([blob], filename, { type: 'application/pdf' });
+  return { blob, file, filename };
+}
+
+export async function generarPdfContratoServicio(
+  hoja: HojaState,
+  taller: TallerConfig,
+  cliente: ContratoClienteInfo,
+  folioOverride?: string,
+  clientSignatureDataUrl?: string,
+  providerSignatureDataUrl?: string
+): Promise<ContratoPdfFileResult> {
+  const res = await buildPdfContratoServicioFile(
+    hoja,
+    taller,
+    cliente,
+    folioOverride,
+    clientSignatureDataUrl,
+    providerSignatureDataUrl
+  );
+  const url = URL.createObjectURL(res.blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = res.filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 2500);
+  return res;
 }
 
 export async function generarPdfHistorialCotizaciones(
@@ -1397,3 +1456,294 @@ export async function generarPdfHistorialCotizaciones(
   doc.save(`historial-cotizaciones-${isoDate}.pdf`);
   return true;
 }
+
+/**
+ * Genera el PDF de Orden de Producción (Para Taller) — CERO precios ni montos.
+ * Incluye resumen de tramos 6.10 m por perfil, diagrama visual barra por barra,
+ * lista de vidrios/paneles y advertencia ámbar de verificación antes de cortar.
+ */
+export async function generarPdfOrdenProduccionTaller(
+  hoja: HojaState,
+  taller: TallerConfig,
+  optResult?: OptimizacionTramos1DResult
+): Promise<boolean> {
+  if (!hoja.partidas || hoja.partidas.length === 0) return false;
+  const doc = await createLetterDoc();
+  const dateLabel = formatDateEsMx();
+  const dims = getSafeImageDims(doc, taller.logoDataUrl);
+  const headerSpec = buildPdfHeaderSpec(taller, 'tecnico', {
+    dateLabel,
+    naturalLogoWidth: dims.width,
+    naturalLogoHeight: dims.height,
+  });
+  const logoMetrics = headerSpec.showLogo
+    ? computePdfLogoMetrics({
+        naturalWidth: dims.width,
+        naturalHeight: dims.height,
+        zoomPct: headerSpec.logoZoomPct,
+        align: headerSpec.logoAlign,
+      })
+    : null;
+
+  drawStandardWorkshopHeader(
+    doc,
+    {
+      ...headerSpec,
+      documentLabel: 'ORDEN DE PRODUCCIÓN (PARA TALLER)',
+    },
+    dateLabel,
+    logoMetrics,
+    'SOLO PRODUCCIÓN · SIN PRECIOS'
+  );
+
+  const opt = optResult || optimizarPartidasTramos1D(hoja.partidas, [], taller.optimizador);
+  const proyectoLabel = (hoja.proyecto || '').trim() || 'Obra / Cliente General';
+  const totalPiezas = hoja.partidas.reduce((acc, p) => acc + Math.max(1, Number(p.cantidad) || 1), 0);
+
+  let y = headerSpec.bodyStartY - 1;
+  doc.setTextColor(15, 23, 42);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.text(`Obra / Proyecto: ${proyectoLabel}`, 14, y);
+  y += 5.5;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.8);
+  doc.setTextColor(51, 65, 85);
+  doc.text(
+    `Partidas: ${hoja.partidas.length} (${totalPiezas} pza(s)) · Tramos 6.10 m requeridos: ${opt.tramos610Totales} · Aprovechamiento: ${opt.aprovechamientoGlobalPct}% · Merma real: ${opt.mermaRealPct}%`,
+    14,
+    y
+  );
+  y += 7;
+
+  // 1. Resumen de partidas (sin precios)
+  doc.setTextColor(15, 23, 42);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10.5);
+  doc.text('1. Partidas a Fabricar', 14, y);
+  y += 5.5;
+  doc.setFillColor(241, 245, 249);
+  doc.rect(14, y - 4, 188, 6.5, 'F');
+  doc.setFontSize(8.5);
+  doc.text('#', 16, y);
+  doc.text('Área / Especificación', 24, y);
+  doc.text('Medidas (cm)', 136, y);
+  doc.text('Cant.', 198, y, { align: 'right' });
+  y += 5.5;
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.4);
+  hoja.partidas.forEach((p, idx) => {
+    const l = LINEAS_CONFIG[p.linea];
+    const c = COLORES_CONFIG[p.color];
+    const rel = l.esMosquitero ? 'Tela Mosquitera' : getRellenoLabel(p.relleno, p.vidrio);
+    const label = `${p.area ? `[${p.area}] ` : ''}${p.etiqueta ? `${p.etiqueta} · ` : ''}${l.nombre} · ${c.corto} · ${rel}`;
+    const wrapped = doc.splitTextToSize(label, 108) as string[];
+    const rowH = Math.max(5.5, wrapped.length * 4.1 + 1.5);
+    if (y + rowH > 246) {
+      doc.addPage();
+      y = 20;
+    }
+    doc.setTextColor(15, 23, 42);
+    doc.text(String(idx + 1), 16, y);
+    doc.text(wrapped, 24, y);
+    doc.text(`${p.anchoCm} × ${p.altoCm} cm`, 136, y);
+    doc.text(`×${p.cantidad}`, 198, y, { align: 'right' });
+    doc.setDrawColor(226, 232, 240);
+    doc.line(14, y + rowH - 2, 202, y + rowH - 2);
+    y += rowH;
+  });
+
+  // 2. Resumen y Diagrama Barra por Barra (6.10 m)
+  y += 6;
+  if (y > 236) {
+    doc.addPage();
+    y = 20;
+  }
+  doc.setTextColor(15, 23, 42);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10.5);
+  doc.text('2. Optimización y Diagrama de Cortes por Barra (6.10 m)', 14, y);
+  y += 6;
+
+  const SEG_RGBS: Array<[number, number, number]> = [
+    [37, 99, 235],
+    [13, 148, 136],
+    [79, 70, 229],
+    [2, 132, 199],
+    [217, 119, 6],
+  ];
+
+  for (const grupo of opt.grupos) {
+    if (y + 18 > 248) {
+      doc.addPage();
+      y = 20;
+    }
+    doc.setFillColor(241, 245, 249);
+    doc.rect(14, y - 4, 188, 6.5, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.8);
+    doc.setTextColor(15, 23, 42);
+    doc.text(`${grupo.codigo} · ${grupo.perfilNombre}`, 16, y);
+    doc.text(
+      `${grupo.tramos610Requeridos} tramo(s) 6.10 m · Aprov: ${grupo.aprovechamientoPct}%`,
+      200,
+      y,
+      { align: 'right' }
+    );
+    y += 5.5;
+
+    for (const barra of grupo.barras) {
+      if (y + 17 > 248) {
+        doc.addPage();
+        y = 20;
+      }
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.8);
+      doc.setTextColor(51, 65, 85);
+      const remLabel = barra.esMerma
+        ? `Merma: ${barra.sobranteCm.toFixed(1)} cm`
+        : `Sobrante usable: ${barra.sobranteCm.toFixed(1)} cm`;
+      doc.text(
+        `${barra.etiquetaOrigen} · Usado: ${barra.usadoCm.toFixed(1)} cm · ${remLabel}`,
+        16,
+        y
+      );
+      y += 2;
+
+      // Barra visual (ancho total = 186 mm)
+      const barX = 16;
+      const barW = 184;
+      const barH = 6.5;
+      doc.setFillColor(226, 232, 240);
+      doc.rect(barX, y, barW, barH, 'F');
+
+      let curX = barX;
+      const totalLen = Math.max(1, barra.largoTotalCm);
+      barra.cortes.forEach((corte, cIdx) => {
+        const segW = Math.max(3, (corte.medidaCm / totalLen) * barW);
+        const drawW = Math.min(segW, barX + barW - curX);
+        if (drawW <= 0) return;
+        const rgb = SEG_RGBS[cIdx % SEG_RGBS.length];
+        doc.setFillColor(rgb[0], rgb[1], rgb[2]);
+        doc.rect(curX, y, drawW, barH, 'F');
+        doc.setDrawColor(255, 255, 255);
+        doc.setLineWidth(0.25);
+        doc.line(curX + drawW, y, curX + drawW, y + barH);
+        if (drawW >= 12) {
+          doc.setTextColor(255, 255, 255);
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(6.5);
+          doc.text(`${corte.medidaCm.toFixed(1)}`, curX + drawW / 2, y + 4.3, { align: 'center' });
+        }
+        curX += drawW;
+      });
+
+      const remW = Math.max(0, barX + barW - curX);
+      if (remW > 0.5) {
+        if (barra.esMerma) {
+          doc.setFillColor(254, 205, 211);
+        } else {
+          doc.setFillColor(167, 243, 208);
+        }
+        doc.rect(curX, y, remW, barH, 'F');
+        if (remW >= 16) {
+          doc.setTextColor(barra.esMerma ? 159 : 6, barra.esMerma ? 18 : 95, barra.esMerma ? 57 : 70);
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(6.2);
+          doc.text(
+            `${barra.esMerma ? 'Merma' : 'Usable'} ${barra.sobranteCm.toFixed(0)}`,
+            curX + remW / 2,
+            y + 4.3,
+            { align: 'center' }
+          );
+        }
+      }
+
+      doc.setDrawColor(148, 163, 184);
+      doc.setLineWidth(0.2);
+      doc.rect(barX, y, barW, barH, 'S');
+      y += barH + 4.5;
+    }
+    y += 1.5;
+  }
+
+  // 3. Lista consolidada de vidrios / paneles
+  const allVidrios = hoja.partidas.flatMap((p, idx) =>
+    (p.despiece?.vidrios || []).map((v) => ({
+      partidaLabel: `#${idx + 1} ${p.area || 'General'} · ${p.etiqueta || LINEAS_CONFIG[p.linea]?.nombre || ''}`,
+      nombre: v.nombre,
+      espesor: v.espesorLabel,
+      anchoCm: v.anchoCm,
+      altoCm: v.altoCm,
+      pzas: v.pzas * Math.max(1, Number(p.cantidad) || 1),
+      areaM2: round2(v.areaM2 * Math.max(1, Number(p.cantidad) || 1)),
+    }))
+  );
+
+  if (allVidrios.length > 0) {
+    y += 3;
+    if (y > 235) {
+      doc.addPage();
+      y = 20;
+    }
+    doc.setTextColor(15, 23, 42);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10.5);
+    doc.text('3. Lista de Cortes de Vidrio y Paneles', 14, y);
+    y += 5.5;
+    doc.setFillColor(241, 245, 249);
+    doc.rect(14, y - 4, 188, 6.5, 'F');
+    doc.setFontSize(8.3);
+    doc.text('Partida / Vidrio', 16, y);
+    doc.text('Material', 102, y);
+    doc.text('Medidas (cm)', 152, y);
+    doc.text('Pzas', 198, y, { align: 'right' });
+    y += 5.5;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.2);
+    for (const v of allVidrios) {
+      const desc = `${v.partidaLabel} (${v.nombre})`;
+      const wrapped = doc.splitTextToSize(desc, 82) as string[];
+      const rowH = Math.max(5.2, wrapped.length * 4 + 1.5);
+      if (y + rowH > 246) {
+        doc.addPage();
+        y = 20;
+      }
+      doc.setTextColor(15, 23, 42);
+      doc.text(wrapped, 16, y);
+      doc.text(v.espesor.slice(0, 26), 102, y);
+      doc.text(`${v.anchoCm} × ${v.altoCm} cm`, 152, y);
+      doc.text(String(v.pzas), 198, y, { align: 'right' });
+      doc.setDrawColor(226, 232, 240);
+      doc.line(14, y + rowH - 1.8, 202, y + rowH - 1.8);
+      y += rowH;
+    }
+  }
+
+  // Aviso técnico ámbar al pie antes de cortar
+  y += 6;
+  if (y + 18 > 266) {
+    doc.addPage();
+    y = 22;
+  }
+  doc.setFillColor(254, 243, 199);
+  doc.setDrawColor(245, 158, 11);
+  doc.roundedRect(14, y, 188, 14, 2, 2, 'FD');
+  doc.setTextColor(120, 53, 15);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  const warnLines = doc.splitTextToSize(PRE_CUT_WARNING_TEXT, 180) as string[];
+  doc.text(warnLines, 18, y + 5.5);
+
+  const slug = proyectoLabel
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'taller';
+  doc.save(`orden-produccion-taller-${slug}.pdf`);
+  return true;
+}
+

@@ -1,5 +1,5 @@
-import React from 'react';
-import { CATALOGO_PERFILES } from '../utils/alumineroLogic';
+import React, { useRef } from 'react';
+import { AdminMessageItem, CATALOGO_PERFILES } from '../utils/alumineroLogic';
 import { formatMXN, SavedColleagueReferral } from '../utils/storageHelpers';
 import { ScreenId } from './TopBarAndDrawer';
 import {
@@ -13,6 +13,8 @@ import {
 
 interface Props {
   proActive: boolean;
+  homePage?: 0 | 1;
+  onChangeHomePage?: (next: 0 | 1) => void;
   hojaPiezasCount: number;
   hojaTotal: number;
   inventarioTramosTotal: number;
@@ -26,6 +28,8 @@ interface Props {
   pendingRemindersCount?: number;
   dueRemindersCount?: number;
   pushPermission?: NotificationPermission | 'unsupported';
+  unreadAdminMessages?: AdminMessageItem[];
+  onMarkAdminMessageRead?: (id: string) => void;
   onClaimColleaguePromo?: () => void;
   onOpenColleagueInvite?: () => void;
   onOpenPro?: () => void;
@@ -55,6 +59,8 @@ const SteelCornerAccent: React.FC<{ gold?: boolean }> = ({ gold = false }) => (
 
 export const MainMenuView: React.FC<Props> = ({
   proActive,
+  homePage = 0,
+  onChangeHomePage,
   hojaPiezasCount,
   hojaTotal,
   inventarioTramosTotal,
@@ -68,6 +74,8 @@ export const MainMenuView: React.FC<Props> = ({
   pendingRemindersCount = 0,
   dueRemindersCount = 0,
   pushPermission = 'default',
+  unreadAdminMessages = [],
+  onMarkAdminMessageRead,
   onClaimColleaguePromo,
   onOpenColleagueInvite,
   onOpenPro,
@@ -79,6 +87,30 @@ export const MainMenuView: React.FC<Props> = ({
   onOpenLevantamiento,
   onOpenReminders,
 }) => {
+  const swipeStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
+
+  const toggleHomePageLoop = () => {
+    onChangeHomePage?.(homePage === 0 ? 1 : 0);
+  };
+
+  const handleSwipeStart = (clientX: number, clientY: number) => {
+    swipeStartRef.current = { x: clientX, y: clientY, time: Date.now() };
+  };
+
+  const handleSwipeEnd = (clientX: number, clientY: number) => {
+    const start = swipeStartRef.current;
+    swipeStartRef.current = null;
+    if (!start) return;
+    const dx = clientX - start.x;
+    const dy = clientY - start.y;
+    const elapsed = Date.now() - start.time;
+    if (elapsed > 900) return;
+    if (Math.abs(dx) >= 44 && Math.abs(dx) > Math.abs(dy) * 1.25) {
+      // Bucle infinito: deslizar izquierda o derecha alterna Vista 1 <-> Vista 2
+      toggleHomePageLoop();
+    }
+  };
+
   const handlePedirPinClick = () => {
     if (promoColegaUsed) {
       onOpenPro?.();
@@ -102,23 +134,121 @@ export const MainMenuView: React.FC<Props> = ({
     <section
       id="view-menu"
       data-pro-active={proActive ? 'true' : 'false'}
-      className="screen-animate pb-28 sm:pb-14"
+      data-home-page={homePage}
+      onTouchStart={(e) => {
+        const t = e.touches[0];
+        if (t) handleSwipeStart(t.clientX, t.clientY);
+      }}
+      onTouchEnd={(e) => {
+        const t = e.changedTouches[0];
+        if (t) handleSwipeEnd(t.clientX, t.clientY);
+      }}
+      onPointerDown={(e) => {
+        if (e.pointerType === 'mouse' && e.button === 0) {
+          handleSwipeStart(e.clientX, e.clientY);
+        }
+      }}
+      onPointerUp={(e) => {
+        if (e.pointerType === 'mouse') {
+          handleSwipeEnd(e.clientX, e.clientY);
+        }
+      }}
+      className="screen-animate pb-36 sm:pb-24 touch-pan-y select-none"
     >
-      {/* Título principal centrado */}
-      <div className="mb-2.5 sm:mb-4 flex flex-col items-center justify-center text-center gap-1.5">
-        <h1 className="m-0 text-[clamp(1.5rem,4.9vw,2.15rem)] font-extrabold text-white leading-[1.1] tracking-[-0.02em] drop-shadow-[0_2px_10px_rgba(0,0,0,0.45)] [text-wrap:balance]">
-          ¿Qué vamos a trabajar?
+      {/* Avisos / Mensajes del Administrador (sin leer) */}
+      {unreadAdminMessages.length > 0 && (
+        <div id="menu-admin-messages-stack" className="mb-3 flex flex-col gap-2">
+          {unreadAdminMessages.slice(0, 3).map((msg) => (
+            <div
+              key={msg.id}
+              className={`rounded-2xl border p-3.5 shadow-lg ${
+                msg.tipo === 'promo'
+                  ? 'border-emerald-400/65 bg-emerald-50 dark:bg-emerald-950/75 text-emerald-950 dark:text-emerald-50'
+                  : msg.tipo === 'soporte'
+                    ? 'border-amber-400/65 bg-amber-50 dark:bg-amber-950/70 text-amber-950 dark:text-amber-50'
+                    : 'border-sky-400/65 bg-blue-50 dark:bg-sky-950/75 text-slate-900 dark:text-sky-50'
+              }`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-blue-600 text-white">
+                      {msg.tipo === 'promo' ? '🎁 Promo' : msg.tipo === 'soporte' ? '🛠️ Soporte' : '📢 Aviso'}
+                    </span>
+                    <strong className="text-[13.5px] font-extrabold leading-tight">
+                      {msg.titulo}
+                    </strong>
+                  </div>
+                  <p className="m-0 mt-1.5 text-[12.5px] leading-relaxed whitespace-pre-line opacity-95">
+                    {msg.cuerpo}
+                  </p>
+                </div>
+              </div>
+              {onMarkAdminMessageRead && (
+                <div className="mt-2.5 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => onMarkAdminMessageRead(msg.id)}
+                    className="min-h-[34px] px-3 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[11.5px] font-extrabold cursor-pointer transition-transform active:scale-95"
+                  >
+                    ✓ Entendido / Marcar como leído
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Título principal centrado + indicador discreto de vista 1 / 2 */}
+      <div className="mb-2.5 sm:mb-3.5 flex flex-col items-center justify-center text-center gap-1.5">
+        <h1 className="m-0 text-[clamp(1.45rem,4.8vw,2.1rem)] font-extrabold text-slate-900 dark:text-white leading-[1.1] tracking-[-0.02em] dark:drop-shadow-[0_2px_14px_rgba(255,255,255,0.18)] [text-wrap:balance]">
+          {homePage === 0 ? '¿Qué vamos a trabajar?' : 'Catálogo y Herramientas'}
         </h1>
+        <div className="inline-flex items-center gap-1.5" role="tablist" aria-label="Vistas de la pantalla de inicio">
+          <button
+            type="button"
+            role="tab"
+            id="btn-home-dot-0"
+            aria-selected={homePage === 0}
+            onClick={() => onChangeHomePage?.(0)}
+            className={`px-2.5 py-0.5 rounded-full text-[10.5px] font-extrabold transition-all cursor-pointer border ${
+              homePage === 0
+                ? 'border-sky-400/70 bg-sky-500/20 text-sky-600 dark:text-sky-200'
+                : 'border-slate-300/60 dark:border-white/15 bg-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-white'
+            }`}
+          >
+            1 · Principal
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="btn-home-dot-1"
+            aria-selected={homePage === 1}
+            onClick={() => onChangeHomePage?.(1)}
+            className={`px-2.5 py-0.5 rounded-full text-[10.5px] font-extrabold transition-all cursor-pointer border ${
+              homePage === 1
+                ? 'border-sky-400/70 bg-sky-500/20 text-sky-600 dark:text-sky-200'
+                : 'border-slate-300/60 dark:border-white/15 bg-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-white'
+            }`}
+          >
+            2 · Taller y Catálogo
+          </button>
+        </div>
         {hasReferral && (
           <span
             id="badge-menu-referred-by"
-            className="inline-flex items-center gap-1.5 text-[11.5px] font-bold text-emerald-300/95 bg-emerald-500/12 border border-emerald-400/35 rounded-full px-3.5 py-1 leading-none"
+            className="inline-flex items-center gap-1.5 text-[11.5px] font-bold text-emerald-700 dark:text-emerald-300/95 bg-emerald-100 dark:bg-emerald-500/12 border border-emerald-400/50 rounded-full px-3.5 py-1 leading-none"
           >
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" aria-hidden="true" />
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
             Invitado por: {inviterDisplayName}
           </span>
         )}
       </div>
+
+      {/* ===================== VISTA 1 (PRINCIPAL) ===================== */}
+      {homePage === 0 && (
+        <div id="home-carousel-page-1" className="screen-animate">
 
       {/* 1. Tarjeta destacada principal: Levantamiento Rápido con escuadra metálica 3D */}
       <button
@@ -135,7 +265,7 @@ export const MainMenuView: React.FC<Props> = ({
       >
         <MetallicSetSquareIcon size={46} className="shrink-0 transition-transform duration-200 group-hover:scale-105" />
         <span style={{ flex: 1, minWidth: 0 }}>
-          <span className="block text-[17.5px] sm:text-[19px] font-extrabold text-white tracking-[-0.015em] leading-tight">
+          <span className="block text-[17.5px] sm:text-[19px] font-extrabold text-slate-900 dark:text-white tracking-[-0.015em] leading-tight">
             Levantamiento Rápido
           </span>
           <small>Toma medidas en obra y manda directo a cotizar o modular</small>
@@ -340,7 +470,7 @@ export const MainMenuView: React.FC<Props> = ({
             <MetallicWindowIcon size={40} className="shrink-0" />
           </div>
           <div className="mt-1">
-            <span className="block text-[16px] sm:text-[17px] font-extrabold text-white leading-tight tracking-[-0.01em]">
+            <span className="block text-[16px] sm:text-[17px] font-extrabold text-slate-900 dark:text-white leading-tight tracking-[-0.01em]">
               Ventanas
             </span>
             <span className="menu-card-sub block text-[11.5px] sm:text-[12.5px] mt-1 leading-snug">
@@ -368,7 +498,7 @@ export const MainMenuView: React.FC<Props> = ({
             </span>
           </div>
           <div className="mt-1">
-            <span className="block text-[15.5px] sm:text-[17px] font-extrabold text-white leading-tight tracking-[-0.01em]">
+            <span className="block text-[15.5px] sm:text-[17px] font-extrabold text-slate-900 dark:text-white leading-tight tracking-[-0.01em]">
               Puertas
             </span>
             <span className="menu-card-sub block text-[11px] sm:text-[12.5px] mt-0.5 leading-snug">
@@ -376,23 +506,30 @@ export const MainMenuView: React.FC<Props> = ({
             </span>
           </div>
         </button>
+      </div>
+      </div>
+      )}
 
+      {/* ===================== VISTA 2 (SECUNDARIA: CATÁLOGO, INVENTARIO Y HERRAMIENTAS) ===================== */}
+      {homePage === 1 && (
+        <div id="home-carousel-page-2" className="screen-animate">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 mb-5">
         {/* 3. CATÁLOGO PERFILES (con "3\" Gratis" arriba y píldora esmeralda "41 perf." abajo) */}
         <button
           type="button"
           id="btn-menu-catalogo"
           onClick={() => onGoToView('catalogo')}
-          className="menu-grid-card metal-grid-card !overflow-visible flex flex-col justify-between gap-2 w-full min-h-[132px] sm:min-h-[150px] p-3 sm:p-4 pb-5 rounded-[18px] text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-[0.97]"
+          className="menu-grid-card metal-grid-card !overflow-visible flex flex-col justify-between gap-2 w-full min-h-[128px] sm:min-h-[144px] p-3 sm:p-4 pb-5 rounded-[18px] text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-[0.97]"
         >
           <SteelCornerAccent />
           <div className="flex items-start justify-between gap-1.5 w-full">
-            <MetallicProfilesIcon size={40} className="shrink-0" />
-            <span className="metal-bronze-free-badge inline-flex items-center justify-center px-2.5 py-1 rounded-full text-[10.5px] font-extrabold leading-none whitespace-nowrap shrink-0 mt-0.5">
+            <MetallicProfilesIcon size={38} className="shrink-0" />
+            <span className="metal-bronze-free-badge inline-flex items-center justify-center px-2 py-1 rounded-full text-[10px] font-extrabold leading-none whitespace-nowrap shrink-0 mt-0.5">
               3" Gratis
             </span>
           </div>
           <div className="mt-1">
-            <span className="block text-[15px] sm:text-[16.5px] font-extrabold text-white leading-tight tracking-[-0.01em]">
+            <span className="block text-[15px] sm:text-[16.5px] font-extrabold text-slate-900 dark:text-white leading-tight tracking-[-0.01em]">
               Catálogo Perfiles
             </span>
             <span className="menu-card-sub block text-[11px] sm:text-[12.5px] mt-0.5 leading-snug">
@@ -400,7 +537,7 @@ export const MainMenuView: React.FC<Props> = ({
             </span>
           </div>
           {/* Píldora verde esmeralda centrada en borde inferior */}
-          <span className="metal-cat-bottom-pill mono pointer-events-none absolute -bottom-3.5 left-1/2 -translate-x-1/2 inline-flex items-center justify-center px-3.5 py-1 rounded-full text-[11.5px] font-extrabold leading-none whitespace-nowrap z-10">
+          <span className="metal-cat-bottom-pill mono pointer-events-none absolute -bottom-3.5 left-1/2 -translate-x-1/2 inline-flex items-center justify-center px-3.5 py-1 rounded-full text-[11px] font-extrabold leading-none whitespace-nowrap z-10">
             {CATALOGO_PERFILES.length} perf.
           </span>
         </button>
@@ -410,21 +547,21 @@ export const MainMenuView: React.FC<Props> = ({
           type="button"
           id="btn-menu-inventario"
           onClick={onEntrarInventario}
-          className="menu-grid-card metal-grid-card flex flex-col justify-between gap-2 w-full min-h-[132px] sm:min-h-[150px] p-3 sm:p-4 pb-5 rounded-[18px] text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-[0.97]"
+          className="menu-grid-card metal-grid-card flex flex-col justify-between gap-2 w-full min-h-[128px] sm:min-h-[144px] p-3 sm:p-4 pb-5 rounded-[18px] text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-[0.97]"
         >
           <SteelCornerAccent />
           <div className="flex items-start justify-between gap-1.5 w-full">
-            <MetallicInventoryBoxIcon size={40} className="shrink-0" />
+            <MetallicInventoryBoxIcon size={38} className="shrink-0" />
             <span
               className={`${
                 proActive ? 'metal-emerald-pill' : 'metal-gold-pro-badge'
-              } mono inline-flex items-center justify-center gap-1 px-2.5 py-1 rounded-full text-[10.5px] font-extrabold leading-none whitespace-nowrap shrink-0 mt-0.5`}
+              } mono inline-flex items-center justify-center gap-1 px-2 py-1 rounded-full text-[10px] font-extrabold leading-none whitespace-nowrap shrink-0 mt-0.5`}
             >
               {!proActive ? '🔒 PRO' : `${inventarioTramosTotal} tr.`}
             </span>
           </div>
           <div className="mt-1">
-            <span className="block text-[15px] sm:text-[16.5px] font-extrabold text-white leading-tight tracking-[-0.01em]">
+            <span className="block text-[15px] sm:text-[16.5px] font-extrabold text-slate-900 dark:text-white leading-tight tracking-[-0.01em]">
               Mi Inventario
             </span>
             <span className="menu-card-sub block text-[11px] sm:text-[12.5px] mt-0.5 leading-snug">
@@ -434,15 +571,7 @@ export const MainMenuView: React.FC<Props> = ({
         </button>
       </div>
 
-      {/* 5. Herramientas adicionales del taller (mismo acabado metálico cristal oscuro) */}
-      <div className="mb-2.5 flex items-center gap-2.5">
-        <span className="h-[1px] flex-1 bg-gradient-to-r from-transparent via-[#4A6072]/60 to-transparent" aria-hidden="true" />
-        <span className="text-[10.5px] font-bold uppercase tracking-[0.14em] text-[#8CA6BA]">
-          Herramientas del Taller
-        </span>
-        <span className="h-[1px] flex-1 bg-gradient-to-r from-transparent via-[#4A6072]/60 to-transparent" aria-hidden="true" />
-      </div>
-
+      {/* 5. Herramientas adicionales del taller */}
       <div className="grid grid-cols-2 gap-3 sm:gap-4">
         {/* 5. NOTAS DE OBRA */}
         <button
@@ -452,7 +581,7 @@ export const MainMenuView: React.FC<Props> = ({
           className="menu-grid-card metal-grid-card flex flex-col justify-between gap-3 w-full min-h-[124px] sm:min-h-[132px] p-3.5 sm:p-4 rounded-[18px] text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-[0.97]"
         >
           <div className="flex items-center justify-between gap-2 w-full">
-            <div className="metal-icon-btn w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-[#D8E6F2]">
+            <div className="metal-icon-btn w-10 h-10 rounded-xl flex items-center justify-center shrink-0">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M12 20h9" />
                 <path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4Z" />
@@ -463,7 +592,7 @@ export const MainMenuView: React.FC<Props> = ({
             </span>
           </div>
           <div>
-            <span className="block text-[14.5px] sm:text-[15.5px] font-extrabold text-white leading-tight">
+            <span className="block text-[14.5px] sm:text-[15.5px] font-extrabold text-slate-900 dark:text-white leading-tight">
               Notas de Obra
             </span>
             <span className="menu-card-sub block text-[11px] sm:text-[12px] mt-1 leading-snug">
@@ -480,7 +609,7 @@ export const MainMenuView: React.FC<Props> = ({
           className="menu-grid-card metal-grid-card flex flex-col justify-between gap-3 w-full min-h-[124px] sm:min-h-[132px] p-3.5 sm:p-4 rounded-[18px] text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-[0.97]"
         >
           <div className="flex items-center justify-between gap-2 w-full">
-            <div className="metal-icon-btn w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-[#D8E6F2]">
+            <div className="metal-icon-btn w-10 h-10 rounded-xl flex items-center justify-center shrink-0">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M21 6H3" />
                 <path d="M10 12H3" />
@@ -493,7 +622,7 @@ export const MainMenuView: React.FC<Props> = ({
             </span>
           </div>
           <div>
-            <span className="block text-[14.5px] sm:text-[15.5px] font-extrabold text-white leading-tight">
+            <span className="block text-[14.5px] sm:text-[15.5px] font-extrabold text-slate-900 dark:text-white leading-tight">
               Modulación y Cortes
             </span>
             <span className="menu-card-sub block text-[11px] sm:text-[12px] mt-1 leading-snug">
@@ -510,7 +639,7 @@ export const MainMenuView: React.FC<Props> = ({
           className="menu-grid-card metal-grid-card flex flex-col justify-between gap-3 w-full min-h-[124px] sm:min-h-[132px] p-3.5 sm:p-4 rounded-[18px] text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-[0.97]"
         >
           <div className="flex items-center justify-between gap-2 w-full">
-            <div className="metal-icon-btn w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-[#D8E6F2]">
+            <div className="metal-icon-btn w-10 h-10 rounded-xl flex items-center justify-center shrink-0">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M3 9l9-6 9 6v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
                 <path d="M9 22V12h6v10" />
@@ -521,11 +650,11 @@ export const MainMenuView: React.FC<Props> = ({
             </span>
           </div>
           <div>
-            <span className="block text-[14.5px] sm:text-[15.5px] font-extrabold text-white leading-tight">
+            <span className="block text-[14.5px] sm:text-[15.5px] font-extrabold text-slate-900 dark:text-white leading-tight">
               Mi Taller y Precios
             </span>
             <span className="menu-card-sub block text-[11px] sm:text-[12px] mt-1 leading-snug">
-              Logo, tarifas m² y fórmulas
+              Logo, tarifas m², métricas y fórmulas
             </span>
           </div>
         </button>
@@ -538,7 +667,7 @@ export const MainMenuView: React.FC<Props> = ({
           className="menu-grid-card metal-grid-card flex flex-col justify-between gap-3 w-full min-h-[124px] sm:min-h-[132px] p-3.5 sm:p-4 rounded-[18px] text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-[0.97]"
         >
           <div className="flex items-center justify-between gap-2 w-full">
-            <div className="metal-icon-btn w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-[#D8E6F2]">
+            <div className="metal-icon-btn w-10 h-10 rounded-xl flex items-center justify-center shrink-0">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <rect x="3" y="4" width="18" height="16" rx="2" />
                 <line x1="12" y1="4" x2="12" y2="20" />
@@ -551,7 +680,7 @@ export const MainMenuView: React.FC<Props> = ({
             </span>
           </div>
           <div>
-            <span className="block text-[14.5px] sm:text-[15.5px] font-extrabold text-white leading-tight">
+            <span className="block text-[14.5px] sm:text-[15.5px] font-extrabold text-slate-900 dark:text-white leading-tight">
               Galería (Antes y Después)
             </span>
             <span className="menu-card-sub block text-[11px] sm:text-[12px] mt-1 leading-snug">
@@ -568,7 +697,7 @@ export const MainMenuView: React.FC<Props> = ({
           className="menu-grid-card metal-grid-card flex flex-col justify-between gap-3 w-full min-h-[124px] sm:min-h-[132px] p-3.5 sm:p-4 rounded-[18px] text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-[0.97]"
         >
           <div className="flex items-center justify-between gap-2 w-full">
-            <div className="metal-icon-btn w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-[#D8E6F2]">
+            <div className="metal-icon-btn w-10 h-10 rounded-xl flex items-center justify-center shrink-0">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <rect x="3" y="3" width="18" height="18" rx="2" />
                 <line x1="11" y1="3" x2="11" y2="21" />
@@ -580,7 +709,7 @@ export const MainMenuView: React.FC<Props> = ({
             </span>
           </div>
           <div>
-            <span className="block text-[14.5px] sm:text-[15.5px] font-extrabold text-white leading-tight">
+            <span className="block text-[14.5px] sm:text-[15.5px] font-extrabold text-slate-900 dark:text-white leading-tight">
               Optimizador de Vidrio (2D)
             </span>
             <span className="menu-card-sub block text-[11px] sm:text-[12px] mt-1 leading-snug">
@@ -597,7 +726,7 @@ export const MainMenuView: React.FC<Props> = ({
           className="menu-grid-card metal-grid-card flex flex-col justify-between gap-3 w-full min-h-[124px] sm:min-h-[132px] p-3.5 sm:p-4 rounded-[18px] text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-[0.97]"
         >
           <div className="flex items-center justify-between gap-2 w-full">
-            <div className="metal-icon-btn w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-[#D8E6F2]">
+            <div className="metal-icon-btn w-10 h-10 rounded-xl flex items-center justify-center shrink-0">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" />
                 <rect x="9" y="3" width="6" height="4" rx="1" />
@@ -610,7 +739,7 @@ export const MainMenuView: React.FC<Props> = ({
             </span>
           </div>
           <div>
-            <span className="block text-[14.5px] sm:text-[15.5px] font-extrabold text-white leading-tight">
+            <span className="block text-[14.5px] sm:text-[15.5px] font-extrabold text-slate-900 dark:text-white leading-tight">
               Historial de Cotizaciones
             </span>
             <span className="menu-card-sub block text-[11px] sm:text-[12px] mt-1 leading-snug">
@@ -627,14 +756,14 @@ export const MainMenuView: React.FC<Props> = ({
           className="col-span-2 menu-grid-card metal-grid-card flex items-center justify-between gap-3 w-full min-h-[82px] p-3.5 sm:p-4 rounded-[18px] text-left cursor-pointer transition-all duration-150 hover:-translate-y-0.5 active:scale-[0.985]"
         >
           <div className="flex items-center gap-3 min-w-0">
-            <div className="metal-icon-btn w-11 h-11 rounded-xl flex items-center justify-center shrink-0 text-sky-300">
+            <div className="metal-icon-btn w-11 h-11 rounded-xl flex items-center justify-center shrink-0">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <rect x="2" y="4" width="20" height="16" rx="3" />
                 <polygon points="10 9 16 12 10 15 10 9" fill="currentColor" />
               </svg>
             </div>
             <div className="min-w-0">
-              <span className="block text-[15px] sm:text-[16px] font-extrabold text-white leading-tight">
+              <span className="block text-[15px] sm:text-[16px] font-extrabold text-slate-900 dark:text-white leading-tight">
                 Video Tutoriales
               </span>
               <span className="menu-card-sub block text-[11.5px] sm:text-[12.5px] mt-0.5 leading-snug">
@@ -647,6 +776,8 @@ export const MainMenuView: React.FC<Props> = ({
           </span>
         </button>
       </div>
+        </div>
+      )}
     </section>
   );
 };

@@ -1,12 +1,16 @@
 import {
+  AjusteDescuentosConfig,
   AperturaVentanaId,
   CATALOGO_PERFILES,
   CortePerfil,
   CorteVidrio,
   LineaId,
   LINEAS_CONFIG,
+  OptimizadorConfig,
   PartidaObra,
   PerfilCatalogoId,
+  resolveAjusteDescuentos,
+  resolveOptimizadorConfig,
   round1,
   round2,
   TRAMO_STD_CM,
@@ -672,6 +676,7 @@ export function calcularModulacionCortes(input: {
   sublineaId: ModulacionSublineaId;
   anchoCm: number;
   altoCm: number;
+  ajusteDescuentos?: Partial<AjusteDescuentosConfig>;
 }): ModulacionCalculoResult {
   const modelo = MODULACION_MODELOS.find((m) => m.id === input.modeloId) || MODULACION_MODELOS[0];
   const serie = MODULACION_SERIES.find((s) => s.id === input.serieId) || MODULACION_SERIES[3];
@@ -681,7 +686,30 @@ export function calcularModulacionCortes(input: {
   const ancho = Math.max(20, Number(input.anchoCm) || 120);
   const alto = Math.max(20, Number(input.altoCm) || 100);
   const adj = sublinea.ajusteHolguraCm;
-  const d = serie.descuentos;
+  const aj = resolveAjusteDescuentos(input.ajusteDescuentos);
+  const hasCustomAj = Boolean(input.ajusteDescuentos);
+  const d =
+    serie.id === 'linea-2' && hasCustomAj
+      ? {
+          ...serie.descuentos,
+          jamba: aj.l2JambaAlto,
+          riel: 0,
+          zocloTotalAncho: aj.l2Zoclo2HojasAncho,
+          cercoAlto: aj.l2HojaCorredizaAlto,
+          traslapeAlto: aj.l2HojaCorredizaAlto,
+          hojaFijaAlto: aj.l2HojaFijaAlto,
+        }
+      : serie.id === 'linea-3' && hasCustomAj
+        ? {
+            ...serie.descuentos,
+            jamba: aj.l3JambaAlto,
+            riel: 0,
+            zocloTotalAncho: aj.l3Zoclo2HojasAncho,
+            cercoAlto: aj.l3HojaCorredizaAlto,
+            traslapeAlto: aj.l3HojaCorredizaAlto,
+            hojaFijaAlto: aj.l3HojaFijaAlto,
+          }
+        : serie.descuentos;
   const isSerieEuropea =
     serie.id === 'serie-70' || serie.id === 'serie-80' || serie.id === 'serie-100';
   const anguloMarco: '90°' | '45°' = isSerieEuropea ? '45°' : '90°';
@@ -724,7 +752,7 @@ export function calcularModulacionCortes(input: {
         medidaCm = round1(Math.max(10, (alto - desc) / 2));
         formulaTexto = `(Alto - ${desc.toFixed(1)} cm) ÷ 2`;
       } else {
-        const desc = round1((modelo.esFija ? d.hojaFijaAlto : d.cercoAlto) + adj);
+        const desc = round1((modelo.esFija || item.seccion === 'hoja-fija' ? d.hojaFijaAlto : d.cercoAlto) + adj);
         medidaCm = round1(Math.max(10, alto - desc));
         formulaTexto = `Alto - ${desc.toFixed(1)} cm`;
       }
@@ -735,7 +763,7 @@ export function calcularModulacionCortes(input: {
         medidaCm = round1(Math.max(10, modelo.esCorrediza ? alto - desc : ancho - d.zocloTotalAncho));
         formulaTexto = modelo.esCorrediza ? `Alto - ${desc.toFixed(1)} cm` : `Ancho - ${d.zocloTotalAncho.toFixed(1)} cm`;
       } else {
-        const desc = round1(d.traslapeAlto + adj);
+        const desc = round1((item.seccion === 'hoja-fija' ? d.hojaFijaAlto : d.traslapeAlto) + adj);
         medidaCm = round1(Math.max(10, alto - desc));
         formulaTexto = `Alto - ${desc.toFixed(1)} cm`;
       }
@@ -849,6 +877,8 @@ export interface Tramo1DBarraPlan {
   etiquetaOrigen: string;
   marca?: string;
   largoTotalCm: number;
+  largoUtilCm: number;
+  despunteCm: number;
   cortes: CorteTramo1DPieza[];
   usadoCm: number;
   desperdicioDiscoCm: number;
@@ -867,6 +897,7 @@ export interface Tramo1DGrupoPerfil {
   metrosCortes: number;
   sobranteTotalCm: number;
   mermaTotalCm: number;
+  mermaRealPct: number;
   aprovechamientoPct: number;
 }
 
@@ -885,7 +916,13 @@ export interface OptimizacionTramos1DResult {
   metrosCortesTotales: number;
   sobranteTotalCm: number;
   mermaTotalCm: number;
+  mermaRealPct: number;
   aprovechamientoGlobalPct: number;
+  largoBarraCm: number;
+  largoUtilCm: number;
+  despunteTotalCm: number;
+  kerfCm: number;
+  minSobranteGuardableCm: number;
   sobrantesGeneradosGuardables: SobranteGeneradoSugerido[];
 }
 
@@ -893,9 +930,15 @@ export function optimizarTramos1D(input: {
   perfiles: ModulacionPerfilCorteRow[];
   sobrantesInventario?: SobranteItem[];
   lineaCompatible?: LineaId;
+  largoBarraCm?: number;
+  despuntePorExtremoCm?: number;
   kerfCm?: number;
   minSobranteGuardableCm?: number;
 }): OptimizacionTramos1DResult {
+  const largoBarraCm = Math.max(200, Number(input.largoBarraCm ?? TRAMO_STD_CM));
+  const despunteExtremo = Math.max(0, Number(input.despuntePorExtremoCm ?? 0));
+  const despunteTotalCm = round1(despunteExtremo * 2);
+  const largoUtilBarraCm = round1(Math.max(100, largoBarraCm - despunteTotalCm));
   const kerf = Math.max(0, Number(input.kerfCm ?? 0.35));
   const minSaveCm = Math.max(10, Number(input.minSobranteGuardableCm ?? 45));
   const invSobrantes = input.sobrantesInventario || [];
@@ -940,7 +983,6 @@ export function optimizarTramos1D(input: {
     for (const s of invSobrantes) {
       if (s.perfilId !== perfilId) continue;
       if (input.lineaCompatible && s.linea !== input.lineaCompatible) {
-        // Permite compatibilidad si no se filtra estricto, pero si se pasa lineaCompatible prioriza misma línea; aún así incluimos compatibles de misma serie o exacta
         continue;
       }
       const cm = round1((Number(s.largoM) || 0) * 100);
@@ -955,7 +997,6 @@ export function optimizarTramos1D(input: {
         });
       }
     }
-    // Ordenar sobrantes del más corto al más largo para aprovechar retazos chicos primero (Best-Fit)
     sobrantesPool.sort((a, b) => a.largoCm - b.largoCm);
 
     const barrasAbiertas: Array<{
@@ -965,6 +1006,8 @@ export function optimizarTramos1D(input: {
       etiquetaOrigen: string;
       marca?: string;
       largoTotalCm: number;
+      largoUtilCm: number;
+      despunteCm: number;
       restanteCm: number;
       cortes: CorteTramo1DPieza[];
       discoCm: number;
@@ -1011,6 +1054,8 @@ export function optimizarTramos1D(input: {
           etiquetaOrigen: `Sobrante taller #${sobCounter} (${(sob.largoCm / 100).toFixed(2)} m)`,
           marca: sob.marca,
           largoTotalCm: sob.largoCm,
+          largoUtilCm: sob.largoCm,
+          despunteCm: 0,
           restanteCm: round2(Math.max(0, sob.largoCm - pieza.medidaCm - kerfFirst)),
           cortes: [pieza],
           discoCm: kerfFirst,
@@ -1018,16 +1063,19 @@ export function optimizarTramos1D(input: {
         continue;
       }
 
-      // 3. Abrir un nuevo tramo completo de 6.10 m (610 cm) descontando grosor del disco en cada corte
+      // 3. Abrir un nuevo tramo completo (610 cm, útil = 610 - despunte) descontando kerf por corte
       tramoCounter += 1;
-      const barLen = Math.max(TRAMO_STD_CM, round1(pieza.medidaCm + kerf));
-      const kerfFirst = Math.min(kerf, Math.max(0, round2(barLen - pieza.medidaCm)));
+      const utilLen = Math.max(largoUtilBarraCm, round1(pieza.medidaCm + kerf));
+      const totalLen = Math.max(largoBarraCm, round1(utilLen + despunteTotalCm));
+      const kerfFirst = Math.min(kerf, Math.max(0, round2(utilLen - pieza.medidaCm)));
       barrasAbiertas.push({
         id: `tramo-${perfilId}-${tramoCounter}`,
         origen: 'tramo-610',
-        etiquetaOrigen: `Tramo 6.10 m #${tramoCounter}`,
-        largoTotalCm: barLen,
-        restanteCm: round2(Math.max(0, barLen - pieza.medidaCm - kerfFirst)),
+        etiquetaOrigen: `Tramo ${(totalLen / 100).toFixed(2)} m #${tramoCounter}`,
+        largoTotalCm: totalLen,
+        largoUtilCm: utilLen,
+        despunteCm: round1(Math.max(0, totalLen - utilLen)),
+        restanteCm: round2(Math.max(0, utilLen - pieza.medidaCm - kerfFirst)),
         cortes: [pieza],
         discoCm: kerfFirst,
       });
@@ -1035,11 +1083,11 @@ export function optimizarTramos1D(input: {
 
     const barrasPlan: Tramo1DBarraPlan[] = barrasAbiertas.map((b) => {
       const usadoCm = round1(b.cortes.reduce((acc, c) => acc + c.medidaCm, 0));
-      const sobranteCm = round1(Math.max(0, b.largoTotalCm - usadoCm - b.discoCm));
+      const sobranteCm = round1(Math.max(0, b.largoUtilCm - usadoCm - b.discoCm));
       const esMerma = sobranteCm > 0 && sobranteCm < minSaveCm;
-      const pct = b.largoTotalCm > 0 ? round1((usadoCm / b.largoTotalCm) * 100) : 0;
+      const pct = b.largoUtilCm > 0 ? round1((usadoCm / b.largoUtilCm) * 100) : 0;
 
-      if (b.origen === 'tramo-610' && sobranteCm >= minSaveCm && sobranteCm < 600) {
+      if (b.origen === 'tramo-610' && sobranteCm >= minSaveCm && sobranteCm < b.largoUtilCm) {
         const key = `${perfilId}__${sobranteCm}`;
         const existing = offcutAggregator.get(key);
         if (existing) {
@@ -1062,6 +1110,8 @@ export function optimizarTramos1D(input: {
         etiquetaOrigen: b.etiquetaOrigen,
         marca: b.marca,
         largoTotalCm: b.largoTotalCm,
+        largoUtilCm: b.largoUtilCm,
+        despunteCm: b.despunteCm,
         cortes: b.cortes,
         usadoCm,
         desperdicioDiscoCm: round2(b.discoCm),
@@ -1073,10 +1123,11 @@ export function optimizarTramos1D(input: {
 
     const tramos610Requeridos = barrasPlan.filter((b) => b.origen === 'tramo-610').length;
     const sobrantesUsados = barrasPlan.filter((b) => b.origen === 'sobrante-inventario').length;
-    const totalCapacidadCm = barrasPlan.reduce((a, b) => a + b.largoTotalCm, 0);
+    const totalCapacidadCm = barrasPlan.reduce((a, b) => a + b.largoUtilCm, 0);
     const totalUsadoCm = barrasPlan.reduce((a, b) => a + b.usadoCm, 0);
     const sobranteTotalCm = round1(barrasPlan.reduce((a, b) => a + b.sobranteCm, 0));
     const mermaTotalCm = round1(barrasPlan.reduce((a, b) => a + (b.esMerma ? b.sobranteCm : 0), 0));
+    const mermaRealPct = totalCapacidadCm > 0 ? round1((mermaTotalCm / totalCapacidadCm) * 100) : 0;
 
     grupos.push({
       perfilId,
@@ -1088,6 +1139,7 @@ export function optimizarTramos1D(input: {
       metrosCortes: round2(totalUsadoCm / 100),
       sobranteTotalCm,
       mermaTotalCm,
+      mermaRealPct,
       aprovechamientoPct: totalCapacidadCm > 0 ? round1((totalUsadoCm / totalCapacidadCm) * 100) : 0,
     });
   }
@@ -1098,11 +1150,13 @@ export function optimizarTramos1D(input: {
   const sobranteTotalCm = round1(grupos.reduce((a, g) => a + g.sobranteTotalCm, 0));
   const mermaTotalCm = round1(grupos.reduce((a, g) => a + g.mermaTotalCm, 0));
   const capacidadGlobalCm = grupos.reduce(
-    (a, g) => a + g.barras.reduce((ba, b) => ba + b.largoTotalCm, 0),
+    (a, g) => a + g.barras.reduce((ba, b) => ba + b.largoUtilCm, 0),
     0
   );
   const aprovechamientoGlobalPct =
     capacidadGlobalCm > 0 ? round1(((metrosCortesTotales * 100) / capacidadGlobalCm) * 100) : 0;
+  const mermaRealPct =
+    capacidadGlobalCm > 0 ? round1((mermaTotalCm / capacidadGlobalCm) * 100) : 0;
 
   return {
     grupos,
@@ -1111,9 +1165,62 @@ export function optimizarTramos1D(input: {
     metrosCortesTotales,
     sobranteTotalCm,
     mermaTotalCm,
+    mermaRealPct,
     aprovechamientoGlobalPct,
+    largoBarraCm,
+    largoUtilCm: largoUtilBarraCm,
+    despunteTotalCm,
+    kerfCm: kerf,
+    minSobranteGuardableCm: minSaveCm,
     sobrantesGeneradosGuardables: Array.from(offcutAggregator.values()),
   };
+}
+
+export function optimizarPartidasTramos1D(
+  partidas: PartidaObra[],
+  sobrantesInventario: SobranteItem[] = [],
+  optConfig?: Partial<OptimizadorConfig>
+): OptimizacionTramos1DResult {
+  const cfg = resolveOptimizadorConfig(optConfig);
+  const filas: ModulacionPerfilCorteRow[] = [];
+  for (const p of partidas || []) {
+    const qtyPartida = Math.max(1, Math.round(Number(p.cantidad) || 1));
+    const list = p.despiece?.perfiles || [];
+    list.forEach((c, idx) => {
+      const pzasTotal = Math.max(1, Math.round(Number(c.pzas) || 1)) * qtyPartida;
+      const medidaCm = round1(Math.max(5, Number(c.medidaCm) || 0));
+      filas.push({
+        id: `${p.id}__${c.perfilId}__${idx}`,
+        seccion:
+          c.perfilId === 'cabezal' || c.perfilId === 'jamba' || c.perfilId === 'riel'
+            ? 'contramarco'
+            : c.perfilId === 'mosq_marco' || c.perfilId === 'riel_mosq'
+              ? 'mosquitero'
+              : 'hoja-movil',
+        codigo: PROFILE_CODES[c.perfilId] || c.perfilId.toUpperCase(),
+        perfilId: c.perfilId,
+        nombre: `${c.nombre} · ${p.etiqueta || p.area || 'Partida'}`,
+        rol: c.funcion || '',
+        orientacion: 'horizontal',
+        cantidad: pzasTotal,
+        cantidadLabel: `x${pzasTotal}`,
+        formulaTexto: c.funcion || '',
+        medidaCm,
+        medidaM: round2(medidaCm / 100),
+        totalMetros: round2((medidaCm * pzasTotal) / 100),
+        angulo: c.angulo || '90°',
+      });
+    });
+  }
+
+  return optimizarTramos1D({
+    perfiles: filas,
+    sobrantesInventario,
+    largoBarraCm: cfg.largoBarraCm,
+    despuntePorExtremoCm: cfg.despuntePorExtremoCm,
+    kerfCm: cfg.kerfCm,
+    minSobranteGuardableCm: cfg.umbralSobranteUsableCm,
+  });
 }
 
 export function buildPartidaFromModulacion(

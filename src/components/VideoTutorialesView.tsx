@@ -4,6 +4,8 @@ import {
   Edit3,
   Film,
   Lock,
+  Maximize2,
+  Minimize2,
   Play,
   Plus,
   Trash2,
@@ -167,6 +169,9 @@ export const VideoTutorialesView: React.FC<VideoTutorialesViewProps> = ({ onShow
   const [localVideos, setLocalVideos] = useState<TutorialVideoItem[]>(() => loadLocalTestVideosMeta());
   const [activeCategory, setActiveCategory] = useState<TutorialVideoCategory | 'todos'>('todos');
   const [playingVideoId, setPlayingVideoId] = useState<string | null>(null);
+  const [landscapeFullscreen, setLandscapeFullscreen] = useState(false);
+  const [manualFullscreen, setManualFullscreen] = useState(false);
+  const playerContainerRef = useRef<HTMLDivElement | null>(null);
 
   // Modo editor rápido protegido por clave de administrador
   const [adminUnlocked, setAdminUnlocked] = useState(false);
@@ -192,21 +197,86 @@ export const VideoTutorialesView: React.FC<VideoTutorialesViewProps> = ({ onShow
     return () => unsub();
   }, []);
 
+  // Auto-rotación y pantalla completa automática cuando el dispositivo se gira a horizontal con video activo
+  useEffect(() => {
+    if (!playingVideoId) {
+      setLandscapeFullscreen(false);
+      setManualFullscreen(false);
+      return;
+    }
+    const evaluateOrientation = () => {
+      const isLandscapeViewport =
+        window.innerWidth > window.innerHeight &&
+        window.innerHeight <= 620;
+      const mediaMatches =
+        typeof window.matchMedia === 'function'
+          ? window.matchMedia('(orientation: landscape)').matches
+          : isLandscapeViewport;
+      const shouldExpand = isLandscapeViewport && mediaMatches;
+      setLandscapeFullscreen(shouldExpand);
+      if (shouldExpand && playerContainerRef.current && !document.fullscreenElement) {
+        const el = playerContainerRef.current as HTMLElement & {
+          webkitRequestFullscreen?: () => Promise<void> | void;
+        };
+        if (typeof el.requestFullscreen === 'function') {
+          void el.requestFullscreen().catch(() => {});
+        } else if (typeof el.webkitRequestFullscreen === 'function') {
+          try {
+            el.webkitRequestFullscreen();
+          } catch {
+            // fallback CSS fixed overlay
+          }
+        }
+      }
+    };
+    evaluateOrientation();
+    window.addEventListener('orientationchange', evaluateOrientation);
+    window.addEventListener('resize', evaluateOrientation);
+    return () => {
+      window.removeEventListener('orientationchange', evaluateOrientation);
+      window.removeEventListener('resize', evaluateOrientation);
+    };
+  }, [playingVideoId]);
+
   const allVideos = useMemo(() => {
-    return [...cloudVideos, ...localVideos].sort(
+    const seen = new Set<string>();
+    const combined = [...cloudVideos, ...localVideos].filter((v) => {
+      if (!v || !v.id || seen.has(v.id)) return false;
+      const cleanUrl = String(v.url || '').trim();
+      if (!cleanUrl) return false;
+      const parsed = parseTutorialVideoUrl(cleanUrl);
+      if (!parsed.valid) return false;
+      seen.add(v.id);
+      return true;
+    });
+    return combined.sort(
       (a, b) => (a.orden ?? 999) - (b.orden ?? 999) || b.updatedAt - a.updatedAt
     );
   }, [cloudVideos, localVideos]);
 
   const filteredVideos = useMemo(() => {
-    if (activeCategory === 'todos') return allVideos;
-    return allVideos.filter((v) => v.categoria === activeCategory);
-  }, [allVideos, activeCategory]);
+    const byCat =
+      activeCategory === 'todos'
+        ? allVideos
+        : allVideos.filter((v) => v.categoria === activeCategory);
+    // Evitar mostrar recuadro duplicado en la lista cuando ese mismo video ya está abierto en el reproductor activo
+    return byCat.filter((v) => v.id !== playingVideoId);
+  }, [allVideos, activeCategory, playingVideoId]);
 
   const activeVideo = useMemo(
     () => allVideos.find((v) => v.id === playingVideoId) || null,
     [allVideos, playingVideoId]
   );
+
+  const isFullscreenMode = Boolean(activeVideo && (landscapeFullscreen || manualFullscreen));
+
+  const exitFullscreenSafe = () => {
+    setManualFullscreen(false);
+    setLandscapeFullscreen(false);
+    if (document.fullscreenElement && typeof document.exitFullscreen === 'function') {
+      void document.exitFullscreen().catch(() => {});
+    }
+  };
 
   const resetForm = () => {
     setEditingId(null);
@@ -462,32 +532,74 @@ export const VideoTutorialesView: React.FC<VideoTutorialesViewProps> = ({ onShow
         })}
       </div>
 
-      {/* Reproductor activo */}
+      {/* Reproductor activo (único recuadro sin duplicados; se expande a pantalla completa automática al girar a horizontal) */}
       {activeVideo && (
         <div
+          ref={playerContainerRef}
           id="video-tutorial-active-player"
-          className="mb-5 rounded-[20px] border border-sky-400/50 bg-[#0A1824]/95 p-4 shadow-xl"
+          data-fullscreen={isFullscreenMode ? 'true' : 'false'}
+          className={
+            isFullscreenMode
+              ? 'fixed inset-0 z-[10050] bg-black flex flex-col justify-center items-center p-2 sm:p-4'
+              : 'mb-5 rounded-[20px] border border-sky-400/50 bg-[#0A1824]/95 p-4 shadow-xl'
+          }
         >
-          <div className="flex items-start justify-between gap-3 mb-3">
+          <div
+            className={`flex items-start justify-between gap-3 w-full ${
+              isFullscreenMode ? 'max-w-[1100px] mb-2 px-1' : 'mb-3'
+            }`}
+          >
             <div className="min-w-0">
-              <span className="inline-block px-2.5 py-0.5 rounded-full bg-sky-500/20 border border-sky-400/40 text-sky-200 text-[10.5px] font-extrabold mb-1">
-                {TUTORIAL_VIDEO_CATEGORIES.find((c) => c.id === activeVideo.categoria)?.label || activeVideo.categoria}
-              </span>
-              <h2 className="m-0 text-[16.5px] font-extrabold text-white leading-snug">
+              {!isFullscreenMode && (
+                <span className="inline-block px-2.5 py-0.5 rounded-full bg-sky-500/20 border border-sky-400/40 text-sky-200 text-[10.5px] font-extrabold mb-1">
+                  {TUTORIAL_VIDEO_CATEGORIES.find((c) => c.id === activeVideo.categoria)?.label || activeVideo.categoria}
+                </span>
+              )}
+              <h2 className={`m-0 font-extrabold text-white leading-snug truncate ${isFullscreenMode ? 'text-[14px]' : 'text-[16.5px]'}`}>
                 {activeVideo.titulo}
               </h2>
             </div>
-            <button
-              type="button"
-              onClick={() => setPlayingVideoId(null)}
-              aria-label="Cerrar reproductor"
-              className="w-9 h-9 rounded-xl metal-icon-btn flex items-center justify-center cursor-pointer shrink-0"
-            >
-              <X className="w-4 h-4" aria-hidden="true" />
-            </button>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                id="btn-video-fullscreen-toggle"
+                onClick={() => {
+                  if (isFullscreenMode) {
+                    exitFullscreenSafe();
+                  } else {
+                    setManualFullscreen(true);
+                    if (playerContainerRef.current && typeof playerContainerRef.current.requestFullscreen === 'function') {
+                      void playerContainerRef.current.requestFullscreen().catch(() => {});
+                    }
+                  }
+                }}
+                aria-label={isFullscreenMode ? 'Salir de pantalla completa' : 'Ver en pantalla completa'}
+                className="w-9 h-9 rounded-xl metal-icon-btn flex items-center justify-center cursor-pointer shrink-0"
+              >
+                {isFullscreenMode ? (
+                  <Minimize2 className="w-4 h-4" aria-hidden="true" />
+                ) : (
+                  <Maximize2 className="w-4 h-4" aria-hidden="true" />
+                )}
+              </button>
+              <button
+                type="button"
+                id="btn-video-close-player"
+                onClick={() => {
+                  exitFullscreenSafe();
+                  setPlayingVideoId(null);
+                }}
+                aria-label="Cerrar reproductor"
+                className="w-9 h-9 rounded-xl metal-icon-btn flex items-center justify-center cursor-pointer shrink-0"
+              >
+                <X className="w-4 h-4" aria-hidden="true" />
+              </button>
+            </div>
           </div>
-          <VideoPlayerEmbed video={activeVideo} />
-          {activeVideo.descripcion && (
+          <div className={isFullscreenMode ? 'w-full max-w-[1100px] max-h-[calc(100vh-64px)] flex items-center justify-center' : 'w-full'}>
+            <VideoPlayerEmbed video={activeVideo} />
+          </div>
+          {!isFullscreenMode && activeVideo.descripcion && (
             <p className="m-0 mt-3 text-[13px] text-[#C8D8E6] leading-relaxed">
               {activeVideo.descripcion}
             </p>
@@ -637,7 +749,7 @@ export const VideoTutorialesView: React.FC<VideoTutorialesViewProps> = ({ onShow
       )}
 
       {/* Lista de Videos */}
-      {filteredVideos.length === 0 ? (
+      {allVideos.length === 0 ? (
         <div
           id="videos-empty-state"
           className="rounded-[20px] border border-dashed border-[#4A6072]/70 bg-[#0B1924]/75 p-8 text-center"
@@ -652,7 +764,7 @@ export const VideoTutorialesView: React.FC<VideoTutorialesViewProps> = ({ onShow
             Aquí aparecerán automáticamente las guías en video publicadas por el equipo de Aluminero Pro. Si eres administrador, puedes agregarlos desde el Panel de Administrador o usando el botón superior.
           </p>
         </div>
-      ) : (
+      ) : filteredVideos.length === 0 ? null : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
           {filteredVideos.map((v) => {
             const parsed = parseTutorialVideoUrl(v.url);

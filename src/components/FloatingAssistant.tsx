@@ -8,6 +8,7 @@ import {
 } from '../utils/alumineroLogic';
 import {
   AppSkin,
+  AppSkinVariant,
   compressImageToDataUrl,
   formatWhatsappUrlDigits,
   getTodayDateKey,
@@ -16,12 +17,13 @@ import {
   sanitizeWhatsappNumber,
 } from '../utils/storageHelpers';
 import { PhotoPickerButtons } from './PhotoPickerButtons';
-import { MetallicRobot3D } from './MetallicIcons';
+import { getRobotPaletteForSkin, MetallicRobot3D } from './MetallicIcons';
 
 interface FloatingAssistantProps {
   whatsappNumber: string;
   deviceId: string;
   skin?: AppSkin;
+  skinVariant?: AppSkinVariant;
   proActive?: boolean;
   onOpenPro?: () => void;
   onShowToast: (msg: string, topSuccess?: boolean) => void;
@@ -82,10 +84,12 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
   whatsappNumber,
   deviceId,
   skin = 'basica',
+  skinVariant = 'default',
   proActive = false,
   onOpenPro,
   onShowToast,
 }) => {
+  const robotPalette = getRobotPaletteForSkin(skin, skinVariant);
   const [open, setOpen] = useState(false);
   const [travelingToCenter, setTravelingToCenter] = useState(false);
   const [morphedAtCenter, setMorphedAtCenter] = useState(false);
@@ -359,7 +363,8 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
     <div
       id="floating-assistant-root"
       data-skin={skin}
-      className="fixed bottom-3 right-3 sm:bottom-5 sm:right-5 z-40"
+      data-skin-variant={skinVariant}
+      className="fixed bottom-2.5 right-2.5 sm:bottom-5 sm:right-5 z-40"
     >
       {/* Escenario de desplazamiento del robot 3D metálico desde la esquina hacia el centro */}
       {travelingToCenter && (
@@ -372,7 +377,7 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
             id="assistant-traveling-robot"
             className="robot-3d-glide-center flex items-center justify-center"
           >
-            <MetallicRobot3D size={86} />
+            <MetallicRobot3D size={78} skin={skin} skinVariant={skinVariant} />
           </div>
         </div>
       )}
@@ -401,7 +406,7 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
           <div className="flex items-center justify-between gap-2.5 pb-3 mb-3 border-b border-[#4A6072]/45 assistant-card-divider">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="metal-icon-btn w-11 h-11 rounded-2xl flex items-center justify-center shrink-0">
-                <MetallicRobot3D size={38} compactHeadOnly />
+                <MetallicRobot3D size={36} compactHeadOnly skin={skin} skinVariant={skinVariant} />
               </div>
               <div className="min-w-0">
                 <h2 className="m-0 text-[15px] font-extrabold leading-tight truncate">
@@ -682,20 +687,27 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
         </section>
       )}
 
-      {/* Nuevo Robot 3D Metálico Flotante (SIN círculo azul de fondo, levitación suave + ojos cian luminosos) */}
+      {/* Robot 3D Metálico Flotante Camaleón (-10% escala para no tapar botones) */}
       {!travelingToCenter && (
         <button
           type="button"
           id="btn-floating-assistant"
           data-robot-style="metallic-3d-floating"
+          data-skin={skin}
+          data-skin-variant={skinVariant}
           aria-label={open ? 'Cerrar Asistente Aluminero Pro' : 'Abrir Asistente Aluminero Pro'}
           aria-expanded={open}
           aria-controls="card-floating-assistant"
           onClick={handleToggleAssistant}
+          style={
+            !open
+              ? { filter: `drop-shadow(0 6px 14px ${robotPalette.auraHex}66)` }
+              : undefined
+          }
           className={
             open
-              ? 'metal-icon-btn relative w-[48px] h-[48px] rounded-full flex items-center justify-center cursor-pointer transition-transform active:scale-95 text-white'
-              : 'relative bg-transparent border-0 p-0 m-0 flex items-center justify-center cursor-pointer transition-transform hover:scale-105 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80 rounded-2xl'
+              ? 'metal-icon-btn relative w-[44px] h-[44px] rounded-full flex items-center justify-center cursor-pointer transition-transform active:scale-95 text-white'
+              : 'relative bg-transparent border-0 p-0 m-0 w-[68px] h-[78px] flex items-center justify-center cursor-pointer transition-transform hover:scale-105 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80 rounded-2xl'
           }
         >
           {open ? (
@@ -713,7 +725,12 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
               <line x1="18" y1="6" x2="6" y2="18" />
             </svg>
           ) : (
-            <MetallicRobot3D size={74} className="robot-3d-levitate select-none" />
+            <MetallicRobot3D
+              size={64}
+              skin={skin}
+              skinVariant={skinVariant}
+              className={`${skin === 'industrial' ? 'assistant-robot-hop-1yr' : 'robot-3d-levitate'} select-none`}
+            />
           )}
         </button>
       )}

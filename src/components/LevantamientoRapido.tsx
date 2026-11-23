@@ -26,7 +26,6 @@ import {
 } from '../utils/levantamientoLogic';
 import {
   formatClientPhoneInput,
-  generateRandomMxPhonePlaceholder,
   LEV_MAX_CM,
   LEV_MIN_CM,
   MEXICO_ALUMINUM_CATEGORIES,
@@ -152,7 +151,6 @@ export const LevantamientoRapido: React.FC<Props> = ({
   const [showMexicoLines, setShowMexicoLines] = useState(false);
   const [mexicoLineCat, setMexicoLineCat] = useState<MexicoAluminumCategoryId>('nacional');
   const [customLineaText, setCustomLineaText] = useState('');
-  const randomPhonePlaceholder = useMemo(() => generateRandomMxPhonePlaceholder(), []);
   const [confirmNewOpen, setConfirmNewOpen] = useState(false);
   const [confirmDeletePieceId, setConfirmDeletePieceId] = useState<string | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -818,7 +816,7 @@ export const LevantamientoRapido: React.FC<Props> = ({
                   setShowCliSuggestions(true);
                   persistDraft({ ...draft, cliente: e.target.value });
                 }}
-                placeholder="Ej. Sr. Juan Pérez"
+                placeholder="Ejemplo Cliente"
               />
               {showCliSuggestions && clientesGuardados.length > 0 && (() => {
                 const q = draft.cliente.trim().toLowerCase();
@@ -887,7 +885,7 @@ export const LevantamientoRapido: React.FC<Props> = ({
                     telefono: formatClientPhoneInput(e.target.value, draft.telefono ?? ''),
                   })
                 }
-                placeholder={randomPhonePlaceholder}
+                placeholder="333-333-4444"
               />
 
               <label htmlFor="lv-dir">Dirección / ubicación / referencia (opcional)</label>

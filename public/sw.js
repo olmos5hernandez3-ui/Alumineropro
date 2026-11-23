@@ -1,4 +1,5 @@
-const CACHE_NAME = 'aluminero-pro-v43-20261123';
+const CACHE_VERSION = 'aluminero-pro-v1.0.2';
+const CACHE_NAME = CACHE_VERSION;
 const APP_SHELL_ASSETS = [
   '/',
   '/index.html',
@@ -69,7 +70,7 @@ self.addEventListener('activate', (event) => {
     caches
       .keys()
       .then((keys) =>
-        Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))
+        Promise.all(keys.filter((key) => key !== CACHE_VERSION).map((key) => caches.delete(key)))
       )
       .then(() => self.clients.claim())
   );
@@ -202,19 +203,19 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Navegación SPA: Network-first con respaldo offline a /index.html
-  if (request.mode === 'navigate') {
+  // Navegación SPA y index.html: Network-First con respaldo offline
+  if (request.mode === 'navigate' || url.pathname === '/' || url.pathname.endsWith('.html')) {
     event.respondWith(
-      fetch(request)
+      fetch(request, { cache: 'no-store' })
         .then((response) => {
           if (response && response.ok && url.origin === self.location.origin) {
             const copy = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put('/index.html', copy)).catch(() => {});
+            caches.open(CACHE_VERSION).then((cache) => cache.put('/index.html', copy)).catch(() => {});
           }
           return response;
         })
         .catch(async () => {
-          const cache = await caches.open(CACHE_NAME);
+          const cache = await caches.open(CACHE_VERSION);
           return (
             (await cache.match(request)) ||
             (await cache.match('/index.html')) ||
@@ -225,42 +226,19 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Chunks con hash inmutable (/assets/*) y pdf.worker.min.mjs: Cache-first con actualización en red
-  if (
-    url.origin === self.location.origin &&
-    (url.pathname.startsWith('/assets/') || url.pathname === '/pdf.worker.min.mjs')
-  ) {
-    event.respondWith(
-      caches.open(CACHE_NAME).then(async (cache) => {
-        const cached = await cache.match(request);
-        if (cached) return cached;
-        try {
-          const response = await fetch(request);
-          if (response && response.ok) {
-            cache.put(request, response.clone()).catch(() => {});
-          }
-          return response;
-        } catch {
-          return cached || Response.error();
-        }
-      })
-    );
-    return;
-  }
-
-  // Recursos estáticos del mismo origen: Network-first con caché offline
+  // Todos los recursos de la app del mismo origen (.js, .css, assets, imágenes): Network-First con fallback offline
   if (url.origin === self.location.origin) {
     event.respondWith(
       fetch(request)
         .then((response) => {
           if (response && response.ok) {
             const copy = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy)).catch(() => {});
+            caches.open(CACHE_VERSION).then((cache) => cache.put(request, copy)).catch(() => {});
           }
           return response;
         })
         .catch(async () => {
-          const cache = await caches.open(CACHE_NAME);
+          const cache = await caches.open(CACHE_VERSION);
           const cached = await cache.match(request);
           return cached || Response.error();
         })

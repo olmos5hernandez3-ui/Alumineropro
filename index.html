@@ -9,14 +9,14 @@
     <meta property="og:description" content="Cotizador de taller para aluminio y vidrio: cortes, pijas, plano animado y presupuestos en PDF." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="color-scheme" content="dark" />
+    <meta name="color-scheme" content="dark light" />
     <meta name="theme-color" content="#090d16" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Aluminero" />
-    <meta name="app-version" content="aluminero-pro-v43-20261123" />
-    <link rel="manifest" href="./manifest.json?v=aluminero-pro-v43-20261123" />
+    <meta name="app-version" content="v1.0.2" />
+    <link rel="manifest" href="./manifest.json?v=v1.0.2" />
     <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
     <link rel="icon" type="image/png" sizes="192x192" href="./pwa-192x192.png" />
     <link rel="icon" type="image/svg+xml" href="./icon.svg" />
@@ -29,12 +29,18 @@
           var t = localStorage.getItem('aluminero_theme_v1');
           var theme = t === 'light' || t === 'dark' ? t : 'dark';
           document.documentElement.setAttribute('data-theme', theme);
-          if (theme === 'dark') document.documentElement.classList.add('dark');
+          document.documentElement.setAttribute('data-color-mode', theme);
+          if (theme === 'dark') {
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+          }
           var s = localStorage.getItem('aluminero_skin_v1');
           var skin = s === 'basica' || s === 'ejecutiva' || s === 'industrial' ? s : 'basica';
           document.documentElement.setAttribute('data-skin', skin);
         } catch (e) {
           document.documentElement.setAttribute('data-theme', 'dark');
+          document.documentElement.setAttribute('data-color-mode', 'dark');
           document.documentElement.setAttribute('data-skin', 'basica');
           document.documentElement.classList.add('dark');
         }
@@ -54,12 +60,17 @@
     <style>
       :root, html, body {
         overscroll-behavior-x: none !important;
-        background-color: #090d16 !important;
+      }
+      html[data-color-mode="dark"], html[data-color-mode="dark"] body, html[data-color-mode="dark"] #root {
+        background-color: #090d16;
         color-scheme: dark;
+      }
+      html[data-color-mode="light"], html[data-color-mode="light"] body, html[data-color-mode="light"] #root {
+        background-color: #F1F5F9;
+        color-scheme: light;
       }
       #root {
         min-height: 100vh;
-        background-color: #090d16;
       }
       @keyframes apViewSlideBack {
         from { transform: translateX(-10px); }
@@ -252,12 +263,12 @@
 
           var msg = document.createElement('div');
           msg.style.cssText = 'font-size:13px;font-weight:800;line-height:1.25;min-width:0;flex:1;';
-          msg.textContent = '✨ Nueva actualización disponible';
+          msg.textContent = '✨ Nueva actualización disponible con mejoras.';
 
           var btn = document.createElement('button');
           btn.id = 'btn-pwa-update-now';
           btn.type = 'button';
-          btn.textContent = 'Actualizar';
+          btn.textContent = 'Actualizar ahora';
           btn.style.cssText =
             'flex-shrink:0;min-height:36px;padding:0 14px;border-radius:10px;border:none;' +
             'background:#0f172a;color:#fef08a;font-size:12.5px;font-weight:800;cursor:pointer;' +
@@ -328,6 +339,10 @@
           if (document.visibilityState === 'visible') {
             triggerUpdateCheck();
           }
+        });
+
+        window.addEventListener('focus', function () {
+          triggerUpdateCheck();
         });
 
         window.addEventListener('online', function () {

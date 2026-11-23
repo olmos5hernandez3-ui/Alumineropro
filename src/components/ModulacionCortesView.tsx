@@ -1,10 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AjusteDescuentosConfig,
   COLORES_CONFIG,
   ColorId,
   CorteVidrio,
   LineaId,
+  OptimizadorConfig,
   PartidaObra,
+  PRE_CUT_WARNING_TEXT,
+  resolveOptimizadorConfig,
   round2,
 } from '../utils/alumineroLogic';
 import {
@@ -56,6 +60,8 @@ interface ModulacionCortesViewProps {
   onPushSubModal?: (sub: 'zoomPerfil') => void;
   onRequestBack?: () => void;
   onRegisterCloseSubModal?: (fn: (() => void) | null) => void;
+  ajusteDescuentos?: Partial<AjusteDescuentosConfig>;
+  optimizadorConfig?: Partial<OptimizadorConfig>;
   onShowToast: (msg: string, topSuccess?: boolean) => void;
 }
 
@@ -181,8 +187,14 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
   onPushSubModal,
   onRequestBack,
   onRegisterCloseSubModal,
+  ajusteDescuentos,
+  optimizadorConfig,
   onShowToast,
 }) => {
+  const resolvedOptCfg = useMemo(
+    () => resolveOptimizadorConfig(optimizadorConfig),
+    [optimizadorConfig]
+  );
   const [localStep, setLocalStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [categoria, setCategoria] = useState<ModulacionCategoria>('ventanas');
   const [modeloId, setModeloId] = useState<ModulacionModeloId>('win-corrediza');
@@ -201,8 +213,8 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
   const [cortadosMap, setCortadosMap] = useState<Record<string, number>>({});
   const [colorParaSobrantes, setColorParaSobrantes] = useState<ColorId>('natural');
   const [marcaParaSobrantes, setMarcaParaSobrantes] = useState<string>('Alumer');
-  const [discoKerfMm, setDiscoKerfMm] = useState<number>(3.5);
-  const [umbralSobranteCm, setUmbralSobranteCm] = useState<number>(45);
+  const [discoKerfMm, setDiscoKerfMm] = useState<number>(() => round2(resolvedOptCfg.kerfCm * 10));
+  const [umbralSobranteCm, setUmbralSobranteCm] = useState<number>(() => resolvedOptCfg.umbralSobranteUsableCm);
   const [zoomPerfil, setZoomPerfil] = useState<PerfilZoomData | null>(null);
   const [vidrioSeleccionado, setVidrioSeleccionado] = useState<string>('Vidrio claro 6 mm');
   const [activoLev, setActivoLev] = useState<LevantamientoDraft | null>(() => {
@@ -601,6 +613,7 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
       sublineaId,
       anchoCm,
       altoCm,
+      ajusteDescuentos,
     });
     return {
       ...base,
@@ -608,7 +621,7 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
         v.tipo === 'vidrio' ? { ...v, espesorLabel: vidrioSeleccionado } : v
       ),
     };
-  }, [modeloId, conMosquitero, serieId, sublineaId, anchoCm, altoCm, vidrioSeleccionado]);
+  }, [modeloId, conMosquitero, serieId, sublineaId, anchoCm, altoCm, vidrioSeleccionado, ajusteDescuentos]);
 
   const lineaCompatible: LineaId =
     selectedModelo.categoria === 'puertas'
@@ -713,10 +726,12 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
         perfiles: effectivePerfiles,
         sobrantesInventario: sobrantes,
         lineaCompatible,
+        largoBarraCm: resolvedOptCfg.largoBarraCm,
+        despuntePorExtremoCm: resolvedOptCfg.despuntePorExtremoCm,
         kerfCm: Math.max(0, round2(discoKerfMm / 10)),
-        minSobranteGuardableCm: Math.max(10, Math.round(umbralSobranteCm) || 45),
+        minSobranteGuardableCm: Math.max(10, Math.round(umbralSobranteCm) || 60),
       }),
-    [effectivePerfiles, sobrantes, lineaCompatible, discoKerfMm, umbralSobranteCm]
+    [effectivePerfiles, sobrantes, lineaCompatible, discoKerfMm, umbralSobranteCm, resolvedOptCfg]
   );
 
   const seccionesConFilas = useMemo(
@@ -1605,6 +1620,13 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
                 );
               })()}
 
+              <div
+                id="mod-precut-warning"
+                className="px-3 py-2 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-[11.5px] font-semibold leading-snug"
+              >
+                {PRE_CUT_WARNING_TEXT}
+              </div>
+
               {seccionesConFilas.map((sec) => {
                 const secReq = sec.rows.reduce((a, r) => a + r.cantidad, 0);
                 const secDone = sec.rows.reduce(
@@ -1941,13 +1963,13 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
                 </div>
                 <div className="p-3 rounded-xl border border-rose-300 bg-rose-50">
                   <span className="block text-[11px] font-bold text-rose-800 uppercase">
-                    Merma / Chatarra (&lt; {umbralSobranteCm} cm)
+                    Merma real (&lt; {umbralSobranteCm} cm)
                   </span>
                   <strong className="mono text-[20px] font-extrabold text-rose-950">
-                    {(optimizacion1D.mermaTotalCm / 100).toFixed(2)} m
+                    {optimizacion1D.mermaRealPct}%
                   </strong>
                   <span className="block text-[10.5px] text-slate-600 mono">
-                    Sobr. total: {(optimizacion1D.sobranteTotalCm / 100).toFixed(2)} m
+                    Merma: {(optimizacion1D.mermaTotalCm / 100).toFixed(2)} m · Usable: {(Math.max(0, optimizacion1D.sobranteTotalCm - optimizacion1D.mermaTotalCm) / 100).toFixed(2)} m
                   </span>
                 </div>
               </div>
@@ -2030,11 +2052,11 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
                               Usado: {barra.usadoCm.toFixed(1)} cm ·{' '}
                               {barra.esMerma ? (
                                 <strong className="text-rose-700">
-                                  Merma: {barra.sobranteCm.toFixed(1)} cm
+                                  Merma ({barra.sobranteCm.toFixed(1)} cm)
                                 </strong>
                               ) : (
-                                <strong className="text-amber-700">
-                                  Sobrante útil: {barra.sobranteCm.toFixed(1)} cm ({(barra.sobranteCm / 100).toFixed(2)} m)
+                                <strong className="text-emerald-700">
+                                  Sobrante usable ({barra.sobranteCm.toFixed(1)} cm)
                                 </strong>
                               )}
                             </span>
@@ -2063,7 +2085,7 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
                             })}
                             {barra.sobranteCm > 0 && (
                               <div
-                                title={`${barra.esMerma ? 'Merma / Chatarra' : 'Sobrante útil'}: ${barra.sobranteCm.toFixed(1)} cm`}
+                                title={`${barra.esMerma ? 'Merma' : 'Sobrante usable'}: ${barra.sobranteCm.toFixed(1)} cm`}
                                 style={{
                                   width: `${Math.max(
                                     2,
@@ -2073,11 +2095,11 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
                                 className={`h-full flex items-center justify-center text-[10px] font-extrabold mono px-1 truncate border-l border-dashed ${
                                   barra.esMerma
                                     ? 'bg-rose-100 text-rose-900 border-rose-400'
-                                    : 'bg-amber-100 text-amber-900 border-amber-400'
+                                    : 'bg-emerald-100 text-emerald-900 border-emerald-400'
                                 }`}
                               >
                                 {barra.sobranteCm >= 12
-                                  ? `${barra.esMerma ? 'Merma ' : ''}${barra.sobranteCm.toFixed(0)}cm`
+                                  ? `${barra.esMerma ? 'Merma ' : 'Usable '}${barra.sobranteCm.toFixed(0)}cm`
                                   : ''}
                               </div>
                             )}
@@ -2161,9 +2183,9 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
                       type="button"
                       id="btn-mod-save-sobrantes"
                       onClick={handleGuardarSobrantesGenerados}
-                      className="min-h-[40px] px-4 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-[12.5px] font-extrabold cursor-pointer active:scale-95"
+                      className="min-h-[40px] px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[12.5px] font-extrabold cursor-pointer active:scale-95"
                     >
-                      💾 Guardar sobrantes en Inventario
+                      + Guardar en Mi Inventario
                     </button>
                   </div>
                 </div>

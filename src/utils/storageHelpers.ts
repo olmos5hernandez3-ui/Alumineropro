@@ -1,10 +1,14 @@
 import {
+  AdminMessageItem,
+  AjusteDescuentosConfig,
   AperturaVentanaId,
   ColorId,
   LineaId,
   normalizeDeviceIdInput,
+  OptimizadorConfig,
   PartidaObra,
   PerfilCatalogoId,
+  ReferencePricesDoc,
 } from './alumineroLogic';
 import type { CotizacionReminder } from './pushReminders';
 
@@ -46,10 +50,15 @@ export const KEYS = {
   RECORDATORIOS: 'aluminero_recordatorios_cotizacion_v1',
   REFERRALS_HISTORY: 'aluminero_referrals_history_v1',
   SKIN: 'aluminero_skin_v1',
+  SKIN_VARIANT: 'aluminero_skin_variant_v1',
   PROMO_COLEGA_USAGE: 'aluminero_promo_colega_usage_v1',
   TUTORIAL_SEEN: 'aluminero_guided_tutorial_seen_v1',
   ASSISTANT_QUOTA: 'aluminero_assistant_daily_quota_v1',
   TUTORIAL_VIDEOS_CACHE: 'aluminero_tutorial_videos_cache_v1',
+  TERMS_ACCEPTED_AT: 'aluminero_terms_accepted_at_v1',
+  READ_ADMIN_MESSAGES: 'aluminero_read_admin_messages_v1',
+  REFERENCE_PRICES_CACHE: 'aluminero_reference_prices_cache_v1',
+  ADMIN_MESSAGES_CACHE: 'aluminero_admin_messages_cache_v1',
 };
 
 export const REFERRED_BY_ID_STORAGE_KEY = 'referred_by_id';
@@ -130,6 +139,11 @@ export interface TallerConfig {
   precioListaTramo: number;
   tarifasBase: Partial<Record<LineaId, number>>;
   rellenoPreciosM2?: Record<string, number>;
+  herrajesPrecios?: Record<string, number>;
+  ajusteDescuentos?: Partial<AjusteDescuentosConfig>;
+  optimizador?: Partial<OptimizadorConfig>;
+  ivaPorDefecto?: boolean;
+  termsAcceptedAt?: number | null;
   pdfHeader?: PdfHeaderConfig;
 }
 
@@ -367,6 +381,11 @@ export const DEFAULT_TALLER: TallerConfig = {
   precioListaTramo: 850,
   tarifasBase: {},
   rellenoPreciosM2: {},
+  herrajesPrecios: {},
+  ajusteDescuentos: {},
+  optimizador: {},
+  ivaPorDefecto: false,
+  termsAcceptedAt: null,
   pdfHeader: { ...DEFAULT_PDF_HEADER },
 };
 
@@ -1594,8 +1613,42 @@ export function addReferralHistoryRecord(
   return next;
 }
 
-// ==================== CARÁTULAS / APARIENCIA GLOBAL (3 TEMAS) ====================
+// ==================== CARÁTULAS / APARIENCIA GLOBAL (3 TEMAS + VARIANTES) ====================
 export type AppSkin = 'basica' | 'ejecutiva' | 'industrial';
+export type AppSkinVariant = 'default' | 'azul' | 'naranja' | 'verde' | 'plateada' | 'dorada';
+
+export interface SkinVariantOption {
+  id: AppSkinVariant;
+  label: string;
+  swatchHex: string;
+  accentHex: string;
+}
+
+export const SKIN_VARIANTS_BY_SKIN: Record<AppSkin, SkinVariantOption[]> = {
+  basica: [],
+  ejecutiva: [
+    { id: 'azul', label: 'Azul', swatchHex: '#38BDF8', accentHex: '#F59E0B' },
+    { id: 'naranja', label: 'Anaranjada', swatchHex: '#F97316', accentHex: '#FB923C' },
+  ],
+  industrial: [
+    { id: 'verde', label: 'Esmeralda', swatchHex: '#10B981', accentHex: '#34D399' },
+    { id: 'plateada', label: 'Plateada', swatchHex: '#CBD5E1', accentHex: '#94A3B8' },
+    { id: 'dorada', label: 'Dorada', swatchHex: '#D4AF37', accentHex: '#FACC15' },
+  ],
+};
+
+export function getDefaultVariantForSkin(skin: AppSkin): AppSkinVariant {
+  if (skin === 'ejecutiva') return 'azul';
+  if (skin === 'industrial') return 'verde';
+  return 'default';
+}
+
+export function normalizeSkinVariant(skin: AppSkin, variant: string | null | undefined): AppSkinVariant {
+  const allowed = SKIN_VARIANTS_BY_SKIN[skin];
+  if (!allowed || allowed.length === 0) return 'default';
+  const match = allowed.find((v) => v.id === variant);
+  return match ? match.id : getDefaultVariantForSkin(skin);
+}
 
 export function loadSkin(): AppSkin {
   if (typeof localStorage === 'undefined') return 'basica';
@@ -1615,6 +1668,22 @@ export function saveSkin(skin: AppSkin): void {
   }
 }
 
+export function loadSkinVariant(skin?: AppSkin): AppSkinVariant {
+  const effectiveSkin = skin || loadSkin();
+  if (typeof localStorage === 'undefined') return getDefaultVariantForSkin(effectiveSkin);
+  const stored = localStorage.getItem(KEYS.SKIN_VARIANT);
+  return normalizeSkinVariant(effectiveSkin, stored);
+}
+
+export function saveSkinVariant(variant: AppSkinVariant): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(KEYS.SKIN_VARIANT, variant);
+  } catch {
+    // ignorar si localStorage no permite escritura
+  }
+}
+
 export function getUnlockedSkinsForLicense(
   licencia: LicenciaState | null | undefined,
   proActive: boolean
@@ -1624,24 +1693,36 @@ export function getUnlockedSkinsForLicense(
   }
   const code = String(licencia.planCode || '').trim().toUpperCase();
   const key = String(licencia.activatedKey || '').trim().toUpperCase();
-  // Promo Colega de 3 días (G / D3): solo Carátula Básica
-  if (code === 'G' || code === 'D3' || /^AP-G-/i.test(key) || /^AP-D3-/i.test(key)) {
+  const label = String(licencia.planLabel || '').toLowerCase();
+
+  // Versión Gratuita y Promo Colega (3 días) tienen acceso a Carátula 1: Básica (Modo Día / Noche)
+  if (
+    code === 'G' ||
+    code === 'D3' ||
+    /^AP-G-/i.test(key) ||
+    /^AP-D3-/i.test(key) ||
+    /colega|3\s*d[ií]as|regalo/.test(label)
+  ) {
     return ['basica'];
   }
-  // Plan Anual (A) o Vitalicio (V / expiresAt === null) o días >= 300: desbloquea las 3 carátulas
-  if (code === 'A' || code === 'V' || licencia.expiresAt === null) {
+
+  // Plan PRO Anual (1 Año / 365 días / Vitalicio) desbloquea las 3 carátulas (Básica, Ejecutiva e Industrial Pro)
+  const durationDays =
+    licencia.expiresAt === null
+      ? 9999
+      : Math.round((licencia.expiresAt - (licencia.activatedAt || 0)) / (24 * 60 * 60 * 1000));
+  if (
+    code === 'A' ||
+    code === 'V' ||
+    /^AP-A-/i.test(key) ||
+    /^AP-V-/i.test(key) ||
+    /1\s*a[ñn]o|anual|365|vitalici/.test(label) ||
+    durationDays >= 300
+  ) {
     return ['basica', 'ejecutiva', 'industrial'];
   }
-  if (/^D(\d+)$/.test(code)) {
-    const customDays = Number(code.slice(1)) || 0;
-    if (customDays >= 300) return ['basica', 'ejecutiva', 'industrial'];
-    if (customDays >= 7) return ['basica', 'ejecutiva'];
-    return ['basica'];
-  }
-  // Planes 30 días (M) y 90 días (Q): Básica + Ejecutiva Azul
-  if (code === 'M' || code === 'Q') {
-    return ['basica', 'ejecutiva'];
-  }
+
+  // Planes PRO 30 días y 90 días (u otros intermedios) desbloquean Básica + Ejecutiva
   return ['basica', 'ejecutiva'];
 }
 
@@ -1654,9 +1735,9 @@ export function isSkinUnlockedForLicense(
 }
 
 export function getSkinPlanRequirementLabel(skin: AppSkin): string {
-  if (skin === 'ejecutiva') return 'Plan PRO 30 días o 90 días';
-  if (skin === 'industrial') return 'Plan PRO Anual (1 Año)';
-  return 'Versión Gratuita y Promo Colega';
+  if (skin === 'ejecutiva') return 'Planes PRO 30 y 90 días';
+  if (skin === 'industrial') return 'Exclusivo Plan PRO 1 Año';
+  return 'Gratis y Promo Colega 3 días';
 }
 
 // ==================== USO ÚNICO PROMO COLEGA (3 DÍAS GRATIS) ====================
@@ -1820,6 +1901,83 @@ export function saveTutorialVideosCache(videos: TutorialVideoItem[]): void {
     localStorage.setItem(KEYS.TUTORIAL_VIDEOS_CACHE, JSON.stringify(videos.slice(0, 200)));
   } catch {
     // ignorar si cuota llena
+  }
+}
+
+// ==================== TÉRMINOS, PRECIOS DE REFERENCIA Y MENSAJES ADMIN ====================
+
+export function loadTermsAcceptedAt(): number | null {
+  if (typeof localStorage === 'undefined') return null;
+  const raw = localStorage.getItem(KEYS.TERMS_ACCEPTED_AT);
+  if (!raw) return null;
+  const ts = Number(raw);
+  return Number.isFinite(ts) && ts > 0 ? ts : null;
+}
+
+export function saveTermsAcceptedAt(ts: number): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(KEYS.TERMS_ACCEPTED_AT, String(Math.round(ts)));
+  } catch {
+    // ignorar
+  }
+}
+
+export function loadReadAdminMessageIds(): string[] {
+  if (typeof localStorage === 'undefined') return [];
+  const raw = safeJsonParse<unknown>(localStorage.getItem(KEYS.READ_ADMIN_MESSAGES), []);
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((x): x is string => typeof x === 'string' && x.trim().length > 0).slice(0, 300);
+}
+
+export function markAdminMessageIdRead(messageId: string): string[] {
+  const cur = loadReadAdminMessageIds();
+  if (!messageId || cur.includes(messageId)) return cur;
+  const next = [messageId, ...cur].slice(0, 300);
+  if (typeof localStorage !== 'undefined') {
+    try {
+      localStorage.setItem(KEYS.READ_ADMIN_MESSAGES, JSON.stringify(next));
+    } catch {
+      // ignorar
+    }
+  }
+  return next;
+}
+
+export function loadReferencePricesCache(): ReferencePricesDoc | null {
+  if (typeof localStorage === 'undefined') return null;
+  const raw = safeJsonParse<ReferencePricesDoc | null>(
+    localStorage.getItem(KEYS.REFERENCE_PRICES_CACHE),
+    null
+  );
+  if (!raw || typeof raw !== 'object' || !Array.isArray(raw.items)) return null;
+  return raw;
+}
+
+export function saveReferencePricesCache(doc: ReferencePricesDoc): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(KEYS.REFERENCE_PRICES_CACHE, JSON.stringify(doc));
+  } catch {
+    // ignorar
+  }
+}
+
+export function loadAdminMessagesCache(): AdminMessageItem[] {
+  if (typeof localStorage === 'undefined') return [];
+  const raw = safeJsonParse<unknown>(localStorage.getItem(KEYS.ADMIN_MESSAGES_CACHE), []);
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((item): item is AdminMessageItem => Boolean(item && typeof item === 'object' && typeof (item as AdminMessageItem).id === 'string'))
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+}
+
+export function saveAdminMessagesCache(list: AdminMessageItem[]): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(KEYS.ADMIN_MESSAGES_CACHE, JSON.stringify(list.slice(0, 100)));
+  } catch {
+    // ignorar
   }
 }
 

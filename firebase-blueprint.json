@@ -125,6 +125,20 @@
           "type": "string",
           "description": "Teléfono o WhatsApp del taller.",
           "maxLength": 40
+        },
+        "termsAcceptedAt": {
+          "type": "number",
+          "description": "Marca de tiempo en milisegundos de aceptación de los Términos de Uso y deslinde."
+        },
+        "preferredTheme": {
+          "type": "string",
+          "description": "Preferencia de modo de color (light o dark).",
+          "maxLength": 16
+        },
+        "preferredSkin": {
+          "type": "string",
+          "description": "Preferencia de carátula visual (basica, ejecutiva o industrial).",
+          "maxLength": 24
         }
       },
       "required": [
@@ -407,9 +421,150 @@
         }
       },
       "required": ["id", "titulo", "categoria", "descripcion", "url", "orden", "createdAt", "updatedAt"]
+    },
+    "ReferencePricesDoc": {
+      "title": "ReferencePricesDoc",
+      "description": "Lista semanal de precios de referencia de aluminio, vidrio y herrajes publicada por el administrador.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Identificador del documento de precios (ej. master).",
+          "minLength": 3,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "updatedAt": {
+          "type": "number",
+          "description": "Fecha y hora en milisegundos de última publicación."
+        },
+        "updatedLabel": {
+          "type": "string",
+          "description": "Etiqueta semanal visible al usuario (ej. Semana del 23 Nov 2026).",
+          "maxLength": 80
+        },
+        "nota": {
+          "type": "string",
+          "description": "Nota informativa opcional sobre mercado o tipo de cambio.",
+          "maxLength": 500
+        },
+        "items": {
+          "type": "array",
+          "description": "Lista de conceptos de referencia (aluminio, vidrio, herrajes)."
+        }
+      },
+      "required": ["id", "updatedAt", "updatedLabel", "items"]
+    },
+    "AdminMessage": {
+      "title": "AdminMessage",
+      "description": "Mensaje o aviso enviado por el administrador a un taller específico o de forma masiva.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Identificador único del mensaje.",
+          "minLength": 3,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "titulo": {
+          "type": "string",
+          "description": "Título del aviso.",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "cuerpo": {
+          "type": "string",
+          "description": "Cuerpo del mensaje.",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "tipo": {
+          "type": "string",
+          "description": "Tipo de aviso (aviso, promo, soporte).",
+          "maxLength": 24
+        },
+        "targetMode": {
+          "type": "string",
+          "description": "Alcance del envío (all o individual).",
+          "maxLength": 16
+        },
+        "targetDeviceId": {
+          "type": "string",
+          "description": "ID del dispositivo destinatario cuando targetMode es individual.",
+          "maxLength": 64
+        },
+        "targetLabel": {
+          "type": "string",
+          "description": "Etiqueta descriptiva del destinatario.",
+          "maxLength": 120
+        },
+        "createdAt": {
+          "type": "number",
+          "description": "Fecha de envío en milisegundos."
+        }
+      },
+      "required": ["id", "titulo", "cuerpo", "tipo", "targetMode", "createdAt"]
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Perfil privado del usuario autenticado (propietario) con preferencias y estado de licencia protegido.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 3, "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 160 },
+        "nombreTaller": { "type": "string", "maxLength": 120 },
+        "responsable": { "type": "string", "maxLength": 120 },
+        "telefono": { "type": "string", "maxLength": 40 },
+        "preferredSkin": { "type": "string", "maxLength": 24 },
+        "preferredSkinVariant": { "type": "string", "maxLength": 24 },
+        "role": { "type": "string", "maxLength": 24 },
+        "proActive": { "type": "boolean" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["uid", "createdAt", "updatedAt"]
+    },
+    "TallerDoc": {
+      "title": "TallerDoc",
+      "description": "Datos de Mi Taller propiedad exclusiva del usuario autenticado.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 3, "maxLength": 128 },
+        "nombre": { "type": "string", "maxLength": 120 },
+        "responsable": { "type": "string", "maxLength": 120 },
+        "tel": { "type": "string", "maxLength": 40 },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["uid", "createdAt", "updatedAt"]
+    },
+    "AdminRole": {
+      "title": "AdminRole",
+      "description": "Registro de administradores autorizados.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 3, "maxLength": 128 },
+        "email": { "type": "string", "minLength": 5, "maxLength": 160 },
+        "role": { "type": "string", "enum": ["admin"] },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["uid", "email", "role", "createdAt"]
     }
   },
   "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Perfil privado por usuario autenticado (acceso exclusivo del propietario o administrador)."
+    },
+    "/talleres/{userId}": {
+      "schema": { "$ref": "#/entities/TallerDoc" },
+      "description": "Configuración de Mi Taller restringida al propietario o administrador."
+    },
+    "/admins/{adminUid}": {
+      "schema": { "$ref": "#/entities/AdminRole" },
+      "description": "Directorio de cuentas con rol de administrador."
+    },
     "/devices/{deviceId}": {
       "schema": { "$ref": "#/entities/Device" },
       "description": "Registro de cada dispositivo cliente y su estado de licencia en la nube."
@@ -432,15 +587,19 @@
     },
     "/config/{configId}": {
       "schema": { "$ref": "#/entities/AppConfig" },
-      "description": "Configuración segura del Panel de Administrador."
-    },
-    "/stats/{statId}": {
-      "schema": { "$ref": "#/entities/PromoStats" },
-      "description": "Contadores globales públicos de promociones compartidas por la comunidad."
+      "description": "Configuración segura del Panel de Administrador (solo administrador)."
     },
     "/tutorial_videos/{videoId}": {
       "schema": { "$ref": "#/entities/TutorialVideo" },
-      "description": "Catálogo en tiempo real de video tutoriales para la academia de Aluminero Pro."
+      "description": "Catálogo de video tutoriales (lectura autenticada, escritura exclusiva de administrador)."
+    },
+    "/reference_prices/{docId}": {
+      "schema": { "$ref": "#/entities/ReferencePricesDoc" },
+      "description": "Lista semanal de precios de referencia publicada por el administrador."
+    },
+    "/admin_messages/{messageId}": {
+      "schema": { "$ref": "#/entities/AdminMessage" },
+      "description": "Avisos y mensajes individuales o masivos enviados desde el Panel de Administrador."
     }
   }
 }

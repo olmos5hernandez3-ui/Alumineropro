@@ -11,6 +11,8 @@ import {
   LINEAS_CONFIG,
   LineaId,
   PerfilCatalogoId,
+  PRE_CUT_WARNING_TEXT,
+  PuertaRellenoModo,
   TrabajoParams,
 } from '../utils/alumineroLogic';
 import {
@@ -577,19 +579,44 @@ export const TrabajoView: React.FC<Props> = ({
                   {params.apertura !== 'fija' &&
                     params.apertura !== 'guillotina' &&
                     params.apertura !== 'banderola' && (
-                      <div className="grid grid-cols-3 gap-1 bg-slate-100 p-1 rounded-xl mb-2.5">
-                        {[2, 3, 4].map((h) => (
+                      <div className="mb-2.5 flex flex-col gap-1.5">
+                        <div className="grid grid-cols-3 gap-1 bg-slate-100 p-1 rounded-xl">
+                          {[2, 3, 4].map((h) => (
+                            <button
+                              key={h}
+                              type="button"
+                              onClick={() =>
+                                onChangeParams({
+                                  hojas: h,
+                                  dobleCorrediza: h === 2 ? params.dobleCorrediza : false,
+                                })
+                              }
+                              className={`min-h-[36px] rounded-lg text-[12px] font-bold cursor-pointer ${
+                                params.hojas === h ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600'
+                              }`}
+                            >
+                              {h} Hojas
+                            </button>
+                          ))}
+                        </div>
+                        {params.linea === '3' && params.apertura === 'corrediza' && params.hojas === 2 && (
                           <button
-                            key={h}
                             type="button"
-                            onClick={() => onChangeParams({ hojas: h })}
-                            className={`min-h-[36px] rounded-lg text-[12px] font-bold cursor-pointer ${
-                              params.hojas === h ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600'
+                            id="btn-toggle-doble-corrediza"
+                            aria-pressed={Boolean(params.dobleCorrediza)}
+                            onClick={() => onChangeParams({ dobleCorrediza: !params.dobleCorrediza })}
+                            className={`w-full min-h-[36px] px-3 py-1.5 rounded-xl border text-[12px] font-bold cursor-pointer text-left flex items-center justify-between gap-2 ${
+                              params.dobleCorrediza
+                                ? 'border-blue-500 bg-blue-50 text-blue-800'
+                                : 'border-slate-200 bg-white text-slate-700'
                             }`}
                           >
-                            {h} Hojas
+                            <span>Doble hoja corrediza (ambas móviles)</span>
+                            <span className="mono text-[11px] font-extrabold">
+                              {params.dobleCorrediza ? 'Sí (2 corredizas)' : 'No (Fijo + Corrediza)'}
+                            </span>
                           </button>
-                        ))}
+                        )}
                       </div>
                     )}
                 </>
@@ -644,6 +671,75 @@ export const TrabajoView: React.FC<Props> = ({
                       </button>
                     )}
                   </div>
+                  {(params.linea === 'puerta-abatible' || params.linea === 'puerta-2') && (
+                    <div className="flex flex-col gap-1.5 pt-0.5">
+                      <div className="grid grid-cols-2 gap-1 bg-slate-100 p-1 rounded-xl">
+                        <button
+                          type="button"
+                          id="btn-puerta-1-hoja"
+                          onClick={() => onChangeParams({ puertaDobleHoja: false, hojas: 1 })}
+                          className={`min-h-[34px] rounded-lg text-[12px] font-bold cursor-pointer ${
+                            !params.puertaDobleHoja ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600'
+                          }`}
+                        >
+                          1 Hoja
+                        </button>
+                        <button
+                          type="button"
+                          id="btn-puerta-2-hojas"
+                          onClick={() => onChangeParams({ puertaDobleHoja: true, hojas: 2 })}
+                          className={`min-h-[34px] rounded-lg text-[12px] font-bold cursor-pointer ${
+                            params.puertaDobleHoja ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600'
+                          }`}
+                        >
+                          2 Hojas (Doble)
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-3 gap-1 bg-slate-100 p-1 rounded-xl">
+                        {(
+                          [
+                            ['vidrio', 'Vidrio'],
+                            ['mixta_duela', 'Mixta Duela'],
+                            ['ciega_duela', 'Ciega Duela'],
+                          ] as Array<[PuertaRellenoModo, string]>
+                        ).map(([modo, lbl]) => (
+                          <button
+                            key={modo}
+                            type="button"
+                            onClick={() => onChangeParams({ puertaRellenoModo: modo })}
+                            className={`min-h-[34px] rounded-lg text-[11.5px] font-bold cursor-pointer ${
+                              (params.puertaRellenoModo || 'vidrio') === modo
+                                ? 'bg-white text-blue-600 shadow-sm'
+                                : 'text-slate-600'
+                            }`}
+                          >
+                            {lbl}
+                          </button>
+                        ))}
+                      </div>
+                      {params.puertaRellenoModo && params.puertaRellenoModo !== 'vidrio' && (
+                        <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-[11.5px] font-bold text-slate-700">
+                          <span>Ancho útil de duela:</span>
+                          <div className="flex items-center gap-1">
+                            {[10, 12.7].map((w) => (
+                              <button
+                                key={w}
+                                type="button"
+                                onClick={() => onChangeParams({ duelaAnchoUtilCm: w })}
+                                className={`px-2 py-1 rounded-lg mono text-[11px] font-extrabold cursor-pointer ${
+                                  (params.duelaAnchoUtilCm || 10) === w
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-white border border-slate-300 text-slate-700'
+                                }`}
+                              >
+                                {w} cm
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1078,6 +1174,13 @@ export const TrabajoView: React.FC<Props> = ({
               >
                 Herrajes ({despiece.herrajes.length})
               </button>
+            </div>
+
+            <div
+              id="trabajo-precut-warning"
+              className="mb-3 px-3 py-2 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-[11.5px] font-semibold leading-snug"
+            >
+              {PRE_CUT_WARNING_TEXT}
             </div>
 
             {despieceTab === 'perfiles' && (

@@ -20,6 +20,7 @@ import {
 } from '../firebase';
 import {
   computeUsageStats30d,
+  DEFAULT_REFERENCE_PRICES,
   isColleaguePromoPlan,
   isEligibleForCloudBackup,
   isUnassignedAutoTrialDevice,
@@ -28,15 +29,25 @@ import {
   validateActivationKey,
   verifyAdminPassword,
   verifyRecoveryPin,
+  type AdminMessageItem,
+  type AdminMessageType,
   type CloudDeviceRecord,
+  type ReferencePriceItem,
+  type ReferencePricesDoc,
   type UsageStats30d,
 } from './alumineroLogic';
 import {
+  loadAdminMessagesCache,
   loadCachedPromoCount,
+  loadReferencePricesCache,
   loadTutorialVideosCache,
+  saveAdminMessagesCache,
   saveCachedPromoCount,
+  saveReferencePricesCache,
   saveTutorialVideosCache,
   type AdminKeyRecord,
+  type AppSkin,
+  type AppTheme,
   type CloudAccountBackupPayload,
   type LicenciaState,
   type TutorialVideoCategory,
@@ -226,6 +237,32 @@ function buildSafeDeviceRecord(
           tallerWhatsapp: String(input.tallerWhatsapp ?? existing?.tallerWhatsapp ?? '')
             .trim()
             .slice(0, 40),
+        }
+      : {}),
+    ...(input.termsAcceptedAt !== undefined || existing?.termsAcceptedAt !== undefined
+      ? {
+          termsAcceptedAt:
+            input.termsAcceptedAt !== undefined
+              ? input.termsAcceptedAt
+              : existing?.termsAcceptedAt ?? null,
+        }
+      : {}),
+    ...(input.preferredTheme || existing?.preferredTheme
+      ? {
+          preferredTheme:
+            input.preferredTheme === 'light' || input.preferredTheme === 'dark'
+              ? input.preferredTheme
+              : existing?.preferredTheme,
+        }
+      : {}),
+    ...(input.preferredSkin || existing?.preferredSkin
+      ? {
+          preferredSkin:
+            input.preferredSkin === 'basica' ||
+            input.preferredSkin === 'ejecutiva' ||
+            input.preferredSkin === 'industrial'
+              ? input.preferredSkin
+              : existing?.preferredSkin,
         }
       : {}),
   };
@@ -2378,6 +2415,9 @@ export async function syncTallerProfileToCloud(params: {
   nombre: string;
   responsable: string;
   tel: string;
+  termsAcceptedAt?: number | null;
+  preferredTheme?: AppTheme;
+  preferredSkin?: AppSkin;
 }): Promise<void> {
   const normId = toSafeDocId(normalizeDeviceIdInput(params.deviceId));
   if (!normId) return;
@@ -2396,6 +2436,9 @@ export async function syncTallerProfileToCloud(params: {
         tallerNombre: nombre,
         tallerResponsable: responsable,
         tallerWhatsapp: tel,
+        ...(params.termsAcceptedAt !== undefined ? { termsAcceptedAt: params.termsAcceptedAt } : {}),
+        ...(params.preferredTheme ? { preferredTheme: params.preferredTheme } : {}),
+        ...(params.preferredSkin ? { preferredSkin: params.preferredSkin } : {}),
         lastSeenAt: now,
         updatedAt: existing?.updatedAt ?? now,
       },
@@ -2528,6 +2571,185 @@ export async function deleteTutorialVideoCloud(videoId: string): Promise<void> {
       handleFirestoreError(err, OperationType.DELETE, path);
     }
   }
+}
+
+// ==================== PRECIOS DE REFERENCIA SEMANALES (FIRESTORE) ====================
+
+function normalizeReferencePricesDoc(
+  raw: Partial<ReferencePricesDoc> | null | undefined
+): ReferencePricesDoc {
+  const now = Date.now();
+  const items: ReferencePriceItem[] =
+    Array.isArray(raw?.items) && raw.items.length > 0
+      ? raw.items.slice(0, 100).map((it, idx) => ({
+          id: String(it?.id || `ref-${idx}`).slice(0, 60),
+          categoria:
+            it?.categoria === 'vidrio' || it?.categoria === 'herrajes' ? it.categoria : 'aluminio',
+          nombre: String(it?.nombre || 'Concepto').trim().slice(0, 100),
+          unidad: String(it?.unidad || 'm²').trim().slice(0, 24),
+          precioSugerido: Math.max(0, Math.round(Number(it?.precioSugerido) || 0)),
+          ...(it?.lineaId ? { lineaId: it.lineaId } : {}),
+          ...(it?.rellenoKey ? { rellenoKey: String(it.rellenoKey).slice(0, 60) } : {}),
+        }))
+      : DEFAULT_REFERENCE_PRICES.items;
+
+  return {
+    updatedAt: Number(raw?.updatedAt) || now,
+    updatedLabel:
+      String(raw?.updatedLabel || '').trim().slice(0, 80) ||
+      `Actualizado ${new Date(now).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })}`,
+    nota: String(raw?.nota || DEFAULT_REFERENCE_PRICES.nota).trim().slice(0, 500),
+    items,
+  };
+}
+
+export async function saveReferencePricesCloud(input: {
+  updatedLabel: string;
+  nota?: string;
+  items: ReferencePriceItem[];
+}): Promise<ReferencePricesDoc> {
+  const now = Date.now();
+  const payload: ReferencePricesDoc = normalizeReferencePricesDoc({
+    updatedAt: now,
+    updatedLabel: input.updatedLabel,
+    nota: input.nota || DEFAULT_REFERENCE_PRICES.nota,
+    items: input.items,
+  });
+  saveReferencePricesCache(payload);
+  try {
+    await setDoc(
+      doc(db, 'reference_prices', 'master'),
+      cleanForFirestore({ id: 'master', ...payload })
+    );
+  } catch (err) {
+    if (!isFirestoreOfflineError(err)) {
+      handleFirestoreError(err, OperationType.UPDATE, 'reference_prices/master');
+    }
+  }
+  return payload;
+}
+
+export function subscribeReferencePrices(
+  onUpdate: (docData: ReferencePricesDoc) => void,
+  onError?: (err: unknown) => void
+): () => void {
+  const ref = doc(db, 'reference_prices', 'master');
+  return onSnapshot(
+    ref,
+    (snap) => {
+      if (snap.exists()) {
+        const normalized = normalizeReferencePricesDoc(snap.data() as Partial<ReferencePricesDoc>);
+        saveReferencePricesCache(normalized);
+        onUpdate(normalized);
+      } else {
+        const fallback = loadReferencePricesCache() || normalizeReferencePricesDoc(null);
+        onUpdate(fallback);
+      }
+    },
+    (err) => {
+      if (!isFirestoreOfflineError(err)) {
+        console.warn('Error en suscripción reference_prices:', err);
+      }
+      const fallback = loadReferencePricesCache() || normalizeReferencePricesDoc(null);
+      onUpdate(fallback);
+      onError?.(err);
+    }
+  );
+}
+
+// ==================== MENSAJES / AVISOS DEL ADMINISTRADOR (FIRESTORE) ====================
+
+function normalizeAdminMessage(raw: Partial<AdminMessageItem>, docId: string): AdminMessageItem {
+  const now = Date.now();
+  const safeId = toSafeKeyRecordId(raw.id || docId);
+  const tipo: AdminMessageType =
+    raw.tipo === 'promo' || raw.tipo === 'soporte' ? raw.tipo : 'aviso';
+  const targetMode = raw.targetMode === 'individual' ? 'individual' : 'all';
+  const result: AdminMessageItem = {
+    id: safeId,
+    titulo: String(raw.titulo || 'Aviso de Aluminero Pro').trim().slice(0, 120) || 'Aviso de Aluminero Pro',
+    cuerpo: String(raw.cuerpo || '').trim().slice(0, 1000),
+    tipo,
+    targetMode,
+    createdAt: Number(raw.createdAt) || now,
+  };
+  if (targetMode === 'individual' && raw.targetDeviceId) {
+    result.targetDeviceId = normalizeDeviceIdInput(String(raw.targetDeviceId)).slice(0, 64);
+  }
+  if (raw.targetLabel) {
+    result.targetLabel = String(raw.targetLabel).trim().slice(0, 120);
+  }
+  return result;
+}
+
+export async function sendAdminMessageCloud(input: {
+  titulo: string;
+  cuerpo: string;
+  tipo: AdminMessageType;
+  targetMode: 'all' | 'individual';
+  targetDeviceId?: string;
+  targetLabel?: string;
+}): Promise<AdminMessageItem> {
+  const now = Date.now();
+  const safeId = toSafeKeyRecordId(`msg-${now}-${Math.random().toString(36).slice(2, 6)}`);
+  const payload = normalizeAdminMessage(
+    {
+      id: safeId,
+      titulo: input.titulo,
+      cuerpo: input.cuerpo,
+      tipo: input.tipo,
+      targetMode: input.targetMode,
+      targetDeviceId: input.targetMode === 'individual' ? input.targetDeviceId || '' : undefined,
+      targetLabel: input.targetLabel || undefined,
+      createdAt: now,
+    },
+    safeId
+  );
+  try {
+    await setDoc(doc(db, 'admin_messages', safeId), cleanForFirestore(payload));
+  } catch (err) {
+    if (!isFirestoreOfflineError(err)) {
+      handleFirestoreError(err, OperationType.CREATE, `admin_messages/${safeId}`);
+    }
+  }
+  return payload;
+}
+
+export async function deleteAdminMessageCloud(messageId: string): Promise<void> {
+  const safeId = toSafeKeyRecordId(messageId);
+  if (!safeId) return;
+  try {
+    await deleteDoc(doc(db, 'admin_messages', safeId));
+  } catch (err) {
+    if (!isFirestoreOfflineError(err)) {
+      handleFirestoreError(err, OperationType.DELETE, `admin_messages/${safeId}`);
+    }
+  }
+}
+
+export function subscribeAdminMessages(
+  onUpdate: (messages: AdminMessageItem[]) => void,
+  onError?: (err: unknown) => void
+): () => void {
+  const q = query(collection(db, 'admin_messages'), limit(100));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const list = snap.docs
+        .map((d) => normalizeAdminMessage(d.data() as Partial<AdminMessageItem>, d.id))
+        .filter((m) => m.cuerpo.length > 0)
+        .sort((a, b) => b.createdAt - a.createdAt);
+      saveAdminMessagesCache(list);
+      onUpdate(list);
+    },
+    (err) => {
+      if (!isFirestoreOfflineError(err)) {
+        console.warn('Error en suscripción admin_messages:', err);
+      }
+      onUpdate(loadAdminMessagesCache());
+      onError?.(err);
+    }
+  );
 }
 
 

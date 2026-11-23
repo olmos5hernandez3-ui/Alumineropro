@@ -395,15 +395,114 @@ export const MetallicInventoryBoxIcon: React.FC<IconProps> = ({ className = '', 
 );
 
 /**
- * 3D Metallic Titanium Floating Robot Assistant (No background circle!)
- * Dark brushed steel/titanium chassis with glowing neon cyan eyes, smile, ears, antenna & chest core.
+ * 3D Metallic Titanium Floating Robot Assistant (Chameleon-aware for all 3 Skins & Variants)
  */
+interface RobotPalette {
+  ledPrimary: string;
+  ledBright: string;
+  ledSmile: string;
+  headStroke: string;
+  headLight: string;
+  headMid: string;
+  headDark: string;
+  auraHex: string;
+}
+
+export function getRobotPaletteForSkin(
+  skin: 'basica' | 'ejecutiva' | 'industrial' = 'basica',
+  skinVariant: string = 'default'
+): RobotPalette {
+  if (skin === 'ejecutiva') {
+    if (skinVariant === 'naranja') {
+      return {
+        ledPrimary: '#F97316',
+        ledBright: '#FDBA74',
+        ledSmile: '#FB923C',
+        headStroke: '#FDBA74',
+        headLight: '#FFF3E6',
+        headMid: '#7C5840',
+        headDark: '#26170E',
+        auraHex: '#F97316',
+      };
+    }
+    return {
+      ledPrimary: '#38BDF8',
+      ledBright: '#7DD3FC',
+      ledSmile: '#38BDF8',
+      headStroke: '#BAE6FD',
+      headLight: '#EFF6FC',
+      headMid: '#4F6D8A',
+      headDark: '#16283E',
+      auraHex: '#38BDF8',
+    };
+  }
+  if (skin === 'industrial') {
+    if (skinVariant === 'plateada') {
+      return {
+        ledPrimary: '#E2E8F0',
+        ledBright: '#FFFFFF',
+        ledSmile: '#CBD5E1',
+        headStroke: '#F1F5F9',
+        headLight: '#F8FAFC',
+        headMid: '#64748B',
+        headDark: '#1E293B',
+        auraHex: '#CBD5E1',
+      };
+    }
+    if (skinVariant === 'dorada') {
+      return {
+        ledPrimary: '#FACC15',
+        ledBright: '#FEF08A',
+        ledSmile: '#D4AF37',
+        headStroke: '#FDE047',
+        headLight: '#FEF9C3',
+        headMid: '#8B7332',
+        headDark: '#231D0F',
+        auraHex: '#D4AF37',
+      };
+    }
+    // Verde Esmeralda (default Industrial)
+    return {
+      ledPrimary: '#10B981',
+      ledBright: '#6EE7B7',
+      ledSmile: '#34D399',
+      headStroke: '#A7F3D0',
+      headLight: '#ECFDF5',
+      headMid: '#376B58',
+      headDark: '#0D2B22',
+      auraHex: '#10B981',
+    };
+  }
+  // Carátula Básica (Azul brillante limpio)
+  return {
+    ledPrimary: '#3B82F6',
+    ledBright: '#93C5FD',
+    ledSmile: '#60A5FA',
+    headStroke: '#CBD5E1',
+    headLight: '#F1F5F9',
+    headMid: '#52677D',
+    headDark: '#1E293B',
+    auraHex: '#2563EB',
+  };
+}
+
 export const MetallicRobot3D: React.FC<{
   size?: number;
   className?: string;
   compactHeadOnly?: boolean;
-}> = ({ size = 76, className = '', compactHeadOnly = false }) => {
+  skin?: 'basica' | 'ejecutiva' | 'industrial';
+  skinVariant?: string;
+}> = ({
+  size = 66,
+  className = '',
+  compactHeadOnly = false,
+  skin = 'basica',
+  skinVariant = 'default',
+}) => {
   const height = compactHeadOnly ? size : Math.round(size * 1.18);
+  const pal = getRobotPaletteForSkin(skin, skinVariant);
+  const uid = `${skin}-${skinVariant}-${compactHeadOnly ? 'h' : 'f'}`;
+
   return (
     <svg
       width={size}
@@ -412,164 +511,149 @@ export const MetallicRobot3D: React.FC<{
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       className={className}
+      data-robot-skin={skin}
+      data-robot-variant={skinVariant}
       aria-hidden="true"
     >
       <defs>
-        {/* Brushed titanium head gradient */}
-        <linearGradient id="rob-titanium-head" x1="18" y1="12" x2="70" y2="62" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#EFF6FC" />
+        <linearGradient id={`rob-head-${uid}`} x1="18" y1="12" x2="70" y2="62" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor={pal.headLight} />
           <stop offset="22%" stopColor="#B8CAD8" />
-          <stop offset="56%" stopColor="#4F6374" />
-          <stop offset="86%" stopColor="#202E3B" />
-          <stop offset="100%" stopColor="#5D7487" />
+          <stop offset="56%" stopColor={pal.headMid} />
+          <stop offset="86%" stopColor={pal.headDark} />
+          <stop offset="100%" stopColor={pal.headMid} />
         </linearGradient>
-        {/* Specular crown highlight */}
-        <radialGradient id="rob-crown-shine" cx="38%" cy="22%" r="55%">
+        <radialGradient id={`rob-crown-${uid}`} cx="38%" cy="22%" r="55%">
           <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.72" />
-          <stop offset="45%" stopColor="#CBE0F0" stopOpacity="0.16" />
-          <stop offset="100%" stopColor="#1B2A38" stopOpacity="0" />
+          <stop offset="45%" stopColor={pal.ledBright} stopOpacity="0.18" />
+          <stop offset="100%" stopColor={pal.headDark} stopOpacity="0" />
         </radialGradient>
-        {/* Glossy obsidian screen visor */}
-        <linearGradient id="rob-visor" x1="22" y1="24" x2="66" y2="54" gradientUnits="userSpaceOnUse">
+        <linearGradient id={`rob-visor-${uid}`} x1="22" y1="24" x2="66" y2="54" gradientUnits="userSpaceOnUse">
           <stop offset="0%" stopColor="#0A1929" />
           <stop offset="50%" stopColor="#040D16" />
           <stop offset="100%" stopColor="#0E263A" />
         </linearGradient>
-        {/* Metallic ear & body gradients */}
-        <linearGradient id="rob-body" x1="22" y1="62" x2="66" y2="96" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#D8E6F2" />
-          <stop offset="32%" stopColor="#6E8497" />
-          <stop offset="72%" stopColor="#243544" />
-          <stop offset="100%" stopColor="#485E70" />
+        <linearGradient id={`rob-body-${uid}`} x1="22" y1="62" x2="66" y2="96" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor={pal.headLight} />
+          <stop offset="32%" stopColor={pal.headMid} />
+          <stop offset="72%" stopColor={pal.headDark} />
+          <stop offset="100%" stopColor={pal.headMid} />
         </linearGradient>
-        <linearGradient id="rob-ear" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#DCE8F2" />
-          <stop offset="50%" stopColor="#53687A" />
-          <stop offset="100%" stopColor="#1E2C38" />
+        <linearGradient id={`rob-ear-${uid}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={pal.headLight} />
+          <stop offset="50%" stopColor={pal.headMid} />
+          <stop offset="100%" stopColor={pal.headDark} />
         </linearGradient>
-        {/* Neon cyan glow filter */}
-        <filter id="rob-cyan-glow" x="-45%" y="-45%" width="190%" height="190%">
+        <filter id={`rob-glow-${uid}`} x="-45%" y="-45%" width="190%" height="190%">
           <feGaussianBlur stdDeviation="2.4" result="blur" />
           <feMerge>
             <feMergeNode in="blur" />
             <feMergeNode in="SourceGraphic" />
           </feMerge>
         </filter>
-        <radialGradient id="rob-hover-shadow" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stopColor="#22D3EE" stopOpacity="0.48" />
-          <stop offset="55%" stopColor="#020B12" stopOpacity="0.52" />
+        <radialGradient id={`rob-shadow-${uid}`} cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor={pal.auraHex} stopOpacity="0.58" />
+          <stop offset="55%" stopColor="#020B12" stopOpacity="0.48" />
           <stop offset="100%" stopColor="#020B12" stopOpacity="0" />
         </radialGradient>
       </defs>
 
       {!compactHeadOnly && (
         <>
-          {/* Hover ambient shadow & thruster cyan aura beneath robot */}
-          <ellipse cx="44" cy="99" rx="22" ry="4.2" fill="url(#rob-hover-shadow)" />
+          <ellipse cx="44" cy="99" rx="22" ry="4.4" fill={`url(#rob-shadow-${uid})`} />
 
-          {/* Left & Right floating metallic arms */}
           <path
             d="M23 68C16 70 14 78 18.5 84C20.5 86.5 24 85 25.5 81.5"
-            fill="url(#rob-ear)"
-            stroke="#A4BBD0"
+            fill={`url(#rob-ear-${uid})`}
+            stroke={pal.headStroke}
             strokeWidth="1.2"
           />
           <path
             d="M65 68C72 70 74 78 69.5 84C67.5 86.5 64 85 62.5 81.5"
-            fill="url(#rob-ear)"
-            stroke="#A4BBD0"
+            fill={`url(#rob-ear-${uid})`}
+            stroke={pal.headStroke}
             strokeWidth="1.2"
           />
 
-          {/* 3D Titanium Pod Torso */}
           <path
             d="M24 65C24 61 32 59 44 59C56 59 64 61 64 65V75C64 86.5 55.2 94.5 44 94.5C32.8 94.5 24 86.5 24 75V65Z"
-            fill="url(#rob-body)"
-            stroke="#9EB4C7"
-            strokeOpacity="0.7"
+            fill={`url(#rob-body-${uid})`}
+            stroke={pal.headStroke}
+            strokeOpacity="0.72"
             strokeWidth="1.3"
           />
-          {/* Dark chest plate recess */}
           <path
             d="M31 68H57V75.5C57 82 51.2 86.5 44 86.5C36.8 86.5 31 82 31 75.5V68Z"
-            fill="#0A1926"
-            stroke="#4A6072"
+            fill="#0A1520"
+            stroke={pal.headMid}
             strokeWidth="1"
           />
-          {/* Glowing Neon Cyan Chest Arc & Core */}
-          <g filter="url(#rob-cyan-glow)" className="robot-cyan-glow-pulse">
+          <g filter={`url(#rob-glow-${uid})`} className="robot-cyan-glow-pulse">
             <path
               d="M35.5 74.5C37.5 79 40.5 81 44 81C47.5 81 50.5 79 52.5 74.5"
-              stroke="#22D3EE"
+              stroke={pal.ledPrimary}
               strokeWidth="2.4"
               strokeLinecap="round"
             />
-            <circle cx="44" cy="73.5" r="2.6" fill="#67E8F9" />
+            <circle cx="44" cy="73.5" r="2.6" fill={pal.ledBright} />
           </g>
-          {/* Metallic neck collar */}
-          <rect x="35" y="57.5" width="18" height="4.5" rx="2.2" fill="#2A3C4C" stroke="#7A93A8" strokeWidth="0.9" />
+          <rect x="35" y="57.5" width="18" height="4.5" rx="2.2" fill={pal.headDark} stroke={pal.headStroke} strokeWidth="0.9" />
         </>
       )}
 
-      {/* Top Antenna */}
-      <line x1="44" y1="7" x2="44" y2="17" stroke="#AFC4D6" strokeWidth="2.6" strokeLinecap="round" />
-      <circle cx="44" cy="6.2" r="3.4" fill="#67E8F9" filter="url(#rob-cyan-glow)" className="robot-cyan-glow-pulse" />
+      <line x1="44" y1="7" x2="44" y2="17" stroke={pal.headStroke} strokeWidth="2.6" strokeLinecap="round" />
+      <circle cx="44" cy="6.2" r="3.4" fill={pal.ledBright} filter={`url(#rob-glow-${uid})`} className="robot-cyan-glow-pulse" />
       <circle cx="43.2" cy="5.2" r="1.1" fill="#FFFFFF" />
 
-      {/* Left & Right Metallic Ear Pods with Neon Cyan Accent */}
-      <rect x="8.5" y="29" width="7.5" height="17" rx="3.75" fill="url(#rob-ear)" stroke="#9BB3C7" strokeWidth="1" />
-      <rect x="72" y="29" width="7.5" height="17" rx="3.75" fill="url(#rob-ear)" stroke="#9BB3C7" strokeWidth="1" />
-      <rect x="11" y="33" width="2.2" height="9" rx="1.1" fill="#22D3EE" filter="url(#rob-cyan-glow)" className="robot-cyan-glow-pulse" />
-      <rect x="74.8" y="33" width="2.2" height="9" rx="1.1" fill="#22D3EE" filter="url(#rob-cyan-glow)" className="robot-cyan-glow-pulse" />
+      <rect x="8.5" y="29" width="7.5" height="17" rx="3.75" fill={`url(#rob-ear-${uid})`} stroke={pal.headStroke} strokeWidth="1" />
+      <rect x="72" y="29" width="7.5" height="17" rx="3.75" fill={`url(#rob-ear-${uid})`} stroke={pal.headStroke} strokeWidth="1" />
+      <rect x="11" y="33" width="2.2" height="9" rx="1.1" fill={pal.ledPrimary} filter={`url(#rob-glow-${uid})`} className="robot-cyan-glow-pulse" />
+      <rect x="74.8" y="33" width="2.2" height="9" rx="1.1" fill={pal.ledPrimary} filter={`url(#rob-glow-${uid})`} className="robot-cyan-glow-pulse" />
 
-      {/* Main 3D Rounded Titanium Head */}
       <rect
         x="15"
         y="16"
         width="58"
         height="43"
         rx="18"
-        fill="url(#rob-titanium-head)"
-        stroke="#C5D8E8"
-        strokeOpacity="0.8"
+        fill={`url(#rob-head-${uid})`}
+        stroke={pal.headStroke}
+        strokeOpacity="0.85"
         strokeWidth="1.4"
       />
-      <rect x="15" y="16" width="58" height="43" rx="18" fill="url(#rob-crown-shine)" />
+      <rect x="15" y="16" width="58" height="43" rx="18" fill={`url(#rob-crown-${uid})`} />
 
-      {/* Glossy Dark Visor Faceplate */}
       <rect
         x="21.5"
         y="23"
         width="45"
         height="29.5"
         rx="12.5"
-        fill="url(#rob-visor)"
-        stroke="#4A6072"
+        fill={`url(#rob-visor-${uid})`}
+        stroke={pal.headMid}
         strokeWidth="1.4"
       />
-      {/* Subtle glass reflection arc on top of visor */}
       <path
         d="M27 26.5C34 24.8 54 24.8 61 26.5"
-        stroke="#BAE6FD"
-        strokeOpacity="0.32"
+        stroke={pal.ledBright}
+        strokeOpacity="0.38"
         strokeWidth="1.6"
         strokeLinecap="round"
       />
 
-      {/* Glowing Neon Cyan Eyes + Friendly Smile */}
-      <g filter="url(#rob-cyan-glow)" className="robot-cyan-glow-pulse">
-        <ellipse cx="34.5" cy="36.2" rx="4.2" ry="4.5" fill="#22D3EE" />
-        <ellipse cx="53.5" cy="36.2" rx="4.2" ry="4.5" fill="#22D3EE" />
+      <g filter={`url(#rob-glow-${uid})`} className="robot-cyan-glow-pulse">
+        <ellipse cx="34.5" cy="36.2" rx="4.2" ry="4.5" fill={pal.ledPrimary} />
+        <ellipse cx="53.5" cy="36.2" rx="4.2" ry="4.5" fill={pal.ledPrimary} />
         <path
           d="M37.5 45.2C40.5 47.8 47.5 47.8 50.5 45.2"
-          stroke="#38BDF8"
+          stroke={pal.ledSmile}
           strokeWidth="2.3"
           strokeLinecap="round"
         />
       </g>
-      {/* Crisp white inner catchlights in eyes */}
       <circle cx="35.6" cy="34.8" r="1.4" fill="#FFFFFF" />
       <circle cx="54.6" cy="34.8" r="1.4" fill="#FFFFFF" />
     </svg>
   );
 };
+

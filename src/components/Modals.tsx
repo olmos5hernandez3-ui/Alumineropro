@@ -116,6 +116,7 @@ interface ProModalProps {
   whatsappNumber?: string;
   defaultEmail?: string;
   tallerNombre?: string;
+  tallerTel?: string;
   referredById?: string | null;
   onClose: () => void;
   onActivateLic: (lic: LicenciaState) => Promise<{ ok: boolean; error?: string } | void> | void;
@@ -133,6 +134,7 @@ export const ProModal: React.FC<ProModalProps> = ({
   whatsappNumber = '',
   defaultEmail = '',
   tallerNombre = '',
+  tallerTel = '',
   referredById = null,
   onClose,
   onActivateLic,
@@ -224,10 +226,12 @@ export const ProModal: React.FC<ProModalProps> = ({
           };
 
   const cleanTallerName = String(tallerNombre || '').trim();
+  const cleanTallerTel = String(tallerTel || '').trim();
   const waBaseLines = [
     `Hola, quiero activar mi licencia de Aluminero Pro por Transferencia SPEI / OXXO.`,
     `Plan elegido: ${selectedPlanMeta.name} (${selectedPlanMeta.price})`,
     ...(cleanTallerName ? [`Nombre del Taller: ${cleanTallerName}`] : []),
+    ...(cleanTallerTel ? [`WhatsApp: ${cleanTallerTel}`] : []),
     `ID de Equipo: ${safeDeviceId}`,
   ];
   if (cleanReferredById) {

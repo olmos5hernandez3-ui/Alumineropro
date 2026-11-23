@@ -2571,5 +2571,313 @@ test('72. Asistente flotante: límite diario gratuito (3 consultas/día) e ilimi
   assert.equal(proState.canSend, true);
 });
 
+test('73. Teléfono mexicano automático XXX-XXX-XX-XX y contador TopBar de días/horas sin texto truncado', async () => {
+  const { formatMxPhoneDashed, formatLicenseCountdownBadge } = await import('./alumineroLogic.ts');
+
+  assert.equal(formatMxPhoneDashed('8237822818'), '823-782-28-18');
+  assert.equal(formatMxPhoneDashed('823-782-28-1899'), '823-782-28-18');
+  assert.equal(formatMxPhoneDashed('82378'), '823-78');
+  assert.equal(formatMxPhoneDashed('8237822'), '823-782-2');
+  assert.equal(formatMxPhoneDashed(''), '');
+
+  const now = 1_760_000_000_000;
+  const oneYearLeft = ((364 * 24) + 23) * 60 * 60 * 1000 + 120_000;
+  assert.equal(
+    formatLicenseCountdownBadge(
+      { active: true, planCode: 'A', planLabel: '1 Año PRO', expiresAt: now + oneYearLeft },
+      null,
+      now
+    ).text,
+    'PRO · 1 Año · 364d 23h'
+  );
+  assert.equal(
+    formatLicenseCountdownBadge(
+      null,
+      now + 50 * 3600 * 1000 + 60_000,
+      now
+    ).text,
+    'Prueba PRO · 2d 2h'
+  );
+  assert.equal(formatLicenseCountdownBadge(null, null, now).text, 'Versión Gratuita');
+});
+
+test('74. Solicitud WhatsApp con datos de Mi Taller + Parser 1-Clic Admin + Mensajes de Bienvenida y Clave Sola', async () => {
+  const {
+    buildColleaguePromoWhatsappMessage,
+    parseWhatsappKeyRequestMessage,
+    buildAdminWelcomeMessage,
+  } = await import('./alumineroLogic.ts');
+
+  const msg = buildColleaguePromoWhatsappMessage('Taller Sur', 'ALM-9X2K', 9, {
+    tallerNombre: 'Aluminios del Norte',
+    tallerTel: '823-782-28-18',
+    referredById: 'ALM-SUR1',
+  });
+  assert.match(msg, /ID de equipo: ALM-9X2K/);
+  assert.match(msg, /Taller \/ Cliente: Aluminios del Norte/);
+  assert.match(msg, /WhatsApp: 823-782-28-18/);
+  assert.match(msg, /Invitado por: Taller Sur/);
+
+  const parsed = parseWhatsappKeyRequestMessage(msg);
+  assert.equal(parsed.hasValidDeviceId, true);
+  assert.equal(parsed.deviceId, 'ALM-9X2K');
+  assert.equal(parsed.cliente, 'Aluminios del Norte');
+  assert.equal(parsed.telefonoDigits, '8237822818');
+  assert.equal(parsed.planCode, 'G');
+
+  const invalid = parseWhatsappKeyRequestMessage('Hola quiero activar la app');
+  assert.equal(invalid.hasValidDeviceId, false);
+  assert.equal(invalid.deviceId, '');
+
+  const welcome = buildAdminWelcomeMessage({
+    cliente: 'Aluminios del Norte',
+    planCode: 'G',
+    planLabel: 'Promoción 3 Días (Regalo)',
+    deviceId: 'ALM-9X2K',
+    dias: 3,
+  });
+  assert.match(welcome, /Aluminios del Norte/);
+  assert.match(welcome, /ALM-9X2K/);
+  assert.equal(welcome.includes('AP-G-'), false, 'El mensaje 1 de bienvenida NO debe mezclar la clave');
+});
+
+test('75. Fórmulas exactas de corte de taller: Línea 2", Línea 3" (2h/3h/doble corr.), Cancel Baño y Puertas 1h/2h + Duela', () => {
+  // Línea 2" 2 hojas: A=120, H=100
+  const l2 = calcularDespiece({
+    linea: '2',
+    anchoCm: 120,
+    altoCm: 100,
+    color: 'blanco',
+    vidrio: 'claro6',
+    hojas: 2,
+    apertura: 'corrediza',
+    sentidoPuerta: 'izq',
+    puertaIntermedio: false,
+    puertaEconomica: false,
+    invertido: false,
+    cantidad: 1,
+    tolerancias: LINEAS_CONFIG['2'].toleranciasDefault,
+  });
+  assert.equal(l2.perfiles.find((p) => p.perfilId === 'jamba')?.medidaCm, 98.4); // 100 - 1.6
+  assert.equal(l2.perfiles.find((p) => p.perfilId === 'riel')?.medidaCm, 120.0); // Ancho exacto
+  assert.equal(l2.perfiles.find((p) => p.perfilId === 'zoclo2v')?.medidaCm, 52.0); // (120 - 16) / 2
+  assert.equal(l2.perfiles.find((p) => p.nombre.includes('Hoja Fija') && p.perfilId === 'cerco')?.medidaCm, 97.2); // 100 - 2.8
+  assert.equal(l2.perfiles.find((p) => p.nombre.includes('Corrediza') && p.perfilId === 'cerco')?.medidaCm, 96.2); // 100 - 3.8
+
+  // Línea 3" 3 hojas con doble corrediza: A=240, H=150
+  const l3 = calcularDespiece({
+    linea: '3',
+    anchoCm: 240,
+    altoCm: 150,
+    color: 'negro',
+    vidrio: 'claro6',
+    hojas: 3,
+    apertura: 'corrediza',
+    dobleCorrediza: true,
+    sentidoPuerta: 'izq',
+    puertaIntermedio: false,
+    puertaEconomica: false,
+    invertido: false,
+    cantidad: 1,
+    tolerancias: LINEAS_CONFIG['3'].toleranciasDefault,
+  });
+  assert.equal(l3.perfiles.find((p) => p.perfilId === 'jamba')?.medidaCm, 147.4); // 150 - 2.6
+  assert.equal(l3.perfiles.find((p) => p.perfilId === 'alumer_7828')?.medidaCm, 237.2); // 240 - 2.8
+  assert.equal(l3.perfiles.find((p) => p.perfilId === 'zoclo2v')?.medidaCm, 72.0); // (240 - 24) / 3
+
+  // Puerta abatible 2 hojas 100% Ciega Duela: A=180, H=210
+  const puerta2h = calcularDespiece({
+    linea: 'puerta-abatible',
+    anchoCm: 180,
+    altoCm: 210,
+    color: 'blanco',
+    vidrio: 'claro6',
+    hojas: 2,
+    puertaDobleHoja: true,
+    puertaRellenoModo: 'ciega_duela',
+    duelaAnchoUtilCm: 10,
+    apertura: 'abatible',
+    sentidoPuerta: 'izq',
+    puertaIntermedio: true,
+    puertaEconomica: false,
+    invertido: false,
+    cantidad: 1,
+    tolerancias: LINEAS_CONFIG['puerta-abatible'].toleranciasDefault,
+  });
+  assert.equal(puerta2h.perfiles.find((p) => p.perfilId === 'alumer_5844')?.medidaCm, 207.4); // 210 - 2.6
+  assert.equal(puerta2h.perfiles.find((p) => p.perfilId === 'alumer_9204')?.medidaCm, 206.0); // 210 - 4.0
+  assert.equal(puerta2h.perfiles.find((p) => p.perfilId === 'alumer_9204')?.pzas, 4);
+  assert.equal(puerta2h.perfiles.find((p) => p.perfilId === 'alumer_9207')?.medidaCm, 73.3); // round1((180 - 33.5)/2) = 73.3
+  const duela = puerta2h.perfiles.find((p) => (p.nombre || '').toLowerCase().includes('duela')) || puerta2h.vidrios.find((v) => (v.nombre || '').toLowerCase().includes('duela'));
+  assert.ok(duela, 'Puerta ciega duela debe calcular tiras de duela');
+});
+
+test('76. Optimizador 6.10 m (605 cm útil, 0.4 cm kerf, 60 cm sobrante usable vs merma real)', async () => {
+  const { optimizarPartidasTramos1D } = await import('./modulacionLogic.ts');
+  const d = calcularDespiece({
+    linea: '3',
+    anchoCm: 150,
+    altoCm: 120,
+    color: 'natural',
+    vidrio: 'claro6',
+    hojas: 2,
+    apertura: 'corrediza',
+    sentidoPuerta: 'izq',
+    puertaIntermedio: false,
+    puertaEconomica: false,
+    invertido: false,
+    cantidad: 1,
+    tolerancias: LINEAS_CONFIG['3'].toleranciasDefault,
+  });
+
+  const opt = optimizarPartidasTramos1D([
+    {
+      id: 'p1',
+      categoria: 'ventanas',
+      linea: '3',
+      area: 'Sala',
+      etiqueta: 'Ventana Sala',
+      anchoCm: 150,
+      altoCm: 120,
+      color: 'natural',
+      vidrio: 'claro6',
+      hojas: 2,
+      apertura: 'corrediza',
+      sentidoPuerta: 'izq',
+      puertaIntermedio: false,
+      puertaEconomica: false,
+      invertido: false,
+      cantidad: 1,
+      modoPrecio: 'm2',
+      precioInput: 2850,
+      cobrarMinM2: false,
+      extraPct: 0,
+      totalLinea: 5130,
+      despiece: d,
+    },
+  ]);
+
+  assert.equal(opt.largoBarraCm, 610);
+  assert.equal(opt.largoUtilCm, 605);
+  assert.equal(opt.kerfCm, 0.4);
+  assert.equal(opt.minSobranteGuardableCm, 60);
+  assert.ok(opt.tramos610Totales >= 1);
+  // Con sobrantes >= 60 cm (usables), mermaRealPct debe ser 0% (no contar retazos usables como merma)
+  assert.equal(opt.mermaRealPct, 0);
+  assert.ok(opt.sobrantesGeneradosGuardables.length >= 1);
+});
+
+test('77. Ajuste masivo de precios por porcentaje (Aluminio, Vidrio, Herrajes, Todo)', async () => {
+  const { applyBulkPriceAdjustment } = await import('./alumineroLogic.ts');
+
+  const alumOnly = applyBulkPriceAdjustment({
+    category: 'aluminio',
+    pct: 10,
+    precioListaTramo: 1000,
+    tarifasBase: { '3': 2800 },
+    rellenoPreciosM2: { 'flot-claro__6': 500 },
+    herrajesPrecios: { 'ref-her-carr3': 100 },
+  });
+  assert.equal(alumOnly.precioListaTramo, 1100);
+  assert.equal(alumOnly.tarifasBase['3'], 3080);
+  assert.equal(alumOnly.rellenoPreciosM2['flot-claro__6'], 500);
+  assert.equal(alumOnly.herrajesPrecios['ref-her-carr3'], 100);
+
+  const allDown = applyBulkPriceAdjustment({
+    category: 'todo',
+    pct: -10,
+    precioListaTramo: 1000,
+    tarifasBase: { '3': 2000 },
+    rellenoPreciosM2: { 'flot-claro__6': 500 },
+    herrajesPrecios: { 'ref-her-carr3': 100 },
+  });
+  assert.equal(allDown.precioListaTramo, 900);
+  assert.equal(allDown.tarifasBase['3'], 1800);
+  assert.equal(allDown.rellenoPreciosM2['flot-claro__6'], 450);
+  assert.equal(allDown.herrajesPrecios['ref-her-carr3'], 90);
+});
+
+test('78. Matriz de 3 Carátulas por plan: Gratis/Colega 3d (Básica), PRO 30d/90d (Ejecutiva) y PRO 1 Año (Industrial Pro)', async () => {
+  const { getUnlockedSkinsForLicense, isSkinUnlockedForLicense } = await import('./storageHelpers.ts');
+
+  // Gratis: solo Básica
+  assert.deepEqual(getUnlockedSkinsForLicense(null, false), ['basica']);
+  assert.equal(isSkinUnlockedForLicense('ejecutiva', null, false), false);
+  assert.equal(isSkinUnlockedForLicense('industrial', null, false), false);
+
+  // Promo Colega 3 días (G): también solo Básica
+  const trialLic = {
+    active: true,
+    planCode: 'G',
+    planLabel: 'Promoción 3 Días (Regalo)',
+    expiresAt: Date.now() + 86_400_000,
+    activatedAt: Date.now(),
+  };
+  assert.deepEqual(getUnlockedSkinsForLicense(trialLic, true), ['basica']);
+  assert.equal(isSkinUnlockedForLicense('ejecutiva', trialLic, true), false);
+  assert.equal(isSkinUnlockedForLicense('industrial', trialLic, true), false);
+
+  // Plan PRO 30 días (M) y 90 días (Q): desbloquea Básica + Ejecutiva
+  const pro30Lic = {
+    active: true,
+    planCode: 'M',
+    planLabel: '30 Días PRO',
+    expiresAt: Date.now() + 30 * 86_400_000,
+    activatedAt: Date.now(),
+  };
+  assert.deepEqual(getUnlockedSkinsForLicense(pro30Lic, true), ['basica', 'ejecutiva']);
+  assert.equal(isSkinUnlockedForLicense('industrial', pro30Lic, true), false);
+
+  const pro90Lic = {
+    active: true,
+    planCode: 'Q',
+    planLabel: '90 Días PRO',
+    expiresAt: Date.now() + 90 * 86_400_000,
+    activatedAt: Date.now(),
+  };
+  assert.deepEqual(getUnlockedSkinsForLicense(pro90Lic, true), ['basica', 'ejecutiva']);
+
+  // Plan PRO 1 Año (A): desbloquea las 3 carátulas incluyendo Industrial Pro
+  const pro1YearLic = {
+    active: true,
+    planCode: 'A',
+    planLabel: '1 Año PRO',
+    expiresAt: Date.now() + 365 * 86_400_000,
+    activatedAt: Date.now(),
+  };
+  assert.deepEqual(getUnlockedSkinsForLicense(pro1YearLic, true), ['basica', 'ejecutiva', 'industrial']);
+  assert.equal(isSkinUnlockedForLicense('industrial', pro1YearLic, true), true);
+});
+
+test('79. Sub-variantes de color por carátula (Ejecutiva Azul/Naranja e Industrial Verde/Plateada/Dorada) y normalización', async () => {
+  const {
+    SKIN_VARIANTS_BY_SKIN,
+    getDefaultVariantForSkin,
+    normalizeSkinVariant,
+  } = await import('./storageHelpers.ts');
+
+  assert.equal(SKIN_VARIANTS_BY_SKIN.basica.length, 0);
+  assert.deepEqual(
+    SKIN_VARIANTS_BY_SKIN.ejecutiva.map((v) => v.id),
+    ['azul', 'naranja']
+  );
+  assert.deepEqual(
+    SKIN_VARIANTS_BY_SKIN.industrial.map((v) => v.id),
+    ['verde', 'plateada', 'dorada']
+  );
+
+  assert.equal(getDefaultVariantForSkin('basica'), 'default');
+  assert.equal(getDefaultVariantForSkin('ejecutiva'), 'azul');
+  assert.equal(getDefaultVariantForSkin('industrial'), 'verde');
+
+  assert.equal(normalizeSkinVariant('ejecutiva', 'naranja'), 'naranja');
+  assert.equal(normalizeSkinVariant('ejecutiva', 'dorada'), 'azul');
+  assert.equal(normalizeSkinVariant('industrial', 'plateada'), 'plateada');
+  assert.equal(normalizeSkinVariant('industrial', 'dorada'), 'dorada');
+  assert.equal(normalizeSkinVariant('industrial', 'naranja'), 'verde');
+  assert.equal(normalizeSkinVariant('basica', 'azul'), 'default');
+});
+
+
 
 

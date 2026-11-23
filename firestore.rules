@@ -2,428 +2,542 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Red de seguridad global (Denegar todo por defecto)
+
+    // =========================================================================
+    // 0. DEFAULT DENY (Fail-Closed Catch-All)
+    // =========================================================================
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // ==================== PRIMITIVAS GLOBALES ====================
-    function isValidId(id) {
-      return id is string && id.size() >= 3 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    // =========================================================================
+    // 1. GLOBAL AUTH, OWNERSHIP & DATA-INTEGRITY HELPERS
+    // =========================================================================
+    function isSignedIn() {
+      return request.auth != null
+        && request.auth.uid is string
+        && request.auth.uid.size() > 0;
     }
 
-    function incoming() {
-      return request.resource.data;
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        (request.auth.token.email == 'olmos5hernandez3@gmail.com'
+          && request.auth.token.email_verified == true)
+        || exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 3 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_-]+$');
+    }
+
+    function isValidOptString(data, field, maxLen) {
+      return !(field in data) || (data[field] is string && data[field].size() <= maxLen);
+    }
+
+    function isValidReqString(data, field, minLen, maxLen) {
+      return field in data
+        && data[field] is string
+        && data[field].size() >= minLen
+        && data[field].size() <= maxLen;
+    }
+
+    function isValidNullableString(data, field, maxLen) {
+      return !(field in data)
+        || data[field] == null
+        || (data[field] is string && data[field].size() <= maxLen);
+    }
+
+    function isValidNullableInt(data, field) {
+      return !(field in data)
+        || data[field] == null
+        || (data[field] is int && data[field] >= 0);
+    }
+
+    function isValidNullableBool(data, field) {
+      return !(field in data) || data[field] == null || data[field] is bool;
+    }
+
+    function isValidTimestampMs(val) {
+      return val is int
+        && val >= 1577836800000
+        && val <= request.time.toMillis() + 300000;
+    }
+
+    function isValidOptionalTimestampMs(data, field) {
+      return !(field in data)
+        || data[field] == null
+        || isValidTimestampMs(data[field]);
+    }
+
+    function isValidUrlString(val, maxLen) {
+      return val is string
+        && val.size() >= 8
+        && val.size() <= maxLen
+        && val.matches('^https://.*');
     }
 
     function existing() {
       return resource.data;
     }
 
-    function isValidEpochMs(val) {
-      return (val is int || val is float) && val >= 1577836800000 && val <= request.time.toMillis() + 86400000;
+    function incoming() {
+      return request.resource.data;
     }
 
-    function isNullableEpochMs(val) {
-      return val == null || isValidEpochMs(val);
+    // =========================================================================
+    // 2. ENTITY VALIDATORS
+    // =========================================================================
+
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasOnly([
+          'uid', 'email', 'nombreTaller', 'responsable', 'telefono', 'ubicacion',
+          'deviceId', 'preferredTheme', 'preferredSkin', 'preferredSkinVariant',
+          'role', 'proActive', 'planCode', 'planLabel', 'expiresAt',
+          'trialActive', 'trialExpiresAt', 'promo_colega_usada', 'fecha_activacion_colega',
+          'revoked', 'blocked', 'adminAssigned', 'termsAcceptedAt',
+          'createdAt', 'updatedAt'
+        ])
+        && isValidReqString(data, 'uid', 3, 128)
+        && data.uid == userId
+        && isValidOptString(data, 'email', 160)
+        && isValidOptString(data, 'nombreTaller', 120)
+        && isValidOptString(data, 'responsable', 120)
+        && isValidOptString(data, 'telefono', 40)
+        && isValidOptString(data, 'ubicacion', 200)
+        && isValidOptString(data, 'deviceId', 64)
+        && isValidOptString(data, 'preferredTheme', 16)
+        && isValidOptString(data, 'preferredSkin', 24)
+        && isValidOptString(data, 'preferredSkinVariant', 24)
+        && isValidOptString(data, 'role', 24)
+        && isValidNullableBool(data, 'proActive')
+        && isValidOptString(data, 'planCode', 24)
+        && isValidOptString(data, 'planLabel', 80)
+        && isValidNullableInt(data, 'expiresAt')
+        && isValidNullableBool(data, 'trialActive')
+        && isValidNullableInt(data, 'trialExpiresAt')
+        && isValidNullableBool(data, 'promo_colega_usada')
+        && isValidOptionalTimestampMs(data, 'fecha_activacion_colega')
+        && isValidNullableBool(data, 'revoked')
+        && isValidNullableBool(data, 'blocked')
+        && isValidNullableBool(data, 'adminAssigned')
+        && isValidOptionalTimestampMs(data, 'termsAcceptedAt')
+        && isValidTimestampMs(data.createdAt)
+        && isValidTimestampMs(data.updatedAt);
     }
 
-    function isNullableExpiryMs(val) {
-      return val == null || ((val is int || val is float) && val >= 1577836800000 && val <= 4102444800000);
+    function isSafeOwnerUserCreate(data) {
+      return (!('role' in data) || data.role == 'user')
+        && (!('proActive' in data) || data.proActive == false)
+        && (!('planCode' in data) || data.planCode == 'FREE')
+        && (!('adminAssigned' in data) || data.adminAssigned == false)
+        && (!('trialActive' in data) || data.trialActive == false)
+        && (!('revoked' in data) || data.revoked == false)
+        && (!('blocked' in data) || data.blocked == false)
+        && (!('expiresAt' in data) || data.expiresAt == null)
+        && (!('trialExpiresAt' in data) || data.trialExpiresAt == null)
+        && (!('promo_colega_usada' in data) || data.promo_colega_usada == false);
     }
 
-    function isBoundedString(val, minLen, maxLen) {
-      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    function isValidTallerDoc(data, userId) {
+      return data.keys().hasOnly([
+          'uid', 'deviceId', 'nombre', 'responsable', 'tel', 'ubicacion',
+          'clienteDefault', 'preferredTheme', 'preferredSkin', 'preferredSkinVariant',
+          'termsAcceptedAt', 'createdAt', 'updatedAt'
+        ])
+        && isValidReqString(data, 'uid', 3, 128)
+        && data.uid == userId
+        && isValidOptString(data, 'deviceId', 64)
+        && isValidOptString(data, 'nombre', 120)
+        && isValidOptString(data, 'responsable', 120)
+        && isValidOptString(data, 'tel', 40)
+        && isValidOptString(data, 'ubicacion', 200)
+        && isValidOptString(data, 'clienteDefault', 120)
+        && isValidOptString(data, 'preferredTheme', 16)
+        && isValidOptString(data, 'preferredSkin', 24)
+        && isValidOptString(data, 'preferredSkinVariant', 24)
+        && isValidOptionalTimestampMs(data, 'termsAcceptedAt')
+        && isValidTimestampMs(data.createdAt)
+        && isValidTimestampMs(data.updatedAt);
     }
 
-    function isNonNegNumber(val, maxVal) {
-      return (val is int || val is float) && val >= 0 && val <= maxVal;
+    function isValidDeviceDoc(data, deviceId) {
+      return data.keys().hasOnly([
+          'deviceId', 'ownerUid', 'cliente', 'tallerNombre', 'tallerResponsable', 'tallerWhatsapp',
+          'deviceLabel', 'status', 'proActive', 'planCode', 'planLabel', 'expiresAt',
+          'lastKey', 'trialActive', 'trialExpiresAt', 'adminAssigned', 'revoked', 'revokedAt',
+          'blocked', 'blockedAt', 'promo_colega_usada', 'fecha_activacion_colega',
+          'termsAcceptedAt', 'preferredTheme', 'preferredSkin', 'preferredSkinVariant',
+          'firstSeenAt', 'lastSeenAt', 'totalSessions', 'totalMinutes',
+          'activeDays', 'updatedAt', 'linkedEmail', 'activeSessionToken'
+        ])
+        && isValidReqString(data, 'deviceId', 3, 64)
+        && data.deviceId == deviceId
+        && isValidReqString(data, 'ownerUid', 3, 128)
+        && isValidOptString(data, 'cliente', 120)
+        && isValidOptString(data, 'tallerNombre', 120)
+        && isValidOptString(data, 'tallerResponsable', 120)
+        && isValidOptString(data, 'tallerWhatsapp', 40)
+        && isValidOptString(data, 'deviceLabel', 80)
+        && (!('status' in data) || data.status in ['free', 'pro', 'blocked'])
+        && data.proActive is bool
+        && isValidReqString(data, 'planCode', 1, 24)
+        && isValidReqString(data, 'planLabel', 1, 80)
+        && isValidNullableInt(data, 'expiresAt')
+        && isValidOptString(data, 'lastKey', 64)
+        && data.trialActive is bool
+        && isValidNullableInt(data, 'trialExpiresAt')
+        && isValidNullableBool(data, 'adminAssigned')
+        && isValidNullableBool(data, 'revoked')
+        && isValidOptionalTimestampMs(data, 'revokedAt')
+        && isValidNullableBool(data, 'blocked')
+        && isValidOptionalTimestampMs(data, 'blockedAt')
+        && isValidNullableBool(data, 'promo_colega_usada')
+        && isValidOptionalTimestampMs(data, 'fecha_activacion_colega')
+        && isValidOptionalTimestampMs(data, 'termsAcceptedAt')
+        && isValidOptString(data, 'preferredTheme', 16)
+        && isValidOptString(data, 'preferredSkin', 24)
+        && isValidOptString(data, 'preferredSkinVariant', 24)
+        && isValidTimestampMs(data.firstSeenAt)
+        && isValidTimestampMs(data.lastSeenAt)
+        && data.totalSessions is int && data.totalSessions >= 0 && data.totalSessions <= 1000000
+        && data.totalMinutes is int && data.totalMinutes >= 0 && data.totalMinutes <= 100000000
+        && data.activeDays is list && data.activeDays.size() <= 60
+        && (data.activeDays.size() == 0 || data.activeDays[0] is string)
+        && isValidTimestampMs(data.updatedAt)
+        && isValidOptString(data, 'linkedEmail', 160)
+        && isValidNullableString(data, 'activeSessionToken', 128);
     }
 
-    // ==================== VALIDACIÓN: DEVICE ====================
-    function isValidDevice(data) {
-      return data.keys().hasAll([
-        'deviceId',
-        'cliente',
-        'deviceLabel',
-        'firstSeenAt',
-        'lastSeenAt',
-        'totalSessions',
-        'totalMinutes',
-        'activeDays',
-        'proActive',
-        'planCode',
-        'planLabel',
-        'lastKey',
-        'updatedAt',
-        'revoked',
-        'blocked',
-        'trialActive',
-        'adminAssigned'
-      ])
-      && data.keys().hasOnly([
-        'deviceId',
-        'cliente',
-        'deviceLabel',
-        'firstSeenAt',
-        'lastSeenAt',
-        'totalSessions',
-        'totalMinutes',
-        'activeDays',
-        'proActive',
-        'planCode',
-        'planLabel',
-        'expiresAt',
-        'lastKey',
-        'updatedAt',
-        'revoked',
-        'revokedAt',
-        'blocked',
-        'blockedAt',
-        'trialActive',
-        'adminAssigned',
-        'linkedEmail',
-        'status',
-        'promo_colega_usada',
-        'fecha_activacion_colega',
-        'tallerNombre',
-        'tallerResponsable',
-        'tallerWhatsapp'
-      ])
-      && isValidId(data.deviceId)
-      && data.deviceId.size() <= 64
-      && isBoundedString(data.cliente, 0, 120)
-      && isBoundedString(data.deviceLabel, 0, 80)
-      && isValidEpochMs(data.firstSeenAt)
-      && isValidEpochMs(data.lastSeenAt)
-      && isNonNegNumber(data.totalSessions, 1000000)
-      && isNonNegNumber(data.totalMinutes, 100000000)
-      && data.activeDays is list
-      && data.activeDays.size() <= 60
-      && (data.activeDays.size() == 0 || (data.activeDays[0] is string && data.activeDays[0].size() <= 16))
-      && data.proActive is bool
-      && isBoundedString(data.planCode, 1, 24)
-      && isBoundedString(data.planLabel, 1, 120)
-      && (!('status' in data) || isBoundedString(data.status, 1, 24))
-      && (!('expiresAt' in data) || isNullableExpiryMs(data.expiresAt))
-      && isBoundedString(data.lastKey, 0, 40)
-      && isValidEpochMs(data.updatedAt)
-      && data.revoked is bool
-      && (!('revokedAt' in data) || isNullableEpochMs(data.revokedAt))
-      && data.blocked is bool
-      && (!('blockedAt' in data) || isNullableEpochMs(data.blockedAt))
-      && data.trialActive is bool
-      && data.adminAssigned is bool
-      && (!('linkedEmail' in data) || data.linkedEmail == null || isBoundedString(data.linkedEmail, 0, 160))
-      && (!('promo_colega_usada' in data) || data.promo_colega_usada is bool)
-      && (!('fecha_activacion_colega' in data) || isNullableEpochMs(data.fecha_activacion_colega))
-      && (!('tallerNombre' in data) || isBoundedString(data.tallerNombre, 0, 120))
-      && (!('tallerResponsable' in data) || isBoundedString(data.tallerResponsable, 0, 120))
-      && (!('tallerWhatsapp' in data) || isBoundedString(data.tallerWhatsapp, 0, 40));
+    function isSafeOwnerDeviceCreate(data) {
+      return data.ownerUid == request.auth.uid
+        && data.proActive == false
+        && data.planCode == 'FREE'
+        && data.trialActive == false
+        && (!('status' in data) || data.status == 'free')
+        && (!('adminAssigned' in data) || data.adminAssigned == false)
+        && (!('revoked' in data) || data.revoked == false)
+        && (!('blocked' in data) || data.blocked == false)
+        && (!('expiresAt' in data) || data.expiresAt == null)
+        && (!('trialExpiresAt' in data) || data.trialExpiresAt == null)
+        && (!('lastKey' in data) || data.lastKey == '')
+        && (!('promo_colega_usada' in data) || data.promo_colega_usada == false);
     }
 
-    // ==================== VALIDACIÓN: ADMIN KEY ====================
-    function isValidAdminKey(data) {
-      return data.keys().hasAll(['id', 'cliente', 'deviceId', 'planLabel', 'key', 'createdAt'])
-      && data.keys().hasOnly([
-        'id',
-        'cliente',
-        'deviceId',
-        'planLabel',
-        'dias',
-        'key',
-        'createdAt',
-        'expiresAt',
-        'revoked',
-        'revokedAt',
-        'linkedEmail'
-      ])
-      && isValidId(data.id)
-      && isBoundedString(data.cliente, 0, 120)
-      && isValidId(data.deviceId)
-      && data.deviceId.size() <= 64
-      && isBoundedString(data.planLabel, 1, 120)
-      && (!('dias' in data) || data.dias == null || isNonNegNumber(data.dias, 3650))
-      && isBoundedString(data.key, 0, 40)
-      && isValidEpochMs(data.createdAt)
-      && (!('expiresAt' in data) || isNullableExpiryMs(data.expiresAt))
-      && (!('revoked' in data) || data.revoked is bool)
-      && (!('revokedAt' in data) || isNullableEpochMs(data.revokedAt))
-      && (!('linkedEmail' in data) || data.linkedEmail == null || isBoundedString(data.linkedEmail, 0, 160));
+    function isValidAdminKeyDoc(data, keyId) {
+      return data.keys().hasOnly([
+          'id', 'cliente', 'deviceId', 'planLabel', 'dias', 'key',
+          'createdAt', 'expiresAt', 'revoked', 'revokedAt', 'linkedEmail'
+        ])
+        && isValidReqString(data, 'id', 3, 128)
+        && data.id == keyId
+        && isValidOptString(data, 'cliente', 120)
+        && isValidReqString(data, 'deviceId', 3, 64)
+        && isValidReqString(data, 'planLabel', 1, 80)
+        && (data.dias == null || (data.dias is int && data.dias >= 0 && data.dias <= 36500))
+        && isValidReqString(data, 'key', 4, 64)
+        && isValidTimestampMs(data.createdAt)
+        && isValidNullableInt(data, 'expiresAt')
+        && isValidNullableBool(data, 'revoked')
+        && isValidOptionalTimestampMs(data, 'revokedAt')
+        && isValidOptString(data, 'linkedEmail', 160);
     }
 
-    // ==================== VALIDACIÓN: REVOKED KEY ====================
-    function isValidRevokedKey(data) {
-      return data.keys().hasAll(['key', 'revokedAt'])
-      && data.keys().hasOnly(['key', 'deviceId', 'revokedAt'])
-      && isValidId(data.key)
-      && data.key.size() >= 4
-      && data.key.size() <= 40
-      && (!('deviceId' in data) || isBoundedString(data.deviceId, 0, 64))
-      && isValidEpochMs(data.revokedAt);
+    function isValidRevokedKeyDoc(data, keyCode) {
+      return data.keys().hasOnly(['key', 'deviceId', 'revokedAt'])
+        && isValidReqString(data, 'key', 4, 64)
+        && data.key == keyCode
+        && isValidOptString(data, 'deviceId', 64)
+        && isValidTimestampMs(data.revokedAt);
     }
 
-    // ==================== VALIDACIÓN: BLOCKED DEVICE ====================
-    function isValidBlockedDevice(data) {
-      return data.keys().hasAll(['deviceId', 'blockedAt'])
-      && data.keys().hasOnly(['deviceId', 'blockedAt'])
-      && isValidId(data.deviceId)
-      && data.deviceId.size() <= 64
-      && isValidEpochMs(data.blockedAt);
+    function isValidBlockedDeviceDoc(data, deviceId) {
+      return data.keys().hasOnly(['deviceId', 'blocked', 'blockedAt', 'reason'])
+        && isValidReqString(data, 'deviceId', 3, 64)
+        && data.deviceId == deviceId
+        && data.blocked is bool
+        && isValidTimestampMs(data.blockedAt)
+        && isValidOptString(data, 'reason', 120);
     }
 
-    // ==================== VALIDACIÓN: CLOUD ACCOUNT ====================
-    function isValidCloudAccount(data) {
-      return data.keys().hasAll([
-        'email',
-        'passwordSalt',
-        'passwordHash',
-        'activeDeviceId',
-        'createdAt',
-        'updatedAt'
-      ])
-      && data.keys().hasOnly([
-        'email',
-        'passwordSalt',
-        'passwordHash',
-        'activeDeviceId',
-        'activeSessionToken',
-        'licencia',
-        'backup',
-        'createdAt',
-        'updatedAt',
-        'lastBackedUpAt'
-      ])
-      && isBoundedString(data.email, 5, 160)
-      && isBoundedString(data.passwordSalt, 8, 128)
-      && isBoundedString(data.passwordHash, 16, 128)
-      && isValidId(data.activeDeviceId)
-      && data.activeDeviceId.size() <= 64
-      && (!('activeSessionToken' in data) || data.activeSessionToken == null || isBoundedString(data.activeSessionToken, 8, 128))
-      && (!('licencia' in data) || data.licencia == null || data.licencia is map)
-      && (!('backup' in data) || data.backup == null || data.backup is map)
-      && isValidEpochMs(data.createdAt)
-      && isValidEpochMs(data.updatedAt)
-      && (!('lastBackedUpAt' in data) || isNullableEpochMs(data.lastBackedUpAt));
+    function isValidAccountDoc(data) {
+      return data.keys().hasOnly([
+          'ownerUid', 'email', 'passwordHash', 'passwordSalt', 'activeDeviceId',
+          'sessionToken', 'licencia', 'backup', 'createdAt', 'updatedAt'
+        ])
+        && isValidReqString(data, 'ownerUid', 3, 128)
+        && isValidReqString(data, 'email', 5, 160)
+        && isValidReqString(data, 'passwordHash', 32, 128)
+        && isValidReqString(data, 'passwordSalt', 8, 128)
+        && isValidReqString(data, 'activeDeviceId', 3, 64)
+        && isValidNullableString(data, 'sessionToken', 128)
+        && (!('licencia' in data) || data.licencia == null || data.licencia is map)
+        && (!('backup' in data) || data.backup == null || data.backup is map)
+        && isValidTimestampMs(data.createdAt)
+        && isValidTimestampMs(data.updatedAt);
     }
 
-    // ==================== VALIDACIÓN: CONFIG ====================
-    function isValidAppConfig(data) {
-      return data.keys().hasAll(['updatedAt'])
-      && data.keys().hasOnly(['adminPasswordSalt', 'adminPasswordHash', 'updatedAt'])
-      && (!('adminPasswordSalt' in data) || isBoundedString(data.adminPasswordSalt, 8, 128))
-      && (!('adminPasswordHash' in data) || isBoundedString(data.adminPasswordHash, 16, 128))
-      && isValidEpochMs(data.updatedAt);
+    function isValidConfigDoc(data) {
+      return data.keys().hasOnly([
+          'passwordHash', 'passwordSalt', 'updatedAt', 'promocionesEnviadas',
+          'maintenanceMode', 'minAppVersion', 'announcement'
+        ])
+        && isValidOptString(data, 'passwordHash', 128)
+        && isValidOptString(data, 'passwordSalt', 128)
+        && (!('promocionesEnviadas' in data)
+          || (data.promocionesEnviadas is int
+            && data.promocionesEnviadas >= 0
+            && data.promocionesEnviadas <= 10000000))
+        && isValidNullableBool(data, 'maintenanceMode')
+        && isValidOptString(data, 'minAppVersion', 32)
+        && isValidOptString(data, 'announcement', 300)
+        && isValidTimestampMs(data.updatedAt);
     }
 
-    // ==================== VALIDACIÓN: PROMO STATS ====================
-    function isValidPromoStats(data) {
-      return data.keys().hasAll(['total', 'updatedAt'])
-      && data.keys().hasOnly(['total', 'updatedAt'])
-      && data.total is int
-      && data.total >= 1
-      && data.total <= 100000000
-      && isValidEpochMs(data.updatedAt);
+    function isValidTutorialVideoDoc(data, videoId) {
+      return data.keys().hasOnly([
+          'id', 'titulo', 'categoria', 'descripcion', 'url', 'orden', 'createdAt', 'updatedAt'
+        ])
+        && isValidReqString(data, 'id', 3, 128)
+        && data.id == videoId
+        && isValidReqString(data, 'titulo', 2, 160)
+        && data.categoria in ['primeros-pasos', 'ventanas-puertas', 'optimizacion-vidrio', 'cotizaciones-pdf']
+        && isValidOptString(data, 'descripcion', 600)
+        && isValidUrlString(data.url, 500)
+        && data.orden is int && data.orden >= 0 && data.orden <= 10000
+        && isValidTimestampMs(data.createdAt)
+        && isValidTimestampMs(data.updatedAt);
     }
 
-    // ==================== VALIDACIÓN: TUTORIAL VIDEO ====================
-    function isValidTutorialVideo(data) {
-      return data.keys().hasAll([
-        'id',
-        'titulo',
-        'categoria',
-        'descripcion',
-        'url',
-        'orden',
-        'createdAt',
-        'updatedAt'
-      ])
-      && data.keys().hasOnly([
-        'id',
-        'titulo',
-        'categoria',
-        'descripcion',
-        'url',
-        'orden',
-        'createdAt',
-        'updatedAt'
-      ])
-      && isValidId(data.id)
-      && isBoundedString(data.titulo, 2, 140)
-      && isBoundedString(data.categoria, 3, 40)
-      && data.categoria in ['primeros-pasos', 'ventanas-puertas', 'optimizacion-vidrio', 'cotizaciones-pdf']
-      && isBoundedString(data.descripcion, 0, 500)
-      && isBoundedString(data.url, 8, 500)
-      && isNonNegNumber(data.orden, 10000)
-      && isValidEpochMs(data.createdAt)
-      && isValidEpochMs(data.updatedAt);
+    function isValidReferencePricesDoc(data) {
+      return data.keys().hasOnly(['updatedAt', 'updatedLabel', 'nota', 'items'])
+        && isValidTimestampMs(data.updatedAt)
+        && isValidReqString(data, 'updatedLabel', 2, 80)
+        && isValidOptString(data, 'nota', 320)
+        && data.items is list && data.items.size() <= 120
+        && (data.items.size() == 0 || data.items[0] is map);
     }
 
-    // ==================== COLECCIÓN DE VERIFICACIÓN DE CONEXIÓN ====================
-    match /test/connection {
-      allow get: if resource == null || resource.data is map;
+    function isValidAdminMessageDoc(data, messageId) {
+      return data.keys().hasOnly([
+          'id', 'titulo', 'cuerpo', 'tipo', 'targetMode', 'targetDeviceId', 'targetLabel', 'createdAt'
+        ])
+        && isValidReqString(data, 'id', 3, 128)
+        && data.id == messageId
+        && isValidReqString(data, 'titulo', 2, 140)
+        && isValidReqString(data, 'cuerpo', 2, 1000)
+        && data.tipo in ['aviso', 'promo', 'alerta', 'actualizacion']
+        && data.targetMode in ['all', 'individual']
+        && isValidOptString(data, 'targetDeviceId', 64)
+        && isValidOptString(data, 'targetLabel', 140)
+        && isValidTimestampMs(data.createdAt);
     }
 
-    // ==================== COLECCIONES DE APLICACIÓN ====================
-    match /devices/{deviceId} {
-      allow get: if isValidId(deviceId);
-      allow list: if request.query.limit <= 500;
-      allow create: if isValidId(deviceId)
-        && isValidDevice(incoming())
-        && incoming().deviceId == deviceId;
-      allow update: if isValidId(deviceId)
-        && isValidDevice(incoming())
-        && incoming().deviceId == existing().deviceId
-        && incoming().firstSeenAt == existing().firstSeenAt
-        && incoming().diff(existing()).affectedKeys().hasOnly([
-          'cliente',
-          'deviceLabel',
-          'lastSeenAt',
-          'totalSessions',
-          'totalMinutes',
-          'activeDays',
-          'proActive',
-          'planCode',
-          'planLabel',
-          'expiresAt',
-          'lastKey',
-          'updatedAt',
-          'revoked',
-          'revokedAt',
-          'blocked',
-          'blockedAt',
-          'trialActive',
-          'adminAssigned',
-          'linkedEmail',
-          'status',
-          'promo_colega_usada',
-          'fecha_activacion_colega',
-          'tallerNombre',
-          'tallerResponsable',
-          'tallerWhatsapp'
-        ]);
-      allow delete: if isValidId(deviceId) && (resource == null || existing().deviceId == deviceId);
+    function isValidAdminRoleDoc(data, adminUid) {
+      return data.keys().hasOnly(['uid', 'email', 'role', 'createdAt'])
+        && isValidReqString(data, 'uid', 3, 128)
+        && data.uid == adminUid
+        && isValidReqString(data, 'email', 5, 160)
+        && data.role == 'admin'
+        && isValidTimestampMs(data.createdAt);
     }
 
-    match /adminKeys/{keyId} {
-      allow get: if isValidId(keyId);
-      allow list: if request.query.limit <= 500;
-      allow create: if isValidId(keyId)
-        && isValidAdminKey(incoming())
-        && incoming().id == keyId;
-      allow update: if isValidId(keyId)
-        && isValidAdminKey(incoming())
-        && incoming().id == existing().id
+    // =========================================================================
+    // 3. USER-OWNED COLLECTIONS (STRICT OWNER OR ADMIN ACCESS)
+    // =========================================================================
+
+    match /users/{userId} {
+      allow read: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow create: if isValidId(userId)
+        && isValidUserProfile(incoming(), userId)
+        && (isAdmin() || (isOwner(userId) && isSafeOwnerUserCreate(incoming())));
+      allow update: if isValidId(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().uid == existing().uid
         && incoming().createdAt == existing().createdAt
-        && incoming().diff(existing()).affectedKeys().hasOnly([
-          'cliente',
-          'deviceId',
-          'planLabel',
-          'dias',
-          'key',
-          'expiresAt',
-          'revoked',
-          'revokedAt',
-          'linkedEmail'
+        && (
+          isAdmin()
+          || (
+            isOwner(userId)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'email', 'nombreTaller', 'responsable', 'telefono', 'ubicacion',
+              'deviceId', 'preferredTheme', 'preferredSkin', 'preferredSkinVariant',
+              'termsAcceptedAt', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isValidId(userId) && isAdmin();
+    }
+
+    match /talleres/{userId} {
+      allow read: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow create: if isValidId(userId)
+        && isValidTallerDoc(incoming(), userId)
+        && (isOwner(userId) || isAdmin());
+      allow update: if isValidId(userId)
+        && isValidTallerDoc(incoming(), userId)
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && (isOwner(userId) || isAdmin())
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'deviceId', 'nombre', 'responsable', 'tel', 'ubicacion',
+          'clienteDefault', 'preferredTheme', 'preferredSkin', 'preferredSkinVariant',
+          'termsAcceptedAt', 'updatedAt'
         ]);
-      allow delete: if isValidId(keyId) && (resource == null || existing().id == keyId);
+      allow delete: if isValidId(userId) && isAdmin();
     }
 
-    match /revokedKeys/{keyCode} {
-      allow get: if isValidId(keyCode);
-      allow list: if request.query.limit <= 500;
-      allow create: if isValidId(keyCode)
-        && isValidRevokedKey(incoming())
-        && incoming().key == keyCode;
-      allow update: if isValidId(keyCode)
-        && isValidRevokedKey(incoming())
-        && incoming().key == existing().key
-        && incoming().diff(existing()).affectedKeys().hasOnly(['deviceId', 'revokedAt']);
-      allow delete: if isValidId(keyCode) && (resource == null || existing().key == keyCode);
-    }
-
-    match /blockedDevices/{deviceId} {
-      allow get: if isValidId(deviceId);
-      allow list: if request.query.limit <= 500;
+    match /devices/{deviceId} {
+      allow read: if isValidId(deviceId)
+        && (isAdmin() || (isSignedIn() && resource != null && resource.data.ownerUid == request.auth.uid));
       allow create: if isValidId(deviceId)
-        && isValidBlockedDevice(incoming())
-        && incoming().deviceId == deviceId;
+        && isValidDeviceDoc(incoming(), deviceId)
+        && (isAdmin() || (isSignedIn() && isSafeOwnerDeviceCreate(incoming())));
       allow update: if isValidId(deviceId)
-        && isValidBlockedDevice(incoming())
+        && isValidDeviceDoc(incoming(), deviceId)
         && incoming().deviceId == existing().deviceId
-        && incoming().diff(existing()).affectedKeys().hasOnly(['blockedAt']);
-      allow delete: if isValidId(deviceId) && (resource == null || existing().deviceId == deviceId);
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().firstSeenAt == existing().firstSeenAt
+        && (
+          isAdmin()
+          || (
+            isSignedIn()
+            && existing().ownerUid == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'cliente', 'tallerNombre', 'tallerResponsable', 'tallerWhatsapp',
+              'deviceLabel', 'termsAcceptedAt', 'preferredTheme', 'preferredSkin',
+              'preferredSkinVariant', 'lastSeenAt', 'totalSessions', 'totalMinutes',
+              'activeDays', 'updatedAt', 'linkedEmail', 'activeSessionToken'
+            ])
+          )
+        );
+      allow delete: if isValidId(deviceId) && isAdmin();
     }
 
     match /accounts/{accountId} {
-      allow get: if isValidId(accountId);
-      allow list: if false;
-      allow create: if isValidId(accountId) && isValidCloudAccount(incoming());
+      allow read: if isValidId(accountId)
+        && (isAdmin() || (isSignedIn() && resource != null && resource.data.ownerUid == request.auth.uid));
+      allow create: if isValidId(accountId)
+        && isValidAccountDoc(incoming())
+        && (isAdmin() || (isSignedIn() && incoming().ownerUid == request.auth.uid));
       allow update: if isValidId(accountId)
-        && isValidCloudAccount(incoming())
+        && isValidAccountDoc(incoming())
+        && incoming().ownerUid == existing().ownerUid
         && incoming().email == existing().email
         && incoming().createdAt == existing().createdAt
-        && incoming().diff(existing()).affectedKeys().hasOnly([
-          'passwordSalt',
-          'passwordHash',
-          'activeDeviceId',
-          'activeSessionToken',
-          'licencia',
-          'backup',
-          'updatedAt',
-          'lastBackedUpAt'
-        ]);
-      allow delete: if isValidId(accountId) && (resource == null || existing().email is string);
+        && (
+          isAdmin()
+          || (
+            isSignedIn()
+            && existing().ownerUid == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'passwordHash', 'passwordSalt', 'activeDeviceId',
+              'sessionToken', 'backup', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isValidId(accountId) && isAdmin();
+    }
+
+    // =========================================================================
+    // 4. ADMIN-ONLY & PUBLIC-READ / ADMIN-WRITE COLLECTIONS
+    // =========================================================================
+
+    match /admins/{adminUid} {
+      allow read: if isValidId(adminUid) && (isOwner(adminUid) || isAdmin());
+      allow create, update: if isValidId(adminUid)
+        && isAdmin()
+        && isValidAdminRoleDoc(incoming(), adminUid);
+      allow delete: if isValidId(adminUid) && isAdmin();
     }
 
     match /config/{configId} {
-      allow get: if isValidId(configId);
-      allow create: if isValidId(configId) && isValidAppConfig(incoming());
-      allow update: if isValidId(configId)
-        && isValidAppConfig(incoming())
-        && incoming().diff(existing()).affectedKeys().hasOnly([
-          'adminPasswordSalt',
-          'adminPasswordHash',
-          'updatedAt'
-        ]);
-      allow delete: if false;
-    }
-
-    match /stats/{statId} {
-      allow get: if isValidId(statId) && statId == 'promociones_enviadas';
-      allow list: if false;
-      allow create: if isValidId(statId)
-        && statId == 'promociones_enviadas'
-        && isValidPromoStats(incoming())
-        && incoming().total >= 1
-        && incoming().total <= 2;
-      allow update: if isValidId(statId)
-        && statId == 'promociones_enviadas'
-        && isValidPromoStats(incoming())
-        && incoming().total == existing().total + 1
-        && incoming().diff(existing()).affectedKeys().hasOnly(['total', 'updatedAt']);
-      allow delete: if false;
+      allow read: if isValidId(configId) && isAdmin();
+      allow create, update: if isValidId(configId)
+        && isAdmin()
+        && isValidConfigDoc(incoming())
+        && (
+          resource == null
+          || request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'passwordHash', 'passwordSalt', 'updatedAt', 'promocionesEnviadas',
+            'maintenanceMode', 'minAppVersion', 'announcement'
+          ])
+        );
+      allow delete: if isValidId(configId) && isAdmin();
     }
 
     match /tutorial_videos/{videoId} {
-      allow get: if isValidId(videoId);
-      allow list: if request.query.limit <= 200;
+      allow read: if isValidId(videoId) && isSignedIn();
       allow create: if isValidId(videoId)
-        && isValidTutorialVideo(incoming())
-        && incoming().id == videoId;
+        && isAdmin()
+        && isValidTutorialVideoDoc(incoming(), videoId);
       allow update: if isValidId(videoId)
-        && isValidTutorialVideo(incoming())
+        && isAdmin()
+        && isValidTutorialVideoDoc(incoming(), videoId)
         && incoming().id == existing().id
         && incoming().createdAt == existing().createdAt
-        && incoming().diff(existing()).affectedKeys().hasOnly([
-          'titulo',
-          'categoria',
-          'descripcion',
-          'url',
-          'orden',
-          'updatedAt'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'titulo', 'categoria', 'descripcion', 'url', 'orden', 'updatedAt'
         ]);
-      allow delete: if isValidId(videoId) && (resource == null || existing().id == videoId);
+      allow delete: if isValidId(videoId) && isAdmin();
+    }
+
+    match /adminKeys/{keyId} {
+      allow read: if isValidId(keyId) && isAdmin();
+      allow create: if isValidId(keyId)
+        && isAdmin()
+        && isValidAdminKeyDoc(incoming(), keyId);
+      allow update: if isValidId(keyId)
+        && isAdmin()
+        && isValidAdminKeyDoc(incoming(), keyId)
+        && incoming().id == existing().id
+        && incoming().createdAt == existing().createdAt
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'cliente', 'deviceId', 'planLabel', 'dias', 'key',
+          'expiresAt', 'revoked', 'revokedAt', 'linkedEmail'
+        ]);
+      allow delete: if isValidId(keyId) && isAdmin();
+    }
+
+    match /revokedKeys/{keyCode} {
+      allow read: if isValidId(keyCode) && isAdmin();
+      allow create, update: if isValidId(keyCode)
+        && isAdmin()
+        && isValidRevokedKeyDoc(incoming(), keyCode);
+      allow delete: if isValidId(keyCode) && isAdmin();
+    }
+
+    match /blockedDevices/{deviceId} {
+      allow read: if isValidId(deviceId) && isAdmin();
+      allow create, update: if isValidId(deviceId)
+        && isAdmin()
+        && isValidBlockedDeviceDoc(incoming(), deviceId);
+      allow delete: if isValidId(deviceId) && isAdmin();
+    }
+
+    match /reference_prices/{docId} {
+      allow read: if isValidId(docId) && isSignedIn();
+      allow create, update: if isValidId(docId)
+        && isAdmin()
+        && isValidReferencePricesDoc(incoming());
+      allow delete: if isValidId(docId) && isAdmin();
+    }
+
+    match /admin_messages/{messageId} {
+      allow read: if isValidId(messageId) && isSignedIn();
+      allow create: if isValidId(messageId)
+        && isAdmin()
+        && isValidAdminMessageDoc(incoming(), messageId);
+      allow update: if isValidId(messageId)
+        && isAdmin()
+        && isValidAdminMessageDoc(incoming(), messageId)
+        && incoming().id == existing().id
+        && incoming().createdAt == existing().createdAt;
+      allow delete: if isValidId(messageId) && isAdmin();
     }
   }
 }

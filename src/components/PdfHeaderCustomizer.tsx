@@ -26,6 +26,7 @@ import {
   PdfDocumentKind,
   resolvePdfHeaderConfig,
 } from '../utils/pdfHeaderUtils';
+import { formatMxPhoneDashed } from '../utils/alumineroLogic';
 import {
   compressImageToDataUrl,
   PdfHeaderColorId,
@@ -553,7 +554,7 @@ export const PdfHeaderCustomizer: React.FC<CustomizerProps> = ({
             type="text"
             value={taller.nombre}
             onChange={(e) => onUpdateTaller({ nombre: e.target.value })}
-            placeholder="Ej. Aluminios y Vidrios del Centro"
+            placeholder="Aluminios del Centro"
             className="w-full min-h-[42px] rounded-xl border border-slate-200 px-3 text-[13.5px] font-semibold"
           />
         </div>
@@ -570,7 +571,7 @@ export const PdfHeaderCustomizer: React.FC<CustomizerProps> = ({
             type="text"
             value={taller.responsable || ''}
             onChange={(e) => onUpdateTaller({ responsable: e.target.value })}
-            placeholder="Ej. Mtro. Roberto Hernández"
+            placeholder="Ejemplo Cliente"
             className="w-full min-h-[42px] rounded-xl border border-slate-200 px-3 text-[13.5px] font-semibold"
           />
         </div>
@@ -618,10 +619,11 @@ export const PdfHeaderCustomizer: React.FC<CustomizerProps> = ({
           </label>
           <input
             id={compact ? 'inp-pdf-tel' : 'inp-taller-tel'}
-            type="text"
+            type="tel"
+            inputMode="numeric"
             value={taller.tel}
-            onChange={(e) => onUpdateTaller({ tel: e.target.value })}
-            placeholder="Ej. 55 1234 5678"
+            onChange={(e) => onUpdateTaller({ tel: formatMxPhoneDashed(e.target.value) })}
+            placeholder="333-333-4444"
             className="w-full min-h-[42px] rounded-xl border border-slate-200 px-3 mono text-[13.5px] font-semibold"
           />
         </div>

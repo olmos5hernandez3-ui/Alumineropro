@@ -5,19 +5,26 @@ import {
   ArrowRight,
   Ban,
   BarChart3,
+  Bell,
   CheckCircle2,
+  ChevronDown,
+  ClipboardPaste,
   Copy,
   Crown,
+  DollarSign,
   Download,
   Edit3,
+  Eraser,
   ExternalLink,
   Gift,
   KeyRound,
+  MessageSquare,
   PieChart as PieChartIcon,
   Plus,
   RefreshCw,
   RotateCcw,
   Search,
+  Send,
   Settings,
   ShieldCheck,
   Trash2,
@@ -42,12 +49,17 @@ import {
   YAxis,
 } from 'recharts';
 import {
+  AdminMessageItem,
+  AdminMessageType,
+  APP_VERSION,
+  buildAdminWelcomeMessage,
+  buildWhatsAppDirectUrl,
   CloudDeviceRecord,
-  computeSalesAnalytics,
+  DEFAULT_REFERENCE_PRICES,
   filterAdminRecordsByResetBaseline,
   formatClientHeaderDisplay,
-  formatClientPhoneInput,
   formatCombinedClientLabel,
+  formatMxPhoneDashed,
   generateActivationKey,
   generateRandomMxPhonePlaceholder,
   isColleaguePromoPlan,
@@ -57,7 +69,10 @@ import {
   LINEAS_CONFIG,
   normalizeDeviceIdInput,
   parseTutorialVideoUrl,
+  parseWhatsappKeyRequestMessage,
   PLANS,
+  ReferencePriceItem,
+  ReferencePricesDoc,
   TUTORIAL_VIDEO_CATEGORIES,
   TutorialVideoCategoryId,
   UsageStats30d,
@@ -66,11 +81,9 @@ import {
   AdminKeyRecord,
   AlumineroBackupPayload,
   compressImageToDataUrl,
-  CotizacionGuardada,
   formatDateTimeExact,
   FormulaPersonalizada,
   LicenciaState,
-  loadCotizacionesGuardadas,
   loadTutorialVideosCache,
   parseBackupPayload,
   ReferralHistoryRecord,
@@ -80,8 +93,13 @@ import {
   validateWhatsappNumber,
 } from '../utils/storageHelpers';
 import {
+  deleteAdminMessageCloud,
   deleteTutorialVideoCloud,
+  saveReferencePricesCloud,
   saveTutorialVideoCloud,
+  sendAdminMessageCloud,
+  subscribeAdminMessages,
+  subscribeReferencePrices,
   subscribeTutorialVideos,
 } from '../utils/cloudSync';
 import {
@@ -144,7 +162,7 @@ export interface AdminDashboardViewProps {
 
 const ADMIN_COUNTERS_RESET_KEY = 'aluminero_admin_counters_reset_at_v1';
 
-type AdminTabId = 'dashboard' | 'graficas' | 'ventas' | 'claves' | 'referidos' | 'herramientas' | 'videos';
+type AdminTabId = 'dashboard' | 'graficas' | 'claves' | 'referidos' | 'precios' | 'mensajes' | 'herramientas' | 'videos';
 type PlanFilterId = 'todos' | 'gratis' | 'colega3d' | '30d' | '90d' | '365d' | 'bloqueados';
 type ChartGranularity = 'week' | 'month';
 
@@ -265,33 +283,11 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [planFilter, setPlanFilter] = useState<PlanFilterId>('todos');
   const [chartGranularity, setChartGranularity] = useState<ChartGranularity>('week');
+  const [expandedUserDevId, setExpandedUserDevId] = useState<string | null>(null);
   const [expandedActionDevId, setExpandedActionDevId] = useState<string | null>(null);
   const [busyDeviceId, setBusyDeviceId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [phonePlaceholder] = useState<string>(() => generateRandomMxPhonePlaceholder());
-  const [cotizacionesList, setCotizacionesList] = useState<CotizacionGuardada[]>(() =>
-    loadCotizacionesGuardadas()
-  );
-
-  useEffect(() => {
-    const refreshQuotes = () => setCotizacionesList(loadCotizacionesGuardadas());
-    window.addEventListener('aluminero:cotizaciones-updated', refreshQuotes);
-    window.addEventListener('focus', refreshQuotes);
-    return () => {
-      window.removeEventListener('aluminero:cotizaciones-updated', refreshQuotes);
-      window.removeEventListener('focus', refreshQuotes);
-    };
-  }, []);
-
-  const salesAnalytics = useMemo(
-    () =>
-      computeSalesAnalytics({
-        cotizacionesGuardadas: cotizacionesList,
-        obrasAprobadas: backupData.obrasAprobadas,
-        historial: backupData.historial,
-      }),
-    [cotizacionesList, backupData.obrasAprobadas, backupData.historial]
-  );
 
   // Confirmations
   const [pendingAction, setPendingAction] = useState<
@@ -309,6 +305,27 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const [planIdx, setPlanIdx] = useState<number>(1);
   const [customDaysStr, setCustomDaysStr] = useState('');
   const [generatedKey, setGeneratedKey] = useState('');
+  const [pasteModalOpen, setPasteModalOpen] = useState(false);
+  const [pasteModalText, setPasteModalText] = useState('');
+  const [pasteAutoGen, setPasteAutoGen] = useState(true);
+  const [confirmDirectCloudOpen, setConfirmDirectCloudOpen] = useState(false);
+
+  // Reference Prices tab state
+  const [refPricesDoc, setRefPricesDoc] = useState<ReferencePricesDoc>(() => ({
+    ...DEFAULT_REFERENCE_PRICES,
+    items: DEFAULT_REFERENCE_PRICES.items.map((i) => ({ ...i })),
+  }));
+  const [refSaving, setRefSaving] = useState(false);
+  const importRefPricesInputRef = useRef<HTMLInputElement>(null);
+
+  // Admin Messages / Avisos tab state
+  const [adminMessages, setAdminMessages] = useState<AdminMessageItem[]>([]);
+  const [msgTitle, setMsgTitle] = useState('');
+  const [msgBody, setMsgBody] = useState('');
+  const [msgType, setMsgType] = useState<AdminMessageType>('aviso');
+  const [msgTargetMode, setMsgTargetMode] = useState<'all' | 'individual'>('all');
+  const [msgTargetDeviceId, setMsgTargetDeviceId] = useState('');
+  const [msgSending, setMsgSending] = useState(false);
 
   // Referrals tab state
   const [refSearch, setRefSearch] = useState('');
@@ -347,7 +364,19 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       setAdminVideos(items);
       saveTutorialVideosCache(items);
     });
-    return () => unsub();
+    const unsubPrices = subscribeReferencePrices((doc) => {
+      if (doc && Array.isArray(doc.items) && doc.items.length > 0) {
+        setRefPricesDoc(doc);
+      }
+    });
+    const unsubMsgs = subscribeAdminMessages((items) => {
+      setAdminMessages(items);
+    });
+    return () => {
+      unsub();
+      unsubPrices();
+      unsubMsgs();
+    };
   }, []);
 
   useEffect(() => {
@@ -523,6 +552,19 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         const clienteDisplay = formatClientHeaderDisplay(rawCliente) || 'Usuario sin nombre';
         const linkedEmail = dev?.linkedEmail || latestKey?.linkedEmail || '';
 
+        const phoneMatch = rawCliente.match(/(?:\+?52[\s-]*)?(\d[\d\s-]{8,13}\d)/);
+        const rawPhoneDigits = phoneMatch
+          ? phoneMatch[1].replace(/\D/g, '').slice(-10)
+          : isSelf
+            ? String(backupData.taller?.tel || '').replace(/\D/g, '').slice(-10)
+            : '';
+        const telefonoDisplay = rawPhoneDigits ? formatMxPhoneDashed(rawPhoneDigits) : 'Sin teléfono';
+        const nombreSolo =
+          clienteDisplay
+            .replace(/\s*·\s*[\d\s-]{8,}$/, '')
+            .replace(/\s+[\d-]{10,}$/, '')
+            .trim() || 'Usuario sin nombre';
+
         const deleteRecord: AdminKeyRecord = latestKey
           ? { ...latestKey, deviceId: normId, cliente: rawCliente }
           : {
@@ -542,6 +584,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           isSelf,
           clienteRaw: rawCliente,
           clienteDisplay,
+          nombreSolo,
+          telefonoDisplay,
           linkedEmail,
           deviceLabel: dev?.deviceLabel || 'Dispositivo Web',
           tier,
@@ -887,6 +931,226 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     onShowToast(`Clave ${key} copiada y registrada`, true);
   };
 
+  const applyParsedWhatsappText = (rawText: string, autoGenerate: boolean): boolean => {
+    const parsed = parseWhatsappKeyRequestMessage(rawText);
+    if (!parsed.hasValidDeviceId || !parsed.deviceId) {
+      onShowToast('No se detectó un ID de equipo válido, verifica el mensaje');
+      return false;
+    }
+    const nextCliente = parsed.cliente || clienteNombre || 'Cliente Taller';
+    const nextPhone = parsed.telefono ? formatMxPhoneDashed(parsed.telefono) : clienteTelefono;
+    const nextPlanIdx = typeof parsed.planIdx === 'number' ? parsed.planIdx : planIdx;
+
+    setClienteNombre(nextCliente);
+    setClienteTelefono(nextPhone);
+    setTargetDevice(parsed.deviceId);
+    setPlanIdx(nextPlanIdx);
+    setCustomDaysStr('');
+
+    if (autoGenerate) {
+      const key = generateActivationKey(parsed.deviceId, nextPlanIdx, null);
+      setGeneratedKey(key);
+      const now = Date.now();
+      const plan = PLANS.find((p) => p.idx === nextPlanIdx) || PLANS[0];
+      const expiresAt = now + plan.days * 24 * 60 * 60 * 1000;
+      const cleanCliente = formatCombinedClientLabel(nextCliente, nextPhone || '0000000000');
+      onRecordAdminKey({
+        id: `ak-${now}`,
+        cliente: cleanCliente,
+        deviceId: parsed.deviceId,
+        planLabel: plan.label,
+        dias: plan.days,
+        key,
+        createdAt: now,
+        expiresAt,
+      });
+      void Promise.resolve(
+        onCloudActivateDevice({
+          deviceId: parsed.deviceId,
+          cliente: cleanCliente,
+          planCode: plan.code,
+          planLabel: plan.label,
+          expiresAt,
+          key,
+          dias: plan.days,
+          recordKeyOnly: true,
+        })
+      ).catch(() => false);
+      onShowToast(`Datos extraídos y clave ${key} generada para ${parsed.deviceId}`, true);
+    } else {
+      const preview = generateActivationKey(parsed.deviceId, nextPlanIdx, null);
+      setGeneratedKey(preview);
+      onShowToast(`Datos extraídos para ${parsed.deviceId}`, true);
+    }
+    return true;
+  };
+
+  const handleOneClickClipboardPaste = async (autoGenerate: boolean) => {
+    try {
+      const txt = await navigator.clipboard.readText();
+      if (txt && txt.trim()) {
+        applyParsedWhatsappText(txt, autoGenerate);
+        return;
+      }
+    } catch {
+      // Clipboard read blocked — fall back to manual paste modal
+    }
+    setPasteAutoGen(autoGenerate);
+    setPasteModalText('');
+    setPasteModalOpen(true);
+  };
+
+  const handleClearKeyForm = () => {
+    setClienteNombre('');
+    setClienteTelefono('');
+    setTargetDevice('');
+    setCustomDaysStr('');
+    setGeneratedKey('');
+    onShowToast('Formulario de claves limpiado');
+  };
+
+  const openWhatsappLink = (phone: string, text: string) => {
+    const url = buildWhatsAppDirectUrl(phone, text);
+    const link = document.createElement('a');
+    link.href = url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  };
+
+  const handleSaveRefPricesCloud = async () => {
+    setRefSaving(true);
+    try {
+      const ok = await saveReferencePricesCloud({
+        updatedLabel: refPricesDoc.updatedLabel.trim() || 'Actualizado esta semana',
+        nota: refPricesDoc.nota.trim(),
+        items: refPricesDoc.items,
+      });
+      if (ok) {
+        onShowToast('Precios de referencia publicados en Firestore', true);
+      } else {
+        onShowToast('No se pudieron guardar los precios en la nube');
+      }
+    } finally {
+      setRefSaving(false);
+    }
+  };
+
+  const handleExportRefPricesJson = () => {
+    const blob = new Blob([JSON.stringify(refPricesDoc, null, 2)], {
+      type: 'application/json;charset=utf-8',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `precios-referencia-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+    onShowToast('Precios de referencia exportados a JSON', true);
+  };
+
+  const handleImportRefPricesFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const text = await file.text();
+      if (file.name.toLowerCase().endsWith('.csv')) {
+        const lines = text.split(/\r?\n/).filter((l) => l.trim());
+        const imported: ReferencePriceItem[] = [];
+        lines.slice(1).forEach((line, idx) => {
+          const cols = line.split(',').map((s) => s.trim().replace(/^"|"$/g, ''));
+          if (cols.length >= 4) {
+            const cat = (['aluminio', 'vidrio', 'herrajes'].includes(cols[0])
+              ? cols[0]
+              : 'aluminio') as ReferencePriceItem['categoria'];
+            const precio = Math.max(1, Number(cols[3]) || 0);
+            if (cols[1] && precio > 0) {
+              imported.push({
+                id: `ref-csv-${Date.now()}-${idx}`,
+                categoria: cat,
+                nombre: cols[1],
+                unidad: cols[2] || 'pza',
+                precioSugerido: precio,
+              });
+            }
+          }
+        });
+        if (imported.length === 0) {
+          onShowToast('CSV sin filas válidas (formato: categoria,nombre,unidad,precioSugerido)');
+          return;
+        }
+        setRefPricesDoc((prev) => ({ ...prev, items: imported }));
+        onShowToast(`${imported.length} precios importados desde CSV`, true);
+      } else {
+        const parsed = JSON.parse(text) as Partial<ReferencePricesDoc>;
+        if (!Array.isArray(parsed.items) || parsed.items.length === 0) {
+          onShowToast('Archivo JSON sin lista de items válida');
+          return;
+        }
+        setRefPricesDoc((prev) => ({
+          updatedAt: Date.now(),
+          updatedLabel: parsed.updatedLabel || prev.updatedLabel,
+          nota: parsed.nota ?? prev.nota,
+          items: parsed.items as ReferencePriceItem[],
+        }));
+        onShowToast(`${parsed.items.length} precios cargados desde JSON`, true);
+      }
+    } catch {
+      onShowToast('No se pudo leer el archivo importado');
+    }
+  };
+
+  const handleSendAdminMessage = async () => {
+    const cleanTitle = msgTitle.trim();
+    const cleanBody = msgBody.trim();
+    if (!cleanTitle || !cleanBody) {
+      onShowToast('Escribe el título y el cuerpo del mensaje');
+      return;
+    }
+    const cleanDev = msgTargetMode === 'individual' ? normalizeDeviceIdInput(msgTargetDeviceId) : '';
+    if (msgTargetMode === 'individual' && !cleanDev) {
+      onShowToast('Selecciona o escribe el ID de equipo destinatario');
+      return;
+    }
+    setMsgSending(true);
+    try {
+      const targetUser = auditUsers.find((u) => u.deviceId === cleanDev);
+      const ok = await sendAdminMessageCloud({
+        titulo: cleanTitle,
+        cuerpo: cleanBody,
+        tipo: msgType,
+        targetMode: msgTargetMode,
+        targetDeviceId: msgTargetMode === 'individual' ? cleanDev : undefined,
+        targetLabel:
+          msgTargetMode === 'individual'
+            ? targetUser
+              ? `${targetUser.clienteDisplay} (${cleanDev})`
+              : cleanDev
+            : 'Todos los usuarios',
+      });
+      if (ok) {
+        setMsgTitle('');
+        setMsgBody('');
+        setMsgTargetDeviceId('');
+        onShowToast(
+          msgTargetMode === 'all'
+            ? 'Aviso general enviado a todos los usuarios'
+            : `Mensaje enviado a ${cleanDev}`,
+          true
+        );
+      } else {
+        onShowToast('Error al enviar el mensaje a Firestore');
+      }
+    } finally {
+      setMsgSending(false);
+    }
+  };
+
   const handleActivateDirect = async () => {
     if (!clienteNombre.trim() || clienteTelefono.replace(/\D/g, '').length === 0) {
       onShowToast('Escribe el nombre y teléfono del cliente para activar');
@@ -1221,7 +1485,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   return (
     <section
       id="view-admin-dashboard"
-      className="w-full max-w-[1400px] mx-auto pb-28 sm:pb-16 text-slate-100 screen-animate"
+      className="w-full max-w-[1400px] mx-auto pb-32 text-slate-100 screen-animate"
     >
       {/* Cabecera Full-Screen del Panel de Administrador */}
       <div className="rounded-2xl border border-slate-700/80 bg-slate-900/95 p-5 sm:p-6 shadow-xl mb-6">
@@ -1231,11 +1495,19 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               <ShieldCheck className="w-6 h-6" aria-hidden="true" />
             </div>
             <div className="min-w-0">
-              <h1 className="m-0 text-[20px] sm:text-[24px] font-extrabold text-white tracking-tight leading-tight">
-                Panel de Administrador
-              </h1>
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="m-0 text-[20px] sm:text-[24px] font-extrabold text-white tracking-tight leading-tight">
+                  Panel de Administrador
+                </h1>
+                <span
+                  id="admin-app-version"
+                  className="px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700 text-slate-300 text-[11px] font-bold mono"
+                >
+                  {APP_VERSION}
+                </span>
+              </div>
               <p className="m-0 mt-1 text-[12.5px] sm:text-[13.5px] text-slate-300 leading-snug">
-                Gestión centralizada de licencias PRO, usuarios, gráficas, métricas, respaldos y video tutoriales
+                Gestión centralizada de licencias PRO, usuarios, gráficas, precios de referencia, avisos y video tutoriales
               </p>
               <div className="mt-2 flex flex-wrap items-center gap-2.5 text-[11.5px] text-slate-400">
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 font-semibold">
@@ -1277,53 +1549,47 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           </div>
         </div>
 
-        {/* Acción Principal Destacada: Generar Claves */}
-        <div className="mt-5 pt-4 border-t border-slate-800 flex flex-col gap-3">
+        {/* Acción Principal Compacta: Generar Claves PRO (naranja translúcido, navegación directa) */}
+        <div className="mt-4 pt-3.5 border-t border-slate-800 flex flex-col gap-2.5">
           <button
             type="button"
             role="tab"
             id="tab-admin-claves"
             aria-selected={activeTab === 'claves'}
             onClick={() => setActiveTab('claves')}
-            className={`w-full min-h-[56px] px-5 py-3.5 rounded-2xl border-2 text-left flex items-center justify-between gap-3 cursor-pointer transition-all shadow-lg ${
+            className={`w-full min-h-[46px] px-4 py-2.5 rounded-xl border text-left flex items-center justify-between gap-3 cursor-pointer transition-all ${
               activeTab === 'claves'
-                ? 'border-amber-300 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 text-slate-950 shadow-orange-500/35 ring-2 ring-amber-300/40'
-                : 'border-amber-400/80 bg-gradient-to-r from-amber-500 via-orange-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-slate-950 shadow-orange-500/20'
+                ? 'bg-orange-500/30 border-orange-400 text-orange-50 ring-1 ring-orange-400/50 shadow-sm'
+                : 'bg-orange-500/20 border-orange-500/50 hover:bg-orange-500/30 text-orange-100'
             }`}
           >
-            <span className="flex items-center gap-3 min-w-0">
-              <span className="w-10 h-10 rounded-xl bg-slate-950/20 border border-slate-950/20 flex items-center justify-center shrink-0">
-                <KeyRound className="w-5 h-5 text-slate-950" aria-hidden="true" />
-              </span>
-              <span className="min-w-0">
-                <span className="block text-[16px] sm:text-[17px] font-black tracking-tight leading-tight text-slate-950">
-                  Generar Claves PRO
-                </span>
-                <span className="block text-[12px] font-bold text-slate-900/90 mt-0.5">
-                  Emitir PINs de 3 días (Colega), 30 días, 90 días o 1 Año al instante
-                </span>
+            <span className="flex items-center gap-2.5 min-w-0">
+              <KeyRound className="w-4 h-4 text-orange-300 shrink-0" aria-hidden="true" />
+              <span className="text-[14px] font-black tracking-tight text-orange-100 truncate">
+                Generar Claves PRO
               </span>
             </span>
-            <span className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-950 text-amber-300 text-[12px] font-extrabold">
-              <span>{activeTab === 'claves' ? 'Abierto' : 'Abrir'}</span>
-              <ArrowRight className="w-4 h-4" aria-hidden="true" />
+            <span className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-orange-500/25 border border-orange-400/45 text-orange-100 text-[11px] font-extrabold">
+              <span>{activeTab === 'claves' ? 'Activo' : 'Abrir'}</span>
+              <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
             </span>
           </button>
 
-          {/* Navegación secundaria con etiquetas cortas y legibles (cero truncamiento) */}
+          {/* Navegación secundaria con etiquetas cortas y legibles (Métricas movida a Mi Taller) */}
           <div
             role="tablist"
             aria-label="Páginas secundarias de administración"
-            className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2"
+            className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2"
           >
             {(
               [
                 { id: 'dashboard', label: 'Usuarios', icon: Users },
                 { id: 'graficas', label: 'Gráficas', icon: BarChart3 },
-                { id: 'ventas', label: 'Métricas', icon: TrendingUp },
+                { id: 'precios', label: 'Precios Ref.', icon: DollarSign },
+                { id: 'mensajes', label: `Avisos (${adminMessages.length})`, icon: Bell },
                 { id: 'referidos', label: `Referidos (${activeReferralHistory.length})`, icon: Gift },
                 { id: 'herramientas', label: 'Respaldos', icon: Settings },
-                { id: 'videos', label: 'Video Tutoriales', icon: Video },
+                { id: 'videos', label: 'Videos', icon: Video },
               ] as const
             ).map((tab) => {
               const Icon = tab.icon;
@@ -1513,246 +1779,280 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               })}
             </div>
 
-            {/* Lista estructurada y sin textos encimados */}
+            {/* Lista compacta desplegable (acordeón) por usuario */}
             {filteredUsers.length === 0 ? (
               <div className="py-10 text-center text-slate-400 text-[13px]">
                 No se encontraron usuarios que coincidan con el filtro seleccionado.
               </div>
             ) : (
-              <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-2">
                 {filteredUsers.map((user) => {
                   const badge = tierBadgeMeta(user.tier, user.planLabel);
-                  const isExpanded = expandedActionDevId === user.deviceId;
+                  const isRowOpen = expandedUserDevId === user.deviceId;
+                  const isPlanPickerOpen = expandedActionDevId === user.deviceId;
                   const isBusy = busyDeviceId === user.deviceId;
 
                   return (
                     <div
                       key={user.deviceId}
-                      className="rounded-xl border border-slate-700/80 bg-slate-950/75 p-4 flex flex-col gap-3"
+                      data-admin-user-row={user.deviceId}
+                      data-expanded={isRowOpen ? 'true' : 'false'}
+                      className={`rounded-xl border transition-colors ${
+                        isRowOpen
+                          ? 'border-sky-500/50 bg-slate-950/95'
+                          : 'border-slate-700/80 bg-slate-950/75 hover:border-slate-600'
+                      }`}
                     >
-                      {/* Fila 1: Identidad, ID + Copiar, Estado actual y Promo Colega */}
-                      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="mono text-[14px] font-extrabold text-sky-300 bg-sky-500/15 border border-sky-400/35 px-2.5 py-0.5 rounded-lg">
+                      {/* Fila colapsada compacta: SOLO ID, Nombre, Teléfono y Tipo de promoción */}
+                      <button
+                        type="button"
+                        id={`btn-admin-user-row-${user.deviceId}`}
+                        aria-expanded={isRowOpen}
+                        onClick={() =>
+                          setExpandedUserDevId((prev) =>
+                            prev === user.deviceId ? null : user.deviceId
+                          )
+                        }
+                        className="w-full px-3.5 py-3 text-left flex flex-wrap sm:flex-nowrap items-center justify-between gap-2.5 cursor-pointer bg-transparent border-0"
+                      >
+                        <div className="min-w-0 flex-1 grid grid-cols-1 sm:grid-cols-12 gap-1.5 sm:gap-2.5 items-center">
+                          <div className="sm:col-span-3 flex items-center gap-1.5 min-w-0">
+                            <span className="mono text-[12.5px] font-extrabold text-sky-300 bg-sky-500/15 border border-sky-400/35 px-2 py-0.5 rounded-md truncate">
                               {user.deviceId}
                             </span>
-                            <button
-                              type="button"
-                              onClick={() => void handleCopyId(user.deviceId)}
-                              className="min-h-[30px] px-2.5 py-0.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-bold inline-flex items-center gap-1 cursor-pointer"
-                            >
-                              <Copy className="w-3 h-3" aria-hidden="true" />
-                              {copiedId === user.deviceId ? 'Copiado' : 'Copiar ID'}
-                            </button>
-                            {user.isSelf && (
-                              <span className="px-2 py-0.5 rounded-md bg-blue-500/20 border border-blue-400/40 text-blue-200 text-[10.5px] font-extrabold">
-                                Este equipo
-                              </span>
-                            )}
-                            <span className={`px-2.5 py-0.5 rounded-lg border text-[11px] font-extrabold ${badge.cls}`}>
+                          </div>
+                          <div className="sm:col-span-4 min-w-0">
+                            <strong className="block text-[13.5px] text-white font-extrabold truncate">
+                              {user.nombreSolo}
+                            </strong>
+                          </div>
+                          <div className="sm:col-span-3 min-w-0">
+                            <span className="mono text-[12px] text-slate-300 font-semibold truncate block">
+                              {user.telefonoDisplay}
+                            </span>
+                          </div>
+                          <div className="sm:col-span-2 flex items-center sm:justify-end">
+                            <span className={`px-2 py-0.5 rounded-md border text-[10.5px] font-extrabold whitespace-nowrap ${badge.cls}`}>
                               {badge.text}
                             </span>
                           </div>
+                        </div>
 
-                          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-                            <strong className="text-[14.5px] text-white font-extrabold">
-                              {user.clienteDisplay}
-                            </strong>
-                            {user.linkedEmail && (
-                              <span className="text-[12px] text-sky-300/90 break-all">
-                                {user.linkedEmail}
+                        <ChevronDown
+                          className={`w-4 h-4 text-slate-400 shrink-0 transition-transform duration-200 ${
+                            isRowOpen ? 'rotate-180 text-sky-300' : ''
+                          }`}
+                          aria-hidden="true"
+                        />
+                      </button>
+
+                      {/* Detalles desplegables al hacer clic en la fila */}
+                      {isRowOpen && (
+                        <div className="px-3.5 pb-4 pt-3 border-t border-slate-800/90 flex flex-col gap-3">
+                          {/* Metadatos rápidos + Copiar ID + Promo Colega */}
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex flex-wrap items-center gap-2 text-[11.5px]">
+                              <button
+                                type="button"
+                                onClick={() => void handleCopyId(user.deviceId)}
+                                className="min-h-[30px] px-2.5 py-0.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-bold inline-flex items-center gap-1 cursor-pointer"
+                              >
+                                <Copy className="w-3 h-3" aria-hidden="true" />
+                                {copiedId === user.deviceId ? 'Copiado' : 'Copiar ID'}
+                              </button>
+                              {user.isSelf && (
+                                <span className="px-2 py-0.5 rounded-md bg-blue-500/20 border border-blue-400/40 text-blue-200 text-[10.5px] font-extrabold">
+                                  Este equipo
+                                </span>
+                              )}
+                              {user.linkedEmail && (
+                                <span className="text-sky-300/90 break-all">{user.linkedEmail}</span>
+                              )}
+                              <span className="text-slate-400">{user.deviceLabel}</span>
+                            </div>
+
+                            {user.promoColegaUsed ? (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-amber-400/45 bg-amber-500/15 text-amber-200 text-[11px] font-bold">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-amber-300 shrink-0" aria-hidden="true" />
+                                Promo Colega 3d: Consumida
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-700 bg-slate-800/80 text-slate-300 text-[11px] font-semibold">
+                                Promo Colega 3d: Disponible
                               </span>
                             )}
-                            <span className="text-[11.5px] text-slate-400">
-                              {user.deviceLabel}
-                            </span>
                           </div>
-                        </div>
 
-                        {/* Indicador explícito de uso de Promo Colega 3 días */}
-                        <div className="flex flex-wrap items-center gap-2 shrink-0">
-                          {user.promoColegaUsed ? (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-amber-400/45 bg-amber-500/15 text-amber-200 text-[11.5px] font-bold">
-                              <CheckCircle2 className="w-3.5 h-3.5 text-amber-300 shrink-0" aria-hidden="true" />
-                              Promo Colega 3d: YA CONSUMIDA
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-700 bg-slate-800/80 text-slate-300 text-[11.5px] font-semibold">
-                              Promo Colega 3d: Disponible
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Fila 2: Fechas exactas (Activación, Promo Colega y Vencimiento) */}
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-2.5 border-t border-slate-800/90 text-[12px]">
-                        <div className="rounded-lg bg-slate-900/90 border border-slate-800 px-3 py-2">
-                          <span className="block text-[10.5px] uppercase tracking-wider font-bold text-slate-400">
-                            Activación Plan Actual
-                          </span>
-                          <strong className="mono text-slate-100 font-bold">
-                            {formatDateTimeExact(user.activatedAt)}
-                          </strong>
-                        </div>
-                        <div className="rounded-lg bg-slate-900/90 border border-slate-800 px-3 py-2">
-                          <span className="block text-[10.5px] uppercase tracking-wider font-bold text-slate-400">
-                            Vencimiento Plan Actual
-                          </span>
-                          <strong className="mono text-slate-100 font-bold">
-                            {user.hasActivePro
-                              ? user.expiresAt === null
-                                ? 'Vitalicia'
-                                : formatDateTimeExact(user.expiresAt)
-                              : 'Sin plan PRO activo'}
-                          </strong>
-                        </div>
-                        <div className="rounded-lg bg-slate-900/90 border border-slate-800 px-3 py-2">
-                          <span className="block text-[10.5px] uppercase tracking-wider font-bold text-slate-400">
-                            Fecha Promo Colega 3d
-                          </span>
-                          <strong className="mono text-amber-200 font-bold">
-                            {user.promoColegaUsed
-                              ? formatDateTimeExact(user.fechaActivacionColega)
-                              : 'No utilizada'}
-                          </strong>
-                        </div>
-                      </div>
-
-                      {/* Historial de promociones activadas para este usuario */}
-                      {user.historyKeys.length > 0 && (
-                        <div className="rounded-lg bg-slate-900/60 border border-slate-800/80 px-3 py-2">
-                          <span className="block text-[10.5px] uppercase tracking-wider font-bold text-slate-400 mb-1.5">
-                            Historial de Promociones Activadas ({user.historyKeys.length})
-                          </span>
-                          <div className="flex flex-wrap gap-1.5">
-                            {user.historyKeys.slice(0, 6).map((hk) => (
-                              <span
-                                key={hk.id}
-                                className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-[11px] font-semibold ${
-                                  hk.revoked
-                                    ? 'border-red-500/35 bg-red-500/10 text-red-300 line-through'
-                                    : 'border-slate-700 bg-slate-800 text-slate-200'
-                                }`}
-                              >
-                                <span>{hk.planLabel}</span>
-                                <span className="mono text-slate-400 text-[10px]">
-                                  · {formatDateTimeExact(hk.createdAt)}
-                                </span>
+                          {/* Fechas exactas */}
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[12px]">
+                            <div className="rounded-lg bg-slate-900/90 border border-slate-800 px-3 py-2">
+                              <span className="block text-[10px] uppercase tracking-wider font-bold text-slate-400">
+                                Activación Plan Actual
                               </span>
-                            ))}
+                              <strong className="mono text-slate-100 font-bold text-[11.5px]">
+                                {formatDateTimeExact(user.activatedAt)}
+                              </strong>
+                            </div>
+                            <div className="rounded-lg bg-slate-900/90 border border-slate-800 px-3 py-2">
+                              <span className="block text-[10px] uppercase tracking-wider font-bold text-slate-400">
+                                Vencimiento Plan Actual
+                              </span>
+                              <strong className="mono text-slate-100 font-bold text-[11.5px]">
+                                {user.hasActivePro
+                                  ? user.expiresAt === null
+                                    ? 'Vitalicia'
+                                    : formatDateTimeExact(user.expiresAt)
+                                  : 'Sin plan PRO activo'}
+                              </strong>
+                            </div>
+                            <div className="rounded-lg bg-slate-900/90 border border-slate-800 px-3 py-2">
+                              <span className="block text-[10px] uppercase tracking-wider font-bold text-slate-400">
+                                Fecha Promo Colega 3d
+                              </span>
+                              <strong className="mono text-amber-200 font-bold text-[11.5px]">
+                                {user.promoColegaUsed
+                                  ? formatDateTimeExact(user.fechaActivacionColega)
+                                  : 'No utilizada'}
+                              </strong>
+                            </div>
                           </div>
-                        </div>
-                      )}
 
-                      {/* Fila 3: Acciones por usuario */}
-                      <div className="flex flex-wrap items-center gap-2 pt-1">
-                        <button
-                          type="button"
-                          disabled={isBusy}
-                          onClick={() =>
-                            setExpandedActionDevId((prev) =>
-                              prev === user.deviceId ? null : user.deviceId
-                            )
-                          }
-                          className="min-h-[36px] px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-[12px] cursor-pointer transition-colors disabled:opacity-60"
-                        >
-                          {isExpanded ? 'Ocultar planes' : 'Renovar / Cambiar Plan'}
-                        </button>
+                          {/* Historial de promociones activadas */}
+                          {user.historyKeys.length > 0 && (
+                            <div className="rounded-lg bg-slate-900/60 border border-slate-800/80 px-3 py-2">
+                              <span className="block text-[10px] uppercase tracking-wider font-bold text-slate-400 mb-1.5">
+                                Historial de Promociones ({user.historyKeys.length})
+                              </span>
+                              <div className="flex flex-wrap gap-1.5">
+                                {user.historyKeys.slice(0, 6).map((hk) => (
+                                  <span
+                                    key={hk.id}
+                                    className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-[11px] font-semibold ${
+                                      hk.revoked
+                                        ? 'border-red-500/35 bg-red-500/10 text-red-300 line-through'
+                                        : 'border-slate-700 bg-slate-800 text-slate-200'
+                                    }`}
+                                  >
+                                    <span>{hk.planLabel}</span>
+                                    <span className="mono text-slate-400 text-[10px]">
+                                      · {formatDateTimeExact(hk.createdAt)}
+                                    </span>
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
 
-                        {user.hasActivePro && (
-                          <button
-                            type="button"
-                            disabled={isBusy}
-                            onClick={() =>
-                              setPendingAction({
-                                type: 'revokePromo',
-                                deviceId: user.deviceId,
-                                cliente: user.clienteDisplay,
-                                keyCode: user.keyCode || undefined,
-                              })
-                            }
-                            className="min-h-[36px] px-3 py-1.5 rounded-lg border border-amber-400/50 bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 font-bold text-[12px] cursor-pointer transition-colors"
-                          >
-                            Revocar a Gratis
-                          </button>
-                        )}
+                          {/* Acciones: Cambiar Plan, Revocar / Denegar, Eliminar */}
+                          <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                            <button
+                              type="button"
+                              disabled={isBusy}
+                              onClick={() =>
+                                setExpandedActionDevId((prev) =>
+                                  prev === user.deviceId ? null : user.deviceId
+                                )
+                              }
+                              className="min-h-[36px] px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-[12px] cursor-pointer transition-colors disabled:opacity-60"
+                            >
+                              {isPlanPickerOpen ? 'Ocultar planes' : 'Cambiar Plan'}
+                            </button>
 
-                        {user.promoColegaUsed && (
-                          <button
-                            type="button"
-                            disabled={isBusy}
-                            onClick={() =>
-                              setPendingAction({
-                                type: 'resetColega',
-                                deviceId: user.deviceId,
-                                cliente: user.clienteDisplay,
-                              })
-                            }
-                            className="min-h-[36px] px-3 py-1.5 rounded-lg border border-emerald-400/45 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-200 font-bold text-[12px] inline-flex items-center gap-1.5 cursor-pointer transition-colors"
-                          >
-                            <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />
-                            Restablecer Promo Colega
-                          </button>
-                        )}
-
-                        {!user.isBlocked && !user.isSelf && (
-                          <button
-                            type="button"
-                            disabled={isBusy}
-                            onClick={() =>
-                              setPendingAction({
-                                type: 'blockFree',
-                                deviceId: user.deviceId,
-                                cliente: user.clienteDisplay,
-                                keyCode: user.keyCode || undefined,
-                              })
-                            }
-                            className="min-h-[36px] px-3 py-1.5 rounded-lg border border-red-500/45 bg-red-500/15 hover:bg-red-500/25 text-red-200 font-bold text-[12px] inline-flex items-center gap-1.5 cursor-pointer transition-colors"
-                          >
-                            <Ban className="w-3.5 h-3.5" aria-hidden="true" />
-                            Bloquear
-                          </button>
-                        )}
-
-                        {!user.isSelf && (
-                          <button
-                            type="button"
-                            disabled={isBusy}
-                            onClick={() =>
-                              setPendingAction({
-                                type: 'deleteRecord',
-                                rec: user.deleteRecord,
-                              })
-                            }
-                            className="min-h-[36px] px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-red-500/20 hover:border-red-500/40 text-slate-300 hover:text-red-200 font-bold text-[12px] inline-flex items-center gap-1 cursor-pointer transition-colors ml-auto"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
-                            Eliminar
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Selector rápido inline de plan para renovar / cambiar */}
-                      {isExpanded && (
-                        <div className="mt-1 p-3 rounded-xl border border-blue-500/40 bg-slate-900 flex flex-col gap-2">
-                          <span className="text-[11.5px] font-bold text-blue-200">
-                            Selecciona el plan a asignar inmediatamente en la nube para{' '}
-                            <strong className="mono text-white">{user.deviceId}</strong>:
-                          </span>
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                            {QUICK_PLAN_OPTIONS.map((opt) => (
+                            {user.hasActivePro && (
                               <button
-                                key={opt.id}
                                 type="button"
                                 disabled={isBusy}
-                                onClick={() => void handleQuickAssignPlan(user, opt)}
-                                className="min-h-[40px] px-3 py-2 rounded-lg border border-slate-600 bg-slate-800 hover:bg-blue-600 hover:border-blue-400 text-white font-extrabold text-[12px] cursor-pointer transition-colors disabled:opacity-50"
+                                onClick={() =>
+                                  setPendingAction({
+                                    type: 'revokePromo',
+                                    deviceId: user.deviceId,
+                                    cliente: user.clienteDisplay,
+                                    keyCode: user.keyCode || undefined,
+                                  })
+                                }
+                                className="min-h-[36px] px-3 py-1.5 rounded-lg border border-amber-400/50 bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 font-bold text-[12px] cursor-pointer transition-colors"
                               >
-                                {isBusy ? 'Aplicando...' : opt.label}
+                                Revocar a Gratis
                               </button>
-                            ))}
+                            )}
+
+                            {user.promoColegaUsed && (
+                              <button
+                                type="button"
+                                disabled={isBusy}
+                                onClick={() =>
+                                  setPendingAction({
+                                    type: 'resetColega',
+                                    deviceId: user.deviceId,
+                                    cliente: user.clienteDisplay,
+                                  })
+                                }
+                                className="min-h-[36px] px-3 py-1.5 rounded-lg border border-emerald-400/45 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-200 font-bold text-[12px] inline-flex items-center gap-1.5 cursor-pointer transition-colors"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />
+                                Restablecer Promo Colega
+                              </button>
+                            )}
+
+                            {!user.isBlocked && !user.isSelf && (
+                              <button
+                                type="button"
+                                disabled={isBusy}
+                                onClick={() =>
+                                  setPendingAction({
+                                    type: 'blockFree',
+                                    deviceId: user.deviceId,
+                                    cliente: user.clienteDisplay,
+                                    keyCode: user.keyCode || undefined,
+                                  })
+                                }
+                                className="min-h-[36px] px-3 py-1.5 rounded-lg border border-red-500/45 bg-red-500/15 hover:bg-red-500/25 text-red-200 font-bold text-[12px] inline-flex items-center gap-1.5 cursor-pointer transition-colors"
+                              >
+                                <Ban className="w-3.5 h-3.5" aria-hidden="true" />
+                                Denegar / Bloquear
+                              </button>
+                            )}
+
+                            {!user.isSelf && (
+                              <button
+                                type="button"
+                                disabled={isBusy}
+                                onClick={() =>
+                                  setPendingAction({
+                                    type: 'deleteRecord',
+                                    rec: user.deleteRecord,
+                                  })
+                                }
+                                className="min-h-[36px] px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-red-500/20 hover:border-red-500/40 text-slate-300 hover:text-red-200 font-bold text-[12px] inline-flex items-center gap-1 cursor-pointer transition-colors ml-auto"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                                Eliminar
+                              </button>
+                            )}
                           </div>
+
+                          {/* Selector rápido inline de plan */}
+                          {isPlanPickerOpen && (
+                            <div className="mt-1 p-3 rounded-xl border border-blue-500/40 bg-slate-900 flex flex-col gap-2">
+                              <span className="text-[11.5px] font-bold text-blue-200">
+                                Selecciona el plan a asignar inmediatamente en la nube para{' '}
+                                <strong className="mono text-white">{user.deviceId}</strong>:
+                              </span>
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                {QUICK_PLAN_OPTIONS.map((opt) => (
+                                  <button
+                                    key={opt.id}
+                                    type="button"
+                                    disabled={isBusy}
+                                    onClick={() => void handleQuickAssignPlan(user, opt)}
+                                    className="min-h-[40px] px-3 py-2 rounded-lg border border-slate-600 bg-slate-800 hover:bg-blue-600 hover:border-blue-400 text-white font-extrabold text-[12px] cursor-pointer transition-colors disabled:opacity-50"
+                                  >
+                                    {isBusy ? 'Aplicando...' : opt.label}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -2207,307 +2507,59 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         </div>
       )}
 
-      {/* ==================== PÁGINA 3: ANÁLISIS DE VENTAS (TICKET PROMEDIO Y MATERIALES) ==================== */}
-      {activeTab === 'ventas' && (
-        <div id="admin-panel-ventas" className="flex flex-col gap-6">
-          <div className="rounded-2xl border border-emerald-500/35 bg-gradient-to-r from-emerald-950/60 via-slate-900 to-blue-950/60 p-4 sm:p-5 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="m-0 text-[18px] font-black text-white flex items-center gap-2">
-                <TrendingUp className="w-5 h-5 text-emerald-400" aria-hidden="true" />
-                <span>Análisis de Ventas y Consumo de Materiales</span>
-              </h2>
-              <p className="m-0 mt-1 text-[12.5px] text-slate-300">
-                Calculado automáticamente a partir del historial de cotizaciones aprobadas y obras apartadas.
-              </p>
-            </div>
-            <button
-              type="button"
-              id="btn-admin-ventas-refresh"
-              onClick={() => setCotizacionesList(loadCotizacionesGuardadas())}
-              className="min-h-[40px] px-3.5 rounded-xl border border-emerald-500/40 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-200 font-extrabold text-[12px] inline-flex items-center gap-1.5 cursor-pointer"
-            >
-              <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
-              <span>Recalcular datos</span>
-            </button>
-          </div>
-
-          {/* 4 KPI cards principales */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3.5">
-            <div className="rounded-2xl border border-emerald-500/40 bg-slate-900/95 p-4 shadow-md">
-              <div className="text-[11px] font-extrabold uppercase tracking-wider text-emerald-300">
-                Ticket Promedio Aprobado
-              </div>
-              <div
-                id="kpi-ventas-ticket-promedio"
-                className="mt-1.5 text-[28px] font-black text-white mono leading-none"
-              >
-                ${salesAnalytics.averageTicket.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </div>
-              <div className="mt-2 text-[11.5px] text-slate-400">
-                Min: ${salesAnalytics.minTicket.toLocaleString('es-MX')} · Máx: ${salesAnalytics.maxTicket.toLocaleString('es-MX')}
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-blue-500/40 bg-slate-900/95 p-4 shadow-md">
-              <div className="text-[11px] font-extrabold uppercase tracking-wider text-blue-300">
-                Cotizaciones Aprobadas
-              </div>
-              <div
-                id="kpi-ventas-aprobadas-count"
-                className="mt-1.5 text-[28px] font-black text-white mono leading-none"
-              >
-                {salesAnalytics.approvedCount}
-              </div>
-              <div className="mt-2 text-[11.5px] text-slate-400">
-                Tasa de cierre: <strong className="text-blue-200">{salesAnalytics.approvalRatePct}%</strong> ({salesAnalytics.totalQuotesCount} totales)
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-amber-500/40 bg-slate-900/95 p-4 shadow-md">
-              <div className="text-[11px] font-extrabold uppercase tracking-wider text-amber-300">
-                Ingresos Aprobados Totales
-              </div>
-              <div
-                id="kpi-ventas-ingresos-totales"
-                className="mt-1.5 text-[28px] font-black text-amber-200 mono leading-none"
-              >
-                ${salesAnalytics.totalApprovedRevenue.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </div>
-              <div className="mt-2 text-[11.5px] text-slate-400">
-                Enviadas: {salesAnalytics.sentCount} · Rechazadas: {salesAnalytics.rejectedCount}
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-violet-500/40 bg-slate-900/95 p-4 shadow-md">
-              <div className="text-[11px] font-extrabold uppercase tracking-wider text-violet-300">
-                Perfil / Material #1
-              </div>
-              <div
-                id="kpi-ventas-top-material"
-                className="mt-1.5 text-[16px] font-black text-white leading-snug line-clamp-2"
-              >
-                {salesAnalytics.topMaterials[0]
-                  ? salesAnalytics.topMaterials[0].nombre
-                  : 'Sin consumo registrado'}
-              </div>
-              <div className="mt-1.5 text-[11.5px] text-violet-200 mono">
-                {salesAnalytics.topMaterials[0]
-                  ? `${salesAnalytics.topMaterials[0].cantidad} ${salesAnalytics.topMaterials[0].unidad} (${salesAnalytics.topMaterials[0].pct}%)`
-                  : 'Aprueba cotizaciones para ver ranking'}
-              </div>
-            </div>
-          </div>
-
-          {/* Gráficas: Perfiles más consumidos + Montos de cotizaciones aprobadas */}
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-            {/* Gráfica 1: Perfiles / Materiales más consumidos */}
-            <div className="rounded-2xl border border-slate-700/80 bg-slate-900/95 p-4 sm:p-5 shadow-md">
-              <div className="flex items-center justify-between gap-2 mb-3">
-                <div>
-                  <h3 className="m-0 text-[15px] font-extrabold text-white">
-                    Perfiles y Materiales Más Consumidos
-                  </h3>
-                  <p className="m-0 text-[11.5px] text-slate-400">
-                    Top perfiles utilizados en cotizaciones aprobadas y obras apartadas
-                  </p>
-                </div>
-                <span className="px-2.5 py-1 rounded-lg bg-violet-500/20 border border-violet-400/40 text-violet-200 text-[11px] font-extrabold mono">
-                  {salesAnalytics.topMaterials.length} perfiles
-                </span>
-              </div>
-
-              {salesAnalytics.topMaterials.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-slate-700 bg-slate-950/60 p-6 text-center text-[13px] text-slate-400">
-                  Aún no hay cotizaciones aprobadas con consumo de perfiles. Marca una cotización como <strong>Aprobada</strong> en el Historial para ver el ranking.
-                </div>
-              ) : (
-                <>
-                  <div className="w-full h-[260px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart
-                        data={salesAnalytics.topMaterials.slice(0, 7).map((m) => ({
-                          name: m.nombre.length > 22 ? `${m.nombre.slice(0, 20)}…` : m.nombre,
-                          cantidad: m.cantidad,
-                          unidad: m.unidad,
-                        }))}
-                        layout="vertical"
-                        margin={{ top: 6, right: 20, left: 10, bottom: 6 }}
-                      >
-                        <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" horizontal={false} />
-                        <XAxis type="number" stroke="#94a3b8" fontSize={11} />
-                        <YAxis
-                          type="category"
-                          dataKey="name"
-                          stroke="#e2e8f0"
-                          fontSize={11}
-                          width={130}
-                        />
-                        <Tooltip
-                          contentStyle={{
-                            backgroundColor: '#0f172a',
-                            border: '1px solid #334155',
-                            borderRadius: '12px',
-                            color: '#f8fafc',
-                            fontSize: '12px',
-                          }}
-                          formatter={(value) => [`${value ?? 0}`, 'Consumo']}
-                        />
-                        <Bar dataKey="cantidad" radius={[0, 8, 8, 0]}>
-                          {salesAnalytics.topMaterials.slice(0, 7).map((m, idx) => {
-                            const palette = [
-                              '#38bdf8',
-                              '#34d399',
-                              '#fbbf24',
-                              '#a78bfa',
-                              '#fb7185',
-                              '#60a5fa',
-                              '#2dd4bf',
-                            ];
-                            return <Cell key={m.id} fill={palette[idx % palette.length]} />;
-                          })}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-
-                  {/* Lista detallada de materiales */}
-                  <div className="mt-3 flex flex-col gap-1.5 max-h-[220px] overflow-y-auto pr-1">
-                    {salesAnalytics.topMaterials.map((mat, idx) => (
-                      <div
-                        key={mat.id}
-                        className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-950/70 border border-slate-800 text-[12px]"
-                      >
-                        <div className="min-w-0">
-                          <div className="font-extrabold text-white truncate">
-                            #{idx + 1} · {mat.nombre}
-                          </div>
-                          <div className="text-[11px] text-slate-400 truncate">
-                            {mat.linea}
-                            {mat.codigo ? ` · Ref ${mat.codigo}` : ''}
-                          </div>
-                        </div>
-                        <div className="text-right shrink-0 mono">
-                          <div className="font-black text-emerald-300">
-                            {mat.cantidad} {mat.unidad}
-                          </div>
-                          <div className="text-[10.5px] text-slate-400">{mat.pct}%</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Gráfica 2: Ticket por Cotización Aprobada */}
-            <div className="rounded-2xl border border-slate-700/80 bg-slate-900/95 p-4 sm:p-5 shadow-md">
-              <div className="flex items-center justify-between gap-2 mb-3">
-                <div>
-                  <h3 className="m-0 text-[15px] font-extrabold text-white">
-                    Cotizaciones Aprobadas y Ticket
-                  </h3>
-                  <p className="m-0 text-[11.5px] text-slate-400">
-                    Comparativa de montos aprobados frente al ticket promedio
-                  </p>
-                </div>
-                <span className="px-2.5 py-1 rounded-lg bg-emerald-500/20 border border-emerald-400/40 text-emerald-200 text-[11px] font-extrabold mono">
-                  Prom: ${salesAnalytics.averageTicket.toLocaleString('es-MX')}
-                </span>
-              </div>
-
-              {salesAnalytics.approvedQuotes.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-slate-700 bg-slate-950/60 p-6 text-center text-[13px] text-slate-400">
-                  No hay cotizaciones aprobadas todavía. Al aprobar cotizaciones en el Historial aparecerán aquí con su monto y promedio.
-                </div>
-              ) : (
-                <>
-                  <div className="w-full h-[260px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart
-                        data={salesAnalytics.approvedQuotes.slice(0, 10).map((q, idx) => ({
-                          label: q.folio || `Cot #${idx + 1}`,
-                          cliente: q.cliente || 'Cliente',
-                          total: Number(q.total) || 0,
-                        }))}
-                        margin={{ top: 10, right: 14, left: 4, bottom: 8 }}
-                      >
-                        <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                        <XAxis dataKey="label" stroke="#94a3b8" fontSize={11} />
-                        <YAxis
-                          stroke="#94a3b8"
-                          fontSize={11}
-                          tickFormatter={(v) => `$${Math.round(Number(v) / 1000)}k`}
-                        />
-                        <Tooltip
-                          contentStyle={{
-                            backgroundColor: '#0f172a',
-                            border: '1px solid #334155',
-                            borderRadius: '12px',
-                            color: '#f8fafc',
-                            fontSize: '12px',
-                          }}
-                          formatter={(value) => [
-                            `$${Number(value ?? 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}`,
-                            'Monto aprobado',
-                          ]}
-                        />
-                        <Bar dataKey="total" fill="#10b981" radius={[8, 8, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-
-                  {/* Tabla de cotizaciones aprobadas recientes */}
-                  <div className="mt-3 overflow-x-auto">
-                    <table className="w-full text-left border-collapse text-[12px]">
-                      <thead>
-                        <tr className="border-b border-slate-800 text-slate-400 text-[11px] uppercase">
-                          <th className="py-2 pr-2">Folio / Cliente</th>
-                          <th className="py-2 px-2 text-center">Piezas</th>
-                          <th className="py-2 pl-2 text-right">Total</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {salesAnalytics.approvedQuotes.slice(0, 8).map((q) => (
-                          <tr key={q.id} className="border-b border-slate-800/60">
-                            <td className="py-2 pr-2">
-                              <div className="font-extrabold text-white">{q.cliente || 'Cliente sin nombre'}</div>
-                              <div className="text-[10.5px] text-slate-400 mono">{q.folio || q.id}</div>
-                            </td>
-                            <td className="py-2 px-2 text-center mono text-slate-300">
-                              {q.piezasCount || 0}
-                            </td>
-                            <td className="py-2 pl-2 text-right font-black text-emerald-300 mono">
-                              ${(Number(q.total) || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* ==================== TAB 2: GENERADOR DE CLAVES Y LICENCIAS ==================== */}
       {activeTab === 'claves' && (
-        <div className="rounded-2xl border border-slate-700/80 bg-slate-900/95 p-4 sm:p-6 shadow-md max-w-3xl">
-          <h2 className="m-0 text-[17px] font-extrabold text-white">
-            Generador de Claves de Activación PRO
-          </h2>
-          <p className="m-0 mt-1 text-[12.5px] text-slate-400">
-            Genera una clave ligada al ID de equipo del cliente o actívala directamente en la nube sin pedirle código.
-          </p>
+        <div className="rounded-2xl border border-slate-700/80 bg-slate-900/95 p-4 sm:p-6 shadow-md max-w-3xl pb-8">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <h2 className="m-0 text-[17px] font-extrabold text-white">
+                Generador de Claves de Activación PRO
+              </h2>
+              <p className="m-0 mt-1 text-[12.5px] text-slate-400">
+                Pega el mensaje de solicitud de WhatsApp en 1 clic, genera la clave o actívala en la nube.
+              </p>
+            </div>
+          </div>
+
+          {/* Barra rápida: Pegar 1 Clic / Solo pegar / Limpiar */}
+          <div className="mt-4 p-3 rounded-xl border border-emerald-500/40 bg-emerald-950/30 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              id="btn-admin-paste-generate"
+              onClick={() => void handleOneClickClipboardPaste(true)}
+              className="flex-1 min-w-[210px] min-h-[44px] px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[12.5px] inline-flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+            >
+              <ClipboardPaste className="w-4 h-4 shrink-0" aria-hidden="true" />
+              <span>Pegar mensaje y Generar Clave (1 Clic)</span>
+            </button>
+            <button
+              type="button"
+              id="btn-admin-paste-only"
+              onClick={() => void handleOneClickClipboardPaste(false)}
+              className="min-h-[44px] px-3.5 py-2 rounded-xl border border-slate-600 bg-slate-800 hover:bg-slate-700 text-white font-bold text-[12px] inline-flex items-center gap-1.5 cursor-pointer"
+            >
+              <ClipboardPaste className="w-3.5 h-3.5" aria-hidden="true" />
+              <span>Solo pegar</span>
+            </button>
+            <button
+              type="button"
+              id="btn-admin-clear-key"
+              onClick={handleClearKeyForm}
+              className="min-h-[44px] px-3 py-2 rounded-xl border border-slate-700 bg-slate-900 hover:bg-slate-800 text-slate-300 font-bold text-[12px] inline-flex items-center gap-1.5 cursor-pointer"
+            >
+              <Eraser className="w-3.5 h-3.5" aria-hidden="true" />
+              <span>Limpiar</span>
+            </button>
+          </div>
 
           <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-[11.5px] font-bold text-slate-300 mb-1">
-                Nombre del cliente *
+                Nombre del cliente / Taller *
               </label>
               <input
                 type="text"
+                id="inp-admin-cliente"
                 value={clienteNombre}
                 onChange={(e) => {
                   setClienteNombre(e.target.value);
@@ -2523,14 +2575,16 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               </label>
               <input
                 type="tel"
+                id="inp-admin-tel"
+                inputMode="numeric"
                 value={clienteTelefono}
                 onChange={(e) => {
-                  const formatted = formatClientPhoneInput(e.target.value);
+                  const formatted = formatMxPhoneDashed(e.target.value);
                   setClienteTelefono(formatted);
                   refreshKeyPreview(targetDevice, planIdx, parsedCustomDays, clienteNombre, formatted);
                 }}
                 placeholder={phonePlaceholder}
-                className="w-full min-h-[42px] px-3 py-2 rounded-xl border border-slate-700 bg-slate-950 text-white text-[13px]"
+                className="w-full min-h-[42px] px-3 py-2 rounded-xl border border-slate-700 bg-slate-950 text-white mono text-[13px]"
               />
             </div>
             <div>
@@ -2539,6 +2593,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               </label>
               <input
                 type="text"
+                id="inp-admin-device"
                 value={targetDevice}
                 onChange={(e) => {
                   const upper = e.target.value.toUpperCase();
@@ -2597,25 +2652,89 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
             </div>
           </div>
 
-          {generatedKey && (
-            <div className="mt-4 p-3.5 rounded-xl border border-emerald-500/40 bg-emerald-950/40 flex items-center justify-between gap-3">
-              <div>
-                <span className="block text-[10.5px] uppercase font-bold text-emerald-300">
-                  Clave generada lista para entrega
-                </span>
-                <strong className="mono text-[16px] text-white tracking-wider">
-                  {generatedKey}
-                </strong>
-              </div>
-              <button
-                type="button"
-                onClick={() => void handleCopyKeyAndSave()}
-                className="min-h-[38px] px-3.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-[12px] cursor-pointer"
+          {/* Panel Destacado Verde de Envío Rápido en 2 Mensajes */}
+          {generatedKey && (() => {
+            const activePlan = PLANS.find((p) => p.idx === planIdx) || PLANS[0];
+            const diasVal = parsedCustomDays ?? activePlan.days;
+            const planLabelVal = parsedCustomDays ? `Reposición ${parsedCustomDays} días` : activePlan.label;
+            const planCodeVal = parsedCustomDays ? `D${parsedCustomDays}` : activePlan.code;
+            const cleanDev = normalizeDeviceIdInput(targetDevice, deviceId);
+            const welcomeText = buildAdminWelcomeMessage({
+              cliente: clienteNombre || 'Colega',
+              deviceId: cleanDev,
+              planCode: planCodeVal,
+              planLabel: planLabelVal,
+              dias: diasVal,
+            });
+            return (
+              <div
+                id="admin-quick-send-panel"
+                className="mt-4 p-4 rounded-2xl border-2 border-emerald-400/60 bg-emerald-950/45 flex flex-col gap-3 shadow-lg"
               >
-                Copiar Clave
-              </button>
-            </div>
-          )}
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <span className="block text-[10.5px] uppercase tracking-wider font-black text-emerald-300">
+                      ✅ Envío Rápido WhatsApp (2 Mensajes)
+                    </span>
+                    <strong className="mono text-[18px] text-white tracking-wider">
+                      {generatedKey}
+                    </strong>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-lg bg-emerald-500/20 border border-emerald-400/40 text-emerald-200 text-[11px] font-bold mono">
+                    {cleanDev} · {planLabelVal}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div className="flex gap-1.5">
+                    <button
+                      type="button"
+                      id="btn-admin-wa-welcome"
+                      onClick={() => openWhatsappLink(clienteTelefono, welcomeText)}
+                      className="flex-1 min-h-[44px] px-3 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[12px] inline-flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Send className="w-4 h-4 shrink-0" aria-hidden="true" />
+                      <span>1. Enviar Bienvenida a WhatsApp</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await navigator.clipboard.writeText(welcomeText).catch(() => {});
+                        onShowToast('Mensaje de bienvenida copiado', true);
+                      }}
+                      aria-label="Copiar bienvenida"
+                      className="min-w-[42px] min-h-[44px] rounded-xl border border-emerald-400/50 bg-emerald-900/60 hover:bg-emerald-800 text-emerald-100 inline-flex items-center justify-center cursor-pointer"
+                    >
+                      <Copy className="w-4 h-4" aria-hidden="true" />
+                    </button>
+                  </div>
+
+                  <div className="flex gap-1.5">
+                    <button
+                      type="button"
+                      id="btn-admin-wa-key-only"
+                      onClick={() => openWhatsappLink(clienteTelefono, generatedKey)}
+                      className="flex-1 min-h-[44px] px-3 py-2 rounded-xl bg-teal-400 hover:bg-teal-300 text-slate-950 font-black text-[12px] inline-flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <KeyRound className="w-4 h-4 shrink-0" aria-hidden="true" />
+                      <span>2. Enviar Clave Sola a WhatsApp</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await navigator.clipboard.writeText(generatedKey).catch(() => {});
+                        onShowToast(`Clave sola ${generatedKey} copiada`, true);
+                      }}
+                      aria-label="Copiar clave sola"
+                      className="min-w-[42px] min-h-[44px] rounded-xl border border-teal-400/50 bg-teal-900/60 hover:bg-teal-800 text-teal-100 inline-flex items-center justify-center cursor-pointer"
+                    >
+                      <Copy className="w-4 h-4" aria-hidden="true" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           <div className="mt-4 flex flex-col sm:flex-row gap-2.5">
             <button
@@ -2627,7 +2746,19 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
             </button>
             <button
               type="button"
-              onClick={() => void handleActivateDirect()}
+              id="btn-admin-activate-cloud-trigger"
+              onClick={() => {
+                if (!clienteNombre.trim() || clienteTelefono.replace(/\D/g, '').length === 0) {
+                  onShowToast('Escribe el nombre y teléfono del cliente para activar');
+                  return;
+                }
+                const cleanTarget = normalizeDeviceIdInput(targetDevice, deviceId);
+                if (!cleanTarget) {
+                  onShowToast('Escribe el ID de Equipo destino');
+                  return;
+                }
+                setConfirmDirectCloudOpen(true);
+              }}
               className="flex-1 min-h-[46px] px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-[13px] cursor-pointer shadow-md"
             >
               Activar Directo en la Nube
@@ -3386,6 +3517,427 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* ==================== TAB: PRECIOS DE REFERENCIA (FIRESTORE) ==================== */}
+      {activeTab === 'precios' && (
+        <div id="admin-panel-precios" className="rounded-2xl border border-slate-700/80 bg-slate-900/95 p-4 sm:p-6 shadow-md flex flex-col gap-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="m-0 text-[18px] font-extrabold text-white flex items-center gap-2">
+                <DollarSign className="w-5 h-5 text-emerald-400" aria-hidden="true" />
+                <span>Precios de Referencia de Mercado (MXN)</span>
+              </h2>
+              <p className="m-0 mt-1 text-[12.5px] text-slate-400">
+                Publica precios semanales sugeridos visibles para usuarios con Prueba o Licencia PRO desde Mi Taller.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleExportRefPricesJson}
+                className="min-h-[38px] px-3 rounded-xl border border-slate-600 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[12px] font-bold inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Exportar JSON</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => importRefPricesInputRef.current?.click()}
+                className="min-h-[38px] px-3 rounded-xl border border-slate-600 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[12px] font-bold inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <Upload className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Importar CSV/JSON</span>
+              </button>
+              <input
+                ref={importRefPricesInputRef}
+                type="file"
+                accept=".json,.csv,application/json,text/csv"
+                onChange={handleImportRefPricesFile}
+                className="hidden"
+              />
+              <button
+                type="button"
+                id="btn-admin-save-ref-prices"
+                disabled={refSaving}
+                onClick={() => void handleSaveRefPricesCloud()}
+                className="min-h-[38px] px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-60 text-slate-950 text-[12.5px] font-black cursor-pointer"
+              >
+                {refSaving ? 'Guardando...' : 'Publicar en la Nube'}
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[11.5px] font-bold text-slate-300 mb-1">
+                Etiqueta de semana / fecha
+              </label>
+              <input
+                type="text"
+                value={refPricesDoc.updatedLabel}
+                onChange={(e) =>
+                  setRefPricesDoc((prev) => ({ ...prev, updatedLabel: e.target.value }))
+                }
+                placeholder="Ej. Actualizado Semana 47 · Nov 2026"
+                className="w-full min-h-[40px] px-3 rounded-xl border border-slate-700 bg-slate-950 text-white text-[13px]"
+              />
+            </div>
+            <div>
+              <label className="block text-[11.5px] font-bold text-slate-300 mb-1">
+                Nota / Deslinde para talleres
+              </label>
+              <input
+                type="text"
+                value={refPricesDoc.nota}
+                onChange={(e) => setRefPricesDoc((prev) => ({ ...prev, nota: e.target.value }))}
+                placeholder="Valores promedio orientativos en México"
+                className="w-full min-h-[40px] px-3 rounded-xl border border-slate-700 bg-slate-950 text-white text-[13px]"
+              />
+            </div>
+          </div>
+
+          <div className="overflow-x-auto border border-slate-700 rounded-xl">
+            <table className="w-full text-left border-collapse text-[12px] min-w-[520px]">
+              <thead>
+                <tr className="bg-slate-800/80 border-b border-slate-700 text-slate-300">
+                  <th className="p-2.5">Categoría</th>
+                  <th className="p-2.5">Concepto / Perfil</th>
+                  <th className="p-2.5">Unidad</th>
+                  <th className="p-2.5 text-right">Precio Sugerido ($ MXN)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {refPricesDoc.items.map((item, idx) => (
+                  <tr key={item.id} className="border-b border-slate-800 last:border-b-0">
+                    <td className="p-2">
+                      <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-[10.5px] uppercase font-bold text-sky-300">
+                        {item.categoria}
+                      </span>
+                    </td>
+                    <td className="p-2">
+                      <input
+                        type="text"
+                        value={item.nombre}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setRefPricesDoc((prev) => ({
+                            ...prev,
+                            items: prev.items.map((it, i) => (i === idx ? { ...it, nombre: val } : it)),
+                          }));
+                        }}
+                        className="w-full min-h-[34px] px-2 rounded-lg border border-slate-700 bg-slate-950 text-white text-[12px]"
+                      />
+                    </td>
+                    <td className="p-2 text-slate-300 mono">{item.unidad}</td>
+                    <td className="p-2 text-right">
+                      <input
+                        type="number"
+                        min={1}
+                        step={5}
+                        value={item.precioSugerido}
+                        onChange={(e) => {
+                          const num = Math.max(1, Number(e.target.value) || 0);
+                          setRefPricesDoc((prev) => ({
+                            ...prev,
+                            items: prev.items.map((it, i) =>
+                              i === idx ? { ...it, precioSugerido: num } : it
+                            ),
+                          }));
+                        }}
+                        className="w-[100px] min-h-[34px] px-2 rounded-lg border border-slate-700 bg-slate-950 text-emerald-300 font-extrabold mono text-right"
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== TAB: MENSAJES / AVISOS ==================== */}
+      {activeTab === 'mensajes' && (
+        <div id="admin-panel-mensajes" className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
+          <div className="rounded-2xl border border-slate-700/80 bg-slate-900/95 p-4 sm:p-6 shadow-md flex flex-col gap-3.5">
+            <div>
+              <h2 className="m-0 text-[18px] font-extrabold text-white flex items-center gap-2">
+                <MessageSquare className="w-5 h-5 text-sky-400" aria-hidden="true" />
+                <span>Enviar Aviso o Mensaje a Usuarios</span>
+              </h2>
+              <p className="m-0 mt-1 text-[12.5px] text-slate-400">
+                Envía un aviso general a todos los talleres o un mensaje directo a un ID de equipo específico.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                id="btn-msg-target-all"
+                onClick={() => setMsgTargetMode('all')}
+                className={`min-h-[40px] rounded-xl border text-[12px] font-extrabold cursor-pointer ${
+                  msgTargetMode === 'all'
+                    ? 'border-blue-400 bg-blue-600 text-white'
+                    : 'border-slate-700 bg-slate-800 text-slate-300'
+                }`}
+              >
+                📢 Todos los usuarios
+              </button>
+              <button
+                type="button"
+                id="btn-msg-target-one"
+                onClick={() => setMsgTargetMode('individual')}
+                className={`min-h-[40px] rounded-xl border text-[12px] font-extrabold cursor-pointer ${
+                  msgTargetMode === 'individual'
+                    ? 'border-blue-400 bg-blue-600 text-white'
+                    : 'border-slate-700 bg-slate-800 text-slate-300'
+                }`}
+              >
+                🎯 Usuario específico
+              </button>
+            </div>
+
+            {msgTargetMode === 'individual' && (
+              <div>
+                <label className="block text-[11.5px] font-bold text-slate-300 mb-1">
+                  ID de Equipo destinatario
+                </label>
+                <input
+                  type="text"
+                  list="admin-devices-datalist"
+                  value={msgTargetDeviceId}
+                  onChange={(e) => setMsgTargetDeviceId(e.target.value.toUpperCase())}
+                  placeholder="Ej. ALM-XXXX"
+                  className="w-full min-h-[42px] px-3 rounded-xl border border-slate-700 bg-slate-950 text-sky-300 mono font-bold text-[13px]"
+                />
+                <datalist id="admin-devices-datalist">
+                  {auditUsers.map((u) => (
+                    <option key={u.deviceId} value={u.deviceId}>
+                      {u.clienteDisplay}
+                    </option>
+                  ))}
+                </datalist>
+              </div>
+            )}
+
+            <div className="grid grid-cols-3 gap-1.5">
+              {(
+                [
+                  { id: 'aviso', label: '🔔 Aviso' },
+                  { id: 'promo', label: '🎁 Promo' },
+                  { id: 'soporte', label: '🛠️ Soporte' },
+                ] as const
+              ).map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setMsgType(t.id)}
+                  className={`min-h-[36px] rounded-xl border text-[12px] font-bold cursor-pointer ${
+                    msgType === t.id
+                      ? 'border-emerald-400 bg-emerald-600 text-white'
+                      : 'border-slate-700 bg-slate-800 text-slate-300'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            <div>
+              <label className="block text-[11.5px] font-bold text-slate-300 mb-1">Título *</label>
+              <input
+                type="text"
+                id="inp-admin-msg-title"
+                value={msgTitle}
+                onChange={(e) => setMsgTitle(e.target.value)}
+                placeholder="Ej. Nueva lista de precios de aluminio"
+                className="w-full min-h-[42px] px-3 rounded-xl border border-slate-700 bg-slate-950 text-white text-[13px]"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11.5px] font-bold text-slate-300 mb-1">
+                Mensaje / Cuerpo *
+              </label>
+              <textarea
+                id="inp-admin-msg-body"
+                rows={4}
+                value={msgBody}
+                onChange={(e) => setMsgBody(e.target.value)}
+                placeholder="Escribe aquí el aviso o mensaje para tus usuarios..."
+                className="w-full p-3 rounded-xl border border-slate-700 bg-slate-950 text-white text-[13px]"
+              />
+            </div>
+
+            <button
+              type="button"
+              id="btn-admin-send-msg"
+              disabled={msgSending}
+              onClick={() => void handleSendAdminMessage()}
+              className="min-h-[46px] px-4 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-60 text-white font-extrabold text-[13.5px] inline-flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <Send className="w-4 h-4" aria-hidden="true" />
+              <span>{msgSending ? 'Enviando...' : 'Publicar Aviso / Mensaje'}</span>
+            </button>
+          </div>
+
+          <div className="rounded-2xl border border-slate-700/80 bg-slate-900/95 p-4 sm:p-6 shadow-md">
+            <h3 className="m-0 text-[16px] font-extrabold text-white mb-3">
+              Mensajes Enviados ({adminMessages.length})
+            </h3>
+            {adminMessages.length === 0 ? (
+              <p className="m-0 text-[12.5px] text-slate-400 p-5 text-center border border-dashed border-slate-700 rounded-xl">
+                Aún no has enviado avisos o mensajes a los usuarios.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-2.5 max-h-[440px] overflow-y-auto pr-1">
+                {adminMessages.map((m) => (
+                  <div
+                    key={m.id}
+                    className="p-3 rounded-xl border border-slate-700/80 bg-slate-950/70 flex items-start justify-between gap-2.5"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                        <span className="px-2 py-0.5 rounded bg-blue-500/20 border border-blue-400/40 text-blue-200 text-[10px] font-extrabold uppercase">
+                          {m.tipo}
+                        </span>
+                        <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300 text-[10px] font-bold">
+                          {m.targetMode === 'all' ? 'Todos' : m.targetLabel || m.targetDeviceId}
+                        </span>
+                      </div>
+                      <strong className="block text-[13.5px] text-white">{m.titulo}</strong>
+                      <p className="m-0 mt-0.5 text-[12px] text-slate-300 whitespace-pre-line">{m.cuerpo}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await deleteAdminMessageCloud(m.id);
+                        onShowToast('Aviso eliminado');
+                      }}
+                      aria-label={`Eliminar aviso ${m.titulo}`}
+                      className="min-w-[34px] min-h-[34px] rounded-lg border border-red-500/40 bg-red-500/15 hover:bg-red-500/25 text-red-200 inline-flex items-center justify-center cursor-pointer shrink-0"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal de pegado manual (fallback cuando el navegador bloquea clipboard.readText) */}
+      {pasteModalOpen && (
+        <div
+          id="modal-admin-manual-paste"
+          className="fixed inset-0 z-50 bg-slate-950/80 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setPasteModalOpen(false);
+          }}
+        >
+          <div className="w-full max-w-lg rounded-2xl border border-slate-700 bg-slate-900 p-5 text-white shadow-2xl">
+            <h3 className="m-0 text-[16px] font-extrabold">Pegar mensaje de WhatsApp</h3>
+            <p className="m-0 mt-1 text-[12px] text-slate-300">
+              Pega aquí el mensaje recibido del cliente para extraer automáticamente Taller, Teléfono, Plan e ID de Equipo.
+            </p>
+            <textarea
+              id="inp-admin-manual-paste-text"
+              rows={5}
+              autoFocus
+              value={pasteModalText}
+              onChange={(e) => setPasteModalText(e.target.value)}
+              placeholder="Pega aquí el texto de WhatsApp..."
+              className="mt-3 w-full p-3 rounded-xl border border-slate-700 bg-slate-950 text-white text-[13px]"
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPasteModalOpen(false)}
+                className="min-h-[40px] px-4 rounded-xl border border-slate-700 bg-slate-800 text-slate-200 font-bold text-[12.5px] cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                id="btn-admin-extract-manual"
+                onClick={() => {
+                  const ok = applyParsedWhatsappText(pasteModalText, pasteAutoGen);
+                  if (ok) setPasteModalOpen(false);
+                }}
+                className="min-h-[40px] px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[12.5px] cursor-pointer"
+              >
+                Extraer datos
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de confirmación obligatoria para Activar Directo en la Nube */}
+      {confirmDirectCloudOpen && (() => {
+        const plan = PLANS.find((p) => p.idx === planIdx) || PLANS[0];
+        const planLabelVal = parsedCustomDays ? `Reposición ${parsedCustomDays} días` : plan.label;
+        const cleanDev = normalizeDeviceIdInput(targetDevice, deviceId);
+        return (
+          <div
+            id="modal-confirm-direct-cloud"
+            className="fixed inset-0 z-50 bg-slate-950/80 flex items-center justify-center p-4"
+            role="dialog"
+            aria-modal="true"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setConfirmDirectCloudOpen(false);
+            }}
+          >
+            <div className="w-full max-w-md rounded-2xl border border-blue-500/50 bg-slate-900 p-5 text-white shadow-2xl">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="w-6 h-6 text-amber-400 shrink-0 mt-0.5" aria-hidden="true" />
+                <div className="min-w-0">
+                  <h3 className="m-0 text-[16px] font-extrabold">
+                    ¿Realmente quieres activar esta licencia en la nube?
+                  </h3>
+                  <div className="mt-2.5 p-3 rounded-xl bg-slate-950 border border-slate-800 text-[12.5px] space-y-1">
+                    <div>
+                      <span className="text-slate-400">ID de Equipo: </span>
+                      <strong className="mono text-sky-300">{cleanDev}</strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-400">Taller / Cliente: </span>
+                      <strong className="text-white">{clienteNombre} ({clienteTelefono})</strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-400">Plan: </span>
+                      <strong className="text-emerald-300">{planLabelVal}</strong>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  type="button"
+                  id="btn-cancel-direct-cloud"
+                  onClick={() => setConfirmDirectCloudOpen(false)}
+                  className="min-h-[40px] px-4 py-2 rounded-xl border border-slate-700 bg-slate-800 text-slate-200 font-bold text-[12.5px] cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  id="btn-confirm-direct-cloud"
+                  onClick={async () => {
+                    setConfirmDirectCloudOpen(false);
+                    await handleActivateDirect();
+                  }}
+                  className="min-h-[40px] px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-[12.5px] cursor-pointer"
+                >
+                  Sí, confirmar activación
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Diálogo in-app de confirmación de acciones críticas */}
       {pendingAction && (
