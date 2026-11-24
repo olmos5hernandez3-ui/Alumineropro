@@ -34,6 +34,10 @@ import {
   TrabajoParams,
   UsageStats30d,
   validatePiezaDimensiones,
+  cloneHomeMenuLayout,
+  DEFAULT_HOME_MENU_LAYOUT,
+  HomeMenuLayout,
+  normalizeHomeMenuLayout,
 } from './utils/alumineroLogic';
 import {
   activateKeyInCloud,
@@ -115,7 +119,6 @@ import {
   saveDeletedAdminKeySigs,
   SavedColleagueReferral,
   AppSkin,
-  AppSkinVariant,
   AppTheme,
   getUnlockedSkinsForLicense,
   isSkinUnlockedForLicense,
@@ -124,9 +127,7 @@ import {
   loadReadAdminMessageIds,
   loadReferencePricesCache,
   loadSkin,
-  loadSkinVariant,
   markAdminMessageIdRead,
-  normalizeSkinVariant,
   PromoColegaUsageRecord,
   saveAdminMessagesCache,
   saveFormulas,
@@ -144,8 +145,6 @@ import {
   saveReferralHistory,
   saveRevokedDevicesMap,
   saveSkin,
-  saveSkinVariant,
-  SKIN_VARIANTS_BY_SKIN,
   saveSobrantes,
   saveSugerenciasWhatsapp,
   saveTaller,
@@ -155,6 +154,8 @@ import {
   saveTrialRevoked,
   loadGuidedTutorialSeen,
   saveGuidedTutorialSeen,
+  loadHomeMenuLayout,
+  saveHomeMenuLayout,
   loadTheme,
   SobranteItem,
   TallerConfig,
@@ -490,8 +491,6 @@ export default function App() {
   // Modals & UI (controlados desde la pila unificada NavFrame + popstate)
   const [theme, setTheme] = useState<AppTheme>(() => loadTheme());
   const [skin, setSkin] = useState<AppSkin>(() => loadSkin());
-  const [skinVariant, setSkinVariant] = useState<AppSkinVariant>(() => loadSkinVariant(loadSkin()));
-  const [homePage, setHomePage] = useState<0 | 1>(0);
   const [annualCelebrationOpen, setAnnualCelebrationOpen] = useState(false);
   const [promoColegaUsage, setPromoColegaUsage] = useState<PromoColegaUsageRecord>(() =>
     loadPromoColegaUsage(deviceId)
@@ -589,44 +588,35 @@ export default function App() {
     setReadAdminMessageIds(next);
   }, []);
 
-  const handleToggleHomePage = useCallback(() => {
-    setHomePage((prev) => (prev === 0 ? 1 : 0));
-  }, []);
-
   const handleToggleTheme = useCallback(() => {
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   }, []);
 
   const handleSelectSkin = useCallback((nextSkin: AppSkin) => {
-    const nextVariant = normalizeSkinVariant(nextSkin, loadSkinVariant(nextSkin));
     setSkin(nextSkin);
-    setSkinVariant(nextVariant);
-    saveSkinVariant(nextSkin, nextVariant);
     const skinNames: Record<AppSkin, string> = {
       basica: 'Básica',
-      ejecutiva: 'Ejecutiva',
+      ejecutiva: 'Ejecutiva Azul',
       industrial: 'Industrial Pro',
     };
     showToastRef.current(`Carátula "${skinNames[nextSkin]}" aplicada en toda la app`, true);
   }, []);
 
-  const handleSelectSkinVariant = useCallback(
-    (nextVariant: AppSkinVariant) => {
-      const normalized = normalizeSkinVariant(skin, nextVariant);
-      setSkinVariant(normalized);
-      saveSkinVariant(skin, normalized);
-      const found = SKIN_VARIANTS_BY_SKIN[skin]?.find((v) => v.id === normalized);
-      if (found) {
-        showToastRef.current(`Estilo "${found.label}" aplicado en toda la app`, true);
-      }
-    },
-    [skin]
-  );
+  const [homeMenuLayout, setHomeMenuLayout] = useState<HomeMenuLayout>(() => loadHomeMenuLayout());
+
+  const handleChangeHomeMenuLayout = useCallback((next: HomeMenuLayout) => {
+    const saved = saveHomeMenuLayout(next);
+    setHomeMenuLayout(saved);
+  }, []);
+
+  const handleResetHomeMenuLayout = useCallback(() => {
+    const saved = saveHomeMenuLayout(cloneHomeMenuLayout(DEFAULT_HOME_MENU_LAYOUT));
+    setHomeMenuLayout(saved);
+    showToastRef.current('Orden predeterminado restaurado', true);
+  }, []);
 
   const [toast, setToast] = useState<{ msg: string; topSuccess: boolean } | null>(null);
   const toastTimerRef = useRef<number | null>(null);
-  const logoTapsRef = useRef<{ count: number; lastTs: number }>({ count: 0, lastTs: 0 });
-  const logoTapTimerRef = useRef<number | null>(null);
   const licenciaRef = useRef<LicenciaState | null>(licencia);
   licenciaRef.current = licencia;
   const trialRevokedRef = useRef<boolean>(trialRevoked);
@@ -696,6 +686,7 @@ export default function App() {
     obrasAprobadas,
     notas,
     formulas,
+    homeMenuLayout,
     updatedAt: Date.now(),
   });
 
@@ -1034,15 +1025,9 @@ export default function App() {
     if (effectiveSkin !== skin) {
       setSkin('basica');
     }
-    const effectiveVariant = normalizeSkinVariant(effectiveSkin, skinVariant);
-    if (effectiveVariant !== skinVariant) {
-      setSkinVariant(effectiveVariant);
-    }
     saveSkin(effectiveSkin);
-    saveSkinVariant(effectiveSkin, effectiveVariant);
     document.documentElement.setAttribute('data-skin', effectiveSkin);
-    document.documentElement.setAttribute('data-skin-variant', effectiveVariant);
-  }, [skin, skinVariant, licencia, proActive]);
+  }, [skin, licencia, proActive]);
 
   const tallerOnboardingComplete = useMemo(
     () => isTallerOnboardingComplete(taller),
@@ -1261,6 +1246,7 @@ export default function App() {
     obrasAprobadas,
     notas,
     formulas,
+    homeMenuLayout,
   ]);
 
   const despiece = useMemo(
@@ -1597,15 +1583,6 @@ export default function App() {
     [pushNavFrame, replaceNavFrame]
   );
 
-  const requestOpenAdmin = useCallback(() => {
-    const cur = navFramesRef.current[navFramesRef.current.length - 1] || BASE_FRAME;
-    if (cur.globalModals.includes('adminModal')) {
-      replaceGlobalModal('adminModal', 'adminAuth');
-    } else {
-      openGlobalModal('adminAuth');
-    }
-  }, [openGlobalModal, replaceGlobalModal]);
-
   useEffect(() => {
     if (!historyInitializedRef.current) {
       historyInitializedRef.current = true;
@@ -1840,36 +1817,6 @@ export default function App() {
       return;
     }
     navigateTo('inventario', tab ? { invTab: tab } : undefined);
-  };
-
-  const handleLogoClick = () => {
-    const now = Date.now();
-    if (logoTapTimerRef.current) {
-      window.clearTimeout(logoTapTimerRef.current);
-      logoTapTimerRef.current = null;
-    }
-
-    if (now - logoTapsRef.current.lastTs <= 2000) {
-      logoTapsRef.current.count += 1;
-    } else {
-      logoTapsRef.current.count = 1;
-    }
-    logoTapsRef.current.lastTs = now;
-
-    if (logoTapsRef.current.count >= 5) {
-      logoTapsRef.current = { count: 0, lastTs: 0 };
-      requestOpenAdmin();
-      return;
-    }
-
-    logoTapTimerRef.current = window.setTimeout(() => {
-      logoTapsRef.current = { count: 0, lastTs: 0 };
-      logoTapTimerRef.current = null;
-    }, 2000);
-
-    if (currentView !== 'menu') {
-      goHome();
-    }
   };
 
   const handleAgregarObra = () => {
@@ -2747,15 +2694,12 @@ export default function App() {
         trialExpiresAt={trialExpiresAt}
         theme={theme}
         unreadMessagesCount={unreadAdminMessages.length}
-        homePage={homePage}
-        onHomePrev={handleToggleHomePage}
-        onHomeNext={handleToggleHomePage}
         onBack={requestBack}
         onGoHome={goHome}
-        onLogoClick={handleLogoClick}
         onOpenPro={() => openGlobalModal('pro')}
         onOpenDrawer={() => openGlobalModal('drawer')}
         onOpenCalculadora={() => openGlobalModal('calculadora')}
+        onRequestExit={() => setExitConfirmOpen(true)}
         onOpenMessages={() => {
           if (currentView !== 'menu') goHome();
           if (typeof window !== 'undefined') {
@@ -2799,8 +2743,6 @@ export default function App() {
         >
         {currentView === 'menu' && (
           <MainMenuView
-            homePage={homePage}
-            onChangeHomePage={setHomePage}
             proActive={proActive}
             hojaPiezasCount={hojaPiezasCount}
             hojaTotal={hojaTotalAprox}
@@ -2827,6 +2769,9 @@ export default function App() {
             onOpenAntesDespues={() => openGlobalModal('antesDespues')}
             onOpenLevantamiento={() => window.__alumLev?.open()}
             onOpenReminders={() => openGlobalModal('reminders')}
+            menuLayout={homeMenuLayout}
+            onChangeMenuLayout={handleChangeHomeMenuLayout}
+            onResetMenuLayout={handleResetHomeMenuLayout}
           />
         )}
 
@@ -3081,10 +3026,8 @@ export default function App() {
             onOpenReminders={() => openGlobalModal('reminders')}
             pendingRemindersCount={reminderSummary.pendingCount}
             skin={skin}
-            skinVariant={skinVariant}
             unlockedSkins={unlockedSkins}
             onSelectSkin={handleSelectSkin}
-            onSelectSkinVariant={handleSelectSkinVariant}
             colorMode={theme}
             onToggleColorMode={handleToggleTheme}
             referencePrices={referencePrices}
@@ -3632,12 +3575,10 @@ export default function App() {
         deviceId={deviceId}
         theme={theme}
         skin={skin}
-        skinVariant={skinVariant}
         cloudAccountEmail={cloudAccountSession?.email || null}
         isCloudBackupEligible={isCloudBackupEligible}
         onToggleTheme={handleToggleTheme}
         onSelectSkin={handleSelectSkin}
-        onSelectSkinVariant={handleSelectSkinVariant}
         onClose={requestBack}
         onOpenPro={() => openModalFromDrawer('pro')}
         onOpenCloudBackup={() => openModalFromDrawer('cloudBackup')}
@@ -3659,6 +3600,7 @@ export default function App() {
         onOpenReminders={() => openModalFromDrawer('reminders')}
         onOpenCotizaciones={() => openScreenFromDrawer('cotizaciones')}
         onOpenVideos={() => openScreenFromDrawer('videos')}
+        onOpenAdminSecret={() => openModalFromDrawer('adminAuth')}
         tallerOnboardingComplete={tallerOnboardingComplete}
       />
 
@@ -3739,7 +3681,7 @@ export default function App() {
           const normKey = (lic.activatedKey || '').trim().toUpperCase();
           const isColleague3d = isColleaguePromoPlan(lic.planCode, null, normKey);
 
-          // Validación estricta de uso único en almacenamiento local antes incluso de contactar nube
+          // Validación estricta de uso único en almacenamiento local
           if (isColleague3d && promoColegaUsage.promo_colega_usada) {
             return {
               ok: false,
@@ -3754,32 +3696,7 @@ export default function App() {
             };
           }
 
-          const cloudRes = await activateKeyInCloud({
-            deviceId,
-            key: normKey,
-            planCode: lic.planCode,
-            planLabel: lic.planLabel,
-            expiresAt: lic.expiresAt,
-            cliente: hoja.proyecto.trim() || taller.nombre || '',
-            deviceLabel: detectDeviceLabel(),
-            linkedEmail: lic.linkedEmail,
-          });
-
-          if (!cloudRes.ok && !cloudRes.offline) {
-            if (cloudRes.revoked && normKey) {
-              revokedKeysRef.current.add(normKey);
-              setRevokedKeys((prev) => (prev.includes(normKey) ? prev : [...prev, normKey]));
-            }
-            if (cloudRes.error === PROMO_COLEGA_ALREADY_USED_ERROR) {
-              setPromoColegaUsage(savePromoColegaUsage(deviceId, true, Date.now()));
-            }
-            return {
-              ok: false,
-              error: cloudRes.error || 'Este código fue revocado y ya no puede activarse.',
-            };
-          }
-
-          // Bloqueo definitivo tras primer uso exitoso de Promo Colega (3 días)
+          // Activación inmediata en local: nunca bloquear al usuario esperando red o reglas de Firestore
           if (isColleague3d) {
             const savedUsage = savePromoColegaUsage(deviceId, true, lic.activatedAt || Date.now());
             setPromoColegaUsage(savedUsage);
@@ -3795,6 +3712,7 @@ export default function App() {
             saveRevokedDevicesMap(next);
             return next;
           });
+          licenciaRef.current = lic;
           saveLicencia(lic);
           setLicencia(lic);
           if (isOneYearProPlan(lic)) {
@@ -3824,24 +3742,44 @@ export default function App() {
             setReferralHistory(updatedRefs);
           }
 
-          if (cloudRes.ok && cloudRes.devices && cloudRes.stats) {
-            applyCloudSnapshot({
-              devices: cloudRes.devices,
-              adminKeys: cloudRes.adminKeys || [],
-              revokedKeys: cloudRes.revokedKeys,
-              stats: cloudRes.stats,
-              serverTime: cloudRes.serverTime || Date.now(),
-              device: cloudRes.device,
-            });
-          } else {
-            void syncDeviceToCloud({
-              deviceId,
-              cliente: hoja.proyecto.trim() || taller.nombre || '',
-              deviceLabel: detectDeviceLabel(),
-              eventType: 'license_sync',
-              licencia: lic,
-            }).then(applyCloudSnapshot);
-          }
+          // Registro en segundo plano hacia Firebase Firestore (no bloquea ni cancela la activación local)
+          void (async () => {
+            try {
+              const cloudRes = await activateKeyInCloud({
+                deviceId,
+                key: normKey,
+                planCode: lic.planCode,
+                planLabel: lic.planLabel,
+                expiresAt: lic.expiresAt,
+                cliente: hoja.proyecto.trim() || taller.nombre || '',
+                deviceLabel: detectDeviceLabel(),
+                linkedEmail: lic.linkedEmail,
+              });
+
+              if (cloudRes.ok && cloudRes.devices && cloudRes.stats) {
+                applyCloudSnapshot({
+                  devices: cloudRes.devices,
+                  adminKeys: cloudRes.adminKeys || [],
+                  revokedKeys: cloudRes.revokedKeys,
+                  stats: cloudRes.stats,
+                  serverTime: cloudRes.serverTime || Date.now(),
+                  device: cloudRes.device,
+                });
+              } else {
+                const snap = await syncDeviceToCloud({
+                  deviceId,
+                  cliente: hoja.proyecto.trim() || taller.nombre || '',
+                  deviceLabel: detectDeviceLabel(),
+                  eventType: 'license_sync',
+                  licencia: lic,
+                });
+                applyCloudSnapshot(snap);
+              }
+            } catch (err) {
+              console.warn('[Aluminero Pro] Registro en segundo plano de licencia omitido:', err);
+            }
+          })();
+
           return { ok: true };
         }}
         onDeactivateLic={() => {
@@ -3864,8 +3802,8 @@ export default function App() {
         open={adminAuthOpen}
         onClose={requestBack}
         onSuccess={() => {
-          // Cierra el diálogo de contraseña y navega a la pantalla dedicada completa de Administrador
-          pushNavFrame({ view: 'admin', globalModals: [] });
+          // Cierra el diálogo de contraseña de inmediato y abre directamente AdminDashboardView
+          replaceNavFrame({ view: 'admin', globalModals: [] });
         }}
       />
 
@@ -4416,6 +4354,9 @@ export default function App() {
             if (Array.isArray(res.backup.formulas)) {
               setFormulas(res.backup.formulas);
             }
+            if (res.backup.homeMenuLayout) {
+              setHomeMenuLayout(saveHomeMenuLayout(normalizeHomeMenuLayout(res.backup.homeMenuLayout)));
+            }
           }
 
           const nextSession: CloudAccountSession = {
@@ -4556,7 +4497,6 @@ export default function App() {
         whatsappNumber={sugerenciasWhatsapp}
         deviceId={deviceId}
         skin={skin}
-        skinVariant={skinVariant}
         proActive={proActive}
         onOpenPro={() => openGlobalModal('pro')}
         onShowToast={showToast}
@@ -4566,11 +4506,8 @@ export default function App() {
         open={annualCelebrationOpen}
         onClose={() => setAnnualCelebrationOpen(false)}
         onApplyIndustrialSkin={() => {
-          const indVar = normalizeSkinVariant('industrial', loadSkinVariant('industrial'));
           setSkin('industrial');
-          setSkinVariant(indVar);
           saveSkin('industrial');
-          saveSkinVariant('industrial', indVar);
           showToast('¡Carátula Industrial Pro (1 Año) activada en toda la app!', true);
         }}
       />

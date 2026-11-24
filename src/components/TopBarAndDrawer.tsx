@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Bell, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Crown, Lock, Palette, Scale } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Bell, Check, ChevronDown, ChevronUp, Crown, Lock, LogOut, Palette, Scale } from 'lucide-react';
 import {
   APP_VERSION,
   formatLicenseCountdownBadge,
@@ -7,12 +7,10 @@ import {
 } from '../utils/alumineroLogic';
 import {
   AppSkin,
-  AppSkinVariant,
   AppTheme,
   getSkinPlanRequirementLabel,
   isSkinUnlockedForLicense,
   LicenciaState,
-  SKIN_VARIANTS_BY_SKIN,
 } from '../utils/storageHelpers';
 import { AlumineroProMetallicLogo } from './MetallicIcons';
 
@@ -40,15 +38,13 @@ interface TopBarProps {
   trialExpiresAt: number | null;
   theme: AppTheme;
   unreadMessagesCount?: number;
-  homePage?: 0 | 1;
-  onHomePrev?: () => void;
-  onHomeNext?: () => void;
   onBack: () => void;
   onGoHome: () => void;
-  onLogoClick: () => void;
+  onLogoClick?: () => void;
   onOpenPro: () => void;
   onOpenDrawer: () => void;
   onOpenCalculadora: () => void;
+  onRequestExit?: () => void;
   onOpenMessages?: () => void;
 }
 
@@ -59,15 +55,12 @@ export const TopBar: React.FC<TopBarProps> = ({
   trialExpiresAt,
   theme,
   unreadMessagesCount = 0,
-  homePage = 0,
-  onHomePrev,
-  onHomeNext,
   onBack,
   onGoHome,
-  onLogoClick,
   onOpenPro,
   onOpenDrawer,
   onOpenCalculadora,
+  onRequestExit,
   onOpenMessages,
 }) => {
   const isDark = theme === 'dark';
@@ -127,64 +120,40 @@ export const TopBar: React.FC<TopBarProps> = ({
               <span className="hidden md:inline">Volver</span>
             </button>
           )}
-          <button
-            type="button"
+          <div
             id="logo-ap"
-            onClick={onLogoClick}
             title="Aluminero Pro"
-            aria-label="Logotipo AP"
-            className="p-0 border-0 bg-transparent cursor-pointer rounded-[10px] shrink-0 transition-transform active:scale-95"
+            aria-label="Logotipo Aluminero Pro"
+            className="p-0 border-0 bg-transparent rounded-[10px] shrink-0 select-none"
           >
             <AlumineroProMetallicLogo size={32} className="block w-[30px] h-[30px] sm:w-[36px] sm:h-[36px]" />
-          </button>
+          </div>
           {currentView === 'menu' && (
-            <button
-              type="button"
+            <span
               id="title-ap"
-              onClick={onLogoClick}
-              title="Aluminero Pro"
-              className={`min-w-0 truncate block p-0 border-0 bg-transparent cursor-pointer font-extrabold text-[14px] sm:text-[18px] tracking-tight text-left ${
+              className={`min-w-0 truncate block p-0 font-extrabold text-[14px] sm:text-[18px] tracking-tight text-left select-none ${
                 isDark ? 'text-white drop-shadow-[0_1px_6px_rgba(56,189,248,0.28)]' : 'text-slate-900'
               }`}
             >
               Aluminero Pro
-            </button>
+            </span>
           )}
-          {currentView === 'menu' && onHomePrev && onHomeNext && (
-            <div
-              id="topbar-home-pager"
-              className="inline-flex items-center gap-0.5 ml-0.5 shrink-0"
-              aria-label={`Navegación de inicio, vista ${homePage + 1} de 2`}
+          {currentView === 'menu' && onRequestExit && (
+            <button
+              type="button"
+              id="btn-top-salir"
+              onClick={onRequestExit}
+              title="Salir de Aluminero Pro"
+              aria-label="Salir de la aplicación"
+              className={`inline-flex items-center gap-0.5 min-h-[28px] px-1.5 sm:px-2 py-0.5 rounded-lg border text-[10px] sm:text-[10.5px] font-extrabold cursor-pointer whitespace-nowrap shrink-0 transition-all active:scale-95 ${
+                isDark
+                  ? 'border-slate-500/60 bg-slate-800/80 hover:bg-rose-600/30 hover:border-rose-400/60 text-slate-200'
+                  : 'border-slate-300 bg-slate-100 hover:bg-rose-50 hover:border-rose-300 text-slate-700 hover:text-rose-700'
+              }`}
             >
-              <button
-                type="button"
-                id="btn-home-prev"
-                onClick={onHomePrev}
-                aria-label="Vista anterior del menú principal"
-                title="Cambiar vista de inicio (anterior)"
-                className={`inline-flex items-center justify-center w-[26px] h-[26px] sm:w-[28px] sm:h-[28px] rounded-lg border cursor-pointer transition-all active:scale-90 ${
-                  isDark
-                    ? 'border-white/15 bg-white/8 hover:bg-white/15 text-slate-200'
-                    : 'border-slate-300 bg-slate-100 hover:bg-slate-200 text-slate-700'
-                }`}
-              >
-                <ChevronLeft className="w-3.5 h-3.5" aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                id="btn-home-next"
-                onClick={onHomeNext}
-                aria-label="Vista siguiente del menú principal"
-                title="Cambiar vista de inicio (siguiente)"
-                className={`inline-flex items-center justify-center w-[26px] h-[26px] sm:w-[28px] sm:h-[28px] rounded-lg border cursor-pointer transition-all active:scale-90 ${
-                  isDark
-                    ? 'border-white/15 bg-white/8 hover:bg-white/15 text-slate-200'
-                    : 'border-slate-300 bg-slate-100 hover:bg-slate-200 text-slate-700'
-                }`}
-              >
-                <ChevronRight className="w-3.5 h-3.5" aria-hidden="true" />
-              </button>
-            </div>
+              <LogOut className="w-3 h-3 shrink-0" aria-hidden="true" />
+              <span>Salir</span>
+            </button>
           )}
         </div>
 
@@ -305,12 +274,10 @@ interface SideDrawerProps {
   deviceId: string;
   theme: AppTheme;
   skin: AppSkin;
-  skinVariant?: AppSkinVariant;
   cloudAccountEmail?: string | null;
   isCloudBackupEligible?: boolean;
   onToggleTheme: () => void;
   onSelectSkin: (skin: AppSkin) => void;
-  onSelectSkinVariant?: (variant: AppSkinVariant) => void;
   onClose: () => void;
   onOpenPro: () => void;
   onOpenCloudBackup: () => void;
@@ -325,6 +292,7 @@ interface SideDrawerProps {
   onOpenReminders?: () => void;
   onOpenCotizaciones?: () => void;
   onOpenVideos?: () => void;
+  onOpenAdminSecret?: () => void;
   tallerOnboardingComplete?: boolean;
 }
 
@@ -344,35 +312,35 @@ const SKIN_OPTIONS: SkinOptionMeta[] = [
   {
     id: 'basica',
     title: 'Básica',
-    subtitle: 'Diseño limpio Día / Noche de alto contraste',
-    tierBadge: 'Gratis y Promo Colega (3d)',
+    subtitle: 'Tema Azul Básico de alto contraste',
+    tierBadge: 'Gratis y PRO',
     previewBg: '#0B1120',
     previewCardA: 'linear-gradient(135deg, #2563EB, #1D4ED8)',
-    previewCardB: 'linear-gradient(135deg, #1E293B, #131C31)',
+    previewCardB: 'linear-gradient(135deg, #1E293B, #0F172A)',
     previewBorder: 'rgba(148, 163, 184, 0.35)',
-    previewAccent: '#F97316',
+    previewAccent: '#38bdf8',
   },
   {
     id: 'ejecutiva',
-    title: 'Ejecutiva',
-    subtitle: 'Acabado metálico con variantes Azul y Anaranjada',
+    title: 'Ejecutiva Azul',
+    subtitle: 'Azul acero metálico con reflejos cian',
     tierBadge: 'PRO 30d / 90d / 1 Año',
-    previewBg: 'linear-gradient(145deg, #071324, #0C234A)',
-    previewCardA: 'linear-gradient(135deg, #163D75, #0F2C59)',
-    previewCardB: 'linear-gradient(135deg, #142F5C, #0A1934)',
+    previewBg: 'linear-gradient(145deg, #07152e, #0c234a)',
+    previewCardA: 'linear-gradient(135deg, #163d75, #0f2c59)',
+    previewCardB: 'linear-gradient(135deg, #142f5c, #0a1934)',
     previewBorder: 'rgba(56, 189, 248, 0.72)',
-    previewAccent: '#38BDF8',
+    previewAccent: '#38bdf8',
   },
   {
     id: 'industrial',
     title: 'Industrial Pro',
-    subtitle: 'Arquitectónica premium: Esmeralda, Acero o Dorada',
-    tierBadge: 'Exclusivo PRO 1 Año',
-    previewBg: 'linear-gradient(145deg, #061A14, #0D2B22)',
+    subtitle: 'Tema Verde PRO esmeralda de taller',
+    tierBadge: 'Prueba PRO (3d) y PRO',
+    previewBg: 'linear-gradient(145deg, #071A13, #0B261C)',
     previewCardA: 'linear-gradient(135deg, #059669, #047857)',
     previewCardB: 'linear-gradient(135deg, #0F3025, #071813)',
-    previewBorder: 'rgba(16, 185, 129, 0.78)',
-    previewAccent: '#10B981',
+    previewBorder: 'rgba(52, 211, 153, 0.78)',
+    previewAccent: '#10b981',
   },
 ];
 
@@ -384,12 +352,10 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
   deviceId,
   theme,
   skin,
-  skinVariant = 'default',
   cloudAccountEmail = null,
   isCloudBackupEligible = false,
   onToggleTheme,
   onSelectSkin,
-  onSelectSkinVariant,
   onClose,
   onOpenPro,
   onOpenCloudBackup,
@@ -404,16 +370,63 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
   onOpenReminders,
   onOpenCotizaciones,
   onOpenVideos,
+  onOpenAdminSecret,
   tallerOnboardingComplete = true,
 }) => {
-  const [skinsExpanded, setSkinsExpanded] = useState(true);
+  const [skinsExpanded, setSkinsExpanded] = useState(false);
   const [missionExpanded, setMissionExpanded] = useState(false);
   const [lockedSkinPrompt, setLockedSkinPrompt] = useState<SkinOptionMeta | null>(null);
+  const drawerBrandTapsRef = useRef<{ count: number; lastTs: number }>({ count: 0, lastTs: 0 });
+  const drawerBrandTapTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      drawerBrandTapsRef.current = { count: 0, lastTs: 0 };
+      if (drawerBrandTapTimerRef.current !== null) {
+        window.clearTimeout(drawerBrandTapTimerRef.current);
+        drawerBrandTapTimerRef.current = null;
+      }
+    }
+    return () => {
+      if (drawerBrandTapTimerRef.current !== null) {
+        window.clearTimeout(drawerBrandTapTimerRef.current);
+        drawerBrandTapTimerRef.current = null;
+      }
+    };
+  }, [open]);
 
   if (!open) return null;
 
+  const handleDrawerBrandSecretClick = () => {
+    if (!onOpenAdminSecret) return;
+    const now = Date.now();
+    if (drawerBrandTapTimerRef.current !== null) {
+      window.clearTimeout(drawerBrandTapTimerRef.current);
+      drawerBrandTapTimerRef.current = null;
+    }
+    if (now - drawerBrandTapsRef.current.lastTs <= 2500) {
+      drawerBrandTapsRef.current.count += 1;
+    } else {
+      drawerBrandTapsRef.current.count = 1;
+    }
+    drawerBrandTapsRef.current.lastTs = now;
+
+    if (drawerBrandTapsRef.current.count >= 5) {
+      drawerBrandTapsRef.current = { count: 0, lastTs: 0 };
+      setLockedSkinPrompt(null);
+      onOpenAdminSecret();
+      return;
+    }
+
+    drawerBrandTapTimerRef.current = window.setTimeout(() => {
+      drawerBrandTapsRef.current = { count: 0, lastTs: 0 };
+      drawerBrandTapTimerRef.current = null;
+    }, 2500);
+  };
+
   const isDark = theme === 'dark';
   const currentSkinMeta = SKIN_OPTIONS.find((s) => s.id === skin) || SKIN_OPTIONS[0];
+  const verdeProUnlocked = isSkinUnlockedForLicense('industrial', licencia, proActive);
 
   const handleSkinTap = (option: SkinOptionMeta) => {
     const unlocked = isSkinUnlockedForLicense(option.id, licencia, proActive);
@@ -452,7 +465,13 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
         className={`w-full max-w-[340px] h-full p-5 flex flex-col gap-2.5 overflow-y-auto shadow-2xl relative ${panelClass}`}
       >
         <div className={`flex items-center justify-between pb-3 border-b ${dividerClass}`}>
-          <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            id="btn-drawer-brand-secret"
+            onClick={handleDrawerBrandSecretClick}
+            aria-label="Aluminero Pro Herramientas y Configuración"
+            className="flex items-center gap-2.5 bg-transparent border-0 p-0 text-left select-none cursor-default focus:outline-none"
+          >
             <AlumineroProMetallicLogo size={32} />
             <div>
               <div className={`font-extrabold text-[16px] tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
@@ -462,7 +481,7 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
                 Herramientas y Configuración
               </div>
             </div>
-          </div>
+          </button>
           <button
             type="button"
             onClick={() => {
@@ -478,24 +497,74 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
           </button>
         </div>
 
-        {/* 1. Cambiar Tema Día / Noche (Carátula Básica) */}
+        {/* 1. Cambiar Tema (Modo Claro / Modo Oscuro) */}
         <button
           type="button"
           id="btn-drawer-theme"
           onClick={onToggleTheme}
-          className={`flex items-center justify-between w-full min-h-[46px] px-3.5 py-2.5 rounded-xl border text-[13.5px] font-extrabold text-left cursor-pointer transition-colors ${itemNeutralClass}`}
+          className={`flex items-center justify-between w-full min-h-[48px] px-3.5 py-2.5 rounded-xl border text-[13.5px] font-extrabold text-left cursor-pointer transition-colors ${itemNeutralClass}`}
         >
-          <span>{isDark ? '☀️ Modo Día (Claro)' : '🌙 Modo Noche (Oscuro)'}</span>
+          <span>{isDark ? '☀️ Modo Claro' : '🌙 Modo Oscuro'}</span>
           <span
             className={`px-2.5 py-0.5 rounded-lg text-[11px] font-extrabold ${
               isDark ? 'bg-white/15 text-sky-200' : 'bg-slate-200 text-slate-800'
             }`}
           >
-            {isDark ? 'Oscuro' : 'Claro'}
+            Actual: {isDark ? 'Oscuro' : 'Claro'}
           </span>
         </button>
 
-        {/* 1.5 Carátulas / Apariencia (3 Temas Visuales Globales + Sub-Variantes) */}
+        {/* 1.2 Selector rápido Azul Básico vs Verde PRO */}
+        <div className={`rounded-xl border p-2.5 shrink-0 ${isDark ? 'border-emerald-400/30 bg-slate-950/35' : 'border-slate-200 bg-slate-50'}`}>
+          <div className={`text-[10.5px] font-extrabold uppercase tracking-wider mb-1.5 ${subTextClass}`}>
+            Color Principal
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              id="btn-drawer-quick-azul"
+              onClick={() => onSelectSkin('basica')}
+              className={`min-h-[38px] px-2.5 py-1.5 rounded-lg border text-[12px] font-extrabold cursor-pointer flex items-center justify-center gap-1.5 transition-all ${
+                skin !== 'industrial'
+                  ? 'border-blue-500 bg-blue-600 text-white shadow-sm'
+                  : isDark
+                    ? 'border-white/15 bg-white/5 text-slate-200 hover:bg-white/10'
+                    : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <span className="w-2.5 h-2.5 rounded-full bg-sky-300 shrink-0" aria-hidden="true" />
+              <span>Azul Básico</span>
+            </button>
+            <button
+              type="button"
+              id="btn-drawer-quick-verde"
+              onClick={() => {
+                if (!verdeProUnlocked) {
+                  onClose();
+                  onOpenPro();
+                  return;
+                }
+                onSelectSkin('industrial');
+              }}
+              className={`min-h-[38px] px-2.5 py-1.5 rounded-lg border text-[12px] font-extrabold cursor-pointer flex items-center justify-center gap-1.5 transition-all ${
+                skin === 'industrial'
+                  ? 'border-emerald-500 bg-emerald-600 text-white shadow-sm'
+                  : isDark
+                    ? 'border-emerald-400/35 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20'
+                    : 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+              }`}
+            >
+              {!verdeProUnlocked ? (
+                <Lock className="w-3 h-3 shrink-0" aria-hidden="true" />
+              ) : (
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-300 shrink-0" aria-hidden="true" />
+              )}
+              <span>Verde PRO</span>
+            </button>
+          </div>
+        </div>
+
+        {/* 1.5 Carátulas / Apariencia (3 Temas Visuales Globales) */}
         <div
           className={`rounded-xl border overflow-hidden shrink-0 ${
             isDark ? 'border-sky-400/35 bg-slate-950/35' : 'border-blue-200 bg-blue-50/50'
@@ -536,132 +605,86 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
               {SKIN_OPTIONS.map((opt) => {
                 const unlocked = isSkinUnlockedForLicense(opt.id, licencia, proActive);
                 const isSelected = skin === opt.id;
-                const variants = SKIN_VARIANTS_BY_SKIN[opt.id] || [];
                 return (
-                  <div key={opt.id} className="flex flex-col gap-1.5">
-                    <button
-                      type="button"
-                      id={`btn-skin-${opt.id}`}
-                      onClick={() => handleSkinTap(opt)}
-                      className={`w-full p-2.5 rounded-xl border text-left transition-all cursor-pointer active:scale-[0.98] ${
-                        isSelected
+                  <button
+                    key={opt.id}
+                    type="button"
+                    id={`btn-skin-${opt.id}`}
+                    onClick={() => handleSkinTap(opt)}
+                    className={`w-full p-2.5 rounded-xl border text-left transition-all cursor-pointer active:scale-[0.98] ${
+                      isSelected
+                        ? isDark
+                          ? 'border-sky-400 bg-sky-500/20 ring-1 ring-sky-400/70'
+                          : 'border-blue-500 bg-blue-100/80 ring-1 ring-blue-400'
+                        : unlocked
                           ? isDark
-                            ? 'border-sky-400 bg-sky-500/20 ring-1 ring-sky-400/70'
-                            : 'border-blue-500 bg-blue-100/80 ring-1 ring-blue-400'
-                          : unlocked
-                            ? isDark
-                              ? 'border-white/15 bg-white/5 hover:bg-white/10'
-                              : 'border-slate-200 bg-white hover:bg-slate-50'
-                            : isDark
-                              ? 'border-amber-400/30 bg-slate-900/60 hover:bg-slate-900/80 opacity-90'
-                              : 'border-slate-200 bg-slate-100/80 hover:bg-slate-100 opacity-90'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5">
+                            ? 'border-white/15 bg-white/5 hover:bg-white/10'
+                            : 'border-slate-200 bg-white hover:bg-slate-50'
+                          : isDark
+                            ? 'border-amber-400/30 bg-slate-900/60 hover:bg-slate-900/80 opacity-90'
+                            : 'border-slate-200 bg-slate-100/80 hover:bg-slate-100 opacity-90'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div
+                        className="w-11 h-11 rounded-lg p-1.5 flex flex-col justify-between shrink-0 shadow-inner"
+                        style={{
+                          background: opt.previewBg,
+                          border: `1.5px solid ${opt.previewBorder}`,
+                        }}
+                        aria-hidden="true"
+                      >
                         <div
-                          className="w-11 h-11 rounded-lg p-1.5 flex flex-col justify-between shrink-0 shadow-inner"
+                          className="h-2.5 w-full rounded-[3px]"
                           style={{
-                            background: opt.previewBg,
-                            border: `1.5px solid ${opt.previewBorder}`,
+                            background: opt.previewCardA,
+                            borderTop: `1.5px solid ${opt.previewAccent}`,
                           }}
-                          aria-hidden="true"
-                        >
-                          <div
-                            className="h-2.5 w-full rounded-[3px]"
+                        />
+                        <div className="grid grid-cols-2 gap-1">
+                          <span
+                            className="h-3 rounded-[3px]"
                             style={{
-                              background: opt.previewCardA,
-                              borderTop: `1.5px solid ${opt.previewAccent}`,
+                              background: opt.previewCardB,
+                              border: `1px solid ${opt.previewBorder}`,
                             }}
                           />
-                          <div className="grid grid-cols-2 gap-1">
-                            <span
-                              className="h-3 rounded-[3px]"
-                              style={{
-                                background: opt.previewCardB,
-                                border: `1px solid ${opt.previewBorder}`,
-                              }}
-                            />
-                            <span
-                              className="h-3 rounded-[3px]"
-                              style={{
-                                background: opt.previewCardB,
-                                border: `1px solid ${opt.previewBorder}`,
-                              }}
-                            />
-                          </div>
+                          <span
+                            className="h-3 rounded-[3px]"
+                            style={{
+                              background: opt.previewCardB,
+                              border: `1px solid ${opt.previewBorder}`,
+                            }}
+                          />
                         </div>
+                      </div>
 
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center justify-between gap-1.5">
-                            <span className={`text-[13px] font-extrabold leading-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                              {opt.title}
-                            </span>
-                            {isSelected ? (
-                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-emerald-600 text-white text-[10px] font-extrabold shrink-0">
-                                <Check className="w-3 h-3" aria-hidden="true" />
-                                Activa
-                              </span>
-                            ) : !unlocked ? (
-                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-blue-600 text-white text-[10px] font-extrabold shrink-0">
-                                <Lock className="w-3 h-3" aria-hidden="true" />
-                                PRO
-                              </span>
-                            ) : null}
-                          </div>
-                          <p className={`m-0 mt-0.5 text-[10.5px] leading-snug ${subTextClass}`}>
-                            {opt.subtitle}
-                          </p>
-                          <span className={`inline-block mt-1 text-[10px] font-bold ${isDark ? 'text-emerald-300' : 'text-emerald-700'}`}>
-                            {opt.tierBadge}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-1.5">
+                          <span className={`text-[13px] font-extrabold leading-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                            {opt.title}
                           </span>
+                          {isSelected ? (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-emerald-600 text-white text-[10px] font-extrabold shrink-0">
+                              <Check className="w-3 h-3" aria-hidden="true" />
+                              Activa
+                            </span>
+                          ) : !unlocked ? (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-blue-600 text-white text-[10px] font-extrabold shrink-0">
+                              <Lock className="w-3 h-3" aria-hidden="true" />
+                              PRO
+                            </span>
+                          ) : null}
                         </div>
-                      </div>
-                    </button>
-
-                    {/* Selector rápido circular de sub-variantes de color debajo de la carátula */}
-                    {unlocked && variants.length > 0 && isSelected && onSelectSkinVariant && (
-                      <div
-                        id={`drawer-swatches-${opt.id}`}
-                        className={`px-2.5 py-2 rounded-xl border flex items-center justify-between gap-2 ${
-                          isDark ? 'border-white/12 bg-slate-900/70' : 'border-slate-200 bg-white'
-                        }`}
-                      >
-                        <span className={`text-[10.5px] font-extrabold uppercase tracking-wider ${subTextClass}`}>
-                          Tono:
+                        <p className={`m-0 mt-0.5 text-[10.5px] leading-snug ${subTextClass}`}>
+                          {opt.subtitle}
+                        </p>
+                        <span className={`inline-block mt-1 text-[10px] font-bold ${isDark ? 'text-emerald-300' : 'text-emerald-700'}`}>
+                          {opt.tierBadge}
                         </span>
-                        <div className="flex items-center gap-2 flex-wrap justify-end">
-                          {variants.map((v) => {
-                            const activeVar = skinVariant === v.id;
-                            return (
-                              <button
-                                key={v.id}
-                                type="button"
-                                id={`btn-drawer-variant-${opt.id}-${v.id}`}
-                                onClick={() => onSelectSkinVariant(v.id)}
-                                aria-label={`Variante ${v.label} de ${opt.title}`}
-                                aria-pressed={activeVar}
-                                title={v.label}
-                                className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full border text-[10.5px] font-extrabold cursor-pointer transition-all active:scale-95 ${
-                                  activeVar
-                                    ? 'border-white bg-white/15 text-white ring-2 ring-sky-400/80 shadow-sm'
-                                    : isDark
-                                      ? 'border-white/15 bg-white/5 text-slate-300 hover:bg-white/10'
-                                      : 'border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-200'
-                                }`}
-                              >
-                                <span
-                                  className="w-4 h-4 rounded-full border border-white/60 shadow-inner shrink-0"
-                                  style={{ background: v.swatchBg }}
-                                  aria-hidden="true"
-                                />
-                                <span>{v.label}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  </button>
                 );
               })}
 

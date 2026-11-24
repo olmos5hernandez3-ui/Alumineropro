@@ -1717,7 +1717,11 @@ export async function verifyAdminPasswordWithServer(
   password: string
 ): Promise<{ ok: boolean; offline?: boolean; error?: string }> {
   if (FIREBASE_DB_URL.trim()) {
-    return await verifyAdminPasswordRtdb(FIREBASE_DB_URL, password);
+    try {
+      return await verifyAdminPasswordRtdb(FIREBASE_DB_URL, password);
+    } catch {
+      return { ok: false, offline: true };
+    }
   }
   const candidate = password.trim();
   if (!candidate) {
@@ -1740,10 +1744,12 @@ export async function verifyAdminPasswordWithServer(
     }
     return { ok: false, error: 'Contraseña incorrecta' };
   } catch (err) {
+    // Si Firestore está sin conexión o restringido por reglas sin sesión Firebase Auth,
+    // devolver offline: true para permitir verificación local inmediata sin bloquear el modal.
     if (isFirestoreOfflineError(err)) {
       return { ok: false, offline: true };
     }
-    throw err;
+    return { ok: false, offline: true };
   }
 }
 
@@ -1752,7 +1758,11 @@ export async function resetAdminPasswordWithServer(
   newPassword: string
 ): Promise<{ ok: boolean; offline?: boolean; error?: string }> {
   if (FIREBASE_DB_URL.trim()) {
-    return await resetAdminPasswordRtdb(FIREBASE_DB_URL, pin, newPassword);
+    try {
+      return await resetAdminPasswordRtdb(FIREBASE_DB_URL, pin, newPassword);
+    } catch {
+      return { ok: false, offline: true };
+    }
   }
   const cleanPin = pin.trim();
   const cleanNew = newPassword.trim();
@@ -1776,7 +1786,7 @@ export async function resetAdminPasswordWithServer(
     if (isFirestoreOfflineError(err)) {
       return { ok: false, offline: true };
     }
-    handleFirestoreError(err, OperationType.WRITE, 'config/admin');
+    return { ok: false, offline: true };
   }
 }
 

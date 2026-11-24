@@ -2,9 +2,13 @@ import {
   AdminMessageItem,
   AjusteDescuentosConfig,
   AperturaVentanaId,
+  cloneHomeMenuLayout,
   ColorId,
+  DEFAULT_HOME_MENU_LAYOUT,
+  HomeMenuLayout,
   LineaId,
   normalizeDeviceIdInput,
+  normalizeHomeMenuLayout,
   OptimizadorConfig,
   PartidaObra,
   PerfilCatalogoId,
@@ -50,7 +54,6 @@ export const KEYS = {
   RECORDATORIOS: 'aluminero_recordatorios_cotizacion_v1',
   REFERRALS_HISTORY: 'aluminero_referrals_history_v1',
   SKIN: 'aluminero_skin_v1',
-  SKIN_VARIANT: 'aluminero_skin_variant_v1',
   PROMO_COLEGA_USAGE: 'aluminero_promo_colega_usage_v1',
   TUTORIAL_SEEN: 'aluminero_guided_tutorial_seen_v1',
   ASSISTANT_QUOTA: 'aluminero_assistant_daily_quota_v1',
@@ -59,6 +62,7 @@ export const KEYS = {
   READ_ADMIN_MESSAGES: 'aluminero_read_admin_messages_v1',
   REFERENCE_PRICES_CACHE: 'aluminero_reference_prices_cache_v1',
   ADMIN_MESSAGES_CACHE: 'aluminero_admin_messages_cache_v1',
+  HOME_MENU_LAYOUT: 'aluminero_home_menu_layout_v1',
 };
 
 export const REFERRED_BY_ID_STORAGE_KEY = 'referred_by_id';
@@ -109,6 +113,7 @@ export interface CloudAccountBackupPayload {
   obrasAprobadas: ObraAprobadaApartado[];
   notas?: NotaObra[];
   formulas?: FormulaPersonalizada[];
+  homeMenuLayout?: HomeMenuLayout;
   updatedAt: number;
 }
 
@@ -1613,42 +1618,8 @@ export function addReferralHistoryRecord(
   return next;
 }
 
-// ==================== CARÁTULAS / APARIENCIA GLOBAL (3 TEMAS + VARIANTES) ====================
+// ==================== CARÁTULAS / APARIENCIA GLOBAL (3 TEMAS) ====================
 export type AppSkin = 'basica' | 'ejecutiva' | 'industrial';
-export type AppSkinVariant = 'default' | 'azul' | 'naranja' | 'verde' | 'plateada' | 'dorada';
-
-export interface SkinVariantOption {
-  id: AppSkinVariant;
-  label: string;
-  swatchHex: string;
-  accentHex: string;
-}
-
-export const SKIN_VARIANTS_BY_SKIN: Record<AppSkin, SkinVariantOption[]> = {
-  basica: [],
-  ejecutiva: [
-    { id: 'azul', label: 'Azul', swatchHex: '#38BDF8', accentHex: '#F59E0B' },
-    { id: 'naranja', label: 'Anaranjada', swatchHex: '#F97316', accentHex: '#FB923C' },
-  ],
-  industrial: [
-    { id: 'verde', label: 'Esmeralda', swatchHex: '#10B981', accentHex: '#34D399' },
-    { id: 'plateada', label: 'Plateada', swatchHex: '#CBD5E1', accentHex: '#94A3B8' },
-    { id: 'dorada', label: 'Dorada', swatchHex: '#D4AF37', accentHex: '#FACC15' },
-  ],
-};
-
-export function getDefaultVariantForSkin(skin: AppSkin): AppSkinVariant {
-  if (skin === 'ejecutiva') return 'azul';
-  if (skin === 'industrial') return 'verde';
-  return 'default';
-}
-
-export function normalizeSkinVariant(skin: AppSkin, variant: string | null | undefined): AppSkinVariant {
-  const allowed = SKIN_VARIANTS_BY_SKIN[skin];
-  if (!allowed || allowed.length === 0) return 'default';
-  const match = allowed.find((v) => v.id === variant);
-  return match ? match.id : getDefaultVariantForSkin(skin);
-}
 
 export function loadSkin(): AppSkin {
   if (typeof localStorage === 'undefined') return 'basica';
@@ -1668,22 +1639,6 @@ export function saveSkin(skin: AppSkin): void {
   }
 }
 
-export function loadSkinVariant(skin?: AppSkin): AppSkinVariant {
-  const effectiveSkin = skin || loadSkin();
-  if (typeof localStorage === 'undefined') return getDefaultVariantForSkin(effectiveSkin);
-  const stored = localStorage.getItem(KEYS.SKIN_VARIANT);
-  return normalizeSkinVariant(effectiveSkin, stored);
-}
-
-export function saveSkinVariant(variant: AppSkinVariant): void {
-  if (typeof localStorage === 'undefined') return;
-  try {
-    localStorage.setItem(KEYS.SKIN_VARIANT, variant);
-  } catch {
-    // ignorar si localStorage no permite escritura
-  }
-}
-
 export function getUnlockedSkinsForLicense(
   licencia: LicenciaState | null | undefined,
   proActive: boolean
@@ -1693,37 +1648,12 @@ export function getUnlockedSkinsForLicense(
   }
   const code = String(licencia.planCode || '').trim().toUpperCase();
   const key = String(licencia.activatedKey || '').trim().toUpperCase();
-  const label = String(licencia.planLabel || '').toLowerCase();
-
-  // Versión Gratuita y Promo Colega (3 días) tienen acceso a Carátula 1: Básica (Modo Día / Noche)
-  if (
-    code === 'G' ||
-    code === 'D3' ||
-    /^AP-G-/i.test(key) ||
-    /^AP-D3-/i.test(key) ||
-    /colega|3\s*d[ií]as|regalo/.test(label)
-  ) {
-    return ['basica'];
+  // Prueba PRO / Promo Colega (3 días) desbloquea Azul Básico + Verde PRO (Industrial Pro)
+  if (code === 'G' || code === 'D3' || /^AP-G-/i.test(key) || /^AP-D3-/i.test(key)) {
+    return ['basica', 'industrial'];
   }
-
-  // Plan PRO Anual (1 Año / 365 días / Vitalicio) desbloquea las 3 carátulas (Básica, Ejecutiva e Industrial Pro)
-  const durationDays =
-    licencia.expiresAt === null
-      ? 9999
-      : Math.round((licencia.expiresAt - (licencia.activatedAt || 0)) / (24 * 60 * 60 * 1000));
-  if (
-    code === 'A' ||
-    code === 'V' ||
-    /^AP-A-/i.test(key) ||
-    /^AP-V-/i.test(key) ||
-    /1\s*a[ñn]o|anual|365|vitalici/.test(label) ||
-    durationDays >= 300
-  ) {
-    return ['basica', 'ejecutiva', 'industrial'];
-  }
-
-  // Planes PRO 30 días y 90 días (u otros intermedios) desbloquean Básica + Ejecutiva
-  return ['basica', 'ejecutiva'];
+  // Planes PRO de pago (30 días, 90 días, 1 Año, Vitalicio o custom >= 7d) desbloquean todas incluyendo Verde PRO
+  return ['basica', 'ejecutiva', 'industrial'];
 }
 
 export function isSkinUnlockedForLicense(
@@ -1735,9 +1665,9 @@ export function isSkinUnlockedForLicense(
 }
 
 export function getSkinPlanRequirementLabel(skin: AppSkin): string {
-  if (skin === 'ejecutiva') return 'Planes PRO 30 y 90 días';
-  if (skin === 'industrial') return 'Exclusivo Plan PRO 1 Año';
-  return 'Gratis y Promo Colega 3 días';
+  if (skin === 'ejecutiva') return 'Plan PRO (30d, 90d o 1 Año)';
+  if (skin === 'industrial') return 'Prueba PRO (3 días) o Plan PRO';
+  return 'Versión Gratuita y PRO';
 }
 
 // ==================== USO ÚNICO PROMO COLEGA (3 DÍAS GRATIS) ====================
@@ -1980,6 +1910,27 @@ export function saveAdminMessagesCache(list: AdminMessageItem[]): void {
     // ignorar
   }
 }
+
+export function loadHomeMenuLayout(): HomeMenuLayout {
+  if (typeof localStorage === 'undefined') {
+    return cloneHomeMenuLayout(DEFAULT_HOME_MENU_LAYOUT);
+  }
+  const raw = safeJsonParse<unknown>(localStorage.getItem(KEYS.HOME_MENU_LAYOUT), null);
+  return normalizeHomeMenuLayout(raw);
+}
+
+export function saveHomeMenuLayout(layout: HomeMenuLayout): HomeMenuLayout {
+  const normalized = normalizeHomeMenuLayout(layout);
+  if (typeof localStorage !== 'undefined') {
+    try {
+      localStorage.setItem(KEYS.HOME_MENU_LAYOUT, JSON.stringify(normalized));
+    } catch {
+      // ignorar si localStorage no permite escritura
+    }
+  }
+  return normalized;
+}
+
 
 
 

@@ -2797,15 +2797,14 @@ test('77. Ajuste masivo de precios por porcentaje (Aluminio, Vidrio, Herrajes, T
   assert.equal(allDown.herrajesPrecios['ref-her-carr3'], 90);
 });
 
-test('78. Matriz de 3 Carátulas por plan: Gratis/Colega 3d (Básica), PRO 30d/90d (Ejecutiva) y PRO 1 Año (Industrial Pro)', async () => {
+test('78. Desbloqueo de Tema Verde PRO (industrial) para Prueba PRO (3 días) y Planes PRO, bloqueado en Gratis', async () => {
   const { getUnlockedSkinsForLicense, isSkinUnlockedForLicense } = await import('./storageHelpers.ts');
 
-  // Gratis: solo Básica
+  // Gratis: solo Azul Básico (basica)
   assert.deepEqual(getUnlockedSkinsForLicense(null, false), ['basica']);
-  assert.equal(isSkinUnlockedForLicense('ejecutiva', null, false), false);
   assert.equal(isSkinUnlockedForLicense('industrial', null, false), false);
 
-  // Promo Colega 3 días (G): también solo Básica
+  // Prueba PRO 3 días (G): desbloquea Básica + Verde PRO (industrial)
   const trialLic = {
     active: true,
     planCode: 'G',
@@ -2813,71 +2812,96 @@ test('78. Matriz de 3 Carátulas por plan: Gratis/Colega 3d (Básica), PRO 30d/9
     expiresAt: Date.now() + 86_400_000,
     activatedAt: Date.now(),
   };
-  assert.deepEqual(getUnlockedSkinsForLicense(trialLic, true), ['basica']);
-  assert.equal(isSkinUnlockedForLicense('ejecutiva', trialLic, true), false);
-  assert.equal(isSkinUnlockedForLicense('industrial', trialLic, true), false);
+  assert.equal(isSkinUnlockedForLicense('industrial', trialLic, true), true);
 
-  // Plan PRO 30 días (M) y 90 días (Q): desbloquea Básica + Ejecutiva
-  const pro30Lic = {
+  // Plan PRO pagado (M/Q/A): desbloquea Básica, Ejecutiva y Verde PRO
+  const paidLic = {
     active: true,
     planCode: 'M',
     planLabel: '30 Días PRO',
     expiresAt: Date.now() + 30 * 86_400_000,
     activatedAt: Date.now(),
   };
-  assert.deepEqual(getUnlockedSkinsForLicense(pro30Lic, true), ['basica', 'ejecutiva']);
-  assert.equal(isSkinUnlockedForLicense('industrial', pro30Lic, true), false);
-
-  const pro90Lic = {
-    active: true,
-    planCode: 'Q',
-    planLabel: '90 Días PRO',
-    expiresAt: Date.now() + 90 * 86_400_000,
-    activatedAt: Date.now(),
-  };
-  assert.deepEqual(getUnlockedSkinsForLicense(pro90Lic, true), ['basica', 'ejecutiva']);
-
-  // Plan PRO 1 Año (A): desbloquea las 3 carátulas incluyendo Industrial Pro
-  const pro1YearLic = {
-    active: true,
-    planCode: 'A',
-    planLabel: '1 Año PRO',
-    expiresAt: Date.now() + 365 * 86_400_000,
-    activatedAt: Date.now(),
-  };
-  assert.deepEqual(getUnlockedSkinsForLicense(pro1YearLic, true), ['basica', 'ejecutiva', 'industrial']);
-  assert.equal(isSkinUnlockedForLicense('industrial', pro1YearLic, true), true);
+  assert.deepEqual(getUnlockedSkinsForLicense(paidLic, true), ['basica', 'ejecutiva', 'industrial']);
 });
 
-test('79. Sub-variantes de color por carátula (Ejecutiva Azul/Naranja e Industrial Verde/Plateada/Dorada) y normalización', async () => {
+test('79. Acceso de Administrador acepta contraseña 1983, override personalizado y PIN de recuperación 202699', async () => {
+  const { verifyAdminAccessCredential } = await import('./alumineroLogic.ts');
+
+  assert.deepEqual(verifyAdminAccessCredential('1983'), { ok: true, viaRecoveryPin: false });
+  assert.deepEqual(verifyAdminAccessCredential('  1983  '), { ok: true, viaRecoveryPin: false });
+  assert.deepEqual(verifyAdminAccessCredential('202699'), { ok: true, viaRecoveryPin: true });
+  assert.deepEqual(verifyAdminAccessCredential(' 202699 '), { ok: true, viaRecoveryPin: true });
+  assert.deepEqual(verifyAdminAccessCredential('0000'), { ok: false, viaRecoveryPin: false });
+  assert.deepEqual(verifyAdminAccessCredential(''), { ok: false, viaRecoveryPin: false });
+
+  // Con override personalizado, el override y el PIN maestro 202699 siguen permitiendo acceso inmediato
+  assert.deepEqual(verifyAdminAccessCredential('MiClavePro26', 'MiClavePro26'), {
+    ok: true,
+    viaRecoveryPin: false,
+  });
+  assert.deepEqual(verifyAdminAccessCredential('202699', 'MiClavePro26'), {
+    ok: true,
+    viaRecoveryPin: true,
+  });
+  assert.deepEqual(verifyAdminAccessCredential('1983', 'MiClavePro26'), {
+    ok: false,
+    viaRecoveryPin: false,
+  });
+});
+
+test('80. HomeMenuLayout: normalización segura y reordenamiento drag-and-drop dentro y entre secciones', async () => {
   const {
-    SKIN_VARIANTS_BY_SKIN,
-    getDefaultVariantForSkin,
-    normalizeSkinVariant,
-  } = await import('./storageHelpers.ts');
+    ALL_HOME_MENU_CARD_IDS,
+    DEFAULT_HOME_MENU_LAYOUT,
+    isDefaultHomeMenuLayout,
+    moveHomeMenuCard,
+    normalizeHomeMenuLayout,
+  } = await import('./alumineroLogic.ts');
 
-  assert.equal(SKIN_VARIANTS_BY_SKIN.basica.length, 0);
-  assert.deepEqual(
-    SKIN_VARIANTS_BY_SKIN.ejecutiva.map((v) => v.id),
-    ['azul', 'naranja']
+  // Normalización sobre entradas inválidas o incompletas devuelve todas las tarjetas sin duplicados
+  const fallback = normalizeHomeMenuLayout(null);
+  assert.equal(isDefaultHomeMenuLayout(fallback), true);
+  assert.equal(
+    fallback.principal.length + fallback.herramientas.length,
+    ALL_HOME_MENU_CARD_IDS.length
   );
-  assert.deepEqual(
-    SKIN_VARIANTS_BY_SKIN.industrial.map((v) => v.id),
-    ['verde', 'plateada', 'dorada']
+
+  const partial = normalizeHomeMenuLayout({
+    principal: ['puertas', 'puertas', 'desconocida' as never],
+    herramientas: ['notas'],
+  });
+  const combined = [...partial.principal, ...partial.herramientas];
+  assert.equal(combined.length, ALL_HOME_MENU_CARD_IDS.length);
+  assert.equal(new Set(combined).size, ALL_HOME_MENU_CARD_IDS.length);
+  assert.equal(partial.principal[0], 'puertas');
+  assert.equal(partial.herramientas[0], 'notas');
+
+  // Reordenar dentro de la misma sección (principal)
+  const firstDefault = DEFAULT_HOME_MENU_LAYOUT.principal[0];
+  const reorderedSame = moveHomeMenuCard(DEFAULT_HOME_MENU_LAYOUT, 'puertas', 'principal', 0);
+  assert.equal(reorderedSame.principal[0], 'puertas');
+  assert.equal(reorderedSame.principal[1], firstDefault);
+  assert.equal(isDefaultHomeMenuLayout(reorderedSame), false);
+
+  // Mover tarjeta entre secciones (herramientas -> principal)
+  const movedUp = moveHomeMenuCard(reorderedSame, 'notas', 'principal', 1);
+  assert.equal(movedUp.principal[1], 'notas');
+  assert.equal(movedUp.herramientas.includes('notas'), false);
+  assert.equal(
+    movedUp.principal.length + movedUp.herramientas.length,
+    ALL_HOME_MENU_CARD_IDS.length
   );
 
-  assert.equal(getDefaultVariantForSkin('basica'), 'default');
-  assert.equal(getDefaultVariantForSkin('ejecutiva'), 'azul');
-  assert.equal(getDefaultVariantForSkin('industrial'), 'verde');
-
-  assert.equal(normalizeSkinVariant('ejecutiva', 'naranja'), 'naranja');
-  assert.equal(normalizeSkinVariant('ejecutiva', 'dorada'), 'azul');
-  assert.equal(normalizeSkinVariant('industrial', 'plateada'), 'plateada');
-  assert.equal(normalizeSkinVariant('industrial', 'dorada'), 'dorada');
-  assert.equal(normalizeSkinVariant('industrial', 'naranja'), 'verde');
-  assert.equal(normalizeSkinVariant('basica', 'azul'), 'default');
+  // Mover tarjeta de principal -> herramientas con índice fuera de rango (clamping)
+  const movedDown = moveHomeMenuCard(movedUp, 'ventanas', 'herramientas', 999);
+  assert.equal(movedDown.principal.includes('ventanas'), false);
+  assert.equal(movedDown.herramientas[movedDown.herramientas.length - 1], 'ventanas');
+  assert.equal(
+    movedDown.principal.length + movedDown.herramientas.length,
+    ALL_HOME_MENU_CARD_IDS.length
+  );
 });
-
 
 
 

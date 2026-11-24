@@ -3488,6 +3488,154 @@ export function verifyRecoveryPin(pin: string): boolean {
   return String(pin || '').trim() === ADMIN_RECOVERY_PIN;
 }
 
+export function verifyAdminAccessCredential(
+  candidate: string,
+  customOverride?: string | null
+): { ok: boolean; viaRecoveryPin: boolean } {
+  const cleanCandidate = String(candidate || '').trim();
+  if (!cleanCandidate) return { ok: false, viaRecoveryPin: false };
+  if (verifyAdminPassword(cleanCandidate, customOverride)) {
+    return { ok: true, viaRecoveryPin: false };
+  }
+  if (verifyRecoveryPin(cleanCandidate)) {
+    return { ok: true, viaRecoveryPin: true };
+  }
+  return { ok: false, viaRecoveryPin: false };
+}
+
+export type HomeMenuSectionId = 'principal' | 'herramientas';
+
+export type HomeMenuCardId =
+  | 'levantamiento'
+  | 'hoja'
+  | 'ventanas'
+  | 'puertas'
+  | 'catalogo'
+  | 'inventario'
+  | 'notas'
+  | 'modulacion'
+  | 'taller'
+  | 'galeria'
+  | 'vidrio'
+  | 'cotizaciones'
+  | 'videos';
+
+export interface HomeMenuLayout {
+  principal: HomeMenuCardId[];
+  herramientas: HomeMenuCardId[];
+}
+
+export const ALL_HOME_MENU_CARD_IDS: readonly HomeMenuCardId[] = [
+  'levantamiento',
+  'hoja',
+  'ventanas',
+  'puertas',
+  'catalogo',
+  'inventario',
+  'notas',
+  'modulacion',
+  'taller',
+  'galeria',
+  'vidrio',
+  'cotizaciones',
+  'videos',
+] as const;
+
+export const DEFAULT_HOME_MENU_LAYOUT: HomeMenuLayout = {
+  principal: ['levantamiento', 'hoja', 'ventanas', 'puertas', 'catalogo', 'inventario'],
+  herramientas: ['notas', 'modulacion', 'taller', 'galeria', 'vidrio', 'cotizaciones', 'videos'],
+};
+
+const VALID_HOME_MENU_CARD_SET = new Set<string>(ALL_HOME_MENU_CARD_IDS);
+
+export function cloneHomeMenuLayout(layout: HomeMenuLayout): HomeMenuLayout {
+  return {
+    principal: [...layout.principal],
+    herramientas: [...layout.herramientas],
+  };
+}
+
+export function normalizeHomeMenuLayout(raw: unknown): HomeMenuLayout {
+  if (!raw || typeof raw !== 'object') {
+    return cloneHomeMenuLayout(DEFAULT_HOME_MENU_LAYOUT);
+  }
+  const obj = raw as Partial<Record<HomeMenuSectionId, unknown>>;
+  const seen = new Set<HomeMenuCardId>();
+  const principal: HomeMenuCardId[] = [];
+  const herramientas: HomeMenuCardId[] = [];
+
+  const ingest = (arr: unknown, target: HomeMenuCardId[]) => {
+    if (!Array.isArray(arr)) return;
+    for (const item of arr) {
+      if (typeof item === 'string' && VALID_HOME_MENU_CARD_SET.has(item)) {
+        const id = item as HomeMenuCardId;
+        if (!seen.has(id)) {
+          seen.add(id);
+          target.push(id);
+        }
+      }
+    }
+  };
+
+  ingest(obj.principal, principal);
+  ingest(obj.herramientas, herramientas);
+
+  // Garantizar que ningún módulo se pierda si se agregan nuevas tarjetas en el futuro
+  for (const id of DEFAULT_HOME_MENU_LAYOUT.principal) {
+    if (!seen.has(id)) {
+      seen.add(id);
+      principal.push(id);
+    }
+  }
+  for (const id of DEFAULT_HOME_MENU_LAYOUT.herramientas) {
+    if (!seen.has(id)) {
+      seen.add(id);
+      herramientas.push(id);
+    }
+  }
+
+  return { principal, herramientas };
+}
+
+export function moveHomeMenuCard(
+  layout: HomeMenuLayout,
+  cardId: HomeMenuCardId,
+  targetSection: HomeMenuSectionId,
+  targetIndex?: number
+): HomeMenuLayout {
+  const normalized = normalizeHomeMenuLayout(layout);
+  if (!VALID_HOME_MENU_CARD_SET.has(cardId)) {
+    return normalized;
+  }
+
+  const next: HomeMenuLayout = {
+    principal: normalized.principal.filter((id) => id !== cardId),
+    herramientas: normalized.herramientas.filter((id) => id !== cardId),
+  };
+
+  const dest = next[targetSection];
+  const rawIdx = typeof targetIndex === 'number' && Number.isFinite(targetIndex)
+    ? Math.trunc(targetIndex)
+    : dest.length;
+  const clampedIdx = Math.max(0, Math.min(dest.length, rawIdx));
+  dest.splice(clampedIdx, 0, cardId);
+  return next;
+}
+
+export function isDefaultHomeMenuLayout(layout: HomeMenuLayout): boolean {
+  const norm = normalizeHomeMenuLayout(layout);
+  if (
+    norm.principal.length !== DEFAULT_HOME_MENU_LAYOUT.principal.length ||
+    norm.herramientas.length !== DEFAULT_HOME_MENU_LAYOUT.herramientas.length
+  ) {
+    return false;
+  }
+  return (
+    norm.principal.every((id, i) => id === DEFAULT_HOME_MENU_LAYOUT.principal[i]) &&
+    norm.herramientas.every((id, i) => id === DEFAULT_HOME_MENU_LAYOUT.herramientas[i])
+  );
+}
+
 export interface CloudDeviceRecord {
   deviceId: string;
   cliente: string;
