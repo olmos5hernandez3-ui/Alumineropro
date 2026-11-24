@@ -54,6 +54,8 @@ export const KEYS = {
   RECORDATORIOS: 'aluminero_recordatorios_cotizacion_v1',
   REFERRALS_HISTORY: 'aluminero_referrals_history_v1',
   SKIN: 'aluminero_skin_v1',
+  SKIN_VARIANT: 'aluminero_skin_variant_v1',
+  LEGAL_DISCLAIMER_ACCEPTED: 'aluminero_legal_disclaimer_accepted_v1',
   PROMO_COLEGA_USAGE: 'aluminero_promo_colega_usage_v1',
   TUTORIAL_SEEN: 'aluminero_guided_tutorial_seen_v1',
   ASSISTANT_QUOTA: 'aluminero_assistant_daily_quota_v1',
@@ -78,6 +80,7 @@ export interface LicenciaState {
   activatedKey?: string;
   adminAssigned?: boolean;
   linkedEmail?: string;
+  tipo?: 'pagado' | 'prueba_gratis';
 }
 
 export interface AdminKeyRecord {
@@ -92,6 +95,7 @@ export interface AdminKeyRecord {
   revoked?: boolean;
   revokedAt?: number | null;
   linkedEmail?: string;
+  tipo?: 'pagado' | 'prueba_gratis';
 }
 
 export interface CloudAccountSession {
@@ -105,6 +109,7 @@ export interface CloudAccountBackupPayload {
   licencia: LicenciaState | null;
   hoja: HojaState;
   historial: HistorialItem[];
+  cotizacionesGuardadas?: CotizacionGuardada[];
   contratoCliente?: ContratoClienteInfo;
   inventario: Record<string, number>;
   inventarioHerrajes: Record<string, number>;
@@ -1618,30 +1623,38 @@ export function addReferralHistoryRecord(
   return next;
 }
 
-// ==================== CARÁTULAS / APARIENCIA GLOBAL (3 TEMAS) ====================
-export type AppSkin = 'basica' | 'ejecutiva' | 'industrial';
-export type AppSkinVariant = 'default' | 'naranja' | 'plateada' | 'dorada';
+// ==================== CARÁTULAS / APARIENCIA GLOBAL (4 TEMAS CON SUB-VARIANTES) ====================
+export type AppSkin = 'basica' | 'navidena' | 'ejecutiva' | 'industrial';
+export type AppSkinVariant = 'default' | 'verde' | 'naranja' | 'plateada' | 'dorada' | 'bronce';
 
 export const SKIN_VARIANTS_BY_SKIN: Record<
   AppSkin,
   Array<{ id: AppSkinVariant; label: string; swatchBg: string }>
 > = {
   basica: [],
+  navidena: [],
   ejecutiva: [
-    { id: 'default', label: 'Azul Acero', swatchBg: 'linear-gradient(135deg, #38BDF8, #0284C7)' },
+    { id: 'default', label: 'Azul', swatchBg: 'linear-gradient(135deg, #38BDF8, #0284C7)' },
+    { id: 'verde', label: 'Verde', swatchBg: 'linear-gradient(135deg, #34D399, #059669)' },
     { id: 'naranja', label: 'Naranja', swatchBg: 'linear-gradient(135deg, #FB923C, #EA580C)' },
   ],
   industrial: [
     { id: 'default', label: 'Verde', swatchBg: 'linear-gradient(135deg, #10B981, #047857)' },
-    { id: 'plateada', label: 'Acero', swatchBg: 'linear-gradient(135deg, #E2E8F0, #64748B)' },
-    { id: 'dorada', label: 'Dorada', swatchBg: 'linear-gradient(135deg, #FACC15, #B45309)' },
+    { id: 'plateada', label: 'Plata', swatchBg: 'linear-gradient(135deg, #E2E8F0, #64748B)' },
+    { id: 'dorada', label: 'Oro', swatchBg: 'linear-gradient(135deg, #FACC15, #B45309)' },
+    { id: 'bronce', label: 'Bronce', swatchBg: 'linear-gradient(135deg, #D98A4E, #7C3F19)' },
   ],
 };
 
 export function loadSkin(): AppSkin {
   if (typeof localStorage === 'undefined') return 'basica';
   const stored = localStorage.getItem(KEYS.SKIN);
-  if (stored === 'basica' || stored === 'ejecutiva' || stored === 'industrial') {
+  if (
+    stored === 'basica' ||
+    stored === 'navidena' ||
+    stored === 'ejecutiva' ||
+    stored === 'industrial'
+  ) {
     return stored;
   }
   return 'basica';
@@ -1656,21 +1669,69 @@ export function saveSkin(skin: AppSkin): void {
   }
 }
 
+export function normalizeSkinVariantForSkin(skin: AppSkin, variant: string | null | undefined): AppSkinVariant {
+  const allowed = SKIN_VARIANTS_BY_SKIN[skin] || [];
+  if (allowed.length === 0) return 'default';
+  const found = allowed.find((v) => v.id === variant);
+  return found ? found.id : 'default';
+}
+
+export function loadSkinVariant(skin: AppSkin = loadSkin()): AppSkinVariant {
+  if (typeof localStorage === 'undefined') return 'default';
+  const raw = localStorage.getItem(KEYS.SKIN_VARIANT);
+  if (!raw) return 'default';
+  // Soporta mapa JSON por carátula o valor simple
+  try {
+    const parsed = JSON.parse(raw) as Record<string, string>;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return normalizeSkinVariantForSkin(skin, parsed[skin]);
+    }
+  } catch {
+    // valor plano legado
+  }
+  return normalizeSkinVariantForSkin(skin, raw);
+}
+
+export function saveSkinVariant(skin: AppSkin, variant: AppSkinVariant): AppSkinVariant {
+  const normalized = normalizeSkinVariantForSkin(skin, variant);
+  if (typeof localStorage === 'undefined') return normalized;
+  try {
+    let map: Record<string, string> = {};
+    const existing = localStorage.getItem(KEYS.SKIN_VARIANT);
+    if (existing) {
+      try {
+        const parsed = JSON.parse(existing) as Record<string, string>;
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          map = { ...parsed };
+        }
+      } catch {
+        // sobrescribir valor plano legado
+      }
+    }
+    map[skin] = normalized;
+    localStorage.setItem(KEYS.SKIN_VARIANT, JSON.stringify(map));
+  } catch {
+    // ignorar si localStorage no permite escritura
+  }
+  return normalized;
+}
+
 export function getUnlockedSkinsForLicense(
   licencia: LicenciaState | null | undefined,
   proActive: boolean
 ): AppSkin[] {
+  // Básica y Navideña disponibles en Versión Gratuita y en todos los planes PRO
   if (!proActive || !licencia || !licencia.active) {
-    return ['basica'];
+    return ['basica', 'navidena'];
   }
   const code = String(licencia.planCode || '').trim().toUpperCase();
   const key = String(licencia.activatedKey || '').trim().toUpperCase();
-  // Prueba PRO / Promo Colega (3 días) desbloquea Azul Básico + Verde PRO (Industrial Pro)
+  // Prueba PRO / Promo Colega (3 días) mantiene Básica y Navideña; Ejecutiva e Industrial PRO son exclusivas de planes de pago / permanentes
   if (code === 'G' || code === 'D3' || /^AP-G-/i.test(key) || /^AP-D3-/i.test(key)) {
-    return ['basica', 'industrial'];
+    return ['basica', 'navidena'];
   }
-  // Planes PRO de pago (30 días, 90 días, 1 Año, Vitalicio o custom >= 7d) desbloquean todas incluyendo Verde PRO
-  return ['basica', 'ejecutiva', 'industrial'];
+  // Planes PRO de pago (30 días, 90 días, 1 Año, Permanente/Vitalicio) desbloquean las 4 carátulas
+  return ['basica', 'navidena', 'ejecutiva', 'industrial'];
 }
 
 export function isSkinUnlockedForLicense(
@@ -1682,9 +1743,26 @@ export function isSkinUnlockedForLicense(
 }
 
 export function getSkinPlanRequirementLabel(skin: AppSkin): string {
-  if (skin === 'ejecutiva') return 'Plan PRO (30d, 90d o 1 Año)';
-  if (skin === 'industrial') return 'Prueba PRO (3 días) o Plan PRO';
+  if (skin === 'ejecutiva' || skin === 'industrial') return 'Planes PRO (30d, 90d o 1 Año)';
   return 'Versión Gratuita y PRO';
+}
+
+export function loadLegalDisclaimerAccepted(): boolean {
+  if (typeof localStorage === 'undefined') return false;
+  return localStorage.getItem(KEYS.LEGAL_DISCLAIMER_ACCEPTED) === '1';
+}
+
+export function saveLegalDisclaimerAccepted(accepted: boolean): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    if (accepted) {
+      localStorage.setItem(KEYS.LEGAL_DISCLAIMER_ACCEPTED, '1');
+    } else {
+      localStorage.removeItem(KEYS.LEGAL_DISCLAIMER_ACCEPTED);
+    }
+  } catch {
+    // ignorar
+  }
 }
 
 // ==================== USO ÚNICO PROMO COLEGA (3 DÍAS GRATIS) ====================

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Bell, Check, ChevronDown, ChevronUp, Crown, Lock, LogOut, Palette, Scale } from 'lucide-react';
+import { Bell, Check, ChevronDown, ChevronUp, CloudUpload, Crown, Lock, Palette, RefreshCw, Scale, WifiOff } from 'lucide-react';
 import {
   APP_VERSION,
   formatLicenseCountdownBadge,
@@ -7,6 +7,7 @@ import {
 } from '../utils/alumineroLogic';
 import {
   AppSkin,
+  AppSkinVariant,
   AppTheme,
   getSkinPlanRequirementLabel,
   isSkinUnlockedForLicense,
@@ -37,6 +38,9 @@ interface TopBarProps {
   licencia: LicenciaState | null;
   trialExpiresAt: number | null;
   theme: AppTheme;
+  isOnline?: boolean;
+  pendingSyncCount?: number;
+  syncingOfflineQueue?: boolean;
   unreadMessagesCount?: number;
   onBack: () => void;
   onGoHome: () => void;
@@ -46,6 +50,7 @@ interface TopBarProps {
   onOpenCalculadora: () => void;
   onRequestExit?: () => void;
   onOpenMessages?: () => void;
+  onClickOfflineStatus?: () => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -54,6 +59,9 @@ export const TopBar: React.FC<TopBarProps> = ({
   licencia,
   trialExpiresAt,
   theme,
+  isOnline = true,
+  pendingSyncCount = 0,
+  syncingOfflineQueue = false,
   unreadMessagesCount = 0,
   onBack,
   onGoHome,
@@ -62,6 +70,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   onOpenCalculadora,
   onRequestExit,
   onOpenMessages,
+  onClickOfflineStatus,
 }) => {
   const isDark = theme === 'dark';
   const [nowTs, setNowTs] = useState<number>(() => Date.now());
@@ -98,8 +107,12 @@ export const TopBar: React.FC<TopBarProps> = ({
       }`}
     >
       <div className="w-full max-w-full lg:max-w-[1120px] mx-auto h-full px-1.5 sm:px-3.5 flex items-center justify-between gap-1 sm:gap-2 box-border">
-        {/* Lado izquierdo: Botón regresar (←) en internas, o botón compacto Salir + Logo AP + Título brillante */}
-        <div className="min-w-0 flex-1 flex items-center gap-1 sm:gap-2 overflow-hidden">
+        {/* Lado izquierdo: Botón regresar (←) en internas, o Logo AP + Título brillante */}
+        <div
+          className={`flex items-center gap-1 sm:gap-2 overflow-hidden ${
+            currentView !== 'menu' ? 'shrink-0' : 'min-w-0 flex-1'
+          }`}
+        >
           {currentView !== 'menu' && (
             <button
               type="button"
@@ -107,13 +120,13 @@ export const TopBar: React.FC<TopBarProps> = ({
               onClick={onBack}
               aria-label="Volver un paso atrás"
               title="Regresar"
-              className={`inline-flex items-center justify-center gap-1 min-w-[34px] min-h-[34px] sm:min-h-[36px] px-2 sm:px-2.5 py-1 rounded-[11px] border text-[12px] font-bold cursor-pointer whitespace-nowrap shrink-0 transition-transform active:scale-95 ${
+              className={`inline-flex items-center justify-center gap-1 min-w-[32px] min-h-[32px] sm:min-w-[34px] sm:min-h-[36px] px-1.5 sm:px-2.5 py-1 rounded-[11px] border text-[12px] font-bold cursor-pointer whitespace-nowrap shrink-0 transition-transform active:scale-95 ${
                 isDark
                   ? 'metal-icon-btn'
                   : 'border-slate-300 bg-slate-100 hover:bg-slate-200 text-slate-800'
               }`}
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <line x1="19" y1="12" x2="5" y2="12" />
                 <polyline points="12 19 5 12 12 5" />
               </svg>
@@ -124,41 +137,91 @@ export const TopBar: React.FC<TopBarProps> = ({
             id="logo-ap"
             title="Aluminero Pro"
             aria-label="Logotipo Aluminero Pro"
-            className="p-0 border-0 bg-transparent rounded-[10px] shrink-0 select-none"
+            className={`p-0 border-0 bg-transparent rounded-[10px] shrink-0 select-none ${
+              currentView !== 'menu' && (!isOnline || pendingSyncCount > 0) ? 'hidden sm:block' : ''
+            }`}
           >
-            <AlumineroProMetallicLogo size={32} className="block w-[30px] h-[30px] sm:w-[36px] sm:h-[36px]" />
+            <AlumineroProMetallicLogo size={32} className="block w-[28px] h-[28px] sm:w-[36px] sm:h-[36px]" />
           </div>
           {currentView === 'menu' && (
             <span
               id="title-ap"
-              className={`min-w-0 truncate block p-0 font-extrabold text-[14px] sm:text-[18px] tracking-tight text-left select-none ${
+              className={`min-w-0 block truncate p-0 font-extrabold text-[14.5px] sm:text-[18px] tracking-tight text-left whitespace-nowrap select-none ${
                 isDark ? 'text-white drop-shadow-[0_1px_6px_rgba(56,189,248,0.28)]' : 'text-slate-900'
               }`}
             >
               Aluminero Pro
             </span>
           )}
-          {currentView === 'menu' && onRequestExit && (
-            <button
-              type="button"
-              id="btn-top-salir"
-              onClick={onRequestExit}
-              title="Salir de Aluminero Pro"
-              aria-label="Salir de la aplicación"
-              className={`inline-flex items-center gap-0.5 min-h-[28px] px-1.5 sm:px-2 py-0.5 rounded-lg border text-[10px] sm:text-[10.5px] font-extrabold cursor-pointer whitespace-nowrap shrink-0 transition-all active:scale-95 ${
-                isDark
-                  ? 'border-slate-500/60 bg-slate-800/80 hover:bg-rose-600/30 hover:border-rose-400/60 text-slate-200'
-                  : 'border-slate-300 bg-slate-100 hover:bg-rose-50 hover:border-rose-300 text-slate-700 hover:text-rose-700'
-              }`}
-            >
-              <LogOut className="w-3 h-3 shrink-0" aria-hidden="true" />
-              <span>Salir</span>
-            </button>
-          )}
         </div>
 
-        {/* Lado derecho: Inicio (internas), Campana avisos, Calculadora, Estado PRO (verde/azul), Menú */}
+        {/* Lado derecho: Estado Offline / Cola Sync, Inicio (internas), Campana avisos, Calculadora, Estado PRO, Menú */}
         <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+          {!isOnline ? (
+            <button
+              type="button"
+              id="topbar-offline-badge"
+              role="status"
+              aria-live="polite"
+              onClick={onClickOfflineStatus}
+              title={
+                pendingSyncCount > 0
+                  ? `Sin conexión a internet · ${pendingSyncCount} cotización(es) en cola para sincronizar`
+                  : 'Sin conexión a internet · Modo offline activo'
+              }
+              aria-label={
+                pendingSyncCount > 0
+                  ? `Sin conexión a internet. ${pendingSyncCount} cotizaciones pendientes de sincronizar`
+                  : 'Sin conexión a internet'
+              }
+              className="inline-flex items-center gap-1 min-h-[32px] sm:min-h-[36px] px-2 sm:px-2.5 py-1 rounded-full border border-rose-300/90 bg-rose-600 text-white text-[10px] sm:text-[11.5px] font-extrabold shadow-[0_2px_10px_rgba(225,29,72,0.42)] whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-transform"
+            >
+              <WifiOff className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+              <span className="sm:hidden">Sin red</span>
+              <span className="hidden sm:inline">Sin conexión</span>
+              {pendingSyncCount > 0 && (
+                <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-white text-rose-700 text-[9.5px] font-black leading-tight">
+                  {pendingSyncCount}
+                </span>
+              )}
+            </button>
+          ) : pendingSyncCount > 0 ? (
+            <button
+              type="button"
+              id="topbar-pending-sync-badge"
+              role="status"
+              aria-live="polite"
+              onClick={onClickOfflineStatus}
+              title={
+                syncingOfflineQueue
+                  ? `Sincronizando ${pendingSyncCount} cotización(es)...`
+                  : `${pendingSyncCount} cotización(es) pendiente(s) de sincronizar en la nube`
+              }
+              aria-label={
+                syncingOfflineQueue
+                  ? `Sincronizando ${pendingSyncCount} cotizaciones`
+                  : `${pendingSyncCount} cotizaciones pendientes de sincronizar`
+              }
+              className={`inline-flex items-center gap-1 min-h-[32px] sm:min-h-[36px] px-2 sm:px-2.5 py-1 rounded-full border text-[10px] sm:text-[11.5px] font-extrabold whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-transform ${
+                isDark
+                  ? 'border-amber-300/80 bg-amber-500/25 text-amber-100 hover:bg-amber-500/35'
+                  : 'border-amber-400 bg-amber-100 text-amber-900 hover:bg-amber-200'
+              }`}
+            >
+              {syncingOfflineQueue ? (
+                <RefreshCw className="w-3.5 h-3.5 shrink-0 animate-spin" aria-hidden="true" />
+              ) : (
+                <CloudUpload className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+              )}
+              <span className="hidden sm:inline">
+                {syncingOfflineQueue ? 'Sincronizando' : 'Por sincronizar'}
+              </span>
+              <span className="px-1.5 py-0.2 rounded-full bg-amber-500 text-slate-950 text-[9.5px] font-black leading-tight">
+                {pendingSyncCount}
+              </span>
+            </button>
+          ) : null}
+
           {currentView !== 'menu' && (
             <button
               type="button"
@@ -166,7 +229,7 @@ export const TopBar: React.FC<TopBarProps> = ({
               onClick={onGoHome}
               aria-label="Ir directo al menú principal (Inicio)"
               title="Ir a Inicio"
-              className={`inline-flex items-center justify-center gap-1 min-h-[34px] sm:min-h-[36px] px-2.5 py-1 rounded-[11px] border text-[11.5px] sm:text-[12px] font-extrabold cursor-pointer whitespace-nowrap shrink-0 transition-all active:scale-95 ${
+              className={`inline-flex items-center justify-center gap-1 min-w-[32px] min-h-[32px] sm:min-h-[36px] px-2 sm:px-2.5 py-1 rounded-[11px] border text-[11.5px] sm:text-[12px] font-extrabold cursor-pointer whitespace-nowrap shrink-0 transition-all active:scale-95 ${
                 isDark
                   ? 'border-emerald-400/55 bg-emerald-600/25 hover:bg-emerald-600/35 text-emerald-100'
                   : 'border-emerald-400 bg-emerald-50 hover:bg-emerald-100 text-emerald-900'
@@ -176,7 +239,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                 <path d="M3 10.5L12 3l9 7.5" />
                 <path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5" />
               </svg>
-              <span>Inicio</span>
+              <span className={!isOnline || pendingSyncCount > 0 ? 'hidden sm:inline' : ''}>Inicio</span>
             </button>
           )}
 
@@ -274,10 +337,19 @@ interface SideDrawerProps {
   deviceId: string;
   theme: AppTheme;
   skin: AppSkin;
+  skinVariant?: AppSkinVariant;
   cloudAccountEmail?: string | null;
   isCloudBackupEligible?: boolean;
+  googleUserEmail?: string | null;
+  googleAuthLoading?: boolean;
+  googleAuthError?: string | null;
+  pendingSyncCount?: number;
   onToggleTheme: () => void;
   onSelectSkin: (skin: AppSkin) => void;
+  onSelectSkinVariant?: (variant: AppSkinVariant) => void;
+  onConnectGoogle?: () => Promise<void> | void;
+  onDisconnectGoogle?: () => Promise<void> | void;
+  onClearGoogleAuthError?: () => void;
   onClose: () => void;
   onOpenPro: () => void;
   onOpenCloudBackup: () => void;
@@ -312,7 +384,7 @@ const SKIN_OPTIONS: SkinOptionMeta[] = [
   {
     id: 'basica',
     title: 'Básica',
-    subtitle: 'Tema Azul Básico de alto contraste',
+    subtitle: 'Diseño limpio y sólido de alto contraste',
     tierBadge: 'Gratis y PRO',
     previewBg: '#0B1120',
     previewCardA: 'linear-gradient(135deg, #2563EB, #1D4ED8)',
@@ -321,10 +393,21 @@ const SKIN_OPTIONS: SkinOptionMeta[] = [
     previewAccent: '#38bdf8',
   },
   {
+    id: 'navidena',
+    title: 'Navideña ❄️',
+    subtitle: 'Invierno oscuro elegante, luces cálidas y gorro navideño',
+    tierBadge: 'Gratis y PRO',
+    previewBg: 'linear-gradient(145deg, #071320, #16101D)',
+    previewCardA: 'linear-gradient(135deg, #991B1B, #7F1D1D)',
+    previewCardB: 'linear-gradient(135deg, #0F2334, #091622)',
+    previewBorder: 'rgba(245, 194, 107, 0.65)',
+    previewAccent: '#F59E0B',
+  },
+  {
     id: 'ejecutiva',
-    title: 'Ejecutiva Azul',
-    subtitle: 'Azul acero metálico con reflejos cian',
-    tierBadge: 'PRO 30d / 90d / 1 Año',
+    title: 'Ejecutiva',
+    subtitle: 'Oscuro luminoso de alta visibilidad',
+    tierBadge: 'Exclusiva Planes PRO',
     previewBg: 'linear-gradient(145deg, #07152e, #0c234a)',
     previewCardA: 'linear-gradient(135deg, #163d75, #0f2c59)',
     previewCardB: 'linear-gradient(135deg, #142f5c, #0a1934)',
@@ -333,9 +416,9 @@ const SKIN_OPTIONS: SkinOptionMeta[] = [
   },
   {
     id: 'industrial',
-    title: 'Industrial Pro',
-    subtitle: 'Tema Verde PRO esmeralda de taller',
-    tierBadge: 'Prueba PRO (3d) y PRO',
+    title: 'Industrial PRO',
+    subtitle: 'Cuadrícula técnica metálica profesional',
+    tierBadge: 'Exclusiva Planes PRO',
     previewBg: 'linear-gradient(145deg, #071A13, #0B261C)',
     previewCardA: 'linear-gradient(135deg, #059669, #047857)',
     previewCardB: 'linear-gradient(135deg, #0F3025, #071813)',
@@ -354,8 +437,15 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
   skin,
   cloudAccountEmail = null,
   isCloudBackupEligible = false,
+  googleUserEmail = null,
+  googleAuthLoading = false,
+  googleAuthError = null,
+  pendingSyncCount = 0,
   onToggleTheme,
   onSelectSkin,
+  onConnectGoogle,
+  onDisconnectGoogle,
+  onClearGoogleAuthError,
   onClose,
   onOpenPro,
   onOpenCloudBackup,
@@ -426,7 +516,6 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
 
   const isDark = theme === 'dark';
   const currentSkinMeta = SKIN_OPTIONS.find((s) => s.id === skin) || SKIN_OPTIONS[0];
-  const verdeProUnlocked = isSkinUnlockedForLicense('industrial', licencia, proActive);
 
   const handleSkinTap = (option: SkinOptionMeta) => {
     const unlocked = isSkinUnlockedForLicense(option.id, licencia, proActive);
@@ -514,10 +603,10 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
           </span>
         </button>
 
-        {/* 1.2 Selector rápido Azul Básico vs Verde PRO */}
-        <div className={`rounded-xl border p-2.5 shrink-0 ${isDark ? 'border-emerald-400/30 bg-slate-950/35' : 'border-slate-200 bg-slate-50'}`}>
+        {/* 1.2 Selector rápido Básica vs Navideña */}
+        <div className={`rounded-xl border p-2.5 shrink-0 ${isDark ? 'border-sky-400/25 bg-slate-950/35' : 'border-slate-200 bg-slate-50'}`}>
           <div className={`text-[10.5px] font-extrabold uppercase tracking-wider mb-1.5 ${subTextClass}`}>
-            Color Principal
+            Acceso Rápido de Carátula
           </div>
           <div className="grid grid-cols-2 gap-2">
             <button
@@ -525,7 +614,7 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
               id="btn-drawer-quick-azul"
               onClick={() => onSelectSkin('basica')}
               className={`min-h-[38px] px-2.5 py-1.5 rounded-lg border text-[12px] font-extrabold cursor-pointer flex items-center justify-center gap-1.5 transition-all ${
-                skin !== 'industrial'
+                skin === 'basica'
                   ? 'border-blue-500 bg-blue-600 text-white shadow-sm'
                   : isDark
                     ? 'border-white/15 bg-white/5 text-slate-200 hover:bg-white/10'
@@ -533,38 +622,27 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
               }`}
             >
               <span className="w-2.5 h-2.5 rounded-full bg-sky-300 shrink-0" aria-hidden="true" />
-              <span>Azul Básico</span>
+              <span>Básica</span>
             </button>
             <button
               type="button"
-              id="btn-drawer-quick-verde"
-              onClick={() => {
-                if (!verdeProUnlocked) {
-                  onClose();
-                  onOpenPro();
-                  return;
-                }
-                onSelectSkin('industrial');
-              }}
+              id="btn-drawer-quick-navidena"
+              onClick={() => onSelectSkin('navidena')}
               className={`min-h-[38px] px-2.5 py-1.5 rounded-lg border text-[12px] font-extrabold cursor-pointer flex items-center justify-center gap-1.5 transition-all ${
-                skin === 'industrial'
-                  ? 'border-emerald-500 bg-emerald-600 text-white shadow-sm'
+                skin === 'navidena'
+                  ? 'border-amber-400 bg-red-700 text-white shadow-sm'
                   : isDark
-                    ? 'border-emerald-400/35 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20'
-                    : 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                    ? 'border-amber-400/35 bg-red-950/40 text-amber-100 hover:bg-red-900/50'
+                    : 'border-red-300 bg-red-50 text-red-800 hover:bg-red-100'
               }`}
             >
-              {!verdeProUnlocked ? (
-                <Lock className="w-3 h-3 shrink-0" aria-hidden="true" />
-              ) : (
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-300 shrink-0" aria-hidden="true" />
-              )}
-              <span>Verde PRO</span>
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-300 shrink-0" aria-hidden="true" />
+              <span>Navideña</span>
             </button>
           </div>
         </div>
 
-        {/* 1.5 Carátulas / Apariencia (3 Temas Visuales Globales) */}
+        {/* 1.5 Carátulas / Apariencia (4 Temas Visuales Globales + Sub-variantes) */}
         <div
           className={`rounded-xl border overflow-hidden shrink-0 ${
             isDark ? 'border-sky-400/35 bg-slate-950/35' : 'border-blue-200 bg-blue-50/50'
@@ -606,12 +684,9 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
                 const unlocked = isSkinUnlockedForLicense(opt.id, licencia, proActive);
                 const isSelected = skin === opt.id;
                 return (
-                  <button
+                  <div
                     key={opt.id}
-                    type="button"
-                    id={`btn-skin-${opt.id}`}
-                    onClick={() => handleSkinTap(opt)}
-                    className={`w-full p-2.5 rounded-xl border text-left transition-all cursor-pointer active:scale-[0.98] ${
+                    className={`w-full rounded-xl border transition-all ${
                       isSelected
                         ? isDark
                           ? 'border-sky-400 bg-sky-500/20 ring-1 ring-sky-400/70'
@@ -625,66 +700,73 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
                             : 'border-slate-200 bg-slate-100/80 hover:bg-slate-100 opacity-90'
                     }`}
                   >
-                    <div className="flex items-center gap-2.5">
-                      <div
-                        className="w-11 h-11 rounded-lg p-1.5 flex flex-col justify-between shrink-0 shadow-inner"
-                        style={{
-                          background: opt.previewBg,
-                          border: `1.5px solid ${opt.previewBorder}`,
-                        }}
-                        aria-hidden="true"
-                      >
+                    <button
+                      type="button"
+                      id={`btn-skin-${opt.id}`}
+                      onClick={() => handleSkinTap(opt)}
+                      className="w-full p-2.5 text-left cursor-pointer active:scale-[0.98] bg-transparent border-0"
+                    >
+                      <div className="flex items-center gap-2.5">
                         <div
-                          className="h-2.5 w-full rounded-[3px]"
+                          className="w-11 h-11 rounded-lg p-1.5 flex flex-col justify-between shrink-0 shadow-inner"
                           style={{
-                            background: opt.previewCardA,
-                            borderTop: `1.5px solid ${opt.previewAccent}`,
+                            background: opt.previewBg,
+                            border: `1.5px solid ${opt.previewBorder}`,
                           }}
-                        />
-                        <div className="grid grid-cols-2 gap-1">
-                          <span
-                            className="h-3 rounded-[3px]"
+                          aria-hidden="true"
+                        >
+                          <div
+                            className="h-2.5 w-full rounded-[3px]"
                             style={{
-                              background: opt.previewCardB,
-                              border: `1px solid ${opt.previewBorder}`,
+                              background: opt.previewCardA,
+                              borderTop: `1.5px solid ${opt.previewAccent}`,
                             }}
                           />
-                          <span
-                            className="h-3 rounded-[3px]"
-                            style={{
-                              background: opt.previewCardB,
-                              border: `1px solid ${opt.previewBorder}`,
-                            }}
-                          />
+                          <div className="grid grid-cols-2 gap-1">
+                            <span
+                              className="h-3 rounded-[3px]"
+                              style={{
+                                background: opt.previewCardB,
+                                border: `1px solid ${opt.previewBorder}`,
+                              }}
+                            />
+                            <span
+                              className="h-3 rounded-[3px]"
+                              style={{
+                                background: opt.previewCardB,
+                                border: `1px solid ${opt.previewBorder}`,
+                              }}
+                            />
+                          </div>
                         </div>
-                      </div>
 
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-1.5">
-                          <span className={`text-[13px] font-extrabold leading-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                            {opt.title}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-1.5">
+                            <span className={`text-[13px] font-extrabold leading-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                              {opt.title}
+                            </span>
+                            {isSelected ? (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-emerald-600 text-white text-[10px] font-extrabold shrink-0">
+                                <Check className="w-3 h-3" aria-hidden="true" />
+                                Activa
+                              </span>
+                            ) : !unlocked ? (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-blue-600 text-white text-[10px] font-extrabold shrink-0">
+                                <Lock className="w-3 h-3" aria-hidden="true" />
+                                PRO
+                              </span>
+                            ) : null}
+                          </div>
+                          <p className={`m-0 mt-0.5 text-[10.5px] leading-snug ${subTextClass}`}>
+                            {opt.subtitle}
+                          </p>
+                          <span className={`inline-block mt-1 text-[10px] font-bold ${isDark ? 'text-emerald-300' : 'text-emerald-700'}`}>
+                            {opt.tierBadge}
                           </span>
-                          {isSelected ? (
-                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-emerald-600 text-white text-[10px] font-extrabold shrink-0">
-                              <Check className="w-3 h-3" aria-hidden="true" />
-                              Activa
-                            </span>
-                          ) : !unlocked ? (
-                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-blue-600 text-white text-[10px] font-extrabold shrink-0">
-                              <Lock className="w-3 h-3" aria-hidden="true" />
-                              PRO
-                            </span>
-                          ) : null}
                         </div>
-                        <p className={`m-0 mt-0.5 text-[10.5px] leading-snug ${subTextClass}`}>
-                          {opt.subtitle}
-                        </p>
-                        <span className={`inline-block mt-1 text-[10px] font-bold ${isDark ? 'text-emerald-300' : 'text-emerald-700'}`}>
-                          {opt.tierBadge}
-                        </span>
                       </div>
-                    </div>
-                  </button>
+                    </button>
+                  </div>
                 );
               })}
 
@@ -808,7 +890,85 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
                 ? 'Vincula tu correo para respaldo automático'
                 : 'Recuperación por cambio o robo de celular'}
           </div>
+          {pendingSyncCount > 0 && (
+            <div className="relative z-10 mt-1.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/20 border border-amber-400/50 text-amber-200 text-[10.5px] font-extrabold">
+              <CloudUpload className="w-3 h-3 shrink-0" aria-hidden="true" />
+              <span>{pendingSyncCount} cotización(es) en cola offline</span>
+            </div>
+          )}
         </button>
+
+        {/* 3.5 Acceso Firebase con Google (signInWithPopup + fallback signInWithRedirect) */}
+        {onConnectGoogle && (
+          <div className="flex flex-col gap-1.5 shrink-0">
+            <button
+              type="button"
+              id="btn-drawer-google-auth"
+              disabled={googleAuthLoading}
+              onClick={() => {
+                if (googleUserEmail && onDisconnectGoogle) {
+                  void onDisconnectGoogle();
+                } else {
+                  void onConnectGoogle();
+                }
+              }}
+              className={`w-full min-h-[44px] px-3.5 py-2 rounded-xl border text-[12.5px] font-extrabold text-left cursor-pointer flex items-center justify-between gap-2 transition-colors disabled:opacity-65 ${
+                googleUserEmail
+                  ? isDark
+                    ? 'border-emerald-400/50 bg-emerald-600/15 hover:bg-emerald-600/25 text-emerald-100'
+                    : 'border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-950'
+                  : isDark
+                    ? 'border-white/25 bg-white text-slate-900 hover:bg-slate-100 shadow-sm'
+                    : 'border-slate-300 bg-white hover:bg-slate-50 text-slate-900 shadow-xs'
+              }`}
+            >
+              <span className="inline-flex items-center gap-2 min-w-0">
+                <svg width="16" height="16" viewBox="0 0 24 24" className="shrink-0" aria-hidden="true">
+                  <path fill="#4285F4" d="M23.49 12.27c0-.79-.07-1.54-.2-2.27H12v4.3h6.44a5.5 5.5 0 0 1-2.39 3.61v3h3.87c2.26-2.08 3.57-5.15 3.57-8.64z" />
+                  <path fill="#34A853" d="M12 24c3.24 0 5.95-1.07 7.93-2.91l-3.87-3c-1.07.72-2.45 1.14-4.06 1.14-3.12 0-5.77-2.11-6.72-4.95H1.28v3.1A12 12 0 0 0 12 24z" />
+                  <path fill="#FBBC05" d="M5.28 14.28A7.2 7.2 0 0 1 4.9 12c0-.79.14-1.56.38-2.28v-3.1H1.28A12 12 0 0 0 0 12c0 1.94.46 3.77 1.28 5.38l4-3.1z" />
+                  <path fill="#EA4335" d="M12 4.77c1.76 0 3.34.61 4.58 1.8l3.44-3.44C17.94 1.19 15.24 0 12 0A12 12 0 0 0 1.28 6.62l4 3.1c.95-2.84 3.6-4.95 6.72-4.95z" />
+                </svg>
+                <span className="truncate">
+                  {googleAuthLoading
+                    ? 'Conectando con Google...'
+                    : googleUserEmail
+                      ? googleUserEmail
+                      : 'Conectar con Google'}
+                </span>
+              </span>
+              <span
+                className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold shrink-0 ${
+                  googleUserEmail
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-slate-900 text-white'
+                }`}
+              >
+                {googleAuthLoading ? '...' : googleUserEmail ? 'Salir' : 'Google'}
+              </span>
+            </button>
+
+            {googleAuthError && (
+              <div
+                id="drawer-google-auth-error"
+                role="alert"
+                className="p-2.5 rounded-xl border border-rose-400/70 bg-rose-950/90 text-rose-100 text-[11px] font-semibold leading-snug flex items-start justify-between gap-2"
+              >
+                <span className="break-words">{googleAuthError}</span>
+                {onClearGoogleAuthError && (
+                  <button
+                    type="button"
+                    onClick={onClearGoogleAuthError}
+                    aria-label="Cerrar aviso de Google"
+                    className="text-rose-200 hover:text-white font-extrabold bg-transparent border-0 p-0.5 cursor-pointer shrink-0"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className={`pt-2 mt-1 border-t flex flex-col gap-2 ${dividerClass}`}>
           {/* 4. Recomendar App (QR) */}

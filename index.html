@@ -36,7 +36,7 @@
             document.documentElement.classList.remove('dark');
           }
           var s = localStorage.getItem('aluminero_skin_v1');
-          var skin = s === 'basica' || s === 'ejecutiva' || s === 'industrial' ? s : 'basica';
+          var skin = s === 'basica' || s === 'navidena' || s === 'ejecutiva' || s === 'industrial' ? s : 'basica';
           document.documentElement.setAttribute('data-skin', skin);
         } catch (e) {
           document.documentElement.setAttribute('data-theme', 'dark');
@@ -73,22 +73,26 @@
         min-height: 100vh;
       }
       @keyframes apViewSlideBack {
-        from { transform: translateX(-10px); }
-        to { transform: none; }
+        from { opacity: 0.92; transform: translate3d(-10px, 0, 0); }
+        to { opacity: 1; transform: translate3d(0, 0, 0); }
       }
       @keyframes apViewSlideForward {
-        from { transform: translateX(10px); }
-        to { transform: none; }
+        from { opacity: 0.92; transform: translate3d(10px, 0, 0); }
+        to { opacity: 1; transform: translate3d(0, 0, 0); }
       }
       .ap-view-back {
         animation: apViewSlideBack 0.14s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+        will-change: transform, opacity;
       }
       .ap-view-forward {
         animation: apViewSlideForward 0.14s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+        will-change: transform, opacity;
       }
       @media (prefers-reduced-motion: reduce) {
         .ap-view-back,
-        .ap-view-forward {
+        .ap-view-forward,
+        .ap-loader-logo,
+        .ap-loader-bar-fill {
           animation: none;
         }
       }
@@ -118,7 +122,9 @@
         width: 88px;
         height: 88px;
         border-radius: 22px;
+        filter: drop-shadow(0 6px 18px rgba(56, 189, 248, 0.5));
         animation: apLoaderFloatGlow 2.4s ease-in-out infinite;
+        will-change: transform, opacity;
       }
       .ap-loader-title {
         margin: 0;
@@ -149,23 +155,24 @@
         background: linear-gradient(90deg, #2563eb 0%, #38bdf8 45%, #f97316 100%);
         box-shadow: 0 0 12px rgba(56, 189, 248, 0.55);
         animation: apLoaderBarSlide 1.35s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+        will-change: transform;
       }
       @keyframes apLoaderFloatGlow {
         0%, 100% {
-          transform: translateY(0px) scale(1);
-          filter: drop-shadow(0 0 14px rgba(37, 99, 235, 0.45)) drop-shadow(0 0 6px rgba(249, 115, 22, 0.2));
+          transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
+          opacity: 0.92;
         }
         50% {
-          transform: translateY(-6px) scale(1.03);
-          filter: drop-shadow(0 8px 24px rgba(56, 189, 248, 0.65)) drop-shadow(0 0 14px rgba(249, 115, 22, 0.4));
+          transform: translate3d(0, -6px, 0) scale3d(1.03, 1.03, 1);
+          opacity: 1;
         }
       }
       @keyframes apLoaderBarSlide {
         0% {
-          transform: translateX(-110%);
+          transform: translate3d(-110%, 0, 0);
         }
         100% {
-          transform: translateX(230%);
+          transform: translate3d(230%, 0, 0);
         }
       }
     </style>

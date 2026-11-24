@@ -1,9 +1,11 @@
 import { initializeApp, type FirebaseApp } from 'firebase/app';
 import {
   getAuth,
+  getRedirectResult,
   GoogleAuthProvider,
   onAuthStateChanged,
   signInWithPopup,
+  signInWithRedirect,
   signOut,
   type Auth,
   type User,
@@ -15,6 +17,9 @@ import {
   type Firestore,
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
+import { formatFirebaseAuthError, type FirebaseAuthErrorInfo } from './utils/firebaseAuthHelpers';
+
+export { formatFirebaseAuthError, type FirebaseAuthErrorInfo };
 
 export const app: FirebaseApp = initializeApp(firebaseConfig);
 export const db: Firestore = getFirestore(app, firebaseConfig.firestoreDatabaseId);
@@ -35,11 +40,77 @@ export function subscribeFirebaseAuth(callback: (user: User | null) => void): ()
   return onAuthStateChanged(auth, callback);
 }
 
-export async function signInWithGoogleFirebase(): Promise<User> {
+export type GoogleAuthFlowResult =
+  | { status: 'signed_in'; user: User }
+  | { status: 'redirecting'; message: string }
+  | { status: 'error'; code: string; message: string; isUnauthorizedDomain: boolean };
+
+function buildGoogleProvider(): GoogleAuthProvider {
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
-  const cred = await signInWithPopup(auth, provider);
-  return cred.user;
+  return provider;
+}
+
+export async function connectGoogleAccountWithFallback(): Promise<GoogleAuthFlowResult> {
+  const provider = buildGoogleProvider();
+  try {
+    const cred = await signInWithPopup(auth, provider);
+    return { status: 'signed_in', user: cred.user };
+  } catch (popupErr) {
+    const info = formatFirebaseAuthError(popupErr);
+    if (info.shouldFallbackToRedirect) {
+      try {
+        await signInWithRedirect(auth, provider);
+        return {
+          status: 'redirecting',
+          message: 'Redirigiendo a Google para iniciar sesión...',
+        };
+      } catch (redirectErr) {
+        const redInfo = formatFirebaseAuthError(redirectErr);
+        return {
+          status: 'error',
+          code: redInfo.code,
+          message: redInfo.message,
+          isUnauthorizedDomain: redInfo.isUnauthorizedDomain,
+        };
+      }
+    }
+    return {
+      status: 'error',
+      code: info.code,
+      message: info.message,
+      isUnauthorizedDomain: info.isUnauthorizedDomain,
+    };
+  }
+}
+
+export async function consumeGoogleRedirectResult(): Promise<GoogleAuthFlowResult | null> {
+  try {
+    const cred = await getRedirectResult(auth);
+    if (cred?.user) {
+      return { status: 'signed_in', user: cred.user };
+    }
+    return null;
+  } catch (err) {
+    const info = formatFirebaseAuthError(err);
+    return {
+      status: 'error',
+      code: info.code,
+      message: info.message,
+      isUnauthorizedDomain: info.isUnauthorizedDomain,
+    };
+  }
+}
+
+export async function signInWithGoogleFirebase(): Promise<User> {
+  const result = await connectGoogleAccountWithFallback();
+  if (result.status === 'signed_in') {
+    return result.user;
+  }
+  if (result.status === 'redirecting') {
+    throw new Error(result.message);
+  }
+  throw new Error(result.message);
 }
 
 export async function signOutFirebase(): Promise<void> {

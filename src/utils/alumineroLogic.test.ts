@@ -2797,14 +2797,16 @@ test('77. Ajuste masivo de precios por porcentaje (Aluminio, Vidrio, Herrajes, T
   assert.equal(allDown.herrajesPrecios['ref-her-carr3'], 90);
 });
 
-test('78. Desbloqueo de Tema Verde PRO (industrial) para Prueba PRO (3 días) y Planes PRO, bloqueado en Gratis', async () => {
+test('78. Carátulas por nivel de suscripción: Básica y Navideña en Gratis/3d; Ejecutiva e Industrial PRO en Planes PRO pagados', async () => {
   const { getUnlockedSkinsForLicense, isSkinUnlockedForLicense } = await import('./storageHelpers.ts');
 
-  // Gratis: solo Azul Básico (basica)
-  assert.deepEqual(getUnlockedSkinsForLicense(null, false), ['basica']);
+  // Gratis: Básica y Navideña desbloqueadas; Ejecutiva e Industrial PRO bloqueadas
+  assert.deepEqual(getUnlockedSkinsForLicense(null, false), ['basica', 'navidena']);
+  assert.equal(isSkinUnlockedForLicense('navidena', null, false), true);
+  assert.equal(isSkinUnlockedForLicense('ejecutiva', null, false), false);
   assert.equal(isSkinUnlockedForLicense('industrial', null, false), false);
 
-  // Prueba PRO 3 días (G): desbloquea Básica + Verde PRO (industrial)
+  // Prueba PRO 3 días (G): mantiene Básica + Navideña
   const trialLic = {
     active: true,
     planCode: 'G',
@@ -2812,9 +2814,10 @@ test('78. Desbloqueo de Tema Verde PRO (industrial) para Prueba PRO (3 días) y 
     expiresAt: Date.now() + 86_400_000,
     activatedAt: Date.now(),
   };
-  assert.equal(isSkinUnlockedForLicense('industrial', trialLic, true), true);
+  assert.deepEqual(getUnlockedSkinsForLicense(trialLic, true), ['basica', 'navidena']);
+  assert.equal(isSkinUnlockedForLicense('industrial', trialLic, true), false);
 
-  // Plan PRO pagado (M/Q/A): desbloquea Básica, Ejecutiva y Verde PRO
+  // Plan PRO pagado (M/Q/A): desbloquea Básica, Navideña, Ejecutiva e Industrial PRO
   const paidLic = {
     active: true,
     planCode: 'M',
@@ -2822,7 +2825,12 @@ test('78. Desbloqueo de Tema Verde PRO (industrial) para Prueba PRO (3 días) y 
     expiresAt: Date.now() + 30 * 86_400_000,
     activatedAt: Date.now(),
   };
-  assert.deepEqual(getUnlockedSkinsForLicense(paidLic, true), ['basica', 'ejecutiva', 'industrial']);
+  assert.deepEqual(getUnlockedSkinsForLicense(paidLic, true), [
+    'basica',
+    'navidena',
+    'ejecutiva',
+    'industrial',
+  ]);
 });
 
 test('79. Acceso de Administrador acepta contraseña 1983, override personalizado y PIN de recuperación 202699', async () => {
@@ -2902,6 +2910,133 @@ test('80. HomeMenuLayout: normalización segura y reordenamiento drag-and-drop d
     ALL_HOME_MENU_CARD_IDS.length
   );
 });
+
+test('81. Seguro de respaldo privado ?Admin=OlmosHer1983 es estricto en mayúsculas y minúsculas', async () => {
+  const { parseAdminUrlShortcut } = await import('./alumineroLogic.ts');
+  assert.equal(parseAdminUrlShortcut('?Admin=OlmosHer1983'), true);
+  assert.equal(parseAdminUrlShortcut('?foo=1&Admin=OlmosHer1983&bar=2'), true);
+  assert.equal(parseAdminUrlShortcut('?admin=OlmosHer1983'), false);
+  assert.equal(parseAdminUrlShortcut('?Admin=olmosher1983'), false);
+  assert.equal(parseAdminUrlShortcut('?Admin=1983'), false);
+  assert.equal(parseAdminUrlShortcut(''), false);
+});
+
+test('82. getHomeMenuTier asigna vista vertical fija (free), 2 páginas fijas (30d/90d) y 2 páginas editables (1 año/permanente)', async () => {
+  const { getHomeMenuTier } = await import('./alumineroLogic.ts');
+  const now = 1_800_000_000_000;
+  const DAY = 86_400_000;
+
+  assert.equal(getHomeMenuTier(null, false, now), 'free');
+  // 3 días de cortesía / colega => free
+  assert.equal(
+    getHomeMenuTier(
+      { active: true, planCode: 'G', planLabel: 'Cortesía 3 días', activatedAt: now, expiresAt: now + 3 * DAY },
+      true,
+      now
+    ),
+    'free'
+  );
+  // 30 días PRO => pro_paged
+  assert.equal(
+    getHomeMenuTier(
+      { active: true, planCode: 'M', planLabel: '30 Días PRO', activatedAt: now, expiresAt: now + 30 * DAY },
+      true,
+      now
+    ),
+    'pro_paged'
+  );
+  // 90 días PRO => pro_paged
+  assert.equal(
+    getHomeMenuTier(
+      { active: true, planCode: 'Q', planLabel: '90 Días PRO', activatedAt: now, expiresAt: now + 90 * DAY },
+      true,
+      now
+    ),
+    'pro_paged'
+  );
+  // 1 Año PRO => pro_annual
+  assert.equal(
+    getHomeMenuTier(
+      { active: true, planCode: 'A', planLabel: '1 Año PRO', activatedAt: now, expiresAt: now + 365 * DAY },
+      true,
+      now
+    ),
+    'pro_annual'
+  );
+  // PRO Permanente sin costo => pro_annual
+  assert.equal(
+    getHomeMenuTier(
+      { active: true, planCode: 'P', planLabel: 'PRO Permanente (Prueba / Cortesía)', activatedAt: now, expiresAt: null },
+      true,
+      now
+    ),
+    'pro_annual'
+  );
+});
+
+test('83. generatePermanentTestKey y validateActivationKey validan claves permanentes AP-P-XXXXXX sin vencimiento', async () => {
+  const { generatePermanentTestKey, validateActivationKey } = await import('./alumineroLogic.ts');
+  const devId = 'ALM-TEST99';
+  const permKey = generatePermanentTestKey(devId);
+  assert.match(permKey, /^AP-P-[A-Z0-9]{6}$/);
+
+  const okRes = validateActivationKey(devId, permKey);
+  assert.equal(okRes.ok, true);
+  assert.equal(okRes.isFreeTestPro, true);
+  assert.equal(okRes.plan?.code, 'P');
+  assert.equal(okRes.plan?.ms, null);
+
+  const wrongDev = validateActivationKey('ALM-OTRO11', permKey);
+  assert.equal(wrongDev.ok, false);
+});
+
+test('84. isFreeTestProRecord distingue licencias PRO permanentes de prueba/cortesía frente a planes pagados', async () => {
+  const { isFreeTestProRecord } = await import('./alumineroLogic.ts');
+  assert.equal(isFreeTestProRecord({ tipo: 'prueba_gratis' }), true);
+  assert.equal(isFreeTestProRecord({ planCode: 'P' }), true);
+  assert.equal(isFreeTestProRecord({ key: 'AP-P-123456' }), true);
+  assert.equal(isFreeTestProRecord({ planLabel: 'PRO Permanente (Prueba / Cortesía)' }), true);
+  assert.equal(isFreeTestProRecord({ tipo: 'pagado', planCode: 'M', key: 'AP-M-123456', planLabel: '30 Días PRO' }), false);
+  assert.equal(isFreeTestProRecord({ tipo: 'pagado', planCode: 'A', key: 'AP-A-999999', planLabel: '1 Año PRO' }), false);
+});
+
+test('85. Carátulas y sub-variantes desbloqueadas por plan (Free/3d: Básica+Navideña; PRO pagado/permanente: todas)', async () => {
+  const { getUnlockedSkinsForLicense, normalizeSkinVariantForSkin } = await import('./storageHelpers.ts');
+  const now = Date.now();
+  const DAY = 86_400_000;
+
+  assert.deepEqual(getUnlockedSkinsForLicense(null, false), ['basica', 'navidena']);
+  assert.deepEqual(
+    getUnlockedSkinsForLicense(
+      { active: true, planCode: 'G', planLabel: 'Cortesía 3 días', activatedAt: now, expiresAt: now + 3 * DAY },
+      true
+    ),
+    ['basica', 'navidena']
+  );
+  assert.deepEqual(
+    getUnlockedSkinsForLicense(
+      { active: true, planCode: 'M', planLabel: '30 Días PRO', activatedAt: now, expiresAt: now + 30 * DAY },
+      true
+    ),
+    ['basica', 'navidena', 'ejecutiva', 'industrial']
+  );
+  assert.deepEqual(
+    getUnlockedSkinsForLicense(
+      { active: true, planCode: 'P', planLabel: 'PRO Permanente (Prueba / Cortesía)', activatedAt: now, expiresAt: null, tipo: 'prueba_gratis' },
+      true
+    ),
+    ['basica', 'navidena', 'ejecutiva', 'industrial']
+  );
+
+  assert.equal(normalizeSkinVariantForSkin('ejecutiva', 'verde'), 'verde');
+  assert.equal(normalizeSkinVariantForSkin('ejecutiva', 'naranja'), 'naranja');
+  assert.equal(normalizeSkinVariantForSkin('ejecutiva', 'bronce'), 'default');
+  assert.equal(normalizeSkinVariantForSkin('industrial', 'bronce'), 'bronce');
+  assert.equal(normalizeSkinVariantForSkin('industrial', 'dorada'), 'dorada');
+  assert.equal(normalizeSkinVariantForSkin('industrial', 'plateada'), 'plateada');
+  assert.equal(normalizeSkinVariantForSkin('navidena', 'dorada'), 'default');
+});
+
 
 
 

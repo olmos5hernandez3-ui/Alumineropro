@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { GripVertical, RotateCcw, ArrowUpDown, Check } from 'lucide-react';
+import { GripVertical, RotateCcw, ArrowUpDown, Check, ChevronLeft, ChevronRight, ArrowRightLeft } from 'lucide-react';
 import {
   AdminMessageItem,
   CATALOGO_PERFILES,
@@ -7,6 +7,7 @@ import {
   HomeMenuCardId,
   HomeMenuLayout,
   HomeMenuSectionId,
+  HomeMenuTier,
   isDefaultHomeMenuLayout,
   moveHomeMenuCard,
   normalizeHomeMenuLayout,
@@ -38,6 +39,7 @@ interface Props {
   dueRemindersCount?: number;
   pushPermission?: NotificationPermission | 'unsupported';
   unreadAdminMessages?: AdminMessageItem[];
+  menuTier?: HomeMenuTier;
   menuLayout?: HomeMenuLayout;
   onChangeMenuLayout?: (next: HomeMenuLayout) => void;
   onResetMenuLayout?: () => void;
@@ -148,6 +150,7 @@ export const MainMenuView: React.FC<Props> = ({
   dueRemindersCount = 0,
   pushPermission = 'default',
   unreadAdminMessages = [],
+  menuTier,
   menuLayout,
   onChangeMenuLayout,
   onResetMenuLayout,
@@ -163,21 +166,26 @@ export const MainMenuView: React.FC<Props> = ({
   onOpenLevantamiento,
   onOpenReminders,
 }) => {
-  const canReorder = Boolean(proActive && onChangeMenuLayout);
+  const effectiveTier: HomeMenuTier = menuTier ?? (proActive ? 'pro_paged' : 'free');
+  const isPaged = effectiveTier === 'pro_paged' || effectiveTier === 'pro_annual';
+  const canReorder = Boolean(effectiveTier === 'pro_annual' && onChangeMenuLayout);
+
   const effectiveLayout = useMemo<HomeMenuLayout>(
-    () => (proActive ? normalizeHomeMenuLayout(menuLayout) : DEFAULT_HOME_MENU_LAYOUT),
-    [proActive, menuLayout]
+    () => (effectiveTier === 'pro_annual' ? normalizeHomeMenuLayout(menuLayout) : DEFAULT_HOME_MENU_LAYOUT),
+    [effectiveTier, menuLayout]
   );
   const isCustomLayout = useMemo(
-    () => proActive && !isDefaultHomeMenuLayout(effectiveLayout),
-    [proActive, effectiveLayout]
+    () => effectiveTier === 'pro_annual' && !isDefaultHomeMenuLayout(effectiveLayout),
+    [effectiveTier, effectiveLayout]
   );
 
+  const [activePage, setActivePage] = useState<0 | 1>(0);
   const [reorderMode, setReorderMode] = useState(false);
   const [dragState, setDragState] = useState<ActiveDragState | null>(null);
   const [dropTarget, setDropTarget] = useState<DropTargetState | null>(null);
 
   const sectionRootRef = useRef<HTMLElement | null>(null);
+  const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
   const layoutRef = useRef<HomeMenuLayout>(effectiveLayout);
   layoutRef.current = effectiveLayout;
 
@@ -198,7 +206,7 @@ export const MainMenuView: React.FC<Props> = ({
 
   const suppressClickUntilRef = useRef<number>(0);
 
-  // Si el usuario pierde PRO o cambia a Gratis, desactivar cualquier estado de arrastre/edición
+  // Si cambia el plan a Gratis o 30d/90d, desactivar estado de arrastre/edición
   useEffect(() => {
     if (!canReorder) {
       setReorderMode(false);
@@ -206,6 +214,37 @@ export const MainMenuView: React.FC<Props> = ({
       setDropTarget(null);
     }
   }, [canReorder]);
+
+  useEffect(() => {
+    if (!isPaged) {
+      setActivePage(0);
+    }
+  }, [isPaged]);
+
+  const handleTogglePage = useCallback(() => {
+    setActivePage((prev) => (prev === 0 ? 1 : 0));
+  }, []);
+
+  const handleCarouselTouchStart = (e: React.TouchEvent) => {
+    if (!isPaged || dragStateRef.current || e.touches.length !== 1) return;
+    swipeStartRef.current = {
+      x: e.touches[0].clientX,
+      y: e.touches[0].clientY,
+    };
+  };
+
+  const handleCarouselTouchEnd = (e: React.TouchEvent) => {
+    if (!isPaged || dragStateRef.current || !swipeStartRef.current || e.changedTouches.length === 0) {
+      swipeStartRef.current = null;
+      return;
+    }
+    const dx = e.changedTouches[0].clientX - swipeStartRef.current.x;
+    const dy = e.changedTouches[0].clientY - swipeStartRef.current.y;
+    swipeStartRef.current = null;
+    if (Math.abs(dx) >= 48 && Math.abs(dx) > Math.abs(dy) * 1.35) {
+      handleTogglePage();
+    }
+  };
 
   // Evitar selección accidental de texto mientras se arrastra una tarjeta
   useEffect(() => {
@@ -237,6 +276,27 @@ export const MainMenuView: React.FC<Props> = ({
     (clientX: number, clientY: number, draggingId: HomeMenuCardId): DropTargetState | null => {
       const root = sectionRootRef.current;
       if (!root) return null;
+
+      // 1) Zona dedicada para mover tarjeta a la otra página (Plan 1 Año / Permanente PRO)
+      const crossPageEl = root.querySelector<HTMLElement>('[data-cross-page-target]');
+      if (crossPageEl) {
+        const targetSec = crossPageEl.dataset.crossPageTarget as HomeMenuSectionId | undefined;
+        if (targetSec === 'principal' || targetSec === 'herramientas') {
+          const rect = crossPageEl.getBoundingClientRect();
+          if (
+            clientX >= rect.left - 12 &&
+            clientX <= rect.right + 12 &&
+            clientY >= rect.top - 12 &&
+            clientY <= rect.bottom + 12
+          ) {
+            return {
+              section: targetSec,
+              index: layoutRef.current[targetSec].length,
+              overCardId: null,
+            };
+          }
+        }
+      }
 
       const cardEls = Array.from(root.querySelectorAll<HTMLElement>('[data-menu-card-id]'));
       let bestCard: { section: HomeMenuSectionId; index: number; id: HomeMenuCardId; dist: number } | null = null;
@@ -382,6 +442,9 @@ export const MainMenuView: React.FC<Props> = ({
         }
         const nextLayout = moveHomeMenuCard(current, active.cardId, finalTarget.section, insertIndex);
         onChangeMenuLayout(nextLayout);
+        if (sourceSection !== finalTarget.section) {
+          setActivePage(finalTarget.section === 'principal' ? 0 : 1);
+        }
       }
     };
 
@@ -1066,46 +1129,103 @@ export const MainMenuView: React.FC<Props> = ({
           </span>
         )}
 
-        {/* Controles discretos de reorganización EXCLUSIVOS para usuarios PRO */}
-        {canReorder && (
+        {/* Controles de paginación (Planes 30d, 90d y 1 Año PRO) y reorganización (exclusivo 1 Año / Permanente) */}
+        {(isPaged || canReorder) && (
           <div
-            id="menu-pro-reorder-bar"
-            className="mt-1 flex items-center justify-center gap-2 flex-wrap"
+            id="menu-pro-controls-bar"
+            data-menu-tier={effectiveTier}
+            className="mt-1.5 w-full flex flex-wrap items-center justify-center gap-2"
           >
-            <button
-              type="button"
-              id="btn-menu-toggle-reorder"
-              onClick={() => setReorderMode((prev) => !prev)}
-              aria-pressed={reorderMode}
-              className={`inline-flex items-center gap-1.5 min-h-[30px] px-3 py-1 rounded-full border text-[11px] font-extrabold cursor-pointer transition-all active:scale-95 ${
-                reorderMode
-                  ? 'border-emerald-400 bg-emerald-600 text-white shadow-sm'
-                  : 'border-slate-300 dark:border-[#4A6072]/70 bg-white/85 dark:bg-[#0D1E2B]/85 text-slate-700 dark:text-sky-200 hover:border-sky-400'
-              }`}
-            >
-              {reorderMode ? (
-                <>
-                  <Check className="w-3.5 h-3.5" aria-hidden="true" />
-                  <span>Listo (arrastra tarjetas)</span>
-                </>
-              ) : (
-                <>
-                  <ArrowUpDown className="w-3.5 h-3.5" aria-hidden="true" />
-                  <span>Personalizar orden PRO</span>
-                </>
-              )}
-            </button>
-
-            {isCustomLayout && onResetMenuLayout && (
-              <button
-                type="button"
-                id="btn-menu-reset-layout"
-                onClick={onResetMenuLayout}
-                className="inline-flex items-center gap-1 min-h-[30px] px-2.5 py-1 rounded-full border border-slate-300 dark:border-white/15 bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/15 text-slate-700 dark:text-slate-200 text-[11px] font-bold cursor-pointer transition-all active:scale-95"
+            {isPaged && (
+              <div
+                id="menu-page-switcher"
+                className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full border border-slate-300 dark:border-[#4A6072]/70 bg-white/90 dark:bg-[#0D1E2B]/90 shadow-xs"
               >
-                <RotateCcw className="w-3 h-3" aria-hidden="true" />
-                <span>Restaurar</span>
-              </button>
+                <button
+                  type="button"
+                  id="btn-menu-page-prev"
+                  onClick={handleTogglePage}
+                  aria-label="Página anterior"
+                  className="w-7 h-7 rounded-full inline-flex items-center justify-center bg-slate-100 dark:bg-white/10 hover:bg-slate-200 dark:hover:bg-white/20 text-slate-700 dark:text-sky-200 cursor-pointer transition-all active:scale-95"
+                >
+                  <ChevronLeft className="w-4 h-4" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  id="btn-menu-page-1"
+                  onClick={() => setActivePage(0)}
+                  aria-pressed={activePage === 0}
+                  className={`px-2.5 py-1 rounded-full text-[11px] font-extrabold cursor-pointer transition-all ${
+                    activePage === 0
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10'
+                  }`}
+                >
+                  Pág. 1 · Principal
+                </button>
+                <button
+                  type="button"
+                  id="btn-menu-page-2"
+                  onClick={() => setActivePage(1)}
+                  aria-pressed={activePage === 1}
+                  className={`px-2.5 py-1 rounded-full text-[11px] font-extrabold cursor-pointer transition-all ${
+                    activePage === 1
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10'
+                  }`}
+                >
+                  Pág. 2 · Taller
+                </button>
+                <button
+                  type="button"
+                  id="btn-menu-page-next"
+                  onClick={handleTogglePage}
+                  aria-label="Página siguiente"
+                  className="w-7 h-7 rounded-full inline-flex items-center justify-center bg-slate-100 dark:bg-white/10 hover:bg-slate-200 dark:hover:bg-white/20 text-slate-700 dark:text-sky-200 cursor-pointer transition-all active:scale-95"
+                >
+                  <ChevronRight className="w-4 h-4" aria-hidden="true" />
+                </button>
+              </div>
+            )}
+
+            {canReorder && (
+              <div id="menu-pro-reorder-bar" className="inline-flex items-center gap-1.5 flex-wrap justify-center">
+                <button
+                  type="button"
+                  id="btn-menu-toggle-reorder"
+                  onClick={() => setReorderMode((prev) => !prev)}
+                  aria-pressed={reorderMode}
+                  className={`inline-flex items-center gap-1.5 min-h-[32px] px-3 py-1 rounded-full border text-[11px] font-extrabold cursor-pointer transition-all active:scale-95 ${
+                    reorderMode
+                      ? 'border-emerald-400 bg-emerald-600 text-white shadow-sm'
+                      : 'border-slate-300 dark:border-[#4A6072]/70 bg-white/85 dark:bg-[#0D1E2B]/85 text-slate-700 dark:text-sky-200 hover:border-sky-400'
+                  }`}
+                >
+                  {reorderMode ? (
+                    <>
+                      <Check className="w-3.5 h-3.5" aria-hidden="true" />
+                      <span>Listo (arrastra tarjetas)</span>
+                    </>
+                  ) : (
+                    <>
+                      <ArrowUpDown className="w-3.5 h-3.5" aria-hidden="true" />
+                      <span>Ordenar (1 Año PRO)</span>
+                    </>
+                  )}
+                </button>
+
+                {isCustomLayout && onResetMenuLayout && (
+                  <button
+                    type="button"
+                    id="btn-menu-reset-layout"
+                    onClick={onResetMenuLayout}
+                    className="inline-flex items-center gap-1 min-h-[32px] px-2.5 py-1 rounded-full border border-slate-300 dark:border-white/15 bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/15 text-slate-700 dark:text-slate-200 text-[11px] font-bold cursor-pointer transition-all active:scale-95"
+                  >
+                    <RotateCcw className="w-3 h-3" aria-hidden="true" />
+                    <span>Restaurar</span>
+                  </button>
+                )}
+              </div>
             )}
           </div>
         )}
@@ -1236,20 +1356,100 @@ export const MainMenuView: React.FC<Props> = ({
         </div>
       )}
 
-      {/* SECCIÓN 1: Módulos Principales */}
-      {renderSectionGrid('principal', effectiveLayout.principal)}
+      {/* DISTRIBUCIÓN SEGÚN PLAN ACTIVO */}
+      {!isPaged ? (
+        /* VERSIÓN GRATUITA / PRUEBA 3D: 1 sola vista vertical fija sin división de páginas ni arrastre */
+        <div id="menu-free-vertical-view" data-menu-layout-mode="free-vertical">
+          {renderSectionGrid('principal', effectiveLayout.principal)}
 
-      {/* Separador visual de Sección 2 */}
-      <div className="mb-3 flex items-center gap-2.5">
-        <span className="h-[1px] flex-1 bg-gradient-to-r from-transparent via-[#4A6072]/60 to-transparent" aria-hidden="true" />
-        <span className="text-[10.5px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-[#8CA6BA]">
-          Herramientas del Taller
-        </span>
-        <span className="h-[1px] flex-1 bg-gradient-to-r from-transparent via-[#4A6072]/60 to-transparent" aria-hidden="true" />
-      </div>
+          <div className="mb-3 flex items-center gap-2.5">
+            <span className="h-[1px] flex-1 bg-gradient-to-r from-transparent via-[#4A6072]/60 to-transparent" aria-hidden="true" />
+            <span className="text-[10.5px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-[#8CA6BA]">
+              Herramientas del Taller
+            </span>
+            <span className="h-[1px] flex-1 bg-gradient-to-r from-transparent via-[#4A6072]/60 to-transparent" aria-hidden="true" />
+          </div>
 
-      {/* SECCIÓN 2: Herramientas del Taller */}
-      {renderSectionGrid('herramientas', effectiveLayout.herramientas)}
+          {renderSectionGrid('herramientas', effectiveLayout.herramientas)}
+        </div>
+      ) : (
+        /* PLANES 30d / 90d PRO (fijo) y 1 AÑO / PERMANENTE PRO (reorganizable con long-press entre páginas) */
+        <div
+          id="menu-paged-carousel"
+          data-menu-layout-mode={canReorder ? 'pro-annual-paged-editable' : 'pro-paged-fixed'}
+          data-active-page={activePage + 1}
+          onTouchStart={handleCarouselTouchStart}
+          onTouchEnd={handleCarouselTouchEnd}
+          className="relative"
+        >
+          {/* Zona interactiva para soltar y mover una tarjeta a la otra página (solo 1 Año / Permanente PRO) */}
+          {canReorder && (dragState || reorderMode) && (() => {
+            const targetSec: HomeMenuSectionId = activePage === 0 ? 'herramientas' : 'principal';
+            const targetLabel = activePage === 0 ? 'Página 2 · Herramientas' : 'Página 1 · Principal';
+            const isHovering = Boolean(dragState && dropTarget?.section === targetSec);
+            return (
+              <div
+                id="menu-cross-page-dropzone"
+                data-cross-page-target={targetSec}
+                className={`mb-3 px-4 py-3 rounded-2xl border-2 border-dashed flex items-center justify-center gap-2 text-[12.5px] font-extrabold transition-all ${
+                  isHovering
+                    ? 'border-emerald-400 bg-emerald-500/25 text-emerald-100 scale-[1.01] shadow-lg'
+                    : dragState
+                      ? 'border-sky-400/80 bg-sky-500/15 text-sky-100'
+                      : 'border-slate-500/40 bg-slate-800/40 text-slate-300'
+                }`}
+              >
+                <ArrowRightLeft className="w-4 h-4 shrink-0" aria-hidden="true" />
+                <span>
+                  {dragState
+                    ? `Soltar aquí para mover a ${targetLabel}`
+                    : `Mantén presionada cualquier tarjeta y arrástrala aquí para moverla a ${targetLabel}`}
+                </span>
+              </div>
+            );
+          })()}
+
+          {activePage === 0 ? (
+            <div id="menu-page-panel-1" className="ap-view-forward">
+              {renderSectionGrid('principal', effectiveLayout.principal)}
+            </div>
+          ) : (
+            <div id="menu-page-panel-2" className="ap-view-forward">
+              <div className="mb-3 flex items-center gap-2.5">
+                <span className="h-[1px] flex-1 bg-gradient-to-r from-transparent via-[#4A6072]/60 to-transparent" aria-hidden="true" />
+                <span className="text-[10.5px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-[#8CA6BA]">
+                  Página 2 · Herramientas del Taller
+                </span>
+                <span className="h-[1px] flex-1 bg-gradient-to-r from-transparent via-[#4A6072]/60 to-transparent" aria-hidden="true" />
+              </div>
+              {renderSectionGrid('herramientas', effectiveLayout.herramientas)}
+            </div>
+          )}
+
+          {/* Indicadores inferiores de página (desliza o toca) */}
+          <div className="mt-1 mb-2 flex items-center justify-center gap-2">
+            <button
+              type="button"
+              onClick={() => setActivePage(0)}
+              aria-label="Ir a Página 1"
+              className={`h-2 rounded-full transition-all cursor-pointer border-0 ${
+                activePage === 0 ? 'w-7 bg-blue-500' : 'w-2 bg-slate-500/60 hover:bg-slate-400'
+              }`}
+            />
+            <button
+              type="button"
+              onClick={() => setActivePage(1)}
+              aria-label="Ir a Página 2"
+              className={`h-2 rounded-full transition-all cursor-pointer border-0 ${
+                activePage === 1 ? 'w-7 bg-blue-500' : 'w-2 bg-slate-500/60 hover:bg-slate-400'
+              }`}
+            />
+            <span className="ml-1 text-[10.5px] font-semibold text-slate-400">
+              Desliza ↔ para cambiar página ({activePage + 1}/2)
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Vista fantasma flotante durante arrastre PRO */}
       {dragState && (

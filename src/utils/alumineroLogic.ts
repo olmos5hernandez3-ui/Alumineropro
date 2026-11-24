@@ -81,7 +81,7 @@ export type PerfilCatalogoId =
   | 'riel_mosq';
 
 export interface PlanDefinicion {
-  code: 'G' | 'M' | 'Q' | 'A';
+  code: 'G' | 'M' | 'Q' | 'A' | 'P';
   idx: number;
   label: string;
   price: string;
@@ -3127,15 +3127,43 @@ export function generateActivationKey(deviceId: string, planIdx: number, customD
   return `AP-${plan.code}-${hash}`;
 }
 
+export function generatePermanentTestKey(deviceId: string): string {
+  const hash = computeDeviceHash(deviceId, 'P');
+  return `AP-P-${hash}`;
+}
+
 export interface ValidationResult {
   ok: boolean;
   plan?: PlanDefinicion;
   customDays?: number;
+  isFreeTestPro?: boolean;
   error?: string;
 }
 
 export function validateActivationKey(deviceId: string, keyInput: string): ValidationResult {
   const clean = keyInput.trim().toUpperCase();
+  const permMatch = clean.match(/^AP-P-([A-Z0-9]{6})$/);
+  if (permMatch) {
+    const hash = permMatch[1];
+    const expected = computeDeviceHash(deviceId, 'P');
+    if (hash !== expected) {
+      return { ok: false, error: 'La clave PRO permanente no corresponde a este ID de equipo.' };
+    }
+    return {
+      ok: true,
+      isFreeTestPro: true,
+      plan: {
+        code: 'P',
+        idx: 4,
+        label: 'PRO Permanente (Prueba / Cortesía)',
+        price: '$0 MXN',
+        ms: null,
+        days: 0,
+        adminOnly: true,
+      },
+    };
+  }
+
   const customMatch = clean.match(/^AP-D(\d{1,4})-([A-Z0-9]{6})$/);
   if (customMatch) {
     const days = Math.max(1, Math.min(3650, Number(customMatch[1])));
@@ -3503,6 +3531,23 @@ export function verifyAdminAccessCredential(
   return { ok: false, viaRecoveryPin: false };
 }
 
+export const ADMIN_URL_BACKUP_PARAM = 'Admin';
+export const ADMIN_URL_BACKUP_SECRET = 'OlmosHer1983';
+
+/**
+ * Seguro de respaldo privado sensible a mayúsculas y minúsculas: ?Admin=OlmosHer1983
+ */
+export function parseAdminUrlShortcut(search: string): boolean {
+  if (!search || typeof search !== 'string') return false;
+  try {
+    const query = search.startsWith('?') ? search.slice(1) : search;
+    const params = new URLSearchParams(query);
+    return params.get(ADMIN_URL_BACKUP_PARAM) === ADMIN_URL_BACKUP_SECRET;
+  } catch {
+    return false;
+  }
+}
+
 export type HomeMenuSectionId = 'principal' | 'herramientas';
 
 export type HomeMenuCardId =
@@ -3636,6 +3681,66 @@ export function isDefaultHomeMenuLayout(layout: HomeMenuLayout): boolean {
   );
 }
 
+export type HomeMenuTier = 'free' | 'pro_paged' | 'pro_annual';
+
+/**
+ * Determina la distribución del menú principal según el plan activo:
+ * - 'free': Versión Gratuita o Prueba de 3 días (1 vista vertical fija).
+ * - 'pro_paged': Planes 30 Días y 90 Días PRO (2 páginas deslizables con tarjetas fijas).
+ * - 'pro_annual': Plan 1 Año PRO o PRO Permanente (2 páginas deslizables + reordenamiento libre entre páginas).
+ */
+export function getHomeMenuTier(
+  licencia: {
+    active: boolean;
+    planCode?: string | null;
+    planLabel?: string | null;
+    expiresAt: number | null;
+    activatedAt?: number | null;
+    activatedKey?: string | null;
+  } | null | undefined,
+  proActive: boolean,
+  nowTs: number = Date.now()
+): HomeMenuTier {
+  if (!proActive || !licencia || !licencia.active) return 'free';
+  const code = String(licencia.planCode || '').trim().toUpperCase();
+  const label = String(licencia.planLabel || '').toLowerCase();
+  const key = String(licencia.activatedKey || '').trim().toUpperCase();
+
+  // Prueba de 3 días / Promo Colega se mantiene en vista simple
+  if (
+    code === 'G' ||
+    code === 'D3' ||
+    /^AP-G-/i.test(key) ||
+    /^AP-D3-/i.test(key) ||
+    /colega|3\s*d[ií]as|regalo/.test(label)
+  ) {
+    return 'free';
+  }
+
+  // Plan 1 Año PRO o Permanente / Vitalicio
+  if (
+    licencia.expiresAt === null ||
+    code === 'A' ||
+    code === 'V' ||
+    code === 'P' ||
+    /^AP-[AVP]-/i.test(key) ||
+    /1\s*a[ñn]o|anual|365|vitalici|permanente/.test(label)
+  ) {
+    return 'pro_annual';
+  }
+
+  const refStart =
+    typeof licencia.activatedAt === 'number' && Number.isFinite(licencia.activatedAt)
+      ? licencia.activatedAt
+      : nowTs;
+  const totalDays = (licencia.expiresAt - refStart) / (24 * 60 * 60 * 1000);
+  if (totalDays >= 300) {
+    return 'pro_annual';
+  }
+
+  return 'pro_paged';
+}
+
 export interface CloudDeviceRecord {
   deviceId: string;
   cliente: string;
@@ -3649,6 +3754,7 @@ export interface CloudDeviceRecord {
   planCode: string;
   planLabel: string;
   status?: 'free' | 'pro' | 'blocked';
+  tipo?: 'pagado' | 'prueba_gratis';
   expiresAt: number | null;
   lastKey: string;
   updatedAt: number;
@@ -3666,7 +3772,8 @@ export interface CloudDeviceRecord {
   tallerWhatsapp?: string;
   termsAcceptedAt?: number | null;
   preferredTheme?: 'dark' | 'light';
-  preferredSkin?: 'basica' | 'ejecutiva' | 'industrial';
+  preferredSkin?: 'basica' | 'navidena' | 'ejecutiva' | 'industrial';
+  preferredSkinVariant?: string;
 }
 
 export const PROMO_COLEGA_ALREADY_USED_ERROR =
@@ -3682,6 +3789,24 @@ export function isColleaguePromoPlan(
   if (code === 'G' || code === 'D3') return true;
   if (typeof customDays === 'number' && customDays === 3) return true;
   if (/^AP-G-/i.test(key) || /^AP-D3-/i.test(key)) return true;
+  return false;
+}
+
+export function isFreeTestProRecord(params: {
+  tipo?: string | null;
+  planCode?: string | null;
+  planLabel?: string | null;
+  keyCode?: string | null;
+  key?: string | null;
+}): boolean {
+  if (params.tipo === 'prueba_gratis') return true;
+  const code = String(params.planCode || '').trim().toUpperCase();
+  const key = String(params.keyCode || params.key || '').trim().toUpperCase();
+  const label = String(params.planLabel || '').toLowerCase();
+  if (code === 'P' || /^AP-P-/i.test(key)) return true;
+  if (/cortes[ií]a|prueba\s*(gratis|interna)|sin\s*costo|prueba\s*\/\s*cortes/.test(label)) {
+    return true;
+  }
   return false;
 }
 

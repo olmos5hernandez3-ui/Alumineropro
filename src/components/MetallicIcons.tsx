@@ -409,10 +409,34 @@ interface RobotPalette {
 }
 
 export function getRobotPaletteForSkin(
-  skin: 'basica' | 'ejecutiva' | 'industrial' = 'basica',
+  skin: 'basica' | 'navidena' | 'ejecutiva' | 'industrial' = 'basica',
   skinVariant: string = 'default'
 ): RobotPalette {
+  if (skin === 'navidena') {
+    return {
+      ledPrimary: '#F59E0B',
+      ledBright: '#FDE68A',
+      ledSmile: '#FBBF24',
+      headStroke: '#FDE68A',
+      headLight: '#FFFBEB',
+      headMid: '#7F2B2B',
+      headDark: '#1E1116',
+      auraHex: '#DC2626',
+    };
+  }
   if (skin === 'ejecutiva') {
+    if (skinVariant === 'verde') {
+      return {
+        ledPrimary: '#34D399',
+        ledBright: '#A7F3D0',
+        ledSmile: '#10B981',
+        headStroke: '#6EE7B7',
+        headLight: '#ECFDF5',
+        headMid: '#2D6A56',
+        headDark: '#0C241C',
+        auraHex: '#10B981',
+      };
+    }
     if (skinVariant === 'naranja') {
       return {
         ledPrimary: '#F97316',
@@ -461,6 +485,18 @@ export function getRobotPaletteForSkin(
         auraHex: '#D4AF37',
       };
     }
+    if (skinVariant === 'bronce') {
+      return {
+        ledPrimary: '#E09F5A',
+        ledBright: '#FBD3A4',
+        ledSmile: '#CD7F32',
+        headStroke: '#F3C592',
+        headLight: '#FFF3E4',
+        headMid: '#84512C',
+        headDark: '#26150A',
+        auraHex: '#C27132',
+      };
+    }
     // Verde Esmeralda (default Industrial)
     return {
       ledPrimary: '#10B981',
@@ -490,7 +526,7 @@ export const MetallicRobot3D: React.FC<{
   size?: number;
   className?: string;
   compactHeadOnly?: boolean;
-  skin?: 'basica' | 'ejecutiva' | 'industrial';
+  skin?: 'basica' | 'navidena' | 'ejecutiva' | 'industrial';
   skinVariant?: string;
 }> = ({
   size = 66,
@@ -653,6 +689,42 @@ export const MetallicRobot3D: React.FC<{
       </g>
       <circle cx="35.6" cy="34.8" r="1.4" fill="#FFFFFF" />
       <circle cx="54.6" cy="34.8" r="1.4" fill="#FFFFFF" />
+
+      {/* Gorro de Santa Claus animado cuando la carátula Navideña está activa */}
+      {skin === 'navidena' && (
+        <g data-santa-hat="true" className="santa-hat-sway" style={{ transformOrigin: '44px 18px' }}>
+          {/* Cuerpo rojo del gorro */}
+          <path
+            d="M19 20 C24 4 46 1 60 8 C66 11 71 17 75 23 C67 21 62 17 55 15 C45 13 31 15 19 20 Z"
+            fill="#DC2626"
+            stroke="#991B1B"
+            strokeWidth="1.3"
+            strokeLinejoin="round"
+          />
+          {/* Brillo sutil sobre tela roja */}
+          <path
+            d="M27 14 C33 8 44 6 54 9"
+            stroke="#FCA5A5"
+            strokeOpacity="0.65"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+          />
+          {/* Borde blanco esponjoso */}
+          <rect
+            x="16.5"
+            y="16.5"
+            width="53"
+            height="7.2"
+            rx="3.6"
+            fill="#F8FAFC"
+            stroke="#CBD5E1"
+            strokeWidth="1"
+          />
+          {/* Pompón blanco colgante */}
+          <circle cx="76.5" cy="24.5" r="4.6" fill="#FFFFFF" stroke="#CBD5E1" strokeWidth="1" />
+          <circle cx="75.4" cy="23.2" r="1.4" fill="#FEF3C7" />
+        </g>
+      )}
     </svg>
   );
 };

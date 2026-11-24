@@ -71,8 +71,10 @@ import {
   formatCombinedClientLabel,
   formatMxPhoneDashed,
   generateActivationKey,
+  generatePermanentTestKey,
   generateRandomMxPhonePlaceholder,
   isColleaguePromoPlan,
+  isFreeTestProRecord,
   isProActive,
   isUnassignedAutoTrialDevice,
   LineaId,
@@ -170,13 +172,13 @@ export interface AdminDashboardViewProps {
   onShowToast: (msg: string, topSuccess?: boolean) => void;
 }
 
-const ADMIN_COUNTERS_RESET_KEY = 'aluminero_admin_counters_reset_at_v1';
+const ADMIN_COUNTERS_RESET_KEY = 'aluminero_admin_counters_reset_at_v2';
 
 type AdminTabId = 'dashboard' | 'graficas' | 'claves' | 'referidos' | 'precios' | 'mensajes' | 'herramientas' | 'videos';
 type PlanFilterId = 'todos' | 'gratis' | 'colega3d' | '30d' | '90d' | '365d' | 'bloqueados';
 type ChartGranularity = 'week' | 'month';
 
-type ClassifiedTier = 'gratis' | 'colega3d' | '30d' | '90d' | '365d' | 'otros_pro' | 'bloqueado';
+type ClassifiedTier = 'gratis' | 'colega3d' | 'prueba_gratis' | '30d' | '90d' | '365d' | 'otros_pro' | 'bloqueado';
 
 function classifyPlanTier(params: {
   isBlocked: boolean;
@@ -185,9 +187,20 @@ function classifyPlanTier(params: {
   planLabel?: string | null;
   dias?: number | null;
   keyCode?: string | null;
+  tipo?: string | null;
 }): ClassifiedTier {
   if (params.isBlocked) return 'bloqueado';
   if (!params.hasActivePro) return 'gratis';
+  if (
+    isFreeTestProRecord({
+      tipo: params.tipo,
+      planCode: params.planCode,
+      planLabel: params.planLabel,
+      keyCode: params.keyCode,
+    })
+  ) {
+    return 'prueba_gratis';
+  }
   const code = String(params.planCode || '').trim().toUpperCase();
   const label = String(params.planLabel || '').toLowerCase();
   const key = String(params.keyCode || '').trim().toUpperCase();
@@ -358,6 +371,12 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const [pasteModalText, setPasteModalText] = useState('');
   const [pasteAutoGen, setPasteAutoGen] = useState(true);
   const [confirmDirectCloudOpen, setConfirmDirectCloudOpen] = useState(false);
+
+  // Permanent free PRO (pruebas / cortesías) state — $0 MXN, tipo: 'prueba_gratis'
+  const [permTestDeviceId, setPermTestDeviceId] = useState(deviceId);
+  const [permTestLabel, setPermTestLabel] = useState('');
+  const [permTestBusy, setPermTestBusy] = useState(false);
+  const [permTestGeneratedKey, setPermTestGeneratedKey] = useState('');
 
   // Reference Prices tab state
   const [refPricesDoc, setRefPricesDoc] = useState<ReferencePricesDoc>(() => ({
@@ -551,6 +570,18 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               ? 'Versión Gratuita (Revocada)'
               : 'Versión Gratuita';
 
+        const effectiveTipo =
+          (localSelfActivePro ? licencia?.tipo : null) ||
+          latestKey?.tipo ||
+          dev?.tipo ||
+          (isFreeTestProRecord({
+            planCode: effectivePlanCode,
+            planLabel: effectivePlanLabel,
+            keyCode,
+          })
+            ? 'prueba_gratis'
+            : undefined);
+
         const tier = classifyPlanTier({
           isBlocked,
           hasActivePro,
@@ -558,6 +589,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           planLabel: effectivePlanLabel,
           dias: latestKey?.dias ?? null,
           keyCode,
+          tipo: effectiveTipo,
         });
 
         const hasHistoricalColleagueKey = historyKeys.some((k) =>
@@ -661,10 +693,11 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       });
   }, [cloudDevices, adminKeys, deviceId, licencia, backupData.taller, revokedDevicesMap, revokedKeysSet, nowTick, countersResetAt]);
 
-  // KPI metrics
+  // KPI metrics (los planes internos tipo 'prueba_gratis' NUNCA suman a ventas ni a Conversión a PRO Pagado)
   const kpis = useMemo(() => {
     let gratis = 0;
     let colega3d = 0;
+    let pruebasGratis = 0;
     let pro30 = 0;
     let pro90 = 0;
     let pro365 = 0;
@@ -680,6 +713,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           break;
         case 'colega3d':
           colega3d++;
+          break;
+        case 'prueba_gratis':
+          pruebasGratis++;
           break;
         case '30d':
           pro30++;
@@ -700,10 +736,12 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     }
 
     const totalProPaid = pro30 + pro90 + pro365 + otrosPro;
+    const totalNonTestUsers = Math.max(0, auditUsers.length - pruebasGratis);
     return {
-      totalUsers: auditUsers.length,
+      totalUsers: totalNonTestUsers,
       gratis,
       colega3d,
+      pruebasGratis,
       pro30,
       pro90,
       pro365,
@@ -748,15 +786,18 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   }, [auditUsers, kpis.colega3d, kpis.colegaUsadaTotal]);
 
   const analyticsRates = useMemo(() => {
-    const total = Math.max(1, kpis.totalUsers);
-    const proRate = Math.round((kpis.totalProPaid / total) * 100);
-    const colegaUsageRate = Math.round((kpis.colegaUsadaTotal / total) * 100);
+    const proRate = kpis.totalUsers > 0 ? Math.round((kpis.totalProPaid / kpis.totalUsers) * 100) : 0;
+    const colegaUsageRate =
+      kpis.totalUsers > 0 ? Math.round((kpis.colegaUsadaTotal / kpis.totalUsers) * 100) : 0;
     const estimatedProValue = kpis.pro30 * 369 + kpis.pro90 * 989 + kpis.pro365 * 1799;
+    const paidKeysIssued = filterAdminRecordsByResetBaseline(adminKeys, countersResetAt).filter(
+      (k) => !isFreeTestProRecord({ tipo: k.tipo, planLabel: k.planLabel, keyCode: k.key })
+    ).length;
     return {
       proRate,
       colegaUsageRate,
       estimatedProValue,
-      totalKeysIssued: filterAdminRecordsByResetBaseline(adminKeys, countersResetAt).length,
+      totalKeysIssued: paidKeysIssued,
     };
   }, [kpis, adminKeys, countersResetAt]);
 
@@ -937,49 +978,6 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     return key;
   };
 
-  const handleCopyKeyAndSave = async () => {
-    if (!clienteNombre.trim() || clienteTelefono.replace(/\D/g, '').length === 0) {
-      onShowToast('Escribe el nombre y teléfono del cliente para generar su clave');
-      return;
-    }
-    const key = refreshKeyPreview();
-    const now = Date.now();
-    const plan = PLANS.find((p) => p.idx === planIdx) || PLANS[0];
-    const dias = parsedCustomDays ?? plan.days;
-    const planLabel = parsedCustomDays ? `Reposición ${parsedCustomDays} días` : plan.label;
-    const planCode = parsedCustomDays ? `D${parsedCustomDays}` : plan.code;
-    const expiresAt = now + dias * 24 * 60 * 60 * 1000;
-    const cleanTarget = normalizeDeviceIdInput(targetDevice, deviceId);
-    const cleanCliente = formatCombinedClientLabel(clienteNombre, clienteTelefono);
-
-    onRecordAdminKey({
-      id: `ak-${now}`,
-      cliente: cleanCliente,
-      deviceId: cleanTarget,
-      planLabel,
-      dias,
-      key,
-      createdAt: now,
-      expiresAt,
-    });
-
-    void Promise.resolve(
-      onCloudActivateDevice({
-        deviceId: cleanTarget,
-        cliente: cleanCliente,
-        planCode,
-        planLabel,
-        expiresAt,
-        key,
-        dias,
-        recordKeyOnly: true,
-      })
-    ).catch(() => false);
-
-    await navigator.clipboard.writeText(key).catch(() => {});
-    onShowToast(`Clave ${key} copiada y registrada`, true);
-  };
-
   const applyParsedWhatsappText = (rawText: string, autoGenerate: boolean): boolean => {
     const parsed = parseWhatsappKeyRequestMessage(rawText);
     if (!parsed.hasValidDeviceId || !parsed.deviceId) {
@@ -1012,6 +1010,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         key,
         createdAt: now,
         expiresAt,
+        tipo: 'pagado',
       });
       void Promise.resolve(
         onCloudActivateDevice({
@@ -1025,7 +1024,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           recordKeyOnly: true,
         })
       ).catch(() => false);
-      onShowToast(`Datos extraídos y clave ${key} generada para ${parsed.deviceId}`, true);
+      void navigator.clipboard.writeText(key).catch(() => {});
+      onShowToast(`Clave ${key} generada, copiada y registrada para ${parsed.deviceId}`, true);
     } else {
       const preview = generateActivationKey(parsed.deviceId, nextPlanIdx, null);
       setGeneratedKey(preview);
@@ -1056,6 +1056,71 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     setCustomDaysStr('');
     setGeneratedKey('');
     onShowToast('Formulario de claves limpiado');
+  };
+
+  const handleActivatePermanentTestPro = async () => {
+    const cleanTarget = normalizeDeviceIdInput(permTestDeviceId, deviceId);
+    if (!cleanTarget) {
+      onShowToast('Escribe un ID de Equipo válido (ej. ALM-XXXX)');
+      return;
+    }
+    setPermTestBusy(true);
+    try {
+      const now = Date.now();
+      const key = generatePermanentTestKey(cleanTarget);
+      const planLabel = 'PRO Permanente (Prueba / Cortesía)';
+      const cleanNota = permTestLabel.trim() || 'Prueba interna / Cortesía';
+      const isSelf = cleanTarget === deviceId.trim().toUpperCase();
+
+      onRecordAdminKey({
+        id: `ak-test-${now}`,
+        cliente: `${cleanNota} · $0 MXN`,
+        deviceId: cleanTarget,
+        planLabel,
+        dias: null,
+        key,
+        createdAt: now,
+        expiresAt: null,
+        tipo: 'prueba_gratis',
+      });
+
+      if (isSelf) {
+        onActivateLic({
+          active: true,
+          planCode: 'P',
+          planLabel,
+          expiresAt: null,
+          activatedAt: now,
+          activatedKey: key,
+          adminAssigned: true,
+          tipo: 'prueba_gratis',
+        });
+      }
+
+      setPermTestGeneratedKey(key);
+      void navigator.clipboard.writeText(key).catch(() => {});
+
+      void Promise.resolve(
+        onCloudActivateDevice({
+          deviceId: cleanTarget,
+          cliente: `${cleanNota} · $0 MXN`,
+          planCode: 'P',
+          planLabel,
+          expiresAt: null,
+          key,
+          dias: null,
+          revoke: false,
+          recordKeyOnly: false,
+        })
+      ).catch(() => false);
+
+      onShowToast(
+        `PRO Permanente ($0 · Prueba/Cortesía) activado para ${cleanTarget}. No suma a ventas.`,
+        true
+      );
+    } finally {
+      setPermTestBusy(false);
+    }
   };
 
   const openWhatsappLink = (phone: string, text: string) => {
@@ -1749,14 +1814,14 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               </p>
             </div>
 
-            <div className="rounded-2xl border border-amber-500/40 bg-slate-900/95 p-4 shadow-md">
+            <div id="kpi-card-planes-pro-activos" className="rounded-2xl border border-amber-500/40 bg-slate-900/95 p-4 shadow-md">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[11.5px] font-bold uppercase tracking-wider text-amber-300">
-                  Usuarios PRO Activos
+                  Planes PRO Activos
                 </span>
                 <Crown className="w-4 h-4 text-amber-400 shrink-0" aria-hidden="true" />
               </div>
-              <div className="mt-2 mono text-[28px] font-extrabold text-amber-300 leading-none">
+              <div id="kpi-val-planes-pro-activos" className="mt-2 mono text-[28px] font-extrabold text-amber-300 leading-none">
                 {kpis.totalProPaid}
               </div>
               <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] font-bold">
@@ -2603,7 +2668,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
             </div>
           </div>
 
-          {/* Barra rápida: Pegar 1 Clic / Solo pegar / Limpiar */}
+          {/* Barra rápida: Pegar 1 Clic (genera, copia y guarda) + Limpiar */}
           <div className="mt-4 p-3 rounded-xl border border-emerald-500/40 bg-emerald-950/30 flex flex-wrap items-center gap-2">
             <button
               type="button"
@@ -2616,18 +2681,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
             </button>
             <button
               type="button"
-              id="btn-admin-paste-only"
-              onClick={() => void handleOneClickClipboardPaste(false)}
-              className="min-h-[44px] px-3.5 py-2 rounded-xl border border-slate-600 bg-slate-800 hover:bg-slate-700 text-white font-bold text-[12px] inline-flex items-center gap-1.5 cursor-pointer"
-            >
-              <ClipboardPaste className="w-3.5 h-3.5" aria-hidden="true" />
-              <span>Solo pegar</span>
-            </button>
-            <button
-              type="button"
               id="btn-admin-clear-key"
               onClick={handleClearKeyForm}
-              className="min-h-[44px] px-3 py-2 rounded-xl border border-slate-700 bg-slate-900 hover:bg-slate-800 text-slate-300 font-bold text-[12px] inline-flex items-center gap-1.5 cursor-pointer"
+              className="min-h-[44px] px-3.5 py-2 rounded-xl border border-slate-700 bg-slate-900 hover:bg-slate-800 text-slate-300 font-bold text-[12px] inline-flex items-center gap-1.5 cursor-pointer"
             >
               <Eraser className="w-3.5 h-3.5" aria-hidden="true" />
               <span>Limpiar</span>
@@ -2821,13 +2877,6 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           <div className="mt-4 flex flex-col sm:flex-row gap-2.5">
             <button
               type="button"
-              onClick={() => void handleCopyKeyAndSave()}
-              className="flex-1 min-h-[46px] px-4 py-2.5 rounded-xl border border-slate-600 bg-slate-800 hover:bg-slate-700 text-white font-extrabold text-[13px] cursor-pointer"
-            >
-              Generar, Copiar y Guardar Clave
-            </button>
-            <button
-              type="button"
               id="btn-admin-activate-cloud-trigger"
               onClick={() => {
                 if (!clienteNombre.trim() || clienteTelefono.replace(/\D/g, '').length === 0) {
@@ -2841,10 +2890,104 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 }
                 setConfirmDirectCloudOpen(true);
               }}
-              className="flex-1 min-h-[46px] px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-[13px] cursor-pointer shadow-md"
+              className="w-full min-h-[46px] px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-[13px] cursor-pointer shadow-md"
             >
               Activar Directo en la Nube
             </button>
+          </div>
+
+          {/* Sección dedicada: Planes PRO Permanentes sin costo (Pruebas / Cortesías — $0 MXN) */}
+          <div
+            id="admin-permanent-test-pro-section"
+            className="mt-6 pt-5 border-t border-slate-700/80"
+          >
+            <div className="rounded-2xl border border-violet-400/45 bg-violet-950/25 p-4 sm:p-5">
+              <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
+                <div>
+                  <span className="inline-flex items-center gap-1.5 text-[10.5px] font-black uppercase tracking-wider text-violet-300">
+                    <ShieldCheck className="w-3.5 h-3.5" aria-hidden="true" />
+                    Pruebas Internas / Cortesías ($0 MXN)
+                  </span>
+                  <h3 className="m-0 mt-0.5 text-[15.5px] font-extrabold text-white">
+                    Planes PRO Permanentes sin costo
+                  </h3>
+                  <p className="m-0 mt-1 text-[12px] text-slate-300 leading-snug">
+                    Activa acceso PRO permanente (<span className="mono font-bold text-violet-200">tipo: prueba_gratis</span>) por ID de Equipo para tus pruebas o cortesías. Nunca suma a ventas, ingresos ni a Conversión a PRO Pagado.
+                  </p>
+                </div>
+                {kpis.pruebasGratis > 0 && (
+                  <span className="px-2.5 py-1 rounded-lg bg-violet-500/20 border border-violet-400/40 text-violet-200 text-[11px] font-extrabold mono shrink-0">
+                    {kpis.pruebasGratis} cortesía(s) activa(s)
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor="inp-admin-perm-device" className="block text-[11.5px] font-bold text-slate-300 mb-1">
+                    ID de Equipo destino *
+                  </label>
+                  <input
+                    id="inp-admin-perm-device"
+                    type="text"
+                    value={permTestDeviceId}
+                    onChange={(e) => setPermTestDeviceId(e.target.value.toUpperCase())}
+                    placeholder="ALM-XXXX"
+                    className="mono w-full min-h-[42px] px-3 py-2 rounded-xl border border-violet-400/40 bg-slate-950 text-violet-200 font-bold text-[13.5px]"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="inp-admin-perm-cliente" className="block text-[11.5px] font-bold text-slate-300 mb-1">
+                    Nota / Etiqueta (opcional)
+                  </label>
+                  <input
+                    id="inp-admin-perm-cliente"
+                    type="text"
+                    value={permTestLabel}
+                    onChange={(e) => setPermTestLabel(e.target.value)}
+                    placeholder="Ej. Teléfono de pruebas / Cortesía"
+                    className="w-full min-h-[42px] px-3 py-2 rounded-xl border border-slate-700 bg-slate-950 text-white text-[13px]"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-center gap-2.5">
+                <button
+                  type="button"
+                  id="btn-admin-activate-perm-test"
+                  disabled={permTestBusy}
+                  onClick={() => void handleActivatePermanentTestPro()}
+                  className="min-h-[44px] px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-extrabold text-[13px] inline-flex items-center justify-center gap-2 cursor-pointer shadow-md disabled:opacity-60"
+                >
+                  <Crown className="w-4 h-4 shrink-0" aria-hidden="true" />
+                  <span>{permTestBusy ? 'Activando...' : 'Activar PRO Permanente ($0 MXN)'}</span>
+                </button>
+
+                {permTestGeneratedKey && (
+                  <div
+                    id="admin-perm-test-key-result"
+                    className="flex-1 min-w-[200px] px-3 py-2 rounded-xl border border-violet-400/50 bg-slate-950/90 flex items-center justify-between gap-2"
+                  >
+                    <div className="min-w-0">
+                      <span className="block text-[10px] font-bold uppercase text-violet-300">
+                        Clave Permanente ($0 · prueba_gratis)
+                      </span>
+                      <strong className="mono text-[13.5px] text-white">{permTestGeneratedKey}</strong>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await navigator.clipboard.writeText(permTestGeneratedKey).catch(() => {});
+                        onShowToast(`Clave permanente ${permTestGeneratedKey} copiada`, true);
+                      }}
+                      className="min-h-[34px] px-2.5 rounded-lg bg-violet-600/30 hover:bg-violet-600/50 border border-violet-400/50 text-violet-100 text-[11px] font-bold cursor-pointer"
+                    >
+                      Copiar
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       )}

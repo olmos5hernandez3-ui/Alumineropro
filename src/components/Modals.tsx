@@ -176,8 +176,9 @@ export const ProModal: React.FC<ProModalProps> = ({
 
   const emailCheck = validateCloudBackupEmailPair(cloudEmail, cloudEmailConfirm);
   const keyNeedsCloudEmail = keyRequiresCloudEmailConfirmation(keyInput);
-  const isShortKey = isShortPlanKeyPrefix(keyInput);
-  // Obligatorio ÚNICAMENTE para planes de 90 días y 1 año; claves de 30 días / cortas activan de inmediato sin correo
+  const isShortKey =
+    isShortPlanKeyPrefix(keyInput) || keyInput.trim().toUpperCase().startsWith('AP-P-');
+  // Obligatorio ÚNICAMENTE para planes de 90 días y 1 año; claves de 30 días / cortas / prueba permanente activan de inmediato sin correo
   const emailRequiredBeforeActivate = isShortKey
     ? false
     : keyNeedsCloudEmail || selectedPlanKey !== '30d';
@@ -279,6 +280,7 @@ export const ProModal: React.FC<ProModalProps> = ({
       expiresAt: res.plan.ms === null ? null : now + res.plan.ms,
       activatedAt: now,
       activatedKey: cleanKey,
+      tipo: res.isFreeTestPro ? 'prueba_gratis' : 'pagado',
       ...(confirmedEmail ? { linkedEmail: confirmedEmail } : {}),
     };
 
@@ -779,418 +781,8 @@ export const ProModal: React.FC<ProModalProps> = ({
   );
 };
 
-/* ==================== MODAL SEGURIDAD ADMINISTRADOR ==================== */
-interface AdminAuthModalProps {
-  open: boolean;
-  onClose: () => void;
-  onSuccess: () => void;
-}
-
-export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({ open, onClose, onSuccess }) => {
-  const [step, setStep] = useState<'login' | 'pin' | 'new-password'>('login');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [recoveryPin, setRecoveryPin] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [errorMsg, setErrorMsg] = useState('');
-  const [infoMsg, setInfoMsg] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const pinRef = useRef<HTMLInputElement>(null);
-  const newPwdRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (open) {
-      clearLegacyAdminKeys();
-      setStep('login');
-      setPassword('');
-      setShowPassword(false);
-      setRecoveryPin('');
-      setNewPassword('');
-      setShowNewPassword(false);
-      setErrorMsg('');
-      setInfoMsg('');
-      setSubmitting(false);
-      const timer = window.setTimeout(() => inputRef.current?.focus(), 40);
-      return () => window.clearTimeout(timer);
-    } else {
-      setStep('login');
-      setPassword('');
-      setShowPassword(false);
-      setRecoveryPin('');
-      setNewPassword('');
-      setShowNewPassword(false);
-      setErrorMsg('');
-      setInfoMsg('');
-      setSubmitting(false);
-    }
-  }, [open]);
-
-  if (!open) return null;
-
-  const handleLoginSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (submitting) return;
-    const cleanPass = password.trim();
-    if (!cleanPass) {
-      setErrorMsg('Contraseña incorrecta');
-      return;
-    }
-
-    // 1) Verificación local instantánea: contraseña configurada (por defecto 1983) o PIN de recuperación (202699)
-    const localAuth = verifyAdminAccessCredential(cleanPass, loadAdminPasswordOverride());
-    if (localAuth.ok) {
-      setPassword('');
-      setErrorMsg('');
-      setInfoMsg('');
-      setSubmitting(false);
-      onSuccess();
-      return;
-    }
-
-    // 2) Respaldo en nube con límite de tiempo corto y manejo de errores para nunca bloquear el botón
-    setSubmitting(true);
-    try {
-      const timeoutPromise = new Promise<{ ok: boolean; offline: boolean }>((resolve) => {
-        window.setTimeout(() => resolve({ ok: false, offline: true }), 2200);
-      });
-      const serverCheck = await Promise.race([
-        verifyAdminPasswordWithServer(cleanPass).catch(() => ({ ok: false, offline: true })),
-        timeoutPromise,
-      ]);
-
-      if (serverCheck.ok) {
-        saveAdminPasswordOverride(cleanPass);
-        setPassword('');
-        setErrorMsg('');
-        setInfoMsg('');
-        onSuccess();
-        return;
-      }
-
-      setErrorMsg('Contraseña incorrecta');
-    } catch {
-      setErrorMsg('Contraseña incorrecta');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handlePinSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!verifyRecoveryPin(recoveryPin)) {
-      setErrorMsg('PIN de recuperación incorrecto');
-      return;
-    }
-    setErrorMsg('');
-    setStep('new-password');
-    window.setTimeout(() => newPwdRef.current?.focus(), 40);
-  };
-
-  const handleSaveNewPassword = (e: React.FormEvent) => {
-    e.preventDefault();
-    const cleanNew = newPassword.trim();
-    if (cleanNew.length < 4) {
-      setErrorMsg('Escribe una contraseña de al menos 4 caracteres');
-      return;
-    }
-    const pinForCloud = recoveryPin.trim();
-    saveAdminPasswordOverride(cleanNew);
-    void resetAdminPasswordWithServer(pinForCloud, cleanNew).catch(() => {
-      // Sincronización en segundo plano sin bloquear el cambio local
-    });
-    setPassword('');
-    setRecoveryPin('');
-    setNewPassword('');
-    setErrorMsg('');
-    setInfoMsg('Nueva contraseña guardada correctamente. Ingresa con tu nueva clave.');
-    setStep('login');
-    window.setTimeout(() => inputRef.current?.focus(), 40);
-  };
-
-  return (
-    <div
-      id="modal-admin-auth"
-      className="fixed inset-0 z-50 bg-slate-950/75 flex items-center justify-center p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Acceso de Administrador"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      {step === 'login' && (
-        <form
-          onSubmit={handleLoginSubmit}
-          className="w-full max-w-[400px] bg-white text-slate-900 rounded-[20px] p-5 shadow-2xl"
-        >
-          <div className="flex items-start justify-between gap-2 mb-3">
-            <div>
-              <h2 className="m-0 text-[18px] font-extrabold">Seguridad · Administrador</h2>
-              <p className="m-0 text-[12px] text-slate-500">
-                Ingresa la contraseña para abrir el Panel de Administrador
-              </p>
-            </div>
-            <button
-              type="button"
-              id="btn-admin-auth-close"
-              onClick={onClose}
-              aria-label="Cerrar cuadro de contraseña"
-              className="min-w-[36px] min-h-[36px] rounded-xl bg-slate-100 text-slate-700 font-bold cursor-pointer"
-            >
-              ✕
-            </button>
-          </div>
-
-          {infoMsg && (
-            <p
-              id="msg-admin-password-reset-ok"
-              className="mb-3 p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-[12px] font-bold"
-            >
-              {infoMsg}
-            </p>
-          )}
-
-          <div className="mb-3">
-            <label htmlFor="inp-admin-password" className="block text-[12px] font-bold text-slate-600 mb-1">
-              Clave de acceso
-            </label>
-            <div className="relative flex items-center">
-              <input
-                ref={inputRef}
-                id="inp-admin-password"
-                type={showPassword ? 'text' : 'password'}
-                autoComplete="off"
-                value={password}
-                onChange={(e) => {
-                  setPassword(e.target.value);
-                  if (errorMsg) setErrorMsg('');
-                }}
-                placeholder="••••••••••••"
-                className="w-full min-h-[44px] rounded-xl border border-slate-200 pl-3 pr-11 text-[14px] font-semibold"
-              />
-              <button
-                type="button"
-                id="btn-toggle-admin-password"
-                onClick={() => setShowPassword((prev) => !prev)}
-                aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-                title={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-                className="absolute right-1.5 inline-flex items-center justify-center w-9 h-9 rounded-lg text-slate-500 hover:text-slate-800 cursor-pointer"
-              >
-                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-              </button>
-            </div>
-            {errorMsg && (
-              <p
-                id="err-admin-password"
-                role="alert"
-                className="mt-1.5 mb-0 text-[12.5px] font-bold text-red-600"
-                style={{ color: '#DC2626' }}
-              >
-                {errorMsg}
-              </p>
-            )}
-          </div>
-
-          <div className="flex items-center justify-end gap-2">
-            <button
-              type="button"
-              id="btn-admin-auth-cancel"
-              onClick={onClose}
-              className="min-h-[42px] px-4 rounded-xl border border-slate-200 bg-slate-100 text-slate-700 text-[13px] font-bold cursor-pointer"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              id="btn-admin-auth-submit"
-              disabled={submitting}
-              className="min-h-[42px] px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[13px] font-extrabold cursor-pointer disabled:opacity-60"
-            >
-              {submitting ? 'Verificando...' : 'Entrar'}
-            </button>
-          </div>
-
-          <div className="mt-3 text-center">
-            <button
-              type="button"
-              id="btn-forgot-admin-password"
-              onClick={() => {
-                setErrorMsg('');
-                setInfoMsg('');
-                setRecoveryPin('');
-                setStep('pin');
-                window.setTimeout(() => pinRef.current?.focus(), 40);
-              }}
-              className="text-[12px] font-semibold text-slate-500 hover:text-blue-600 underline cursor-pointer bg-transparent border-0"
-            >
-              ¿Olvidaste tu contraseña?
-            </button>
-          </div>
-        </form>
-      )}
-
-      {step === 'pin' && (
-        <form
-          onSubmit={handlePinSubmit}
-          className="w-full max-w-[400px] bg-white text-slate-900 rounded-[20px] p-5 shadow-2xl"
-        >
-          <div className="flex items-start justify-between gap-2 mb-3">
-            <div>
-              <h2 className="m-0 text-[18px] font-extrabold">Recuperar Acceso</h2>
-              <p className="m-0 text-[12px] text-slate-500">
-                Ingresa el PIN de recuperación maestro para definir una nueva clave
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Cerrar recuperación"
-              className="min-w-[36px] min-h-[36px] rounded-xl bg-slate-100 text-slate-700 font-bold cursor-pointer"
-            >
-              ✕
-            </button>
-          </div>
-
-          <div className="mb-3">
-            <label htmlFor="inp-admin-recovery-pin" className="block text-[12px] font-bold text-slate-600 mb-1">
-              PIN de recuperación maestro
-            </label>
-            <input
-              ref={pinRef}
-              id="inp-admin-recovery-pin"
-              type="password"
-              inputMode="numeric"
-              autoComplete="off"
-              value={recoveryPin}
-              onChange={(e) => {
-                setRecoveryPin(e.target.value);
-                if (errorMsg) setErrorMsg('');
-              }}
-              placeholder="PIN maestro"
-              className="w-full min-h-[44px] rounded-xl border border-slate-200 px-3 mono text-[14px] font-bold"
-            />
-            {errorMsg && (
-              <p
-                id="err-admin-recovery-pin"
-                role="alert"
-                className="mt-1.5 mb-0 text-[12.5px] font-bold text-red-600"
-                style={{ color: '#DC2626' }}
-              >
-                {errorMsg}
-              </p>
-            )}
-          </div>
-
-          <div className="flex items-center justify-between gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setErrorMsg('');
-                setStep('login');
-              }}
-              className="min-h-[42px] px-3 rounded-xl border border-slate-200 bg-slate-100 text-slate-700 text-[12.5px] font-bold cursor-pointer"
-            >
-              Volver
-            </button>
-            <button
-              type="submit"
-              id="btn-verify-recovery-pin"
-              className="min-h-[42px] px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[13px] font-extrabold cursor-pointer"
-            >
-              Validar PIN
-            </button>
-          </div>
-        </form>
-      )}
-
-      {step === 'new-password' && (
-        <form
-          onSubmit={handleSaveNewPassword}
-          className="w-full max-w-[400px] bg-white text-slate-900 rounded-[20px] p-5 shadow-2xl"
-        >
-          <div className="flex items-start justify-between gap-2 mb-3">
-            <div>
-              <h2 className="m-0 text-[18px] font-extrabold">Nueva Contraseña Admin</h2>
-              <p className="m-0 text-[12px] text-slate-500">
-                Guarda una nueva contraseña persistente para el Panel de Administrador
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Cerrar cambio de contraseña"
-              className="min-w-[36px] min-h-[36px] rounded-xl bg-slate-100 text-slate-700 font-bold cursor-pointer"
-            >
-              ✕
-            </button>
-          </div>
-
-          <div className="mb-3">
-            <label htmlFor="inp-admin-new-password" className="block text-[12px] font-bold text-slate-600 mb-1">
-              Nueva contraseña de administrador
-            </label>
-            <div className="relative flex items-center">
-              <input
-                ref={newPwdRef}
-                id="inp-admin-new-password"
-                type={showNewPassword ? 'text' : 'password'}
-                autoComplete="new-password"
-                value={newPassword}
-                onChange={(e) => {
-                  setNewPassword(e.target.value);
-                  if (errorMsg) setErrorMsg('');
-                }}
-                placeholder="Mínimo 4 caracteres"
-                className="w-full min-h-[44px] rounded-xl border border-slate-200 pl-3 pr-11 text-[14px] font-semibold"
-              />
-              <button
-                type="button"
-                id="btn-toggle-admin-new-password"
-                onClick={() => setShowNewPassword((prev) => !prev)}
-                aria-label={showNewPassword ? 'Ocultar nueva contraseña' : 'Mostrar nueva contraseña'}
-                className="absolute right-1.5 inline-flex items-center justify-center w-9 h-9 rounded-lg text-slate-500 hover:text-slate-800 cursor-pointer"
-              >
-                {showNewPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-              </button>
-            </div>
-            {errorMsg && (
-              <p
-                role="alert"
-                className="mt-1.5 mb-0 text-[12.5px] font-bold text-red-600"
-                style={{ color: '#DC2626' }}
-              >
-                {errorMsg}
-              </p>
-            )}
-          </div>
-
-          <div className="flex items-center justify-between gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setErrorMsg('');
-                setStep('login');
-              }}
-              className="min-h-[42px] px-3 rounded-xl border border-slate-200 bg-slate-100 text-slate-700 text-[12.5px] font-bold cursor-pointer"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              id="btn-save-new-admin-password"
-              disabled={submitting}
-              className="min-h-[42px] px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[13px] font-extrabold cursor-pointer disabled:opacity-60"
-            >
-              {submitting ? 'Guardando...' : 'Guardar contraseña'}
-            </button>
-          </div>
-        </form>
-      )}
-    </div>
-  );
-};
+/* ==================== MODAL SEGURIDAD ADMINISTRADOR (EXTRAÍDO A AdminGateModal.tsx) ==================== */
+export { AdminGateModal, AdminAuthModal } from './AdminGateModal';
 
 /* ==================== EMPAQUETADO CLOUDFLARE PAGES (JSZip CDN + Datos/Fotos del Dispositivo) ==================== */
 interface JSZipInstance {
@@ -5222,6 +4814,14 @@ interface CloudBackupModalProps {
   session: CloudAccountSession | null;
   isEligible: boolean;
   syncing: boolean;
+  googleUserEmail?: string | null;
+  googleAuthLoading?: boolean;
+  googleAuthError?: string | null;
+  pendingSyncCount?: number;
+  isOnline?: boolean;
+  onConnectGoogle?: () => Promise<void> | void;
+  onDisconnectGoogle?: () => Promise<void> | void;
+  onClearGoogleAuthError?: () => void;
   onClose: () => void;
   onOpenProPlans: () => void;
   onRegisterAccount: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
@@ -5237,6 +4837,14 @@ export const CloudBackupModal: React.FC<CloudBackupModalProps> = ({
   session,
   isEligible,
   syncing,
+  googleUserEmail = null,
+  googleAuthLoading = false,
+  googleAuthError = null,
+  pendingSyncCount = 0,
+  isOnline = true,
+  onConnectGoogle,
+  onDisconnectGoogle,
+  onClearGoogleAuthError,
   onClose,
   onOpenProPlans,
   onRegisterAccount,
@@ -5336,6 +4944,96 @@ export const CloudBackupModal: React.FC<CloudBackupModalProps> = ({
             ✕
           </button>
         </div>
+
+        {/* Estado de autenticación con Google (Firebase Auth con respaldo automático signInWithRedirect) */}
+        {onConnectGoogle && (
+          <div className="mb-3 p-3 rounded-xl border border-slate-200 bg-slate-50 flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11.5px] font-extrabold uppercase tracking-wide text-slate-600">
+                Cuenta de Google (Firebase)
+              </span>
+              <span
+                className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                  googleUserEmail
+                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                    : 'bg-amber-100 text-amber-800 border border-amber-300'
+                }`}
+              >
+                {googleUserEmail ? 'Conectada' : 'Sin conectar'}
+              </span>
+            </div>
+
+            {googleUserEmail ? (
+              <div className="flex items-center justify-between gap-2 bg-white border border-emerald-200 rounded-xl px-3 py-2">
+                <div className="min-w-0">
+                  <div className="text-[11px] font-bold text-emerald-700">Sesión de Google activa</div>
+                  <div className="text-[12.5px] font-extrabold text-slate-900 truncate">{googleUserEmail}</div>
+                </div>
+                {onDisconnectGoogle && (
+                  <button
+                    type="button"
+                    id="btn-cloud-disconnect-google"
+                    disabled={googleAuthLoading}
+                    onClick={() => void onDisconnectGoogle()}
+                    className="px-2.5 py-1.5 rounded-lg border border-slate-300 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-extrabold cursor-pointer shrink-0 disabled:opacity-60"
+                  >
+                    Desconectar
+                  </button>
+                )}
+              </div>
+            ) : (
+              <button
+                type="button"
+                id="btn-cloud-connect-google"
+                disabled={googleAuthLoading}
+                onClick={() => void onConnectGoogle()}
+                className="w-full min-h-[44px] px-3.5 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-900 font-extrabold text-[13px] cursor-pointer flex items-center justify-center gap-2 shadow-xs transition-colors disabled:opacity-60"
+              >
+                <svg width="17" height="17" viewBox="0 0 24 24" className="shrink-0" aria-hidden="true">
+                  <path fill="#4285F4" d="M23.49 12.27c0-.79-.07-1.54-.2-2.27H12v4.3h6.44a5.5 5.5 0 0 1-2.39 3.61v3h3.87c2.26-2.08 3.57-5.15 3.57-8.64z" />
+                  <path fill="#34A853" d="M12 24c3.24 0 5.95-1.07 7.93-2.91l-3.87-3c-1.07.72-2.45 1.14-4.06 1.14-3.12 0-5.77-2.11-6.72-4.95H1.28v3.1A12 12 0 0 0 12 24z" />
+                  <path fill="#FBBC05" d="M5.28 14.28A7.2 7.2 0 0 1 4.9 12c0-.79.14-1.56.38-2.28v-3.1H1.28A12 12 0 0 0 0 12c0 1.94.46 3.77 1.28 5.38l4-3.1z" />
+                  <path fill="#EA4335" d="M12 4.77c1.76 0 3.34.61 4.58 1.8l3.44-3.44C17.94 1.19 15.24 0 12 0A12 12 0 0 0 1.28 6.62l4 3.1c.95-2.84 3.6-4.95 6.72-4.95z" />
+                </svg>
+                <span>{googleAuthLoading ? 'Conectando con Google...' : 'Conectar con Google'}</span>
+              </button>
+            )}
+
+            {googleAuthError && (
+              <div
+                id="cloud-google-auth-error"
+                role="alert"
+                className="p-2.5 rounded-xl border border-rose-300 bg-rose-50 text-rose-800 text-[11.5px] font-bold leading-snug flex items-start justify-between gap-2"
+              >
+                <span className="break-words">{googleAuthError}</span>
+                {onClearGoogleAuthError && (
+                  <button
+                    type="button"
+                    onClick={onClearGoogleAuthError}
+                    aria-label="Cerrar error de Google"
+                    className="text-rose-700 hover:text-rose-950 font-extrabold bg-transparent border-0 p-0.5 cursor-pointer shrink-0"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {pendingSyncCount > 0 && (
+          <div
+            id="cloud-offline-queue-notice"
+            role="status"
+            className="mb-3 p-3 rounded-xl border border-amber-300 bg-amber-50 text-amber-950 text-[12px] font-bold flex items-center justify-between gap-2"
+          >
+            <span>
+              {isOnline
+                ? `Hay ${pendingSyncCount} cotización(es) guardada(s) sin internet listas para sincronizar.`
+                : `Modo sin conexión: ${pendingSyncCount} cotización(es) en cola persistente para sincronizar al volver la red.`}
+            </span>
+          </div>
+        )}
 
         {session ? (
           <div className="flex flex-col gap-3">

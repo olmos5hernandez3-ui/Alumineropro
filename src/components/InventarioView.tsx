@@ -212,6 +212,33 @@ export const InventarioView: React.FC<Props> = ({
   const [sobLargoStr, setSobLargoStr] = useState('120');
   const [sobCantidad, setSobCantidad] = useState(1);
   const [sobNota, setSobNota] = useState('');
+  const [highlightedSobranteId, setHighlightedSobranteId] = useState<string | null>(null);
+  const prevSobranteIdsRef = useRef<Set<string>>(new Set(sobrantes.map((s) => s.id)));
+  const sobranteHighlightTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const prevIds = prevSobranteIdsRef.current;
+    const newlyAdded = sobrantes.find((s) => !prevIds.has(s.id));
+    prevSobranteIdsRef.current = new Set(sobrantes.map((s) => s.id));
+    if (newlyAdded) {
+      setHighlightedSobranteId(newlyAdded.id);
+      if (sobranteHighlightTimerRef.current !== null) {
+        window.clearTimeout(sobranteHighlightTimerRef.current);
+      }
+      sobranteHighlightTimerRef.current = window.setTimeout(() => {
+        setHighlightedSobranteId((curr) => (curr === newlyAdded.id ? null : curr));
+        sobranteHighlightTimerRef.current = null;
+      }, 2000);
+    }
+  }, [sobrantes]);
+
+  useEffect(() => {
+    return () => {
+      if (sobranteHighlightTimerRef.current !== null) {
+        window.clearTimeout(sobranteHighlightTimerRef.current);
+      }
+    };
+  }, []);
 
   const handleSelectLinea = (nextLinea: LineaId) => {
     setInvLinea(nextLinea);
@@ -1301,10 +1328,14 @@ export const InventarioView: React.FC<Props> = ({
                     const pNombre = CATALOGO_PERFILES.find((p) => p.id === s.perfilId)?.nombre || s.perfilId;
                     const cmVal = Math.round(s.largoM * 100);
                     const totalItemM = round2(s.largoM * s.cantidad);
+                    const isNewlyAdded = s.id === highlightedSobranteId;
                     return (
                       <div
                         key={s.id}
-                        className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl bg-amber-50 border-[1.5px] border-amber-300 text-[#1E293B] text-[12px]"
+                        data-sobrante-new={isNewlyAdded ? 'true' : undefined}
+                        className={`flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl bg-amber-50 border-[1.5px] border-amber-300 text-[#1E293B] text-[12px] transition-[transform,opacity] duration-500 ${
+                          isNewlyAdded ? 'sobrante-new-highlight' : ''
+                        }`}
                       >
                         <div className="flex items-center gap-2 min-w-0 flex-1 basis-[170px]">
                           <button

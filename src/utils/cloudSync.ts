@@ -264,10 +264,18 @@ function buildSafeDeviceRecord(
       ? {
           preferredSkin:
             input.preferredSkin === 'basica' ||
+            input.preferredSkin === 'navidena' ||
             input.preferredSkin === 'ejecutiva' ||
             input.preferredSkin === 'industrial'
               ? input.preferredSkin
               : existing?.preferredSkin,
+        }
+      : {}),
+    ...(input.preferredSkinVariant || existing?.preferredSkinVariant
+      ? {
+          preferredSkinVariant: String(
+            input.preferredSkinVariant || existing?.preferredSkinVariant || 'default'
+          ).slice(0, 24),
         }
       : {}),
   };
@@ -1893,11 +1901,13 @@ export interface CloudAccountBackupResult {
 }
 
 interface FirestoreCloudAccountDoc {
+  ownerUid?: string;
   email: string;
   passwordSalt: string;
   passwordHash: string;
   activeDeviceId: string;
-  activeSessionToken: string | null;
+  sessionToken?: string | null;
+  activeSessionToken?: string | null;
   licencia: {
     active: boolean;
     planCode: string;
@@ -1908,7 +1918,7 @@ interface FirestoreCloudAccountDoc {
   backup: Record<string, unknown> | null;
   createdAt: number;
   updatedAt: number;
-  lastBackedUpAt: number | null;
+  lastBackedUpAt?: number | null;
 }
 
 function sanitizeBackupForFirestore(
@@ -1994,16 +2004,16 @@ export async function registerCloudAccount(params: {
     const safeBackup = sanitizeBackupForFirestore(params.backup);
 
     const newAccount: FirestoreCloudAccountDoc = cleanForFirestore({
+      ownerUid: auth.currentUser?.uid || '',
       email,
       passwordSalt: salt,
       passwordHash: hash,
       activeDeviceId: deviceId,
-      activeSessionToken: sessionToken,
+      sessionToken,
       licencia: cleanLic,
       backup: safeBackup,
       createdAt: now,
       updatedAt: now,
-      lastBackedUpAt: safeBackup ? now : null,
     });
 
     try {
@@ -2084,7 +2094,7 @@ export async function registerCloudAccount(params: {
       email,
       sessionToken,
       licencia: cleanLic,
-      lastBackedUpAt: newAccount.lastBackedUpAt,
+      lastBackedUpAt: safeBackup ? now : null,
       snapshot,
     };
   } catch (err) {
@@ -2201,8 +2211,7 @@ export async function loginCloudAccount(params: {
     try {
       await updateDoc(doc(db, 'accounts', accountId), cleanForFirestore({
         activeDeviceId: deviceId,
-        activeSessionToken: sessionToken,
-        licencia: effectiveLic,
+        sessionToken,
         updatedAt: now,
       }));
     } catch (err) {
@@ -2307,9 +2316,10 @@ export async function uploadCloudAccountBackup(params: {
   try {
     const accountId = await sha256Hex(email);
     const acc = await readServerDoc<FirestoreCloudAccountDoc>('accounts', accountId);
+    const storedSessionToken = acc?.sessionToken ?? acc?.activeSessionToken ?? null;
     if (
       !acc ||
-      acc.activeSessionToken !== params.sessionToken ||
+      storedSessionToken !== params.sessionToken ||
       toSafeDocId(normalizeDeviceIdInput(acc.activeDeviceId)) !== deviceId
     ) {
       return {
@@ -2323,18 +2333,6 @@ export async function uploadCloudAccountBackup(params: {
     await updateDoc(doc(db, 'accounts', accountId), cleanForFirestore({
       backup: safeBackup,
       updatedAt: now,
-      lastBackedUpAt: now,
-      ...(params.licencia && isEligibleForCloudBackup(params.licencia, false, now)
-        ? {
-            licencia: {
-              active: true,
-              planCode: String(params.licencia.planCode),
-              planLabel: String(params.licencia.planLabel),
-              expiresAt: params.licencia.expiresAt ?? null,
-              activatedAt: Number(params.licencia.activatedAt || now),
-            },
-          }
-        : {}),
     }));
 
     return { ok: true, updatedAt: now };
@@ -2366,9 +2364,10 @@ export async function checkCloudAccountSession(params: {
   try {
     const accountId = await sha256Hex(email);
     const acc = await readServerDoc<FirestoreCloudAccountDoc>('accounts', accountId);
+    const storedSessionToken = acc?.sessionToken ?? acc?.activeSessionToken ?? null;
     if (
       !acc ||
-      acc.activeSessionToken !== params.sessionToken ||
+      storedSessionToken !== params.sessionToken ||
       toSafeDocId(normalizeDeviceIdInput(acc.activeDeviceId)) !== deviceId
     ) {
       return {
@@ -2403,13 +2402,14 @@ export async function logoutCloudAccount(params: {
   try {
     const accountId = await sha256Hex(email);
     const acc = await readServerDoc<FirestoreCloudAccountDoc>('accounts', accountId);
+    const storedSessionToken = acc?.sessionToken ?? acc?.activeSessionToken ?? null;
     if (
       acc &&
-      acc.activeSessionToken === params.sessionToken &&
+      storedSessionToken === params.sessionToken &&
       toSafeDocId(normalizeDeviceIdInput(acc.activeDeviceId)) === deviceId
     ) {
       await updateDoc(doc(db, 'accounts', accountId), {
-        activeSessionToken: null,
+        sessionToken: null,
         updatedAt: Date.now(),
       });
     }
@@ -2515,6 +2515,7 @@ export async function syncTallerProfileToCloud(params: {
   termsAcceptedAt?: number | null;
   preferredTheme?: AppTheme;
   preferredSkin?: AppSkin;
+  preferredSkinVariant?: string;
 }): Promise<void> {
   if (!isFirebaseSignedIn()) return;
   const normId = toSafeDocId(normalizeDeviceIdInput(params.deviceId));
@@ -2537,6 +2538,7 @@ export async function syncTallerProfileToCloud(params: {
         ...(params.termsAcceptedAt !== undefined ? { termsAcceptedAt: params.termsAcceptedAt } : {}),
         ...(params.preferredTheme ? { preferredTheme: params.preferredTheme } : {}),
         ...(params.preferredSkin ? { preferredSkin: params.preferredSkin } : {}),
+        ...(params.preferredSkinVariant ? { preferredSkinVariant: params.preferredSkinVariant } : {}),
         lastSeenAt: now,
         updatedAt: existing?.updatedAt ?? now,
       },

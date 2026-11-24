@@ -46,7 +46,6 @@ import {
   HistorialItem,
   loadCotizacionesGuardadas,
   parseBackupPayload,
-  SKIN_VARIANTS_BY_SKIN,
   TallerConfig,
 } from '../utils/storageHelpers';
 import { PdfHeaderCustomizer } from './PdfHeaderCustomizer';
@@ -125,7 +124,7 @@ export const TallerView: React.FC<Props> = ({
   pendingRemindersCount = 0,
   skin = 'basica',
   skinVariant = 'default',
-  unlockedSkins = ['basica'],
+  unlockedSkins = ['basica', 'navidena'],
   onSelectSkin,
   onSelectSkinVariant,
   colorMode = 'dark',
@@ -334,7 +333,7 @@ export const TallerView: React.FC<Props> = ({
               <div>
                 <h2 className="m-0 text-[16px] font-extrabold">Apariencia y Carátula</h2>
                 <p className="m-0 text-[12px] text-slate-500">
-                  Cambia al instante entre Azul Básico, Verde PRO y Modo Claro / Oscuro
+                  Elige entre Básica, Navideña, Ejecutiva (PRO) o Industrial PRO y Modo Claro / Oscuro
                 </p>
               </div>
             </div>
@@ -362,13 +361,13 @@ export const TallerView: React.FC<Props> = ({
 
           {onSelectSkin && (
             <div className="flex flex-col gap-2.5">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
                 <button
                   type="button"
                   id="btn-taller-skin-basica"
                   onClick={() => onSelectSkin('basica')}
                   aria-pressed={skin === 'basica'}
-                  className={`min-h-[52px] px-3 py-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between gap-2 ${
+                  className={`min-h-[54px] px-3 py-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between gap-2 ${
                     skin === 'basica'
                       ? 'border-blue-600 bg-blue-50 text-blue-900 ring-1 ring-blue-500'
                       : 'border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700'
@@ -376,9 +375,27 @@ export const TallerView: React.FC<Props> = ({
                 >
                   <div className="min-w-0">
                     <span className="block text-[13px] font-extrabold">Básica</span>
-                    <span className="block text-[10.5px] text-slate-500">Gratis · Día / Noche</span>
+                    <span className="block text-[10.5px] text-slate-500">Gratis y PRO · Limpia</span>
                   </div>
                   <span className="w-3.5 h-3.5 rounded-full bg-blue-600 shrink-0" aria-hidden="true" />
+                </button>
+
+                <button
+                  type="button"
+                  id="btn-taller-skin-navidena"
+                  onClick={() => onSelectSkin('navidena')}
+                  aria-pressed={skin === 'navidena'}
+                  className={`min-h-[54px] px-3 py-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between gap-2 ${
+                    skin === 'navidena'
+                      ? 'border-red-600 bg-red-50 text-red-950 ring-1 ring-red-500'
+                      : 'border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700'
+                  }`}
+                >
+                  <div className="min-w-0">
+                    <span className="block text-[13px] font-extrabold">Navideña ❄️</span>
+                    <span className="block text-[10.5px] text-slate-500">Gratis y PRO · Invierno</span>
+                  </div>
+                  <span className="w-3.5 h-3.5 rounded-full bg-red-600 ring-2 ring-amber-400 shrink-0" aria-hidden="true" />
                 </button>
 
                 <button
@@ -392,7 +409,7 @@ export const TallerView: React.FC<Props> = ({
                     onSelectSkin('ejecutiva');
                   }}
                   aria-pressed={skin === 'ejecutiva'}
-                  className={`min-h-[52px] px-3 py-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between gap-2 ${
+                  className={`min-h-[54px] px-3 py-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between gap-2 ${
                     skin === 'ejecutiva'
                       ? 'border-sky-600 bg-sky-50 text-sky-950 ring-1 ring-sky-500'
                       : 'border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700'
@@ -403,7 +420,7 @@ export const TallerView: React.FC<Props> = ({
                       Ejecutiva {!ejecutivaUnlocked && '🔒'}
                     </span>
                     <span className="block text-[10.5px] text-slate-500">
-                      {ejecutivaUnlocked ? 'Azul · Anaranjada' : 'PRO 30d / 90d / 1 Año'}
+                      {ejecutivaUnlocked ? 'Oscuro luminoso PRO' : 'Planes PRO (30d/90d/1A)'}
                     </span>
                   </div>
                   {ejecutivaUnlocked ? (
@@ -424,7 +441,7 @@ export const TallerView: React.FC<Props> = ({
                     onSelectSkin('industrial');
                   }}
                   aria-pressed={skin === 'industrial'}
-                  className={`min-h-[52px] px-3 py-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between gap-2 ${
+                  className={`min-h-[54px] px-3 py-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between gap-2 ${
                     skin === 'industrial'
                       ? 'border-emerald-600 bg-emerald-50 text-emerald-950 ring-1 ring-emerald-500'
                       : 'border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700'
@@ -432,10 +449,10 @@ export const TallerView: React.FC<Props> = ({
                 >
                   <div className="min-w-0">
                     <span className="block text-[13px] font-extrabold">
-                      Industrial Pro {!industrialUnlocked && '🔒'}
+                      Industrial PRO {!industrialUnlocked && '🔒'}
                     </span>
                     <span className="block text-[10.5px] text-slate-500">
-                      {industrialUnlocked ? 'Verde · Acero · Dorada' : 'Exclusivo PRO 1 Año'}
+                      {industrialUnlocked ? 'Cuadrícula metálica PRO' : 'Planes PRO (30d/90d/1A)'}
                     </span>
                   </div>
                   {industrialUnlocked ? (
@@ -445,43 +462,6 @@ export const TallerView: React.FC<Props> = ({
                   )}
                 </button>
               </div>
-
-              {onSelectSkinVariant && SKIN_VARIANTS_BY_SKIN[skin]?.length > 0 && (
-                <div
-                  id="taller-skin-variant-swatches"
-                  className="p-2.5 rounded-xl border border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-2"
-                >
-                  <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-600">
-                    Sub-variante de color:
-                  </span>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {SKIN_VARIANTS_BY_SKIN[skin].map((v) => {
-                      const active = skinVariant === v.id;
-                      return (
-                        <button
-                          key={v.id}
-                          type="button"
-                          id={`btn-taller-variant-${v.id}`}
-                          onClick={() => onSelectSkinVariant(v.id)}
-                          aria-pressed={active}
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11.5px] font-extrabold cursor-pointer transition-all ${
-                            active
-                              ? 'border-blue-600 bg-blue-600 text-white shadow-xs'
-                              : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
-                          }`}
-                        >
-                          <span
-                            className="w-4 h-4 rounded-full border border-white/70 shrink-0"
-                            style={{ background: v.swatchBg }}
-                            aria-hidden="true"
-                          />
-                          <span>{v.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
             </div>
           )}
         </div>

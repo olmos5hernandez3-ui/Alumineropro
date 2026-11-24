@@ -32,6 +32,7 @@ import {
   TallerConfig,
   upsertCliente,
 } from '../utils/storageHelpers';
+import { enqueueOfflineCotizacion } from '../utils/offlineSyncQueue';
 import {
   CotizacionReminder,
   CotizacionReminderStatus,
@@ -1024,7 +1025,7 @@ export const HojaCotizacionView: React.FC<Props> = ({
                 cantidad: row.tramosRequeridos || 1,
                 unidad: 'tramos',
               }));
-              recordCotizacionGuardada({
+              const savedList = recordCotizacionGuardada({
                 folio: res.folio,
                 fecha: res.dateLabel,
                 cliente: res.clienteNombre,
@@ -1034,6 +1035,22 @@ export const HojaCotizacionView: React.FC<Props> = ({
                 piezasCount: hoja.partidas.length,
                 materiales: materialesResumen,
               });
+              const createdEntry = savedList.find((item) => item.folio === res.folio) || savedList[0];
+              if (typeof navigator !== 'undefined' && !navigator.onLine) {
+                enqueueOfflineCotizacion({
+                  key: `cotizacion:${res.folio}`,
+                  action: 'save_cotizacion',
+                  cotizacionId: createdEntry?.id,
+                  folio: res.folio,
+                  cliente: res.clienteNombre,
+                  total: res.total,
+                  estado: createdEntry?.estado || 'enviada',
+                });
+                onShowToast(
+                  `Cotización ${res.folio} guardada localmente (en cola para sincronizar al volver la conexión)`,
+                  true
+                );
+              }
               window.dispatchEvent(new CustomEvent('aluminero:cotizaciones-updated'));
               setCurrentFolio(peekNextCotizacionFolio());
               onRecordFinalPdf?.(res);

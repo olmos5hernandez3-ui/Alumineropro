@@ -36,8 +36,10 @@ import {
   validatePiezaDimensiones,
   cloneHomeMenuLayout,
   DEFAULT_HOME_MENU_LAYOUT,
+  getHomeMenuTier,
   HomeMenuLayout,
   normalizeHomeMenuLayout,
+  parseAdminUrlShortcut,
 } from './utils/alumineroLogic';
 import {
   activateKeyInCloud,
@@ -115,19 +117,24 @@ import {
   saveCloudAccountSession,
   saveColleagueReferral,
   saveContratoCliente,
+  saveCotizacionesGuardadas,
   saveCotizacionReminders,
   saveDeletedAdminKeySigs,
   SavedColleagueReferral,
   AppSkin,
+  AppSkinVariant,
   AppTheme,
   getUnlockedSkinsForLicense,
   isSkinUnlockedForLicense,
   loadAdminMessagesCache,
+  loadLegalDisclaimerAccepted,
   loadPromoColegaUsage,
   loadReadAdminMessageIds,
   loadReferencePricesCache,
   loadSkin,
+  loadSkinVariant,
   markAdminMessageIdRead,
+  normalizeSkinVariantForSkin,
   PromoColegaUsageRecord,
   saveAdminMessagesCache,
   saveFormulas,
@@ -145,6 +152,7 @@ import {
   saveReferralHistory,
   saveRevokedDevicesMap,
   saveSkin,
+  saveSkinVariant,
   saveSobrantes,
   saveSugerenciasWhatsapp,
   saveTaller,
@@ -185,13 +193,29 @@ import { RemindersModal } from './components/CotizacionRemindersPanel';
 import { esMaterialDireccional, PiezaVidrioInput } from './utils/glassOptimizer2D';
 import { aggregateModulacionJobs } from './utils/modulacionLogic';
 import { useOnlineStatus, usePWAInstall } from './utils/usePWAInstall';
+import type { User as FirebaseUser } from 'firebase/auth';
+import {
+  auth,
+  connectGoogleAccountWithFallback,
+  consumeGoogleRedirectResult,
+  signOutFirebase,
+  subscribeFirebaseAuth,
+} from './firebase';
+import {
+  enqueueOfflineCotizacion,
+  flushOfflineCotizacionesQueue,
+  loadOfflineCotizacionesQueue,
+  OFFLINE_SYNC_QUEUE_EVENT,
+  type OfflineCotizacionQueueItem,
+} from './utils/offlineSyncQueue';
 import { ScreenId, SideDrawer, TopBar } from './components/TopBarAndDrawer';
 import { MainMenuView } from './components/MainMenuView';
 import { TrabajoView } from './components/TrabajoView';
 import { TallerOnboardingGate } from './components/TallerOnboardingGate';
+import { LegalDisclaimerGate } from './components/LegalDisclaimerGate';
+import { AdminGateModal } from './components/AdminGateModal';
 import { InteractiveTutorialModal } from './components/InteractiveTutorialModal';
 import {
-  AdminAuthModal,
   AdminModal,
   CloudBackupModal,
   ColleagueReferralWelcomeModal,
@@ -204,6 +228,28 @@ import {
   SugerenciasModal,
 } from './components/Modals';
 import { FloatingAssistant } from './components/FloatingAssistant';
+
+const NAVIDENA_SNOW_FLAKES = [
+  { left: '6%', size: 4, duration: '11s', delay: '0s', drift: '14px' },
+  { left: '14%', size: 3, duration: '14s', delay: '-4s', drift: '-12px' },
+  { left: '23%', size: 5, duration: '12.5s', delay: '-2s', drift: '18px' },
+  { left: '34%', size: 3.5, duration: '15s', delay: '-7s', drift: '-10px' },
+  { left: '46%', size: 4, duration: '11.8s', delay: '-1s', drift: '16px' },
+  { left: '58%', size: 5, duration: '13.4s', delay: '-6s', drift: '-15px' },
+  { left: '69%', size: 3, duration: '16s', delay: '-3s', drift: '12px' },
+  { left: '78%', size: 4.5, duration: '12s', delay: '-8s', drift: '-14px' },
+  { left: '87%', size: 3.5, duration: '14.5s', delay: '-5s', drift: '10px' },
+  { left: '94%', size: 4, duration: '13s', delay: '-2.5s', drift: '-12px' },
+] as const;
+
+const NAVIDENA_TWINKLES = [
+  { left: '11%', top: '14%', size: 5, delay: '0.2s' },
+  { left: '28%', top: '8%', size: 4, delay: '1.1s' },
+  { left: '72%', top: '11%', size: 5, delay: '0.6s' },
+  { left: '89%', top: '20%', size: 4, delay: '1.8s' },
+  { left: '19%', top: '68%', size: 4, delay: '2.1s' },
+  { left: '83%', top: '74%', size: 5, delay: '0.9s' },
+] as const;
 
 const AdminDashboardView = lazy(() =>
   import('./components/AdminDashboardView').then((m) => ({ default: m.AdminDashboardView }))
@@ -489,8 +535,14 @@ export default function App() {
   const [editingPartidaId, setEditingPartidaId] = useState<string | null>(null);
 
   // Modals & UI (controlados desde la pila unificada NavFrame + popstate)
+  const [legalAccepted, setLegalAccepted] = useState<boolean>(() =>
+    loadLegalDisclaimerAccepted()
+  );
   const [theme, setTheme] = useState<AppTheme>(() => loadTheme());
   const [skin, setSkin] = useState<AppSkin>(() => loadSkin());
+  const [skinVariant, setSkinVariant] = useState<AppSkinVariant>(() =>
+    loadSkinVariant(loadSkin())
+  );
   const [annualCelebrationOpen, setAnnualCelebrationOpen] = useState(false);
   const [promoColegaUsage, setPromoColegaUsage] = useState<PromoColegaUsageRecord>(() =>
     loadPromoColegaUsage(deviceId)
@@ -520,6 +572,15 @@ export default function App() {
     loadCloudAccountSession()
   );
   const [cloudAccountSyncing, setCloudAccountSyncing] = useState(false);
+  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(() => auth.currentUser);
+  const [googleAuthLoading, setGoogleAuthLoading] = useState(false);
+  const [googleAuthError, setGoogleAuthError] = useState<string | null>(null);
+  const [offlineSyncQueue, setOfflineSyncQueue] = useState<OfflineCotizacionQueueItem[]>(() =>
+    loadOfflineCotizacionesQueue()
+  );
+  const [syncingOfflineQueue, setSyncingOfflineQueue] = useState(false);
+  const syncingOfflineQueueRef = useRef(false);
+  const hojaMountedRef = useRef(false);
   const [cotizacionReminders, setCotizacionReminders] = useState<CotizacionReminder[]>(() =>
     loadCotizacionReminders()
   );
@@ -592,15 +653,44 @@ export default function App() {
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   }, []);
 
+  const homeMenuTier = useMemo(
+    () => getHomeMenuTier(licencia, proActive),
+    [licencia, proActive]
+  );
+
   const handleSelectSkin = useCallback((nextSkin: AppSkin) => {
     setSkin(nextSkin);
+    const nextVariant = loadSkinVariant(nextSkin);
+    setSkinVariant(nextVariant);
     const skinNames: Record<AppSkin, string> = {
       basica: 'Básica',
-      ejecutiva: 'Ejecutiva Azul',
-      industrial: 'Industrial Pro',
+      navidena: 'Navideña',
+      ejecutiva: 'Ejecutiva',
+      industrial: 'Industrial PRO',
     };
     showToastRef.current(`Carátula "${skinNames[nextSkin]}" aplicada en toda la app`, true);
   }, []);
+
+  const handleSelectSkinVariant = useCallback(
+    (variant: AppSkinVariant) => {
+      const normalized = normalizeSkinVariantForSkin(skin, variant);
+      saveSkinVariant(skin, normalized);
+      setSkinVariant(normalized);
+      const variantLabelMap: Record<AppSkinVariant, string> = {
+        default: skin === 'industrial' ? 'Verde' : 'Azul',
+        verde: 'Verde',
+        naranja: 'Naranja',
+        plateada: 'Plata',
+        dorada: 'Oro',
+        bronce: 'Bronce',
+      };
+      showToastRef.current(
+        `Variante "${variantLabelMap[normalized]}" aplicada`,
+        true
+      );
+    },
+    [skin]
+  );
 
   const [homeMenuLayout, setHomeMenuLayout] = useState<HomeMenuLayout>(() => loadHomeMenuLayout());
 
@@ -678,6 +768,7 @@ export default function App() {
     licencia: licenciaRef.current,
     hoja,
     historial,
+    cotizacionesGuardadas: loadCotizacionesGuardadas(),
     contratoCliente,
     inventario,
     inventarioHerrajes,
@@ -1025,9 +1116,15 @@ export default function App() {
     if (effectiveSkin !== skin) {
       setSkin('basica');
     }
+    const effectiveVariant: AppSkinVariant = 'default';
+    if (skinVariant !== effectiveVariant) {
+      setSkinVariant(effectiveVariant);
+    }
     saveSkin(effectiveSkin);
+    saveSkinVariant(effectiveSkin, effectiveVariant);
     document.documentElement.setAttribute('data-skin', effectiveSkin);
-  }, [skin, licencia, proActive]);
+    document.documentElement.setAttribute('data-skin-variant', effectiveVariant);
+  }, [skin, skinVariant, licencia, proActive]);
 
   const tallerOnboardingComplete = useMemo(
     () => isTallerOnboardingComplete(taller),
@@ -1045,13 +1142,28 @@ export default function App() {
         termsAcceptedAt: taller.termsAcceptedAt ?? null,
         preferredTheme: theme,
         preferredSkin: skin,
+        preferredSkinVariant: normalizeSkinVariantForSkin(skin, skinVariant),
       });
     }
-  }, [taller, deviceId, theme, skin]);
+  }, [taller, deviceId, theme, skin, skinVariant]);
 
   useEffect(() => {
     saveHoja(hoja);
-  }, [hoja]);
+    if (!hojaMountedRef.current) {
+      hojaMountedRef.current = true;
+      return;
+    }
+    const offlineNow = !isOnline || (typeof navigator !== 'undefined' && !navigator.onLine);
+    if (offlineNow && hoja.partidas.length > 0) {
+      const totalAprox = hoja.partidas.reduce((acc, p) => acc + (Number(p.totalLinea) || 0), 0);
+      enqueueOfflineCotizacion({
+        key: 'hoja:draft',
+        action: 'save_hoja_draft',
+        cliente: hoja.proyecto || 'Hoja de Cotización',
+        total: totalAprox,
+      });
+    }
+  }, [hoja, isOnline]);
 
   useEffect(() => {
     saveContratoCliente(contratoCliente);
@@ -1209,6 +1321,16 @@ export default function App() {
     const timer = window.setTimeout(() => {
       const curSession = cloudAccountSessionRef.current;
       if (!curSession) return;
+      if (!isOnline || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+        if (hoja.partidas.length > 0) {
+          enqueueOfflineCotizacion({
+            key: 'hoja:draft',
+            action: 'save_hoja_draft',
+            cliente: hoja.proyecto || 'Hoja de Cotización',
+          });
+        }
+        return;
+      }
       void uploadCloudAccountBackup({
         email: curSession.email,
         sessionToken: curSession.sessionToken,
@@ -1226,6 +1348,12 @@ export default function App() {
               ? { ...prev, lastBackedUpAt: res.updatedAt ?? Date.now() }
               : prev
           );
+        } else if (res.offline && hoja.partidas.length > 0) {
+          enqueueOfflineCotizacion({
+            key: 'hoja:draft',
+            action: 'save_hoja_draft',
+            cliente: hoja.proyecto || 'Hoja de Cotización',
+          });
         }
       });
     }, 2500);
@@ -1516,6 +1644,21 @@ export default function App() {
     },
     [pushNavFrame]
   );
+
+  // Seguro de respaldo privado por URL: ?Admin=OlmosHer1983 (sensible a mayúsculas/minúsculas)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!parseAdminUrlShortcut(window.location.search)) return;
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('Admin');
+      const cleanedPath = `${url.pathname}${url.search}${url.hash}`;
+      window.history.replaceState(window.history.state, '', cleanedPath || '/');
+    } catch {
+      // ignorar si el navegador restringe history.replaceState
+    }
+    openGlobalModal('adminAuth');
+  }, [openGlobalModal]);
 
   const openModalFromDrawer = useCallback(
     (modalId: GlobalModalId) => {
@@ -2103,6 +2246,193 @@ export default function App() {
     };
   }, []);
 
+  // Sincronización reactiva del estado de autenticación con Google (incluyendo retorno de signInWithRedirect)
+  useEffect(() => {
+    const unsub = subscribeFirebaseAuth((user) => {
+      setFirebaseUser(user);
+      if (user) {
+        setGoogleAuthError(null);
+      }
+    });
+    void consumeGoogleRedirectResult().then((result) => {
+      if (!result) return;
+      if (result.status === 'signed_in') {
+        setFirebaseUser(result.user);
+        setGoogleAuthError(null);
+        showToast(
+          `Cuenta de Google conectada${result.user.email ? `: ${result.user.email}` : ''}`,
+          true
+        );
+      } else if (result.status === 'error') {
+        setGoogleAuthError(result.message);
+        showToast(result.message);
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  // Suscripción reactiva a la cola persistente de cotizaciones offline
+  useEffect(() => {
+    const refreshQueue = () => setOfflineSyncQueue(loadOfflineCotizacionesQueue());
+    refreshQueue();
+    window.addEventListener(OFFLINE_SYNC_QUEUE_EVENT, refreshQueue);
+    window.addEventListener('storage', refreshQueue);
+    return () => {
+      window.removeEventListener(OFFLINE_SYNC_QUEUE_EVENT, refreshQueue);
+      window.removeEventListener('storage', refreshQueue);
+    };
+  }, []);
+
+  const handleFlushOfflineCotizacionesQueue = async (opts?: {
+    manual?: boolean;
+    silentIfUnlinked?: boolean;
+  }) => {
+    if (syncingOfflineQueueRef.current) return;
+    const pending = loadOfflineCotizacionesQueue();
+    if (pending.length === 0) {
+      if (opts?.manual) {
+        showToast('Todas tus cotizaciones ya están sincronizadas', true);
+      }
+      return;
+    }
+
+    const offlineNow = !isOnline || (typeof navigator !== 'undefined' && !navigator.onLine);
+    if (offlineNow) {
+      if (opts?.manual) {
+        showToast(
+          `Sin conexión a internet · ${pending.length} cotización(es) permanecen en cola persistente`
+        );
+      }
+      return;
+    }
+
+    const curSession = cloudAccountSessionRef.current;
+    if (!curSession) {
+      if (opts?.manual) {
+        openGlobalModal('cloudBackup');
+        showToast(
+          `Conecta tu cuenta en la nube para sincronizar ${pending.length} cotización(es) pendiente(s)`
+        );
+      }
+      return;
+    }
+
+    syncingOfflineQueueRef.current = true;
+    setSyncingOfflineQueue(true);
+    try {
+      const result = await flushOfflineCotizacionesQueue(async () => {
+        const res = await uploadCloudAccountBackup({
+          email: curSession.email,
+          sessionToken: curSession.sessionToken,
+          deviceId,
+          licencia: licenciaRef.current,
+          backup: buildCurrentCloudBackup(),
+        });
+        if (res.sessionExpired) {
+          handleRemoteSessionClosed();
+          return {
+            ok: false,
+            needsAuth: true,
+            error: 'Sesión cerrada en otro dispositivo',
+          };
+        }
+        if (res.ok) {
+          const ts = res.updatedAt || Date.now();
+          setCloudAccountSession((prev) =>
+            prev && prev.sessionToken === curSession.sessionToken
+              ? { ...prev, lastBackedUpAt: ts }
+              : prev
+          );
+          return { ok: true };
+        }
+        return {
+          ok: false,
+          offline: res.offline,
+          error: res.error || 'No se pudo completar la sincronización',
+        };
+      });
+
+      setOfflineSyncQueue(loadOfflineCotizacionesQueue());
+      if (result.ok && result.flushedCount > 0) {
+        showToast(
+          `✓ ${result.flushedCount} cotización(es) pendiente(s) sincronizada(s) en la nube`,
+          true
+        );
+      } else if (!result.ok && opts?.manual) {
+        showToast(result.error || 'No se pudo sincronizar la cola en este momento');
+      }
+    } finally {
+      syncingOfflineQueueRef.current = false;
+      setSyncingOfflineQueue(false);
+    }
+  };
+
+  // Vacía automáticamente la cola persistente al recuperar internet o al iniciar sesión en la nube
+  useEffect(() => {
+    if (!isOnline) return;
+    if (offlineSyncQueue.length === 0) return;
+    if (!cloudAccountSession?.sessionToken) return;
+    const timer = window.setTimeout(() => {
+      void handleFlushOfflineCotizacionesQueue({ silentIfUnlinked: true });
+    }, 900);
+    return () => window.clearTimeout(timer);
+  }, [isOnline, offlineSyncQueue.length, cloudAccountSession?.sessionToken, firebaseUser?.uid]);
+
+  const handleConnectGoogle = async () => {
+    if (googleAuthLoading) return;
+    if (!isOnline || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+      const msg = 'Sin conexión a internet para conectar con Google. Revisa tu red e intenta de nuevo.';
+      setGoogleAuthError(msg);
+      showToast(msg);
+      return;
+    }
+    setGoogleAuthLoading(true);
+    setGoogleAuthError(null);
+    try {
+      const result = await connectGoogleAccountWithFallback();
+      if (result.status === 'signed_in') {
+        setFirebaseUser(result.user);
+        setGoogleAuthError(null);
+        showToast(
+          `Google conectado${result.user.email ? `: ${result.user.email}` : ''}`,
+          true
+        );
+        if (loadOfflineCotizacionesQueue().length > 0 && cloudAccountSessionRef.current) {
+          void handleFlushOfflineCotizacionesQueue({ silentIfUnlinked: true });
+        }
+      } else if (result.status === 'redirecting') {
+        showToast(result.message);
+      } else {
+        setGoogleAuthError(result.message);
+        showToast(result.message);
+      }
+    } catch (err) {
+      const msg =
+        err instanceof Error && err.message
+          ? err.message
+          : 'No se pudo iniciar sesión con Google. Intenta nuevamente.';
+      setGoogleAuthError(msg);
+      showToast(msg);
+    } finally {
+      setGoogleAuthLoading(false);
+    }
+  };
+
+  const handleDisconnectGoogle = async () => {
+    if (googleAuthLoading) return;
+    setGoogleAuthLoading(true);
+    setGoogleAuthError(null);
+    try {
+      await signOutFirebase();
+      setFirebaseUser(null);
+      showToast('Sesión de Google desconectada');
+    } catch {
+      showToast('No se pudo cerrar la sesión de Google');
+    } finally {
+      setGoogleAuthLoading(false);
+    }
+  };
+
   const handleSetHojaProyectoFromLev = useCallback(
     (cliente: string, telefono?: string, direccion?: string) => {
       const clean = String(cliente || '').trim();
@@ -2641,44 +2971,72 @@ export default function App() {
     );
   }
 
-  if (showMandatoryOnboarding) {
+  const showMandatoryLegalGate =
+    !legalAccepted && !accessBlocked && currentView !== 'admin';
+
+  if (showMandatoryLegalGate) {
     return (
-      <TallerOnboardingGate
-        taller={taller}
-        referredByName={referredByName || savedColleagueReferral?.refName || referredById}
-        onSaveOnboarding={({ nombre, responsable, tel, termsAcceptedAt }) => {
-          const acceptedTs = termsAcceptedAt || Date.now();
-          saveTermsAcceptedAt(acceptedTs);
-          const nextTaller: TallerConfig = {
-            ...taller,
-            nombre,
-            responsable,
-            tel,
-            termsAcceptedAt: acceptedTs,
-          };
-          saveTaller(nextTaller);
-          setTaller(nextTaller);
-          void syncTallerProfileToCloud({
-            deviceId,
-            nombre,
-            responsable,
-            tel,
-            termsAcceptedAt: acceptedTs,
-            preferredTheme: theme,
-            preferredSkin: skin,
-          });
-          showToast(`¡Bienvenido, ${nombre}! Datos de Mi Taller guardados.`, true);
-          if (!loadGuidedTutorialSeen()) {
-            setGuidedTutorialAutoOpen(true);
-          }
-        }}
-      />
+      <>
+        <LegalDisclaimerGate onAccepted={() => setLegalAccepted(true)} />
+        <AdminGateModal
+          open={adminAuthOpen}
+          onClose={requestBack}
+          onSuccess={() => {
+            replaceNavFrame({ view: 'admin', globalModals: [] });
+          }}
+        />
+      </>
+    );
+  }
+
+  if (showMandatoryOnboarding && currentView !== 'admin') {
+    return (
+      <>
+        <TallerOnboardingGate
+          taller={taller}
+          referredByName={referredByName || savedColleagueReferral?.refName || referredById}
+          onSaveOnboarding={({ nombre, responsable, tel, termsAcceptedAt }) => {
+            const acceptedTs = termsAcceptedAt || Date.now();
+            saveTermsAcceptedAt(acceptedTs);
+            const nextTaller: TallerConfig = {
+              ...taller,
+              nombre,
+              responsable,
+              tel,
+              termsAcceptedAt: acceptedTs,
+            };
+            saveTaller(nextTaller);
+            setTaller(nextTaller);
+            void syncTallerProfileToCloud({
+              deviceId,
+              nombre,
+              responsable,
+              tel,
+              termsAcceptedAt: acceptedTs,
+              preferredTheme: theme,
+              preferredSkin: skin,
+              preferredSkinVariant: normalizeSkinVariantForSkin(skin, skinVariant),
+            });
+            showToast(`¡Bienvenido, ${nombre}! Datos de Mi Taller guardados.`, true);
+            if (!loadGuidedTutorialSeen()) {
+              setGuidedTutorialAutoOpen(true);
+            }
+          }}
+        />
+        <AdminGateModal
+          open={adminAuthOpen}
+          onClose={requestBack}
+          onSuccess={() => {
+            replaceNavFrame({ view: 'admin', globalModals: [] });
+          }}
+        />
+      </>
     );
   }
 
   return (
     <div
-      className={`min-h-screen w-full max-w-[100vw] overflow-x-hidden box-border transition-colors ${
+      className={`relative min-h-screen w-full max-w-[100vw] overflow-x-hidden box-border transition-colors ${
         theme === 'light'
           ? 'bg-[#F1F5F9] text-slate-900'
           : skin !== 'basica'
@@ -2686,6 +3044,39 @@ export default function App() {
             : 'bg-[#0B1120] text-slate-100'
       }`}
     >
+      {skin === 'navidena' && (
+        <div className="navidena-snow-overlay" aria-hidden="true">
+          {NAVIDENA_SNOW_FLAKES.map((flake, idx) => (
+            <span
+              key={`snow-${idx}`}
+              className="navidena-snow-flake"
+              style={
+                {
+                  left: flake.left,
+                  width: `${flake.size}px`,
+                  height: `${flake.size}px`,
+                  animationDuration: flake.duration,
+                  animationDelay: flake.delay,
+                  '--snow-drift': flake.drift,
+                } as React.CSSProperties
+              }
+            />
+          ))}
+          {NAVIDENA_TWINKLES.map((tw, idx) => (
+            <span
+              key={`twinkle-${idx}`}
+              className="navidena-twinkle"
+              style={{
+                left: tw.left,
+                top: tw.top,
+                width: `${tw.size}px`,
+                height: `${tw.size}px`,
+                animationDelay: tw.delay,
+              }}
+            />
+          ))}
+        </div>
+      )}
       <TopBar
         currentView={currentView}
         title={screenTitleMap[currentView]}
@@ -2693,6 +3084,9 @@ export default function App() {
         licencia={licencia}
         trialExpiresAt={trialExpiresAt}
         theme={theme}
+        isOnline={isOnline}
+        pendingSyncCount={offlineSyncQueue.length}
+        syncingOfflineQueue={syncingOfflineQueue}
         unreadMessagesCount={unreadAdminMessages.length}
         onBack={requestBack}
         onGoHome={goHome}
@@ -2700,6 +3094,17 @@ export default function App() {
         onOpenDrawer={() => openGlobalModal('drawer')}
         onOpenCalculadora={() => openGlobalModal('calculadora')}
         onRequestExit={() => setExitConfirmOpen(true)}
+        onClickOfflineStatus={() => {
+          if (!isOnline) {
+            showToast(
+              offlineSyncQueue.length > 0
+                ? `Modo sin internet activo · ${offlineSyncQueue.length} cotización(es) en cola para sincronizar`
+                : 'Modo sin internet activo · Tus cotizaciones se guardan localmente y se sincronizarán al volver la red'
+            );
+          } else if (offlineSyncQueue.length > 0) {
+            void handleFlushOfflineCotizacionesQueue({ manual: true });
+          }
+        }}
         onOpenMessages={() => {
           if (currentView !== 'menu') goHome();
           if (typeof window !== 'undefined') {
@@ -2713,15 +3118,46 @@ export default function App() {
           currentView === 'admin' ? 'max-w-[1440px] px-4 sm:px-6 lg:px-8' : 'max-w-[1120px] px-3 sm:px-4'
         } mx-auto pt-5 pb-24 box-border overflow-x-hidden`}
       >
-        {!isOnline && (
+        {!isOnline ? (
           <div
             id="offline-banner"
             role="status"
-            className="mb-3 px-3.5 py-2 rounded-xl border border-amber-400/60 bg-amber-500/15 text-amber-200 text-[12px] font-bold flex items-center justify-between gap-2"
+            aria-live="polite"
+            className="mb-3 px-3.5 py-2.5 rounded-xl border border-rose-400/70 bg-rose-600/20 text-rose-100 text-[12px] font-bold flex flex-wrap items-center justify-between gap-2 shadow-sm"
           >
-            <span>Modo sin internet activo · Tus cálculos, inventario y fotos locales siguen funcionando.</span>
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="inline-block w-2.5 h-2.5 rounded-full bg-rose-400 shrink-0" aria-hidden="true" />
+              <span>
+                Sin conexión a internet · Modo offline activo.{' '}
+                {offlineSyncQueue.length > 0
+                  ? `${offlineSyncQueue.length} cotización(es) en cola persistente para sincronizar automáticamente al reconectar.`
+                  : 'Tus cálculos, cotizaciones e inventario siguen guardándose localmente.'}
+              </span>
+            </div>
           </div>
-        )}
+        ) : offlineSyncQueue.length > 0 ? (
+          <div
+            id="offline-pending-sync-banner"
+            role="status"
+            aria-live="polite"
+            className="mb-3 px-3.5 py-2.5 rounded-xl border border-amber-400/70 bg-amber-500/20 text-amber-100 text-[12px] font-bold flex flex-wrap items-center justify-between gap-2 shadow-sm"
+          >
+            <span>
+              {syncingOfflineQueue
+                ? `Sincronizando ${offlineSyncQueue.length} cotización(es) guardada(s) sin conexión...`
+                : `Conexión restablecida · ${offlineSyncQueue.length} cotización(es) pendiente(s) de sincronizar en la nube.`}
+            </span>
+            <button
+              type="button"
+              id="btn-retry-offline-sync"
+              disabled={syncingOfflineQueue}
+              onClick={() => void handleFlushOfflineCotizacionesQueue({ manual: true })}
+              className="px-3 py-1 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 text-[11.5px] font-extrabold cursor-pointer disabled:opacity-60 shrink-0"
+            >
+              {syncingOfflineQueue ? 'Sincronizando...' : 'Sincronizar ahora'}
+            </button>
+          </div>
+        ) : null}
 
         <ErrorBoundary resetKey={currentView} onGoHome={goHome}>
         <Suspense
@@ -2769,6 +3205,7 @@ export default function App() {
             onOpenAntesDespues={() => openGlobalModal('antesDespues')}
             onOpenLevantamiento={() => window.__alumLev?.open()}
             onOpenReminders={() => openGlobalModal('reminders')}
+            menuTier={homeMenuTier}
             menuLayout={homeMenuLayout}
             onChangeMenuLayout={handleChangeHomeMenuLayout}
             onResetMenuLayout={handleResetHomeMenuLayout}
@@ -3026,8 +3463,10 @@ export default function App() {
             onOpenReminders={() => openGlobalModal('reminders')}
             pendingRemindersCount={reminderSummary.pendingCount}
             skin={skin}
+            skinVariant={skinVariant}
             unlockedSkins={unlockedSkins}
             onSelectSkin={handleSelectSkin}
+            onSelectSkinVariant={handleSelectSkinVariant}
             colorMode={theme}
             onToggleColorMode={handleToggleTheme}
             referencePrices={referencePrices}
@@ -3036,7 +3475,12 @@ export default function App() {
         )}
 
         {currentView === 'cotizaciones' && (
-          <HistorialCotizacionesView onGoHoja={handleEntrarHoja} onShowToast={showToast} />
+          <HistorialCotizacionesView
+            isOnline={isOnline}
+            onSyncPendingQueue={() => void handleFlushOfflineCotizacionesQueue({ manual: true })}
+            onGoHoja={handleEntrarHoja}
+            onShowToast={showToast}
+          />
         )}
 
         {currentView === 'inventario' && (
@@ -3577,8 +4021,15 @@ export default function App() {
         skin={skin}
         cloudAccountEmail={cloudAccountSession?.email || null}
         isCloudBackupEligible={isCloudBackupEligible}
+        googleUserEmail={firebaseUser?.email || null}
+        googleAuthLoading={googleAuthLoading}
+        googleAuthError={googleAuthError}
+        pendingSyncCount={offlineSyncQueue.length}
         onToggleTheme={handleToggleTheme}
         onSelectSkin={handleSelectSkin}
+        onConnectGoogle={handleConnectGoogle}
+        onDisconnectGoogle={handleDisconnectGoogle}
+        onClearGoogleAuthError={() => setGoogleAuthError(null)}
         onClose={requestBack}
         onOpenPro={() => openModalFromDrawer('pro')}
         onOpenCloudBackup={() => openModalFromDrawer('cloudBackup')}
@@ -3798,7 +4249,7 @@ export default function App() {
       />
       </ErrorBoundary>
 
-      <AdminAuthModal
+      <AdminGateModal
         open={adminAuthOpen}
         onClose={requestBack}
         onSuccess={() => {
@@ -4269,6 +4720,14 @@ export default function App() {
         session={cloudAccountSession}
         isEligible={isCloudBackupEligible}
         syncing={cloudAccountSyncing}
+        googleUserEmail={firebaseUser?.email || null}
+        googleAuthLoading={googleAuthLoading}
+        googleAuthError={googleAuthError}
+        pendingSyncCount={offlineSyncQueue.length}
+        isOnline={isOnline}
+        onConnectGoogle={handleConnectGoogle}
+        onDisconnectGoogle={handleDisconnectGoogle}
+        onClearGoogleAuthError={() => setGoogleAuthError(null)}
         onClose={requestBack}
         onOpenProPlans={() => openGlobalModal('pro')}
         onRegisterAccount={async (email, password) => {
@@ -4329,6 +4788,11 @@ export default function App() {
             }
             if (Array.isArray(res.backup.historial)) {
               setHistorial(res.backup.historial);
+            }
+            if (Array.isArray(res.backup.cotizacionesGuardadas)) {
+              saveCotizacionesGuardadas(res.backup.cotizacionesGuardadas);
+              setCotizacionesCount(res.backup.cotizacionesGuardadas.length);
+              window.dispatchEvent(new CustomEvent('aluminero:cotizaciones-updated'));
             }
             if (res.backup.contratoCliente && typeof res.backup.contratoCliente === 'object') {
               setContratoCliente(res.backup.contratoCliente);
@@ -4394,6 +4858,10 @@ export default function App() {
             if (res.ok) {
               const ts = res.updatedAt || Date.now();
               setCloudAccountSession((prev) => (prev ? { ...prev, lastBackedUpAt: ts } : prev));
+              if (loadOfflineCotizacionesQueue().length > 0) {
+                await flushOfflineCotizacionesQueue(async () => ({ ok: true }));
+                setOfflineSyncQueue(loadOfflineCotizacionesQueue());
+              }
               showToast('Respaldo de cotizaciones e inventario guardado en la nube', true);
             } else {
               showToast(res.error || 'No se pudo respaldar en la nube');
@@ -4497,6 +4965,7 @@ export default function App() {
         whatsappNumber={sugerenciasWhatsapp}
         deviceId={deviceId}
         skin={skin}
+        skinVariant={skinVariant}
         proActive={proActive}
         onOpenPro={() => openGlobalModal('pro')}
         onShowToast={showToast}

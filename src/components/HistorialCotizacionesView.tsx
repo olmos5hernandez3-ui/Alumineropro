@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { CloudUpload } from 'lucide-react';
 import {
   CotizacionEstado,
   CotizacionGuardada,
@@ -7,8 +8,17 @@ import {
   loadCotizacionesGuardadas,
   updateCotizacionEstado,
 } from '../utils/storageHelpers';
+import {
+  enqueueOfflineCotizacion,
+  isCotizacionPendingSync,
+  loadOfflineCotizacionesQueue,
+  OFFLINE_SYNC_QUEUE_EVENT,
+  type OfflineCotizacionQueueItem,
+} from '../utils/offlineSyncQueue';
 
 interface Props {
+  isOnline?: boolean;
+  onSyncPendingQueue?: () => void;
   onGoHoja: () => void;
   onShowToast: (msg: string, topSuccess?: boolean) => void;
 }
@@ -25,19 +35,32 @@ const ESTADO_BADGE_CLASSES: Record<CotizacionEstado, string> = {
   rechazada: 'bg-rose-50 text-rose-700 border-rose-200',
 };
 
-export const HistorialCotizacionesView: React.FC<Props> = ({ onGoHoja, onShowToast }) => {
+export const HistorialCotizacionesView: React.FC<Props> = ({
+  isOnline = true,
+  onSyncPendingQueue,
+  onGoHoja,
+  onShowToast,
+}) => {
   const [items, setItems] = useState<CotizacionGuardada[]>(() => loadCotizacionesGuardadas());
+  const [pendingQueue, setPendingQueue] = useState<OfflineCotizacionQueueItem[]>(() =>
+    loadOfflineCotizacionesQueue()
+  );
   const [filtroEstado, setFiltroEstado] = useState<'todas' | CotizacionEstado>('todas');
   const [busqueda, setBusqueda] = useState('');
 
   useEffect(() => {
-    const sync = () => setItems(loadCotizacionesGuardadas());
+    const sync = () => {
+      setItems(loadCotizacionesGuardadas());
+      setPendingQueue(loadOfflineCotizacionesQueue());
+    };
     sync();
     window.addEventListener('focus', sync);
     window.addEventListener('aluminero:cotizaciones-updated', sync);
+    window.addEventListener(OFFLINE_SYNC_QUEUE_EVENT, sync);
     return () => {
       window.removeEventListener('focus', sync);
       window.removeEventListener('aluminero:cotizaciones-updated', sync);
+      window.removeEventListener(OFFLINE_SYNC_QUEUE_EVENT, sync);
     };
   }, []);
 
@@ -79,6 +102,25 @@ export const HistorialCotizacionesView: React.FC<Props> = ({ onGoHoja, onShowToa
   const handleChangeEstado = (id: string, estado: CotizacionEstado) => {
     const next = updateCotizacionEstado(id, estado);
     setItems(next);
+    const updatedItem = next.find((c) => c.id === id);
+    const offlineNow = !isOnline || (typeof navigator !== 'undefined' && !navigator.onLine);
+    if (offlineNow && updatedItem) {
+      const nextQueue = enqueueOfflineCotizacion({
+        key: `cotizacion:${updatedItem.folio || updatedItem.id}`,
+        action: 'update_estado',
+        cotizacionId: updatedItem.id,
+        folio: updatedItem.folio,
+        cliente: updatedItem.cliente,
+        total: updatedItem.total,
+        estado,
+      });
+      setPendingQueue(nextQueue);
+      onShowToast(
+        `Cotización marcada como ${ESTADO_LABELS[estado]} · En cola para sincronizar al volver la conexión`,
+        estado === 'aprobada'
+      );
+      return;
+    }
     onShowToast(`Cotización marcada como ${ESTADO_LABELS[estado]}`, estado === 'aprobada');
   };
 
@@ -102,6 +144,33 @@ export const HistorialCotizacionesView: React.FC<Props> = ({ onGoHoja, onShowToa
           📄 Ir a Hoja de Cotización
         </button>
       </div>
+
+      {pendingQueue.length > 0 && (
+        <div
+          id="cotizaciones-sync-queue-bar"
+          role="status"
+          className="mb-4 px-3.5 py-2.5 rounded-xl border border-amber-400/70 bg-amber-500/15 text-amber-100 text-[12px] font-bold flex flex-wrap items-center justify-between gap-2"
+        >
+          <span className="inline-flex items-center gap-2">
+            <CloudUpload className="w-4 h-4 text-amber-300 shrink-0" aria-hidden="true" />
+            <span>
+              {isOnline
+                ? `${pendingQueue.length} cotización(es) pendiente(s) de sincronizar con la nube.`
+                : `Sin conexión: ${pendingQueue.length} cotización(es) guardada(s) en cola persistente.`}
+            </span>
+          </span>
+          {isOnline && onSyncPendingQueue && (
+            <button
+              type="button"
+              id="btn-cotizaciones-sync-now"
+              onClick={onSyncPendingQueue}
+              className="px-3 py-1.5 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 text-[11.5px] font-extrabold cursor-pointer"
+            >
+              Sincronizar ahora
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-4">
         <div className="bg-white text-[#1E293B] border border-slate-300 rounded-2xl p-3 shadow-sm">
@@ -196,6 +265,15 @@ export const HistorialCotizacionesView: React.FC<Props> = ({ onGoHoja, onShowToa
                     >
                       {ESTADO_LABELS[c.estado]}
                     </span>
+                    {isCotizacionPendingSync(pendingQueue, c) && (
+                      <span
+                        data-pending-sync="true"
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border border-amber-300 bg-amber-50 text-amber-800 text-[10.5px] font-extrabold"
+                      >
+                        <CloudUpload className="w-3 h-3 shrink-0" aria-hidden="true" />
+                        <span>En cola offline</span>
+                      </span>
+                    )}
                     <span className="text-[11.5px] text-slate-500 font-semibold">{c.fecha}</span>
                   </div>
                   <div className="mt-1.5 text-[14.5px] font-extrabold text-slate-900 truncate">
