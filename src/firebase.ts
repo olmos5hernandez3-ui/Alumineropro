@@ -1,5 +1,13 @@
 import { initializeApp, type FirebaseApp } from 'firebase/app';
-import { getAuth, type Auth } from 'firebase/auth';
+import {
+  getAuth,
+  GoogleAuthProvider,
+  onAuthStateChanged,
+  signInWithPopup,
+  signOut,
+  type Auth,
+  type User,
+} from 'firebase/auth';
 import {
   doc,
   getDocFromServer,
@@ -11,6 +19,32 @@ import firebaseConfig from '../firebase-applet-config.json';
 export const app: FirebaseApp = initializeApp(firebaseConfig);
 export const db: Firestore = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth: Auth = getAuth(app);
+
+export const ADMIN_FIREBASE_EMAIL = 'olmos5hernandez3@gmail.com';
+
+export function isFirebaseSignedIn(user: User | null = auth.currentUser): boolean {
+  return Boolean(user && typeof user.uid === 'string' && user.uid.length > 0);
+}
+
+export function isFirebaseAdminUser(user: User | null = auth.currentUser): boolean {
+  if (!user || !user.uid || !user.email) return false;
+  return user.email.trim().toLowerCase() === ADMIN_FIREBASE_EMAIL && Boolean(user.emailVerified);
+}
+
+export function subscribeFirebaseAuth(callback: (user: User | null) => void): () => void {
+  return onAuthStateChanged(auth, callback);
+}
+
+export async function signInWithGoogleFirebase(): Promise<User> {
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: 'select_account' });
+  const cred = await signInWithPopup(auth, provider);
+  return cred.user;
+}
+
+export async function signOutFirebase(): Promise<void> {
+  await signOut(auth);
+}
 
 export enum OperationType {
   CREATE = 'create',
@@ -76,6 +110,20 @@ export function isFirestoreOfflineError(error: unknown): boolean {
     msg.includes('client is offline') ||
     msg.includes('network') ||
     msg.includes('unavailable')
+  );
+}
+
+export function isFirestorePermissionDeniedError(error: unknown): boolean {
+  if (!error) return false;
+  const maybe = error as { code?: unknown; message?: unknown };
+  const code = String(maybe.code || '').toLowerCase();
+  const msg = String(maybe.message || error).toLowerCase();
+  return (
+    code === 'permission-denied' ||
+    code.includes('permission-denied') ||
+    msg.includes('missing or insufficient permissions') ||
+    msg.includes('permission_denied') ||
+    msg.includes('permission-denied')
   );
 }
 

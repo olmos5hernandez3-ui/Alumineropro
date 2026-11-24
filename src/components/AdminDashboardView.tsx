@@ -18,6 +18,8 @@ import {
   ExternalLink,
   Gift,
   KeyRound,
+  LogIn,
+  LogOut,
   MessageSquare,
   PieChart as PieChartIcon,
   Plus,
@@ -34,6 +36,14 @@ import {
   Users,
   Video,
 } from 'lucide-react';
+import type { User } from 'firebase/auth';
+import {
+  auth,
+  isFirebaseAdminUser,
+  signInWithGoogleFirebase,
+  signOutFirebase,
+  subscribeFirebaseAuth,
+} from '../firebase';
 import {
   Area,
   AreaChart,
@@ -288,6 +298,45 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const [busyDeviceId, setBusyDeviceId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [phonePlaceholder] = useState<string>(() => generateRandomMxPhonePlaceholder());
+  const [firebaseUser, setFirebaseUser] = useState<User | null>(() => auth.currentUser);
+  const [firebaseAuthBusy, setFirebaseAuthBusy] = useState(false);
+
+  useEffect(() => {
+    return subscribeFirebaseAuth((user) => {
+      setFirebaseUser(user);
+    });
+  }, []);
+
+  const isFirebaseAdminSignedIn = isFirebaseAdminUser(firebaseUser);
+
+  const handleToggleFirebaseGoogleAuth = async () => {
+    if (firebaseAuthBusy) return;
+    setFirebaseAuthBusy(true);
+    try {
+      if (firebaseUser) {
+        await signOutFirebase();
+        onShowToast('Sesión de nube desconectada');
+      } else {
+        const signedInUser = await signInWithGoogleFirebase();
+        if (isFirebaseAdminUser(signedInUser)) {
+          onShowToast('Conectado a Firebase como Administrador', true);
+          void onRefreshCloud();
+        } else {
+          onShowToast(
+            'Sesión iniciada, pero solo el correo de Administrador tiene acceso completo a Firestore.'
+          );
+        }
+      }
+    } catch (err) {
+      const code =
+        err && typeof err === 'object' && 'code' in err ? String((err as { code?: unknown }).code || '') : '';
+      if (code !== 'auth/popup-closed-by-user' && code !== 'auth/cancelled-popup-request') {
+        onShowToast('No se pudo conectar con Google. Revisa que las ventanas emergentes estén permitidas.');
+      }
+    } finally {
+      setFirebaseAuthBusy(false);
+    }
+  };
 
   // Confirmations
   const [pendingAction, setPendingAction] = useState<
@@ -1515,8 +1564,17 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     className={`w-2 h-2 rounded-full ${cloudConnected ? 'bg-emerald-400' : 'bg-amber-400'}`}
                     aria-hidden="true"
                   />
-                  {cloudConnected ? 'Conectado a Firestore' : 'Modo Local / Sincronizando'}
+                  {cloudConnected
+                    ? 'Conectado a Firestore'
+                    : isFirebaseAdminSignedIn
+                      ? 'Sincronizando Firestore...'
+                      : 'Modo Local'}
                 </span>
+                {firebaseUser?.email && (
+                  <span className="text-slate-300 font-medium truncate max-w-[220px]">
+                    {firebaseUser.email}
+                  </span>
+                )}
                 {cloudLastSyncAt && (
                   <span className="mono">
                     Últ. sinc.: {formatDateTimeExact(cloudLastSyncAt)}
@@ -1527,6 +1585,30 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           </div>
 
           <div className="flex items-center gap-2 shrink-0 flex-wrap">
+            <button
+              type="button"
+              id="btn-admin-google-auth"
+              onClick={() => void handleToggleFirebaseGoogleAuth()}
+              disabled={firebaseAuthBusy}
+              className={`min-h-[42px] px-3.5 py-2 rounded-xl border font-bold text-[12px] inline-flex items-center gap-2 cursor-pointer transition-colors disabled:opacity-60 ${
+                firebaseUser
+                  ? 'border-emerald-400/40 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-100'
+                  : 'border-amber-400/40 bg-amber-500/15 hover:bg-amber-500/25 text-amber-100'
+              }`}
+            >
+              {firebaseUser ? (
+                <LogOut className="w-4 h-4" aria-hidden="true" />
+              ) : (
+                <LogIn className="w-4 h-4" aria-hidden="true" />
+              )}
+              <span>
+                {firebaseAuthBusy
+                  ? 'Conectando...'
+                  : firebaseUser
+                    ? 'Desconectar Google'
+                    : 'Conectar Google'}
+              </span>
+            </button>
             <button
               type="button"
               id="btn-admin-refresh-cloud"

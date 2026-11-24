@@ -1620,6 +1620,23 @@ export function addReferralHistoryRecord(
 
 // ==================== CARÁTULAS / APARIENCIA GLOBAL (3 TEMAS) ====================
 export type AppSkin = 'basica' | 'ejecutiva' | 'industrial';
+export type AppSkinVariant = 'default' | 'naranja' | 'plateada' | 'dorada';
+
+export const SKIN_VARIANTS_BY_SKIN: Record<
+  AppSkin,
+  Array<{ id: AppSkinVariant; label: string; swatchBg: string }>
+> = {
+  basica: [],
+  ejecutiva: [
+    { id: 'default', label: 'Azul Acero', swatchBg: 'linear-gradient(135deg, #38BDF8, #0284C7)' },
+    { id: 'naranja', label: 'Naranja', swatchBg: 'linear-gradient(135deg, #FB923C, #EA580C)' },
+  ],
+  industrial: [
+    { id: 'default', label: 'Verde', swatchBg: 'linear-gradient(135deg, #10B981, #047857)' },
+    { id: 'plateada', label: 'Acero', swatchBg: 'linear-gradient(135deg, #E2E8F0, #64748B)' },
+    { id: 'dorada', label: 'Dorada', swatchBg: 'linear-gradient(135deg, #FACC15, #B45309)' },
+  ],
+};
 
 export function loadSkin(): AppSkin {
   if (typeof localStorage === 'undefined') return 'basica';

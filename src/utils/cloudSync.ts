@@ -13,10 +13,15 @@ import {
   updateDoc,
 } from 'firebase/firestore';
 import {
+  auth,
   db,
   handleFirestoreError,
+  isFirebaseAdminUser,
+  isFirebaseSignedIn,
   isFirestoreOfflineError,
+  isFirestorePermissionDeniedError,
   OperationType,
+  subscribeFirebaseAuth,
 } from '../firebase';
 import {
   computeUsageStats30d,
@@ -267,7 +272,16 @@ function buildSafeDeviceRecord(
       : {}),
   };
 
-  return cleanForFirestore(base);
+  const withOwner = auth.currentUser?.uid
+    ? {
+        ...base,
+        ownerUid:
+          (existing as (CloudDeviceRecord & { ownerUid?: string }) | null)?.ownerUid ||
+          auth.currentUser.uid,
+      }
+    : base;
+
+  return cleanForFirestore(withOwner as CloudDeviceRecord);
 }
 
 function buildSafeAdminKeyRecord(rec: AdminKeyRecord): AdminKeyRecord {
@@ -526,10 +540,13 @@ export async function fetchCloudDevicesState(): Promise<CloudSyncSnapshot | null
   if (FIREBASE_DB_URL.trim()) {
     return await fetchRtdbSnapshot(FIREBASE_DB_URL, Date.now());
   }
+  if (!isFirebaseAdminUser()) {
+    return null;
+  }
   try {
     return await fetchAllCollectionsSnapshot(Date.now());
   } catch (err) {
-    if (isFirestoreOfflineError(err)) return null;
+    if (isFirestoreOfflineError(err) || isFirestorePermissionDeniedError(err)) return null;
     throw err;
   }
 }
@@ -550,6 +567,9 @@ export async function syncDeviceToCloud(params: {
   if (FIREBASE_DB_URL.trim()) {
     return await syncDeviceRtdb(FIREBASE_DB_URL, params);
   }
+  if (!isFirebaseSignedIn()) {
+    return null;
+  }
   const normId = toSafeDocId(normalizeDeviceIdInput(params.deviceId));
   if (!normId) return null;
 
@@ -557,15 +577,19 @@ export async function syncDeviceToCloud(params: {
     const now = Date.now();
     const today = new Date(now).toISOString().slice(0, 10);
     const eventType = params.eventType || 'open';
+    const isAdmin = isFirebaseAdminUser();
 
     const existing = await readServerDoc<CloudDeviceRecord>('devices', normId);
-    const blockedDoc = await readServerDoc<{ deviceId: string; blockedAt: number }>('blockedDevices', normId);
+    const blockedDoc = isAdmin
+      ? await readServerDoc<{ deviceId: string; blockedAt: number }>('blockedDevices', normId)
+      : null;
 
     const cleanLicKey = String(params.licencia?.activatedKey || '').trim().toUpperCase();
     const safeLicKey = cleanLicKey ? toSafeDocId(cleanLicKey) : '';
-    const revokedKeyDoc = safeLicKey
-      ? await readServerDoc<{ key: string; revokedAt: number }>('revokedKeys', safeLicKey)
-      : null;
+    const revokedKeyDoc =
+      isAdmin && safeLicKey
+        ? await readServerDoc<{ key: string; revokedAt: number }>('revokedKeys', safeLicKey)
+        : null;
 
     const activeDaysSet = new Set<string>(Array.isArray(existing?.activeDays) ? existing.activeDays : []);
     activeDaysSet.add(today);
@@ -757,13 +781,16 @@ export async function syncDeviceToCloud(params: {
     try {
       await setDoc(doc(db, 'devices', normId), nextRecord);
     } catch (err) {
-      if (isFirestoreOfflineError(err)) return null;
+      if (isFirestoreOfflineError(err) || isFirestorePermissionDeniedError(err)) return null;
       handleFirestoreError(err, existing ? OperationType.UPDATE : OperationType.CREATE, devPath);
     }
 
+    if (!isAdmin) {
+      return null;
+    }
     return await fetchAllCollectionsSnapshot(now, nextRecord);
   } catch (err) {
-    if (isFirestoreOfflineError(err)) return null;
+    if (isFirestoreOfflineError(err) || isFirestorePermissionDeniedError(err)) return null;
     throw err;
   }
 }
@@ -798,6 +825,9 @@ export async function verifyDeviceStatusInCloud(params: {
   if (FIREBASE_DB_URL.trim()) {
     return await verifyDeviceRtdb(FIREBASE_DB_URL, params);
   }
+  if (!isFirebaseSignedIn()) {
+    return { ok: false, offline: true };
+  }
   const normId = toSafeDocId(normalizeDeviceIdInput(params.deviceId));
   if (!normId) {
     return { ok: false, offline: true };
@@ -807,11 +837,14 @@ export async function verifyDeviceStatusInCloud(params: {
     const now = Date.now();
     const cleanKey = String(params.activatedKey || '').trim().toUpperCase();
     const safeKey = cleanKey ? toSafeDocId(cleanKey) : '';
+    const isAdmin = isFirebaseAdminUser();
 
     const [existing, blockedDoc, revokedKeyDoc] = await Promise.all([
       readServerDoc<CloudDeviceRecord>('devices', normId),
-      readServerDoc<{ deviceId: string; blockedAt: number }>('blockedDevices', normId),
-      safeKey
+      isAdmin
+        ? readServerDoc<{ deviceId: string; blockedAt: number }>('blockedDevices', normId)
+        : Promise.resolve(null),
+      isAdmin && safeKey
         ? readServerDoc<{ key: string; revokedAt: number }>('revokedKeys', safeKey)
         : Promise.resolve(null),
     ]);
@@ -849,7 +882,7 @@ export async function verifyDeviceStatusInCloud(params: {
         await setDoc(doc(db, 'devices', normId), updated);
         latestDevice = updated;
       } catch (err) {
-        if (!isFirestoreOfflineError(err)) {
+        if (!isFirestoreOfflineError(err) && !isFirestorePermissionDeniedError(err)) {
           handleFirestoreError(err, OperationType.UPDATE, `devices/${normId}`);
         }
       }
@@ -876,7 +909,7 @@ export async function verifyDeviceStatusInCloud(params: {
         await setDoc(doc(db, 'devices', normId), updated);
         latestDevice = updated;
       } catch (err) {
-        if (!isFirestoreOfflineError(err)) {
+        if (!isFirestoreOfflineError(err) && !isFirestorePermissionDeniedError(err)) {
           handleFirestoreError(err, OperationType.UPDATE, `devices/${normId}`);
         }
       }
@@ -900,7 +933,7 @@ export async function verifyDeviceStatusInCloud(params: {
         await setDoc(doc(db, 'devices', normId), updated);
         latestDevice = updated;
       } catch (err) {
-        if (!isFirestoreOfflineError(err)) {
+        if (!isFirestoreOfflineError(err) && !isFirestorePermissionDeniedError(err)) {
           handleFirestoreError(err, OperationType.UPDATE, `devices/${normId}`);
         }
       }
@@ -923,7 +956,7 @@ export async function verifyDeviceStatusInCloud(params: {
         await setDoc(doc(db, 'devices', normId), updated);
         latestDevice = updated;
       } catch (err) {
-        if (!isFirestoreOfflineError(err)) {
+        if (!isFirestoreOfflineError(err) && !isFirestorePermissionDeniedError(err)) {
           handleFirestoreError(err, OperationType.UPDATE, `devices/${normId}`);
         }
       }
@@ -944,7 +977,7 @@ export async function verifyDeviceStatusInCloud(params: {
         latestDevice.proActive
     );
 
-    const snapshot = await fetchAllCollectionsSnapshot(now, latestDevice);
+    const snapshot = isAdmin ? await fetchAllCollectionsSnapshot(now, latestDevice) : null;
 
     return {
       ok: true,
@@ -961,14 +994,14 @@ export async function verifyDeviceStatusInCloud(params: {
       planLabel: isBlocked ? 'Bloqueado' : latestDevice?.planLabel || 'Versión Gratuita',
       expiresAt: isBlocked ? null : latestDevice?.expiresAt ?? null,
       device: latestDevice,
-      devices: snapshot.devices,
-      adminKeys: snapshot.adminKeys,
-      revokedKeys: snapshot.revokedKeys,
-      stats: snapshot.stats,
-      serverTime: snapshot.serverTime,
+      devices: snapshot?.devices,
+      adminKeys: snapshot?.adminKeys,
+      revokedKeys: snapshot?.revokedKeys,
+      stats: snapshot?.stats,
+      serverTime: snapshot?.serverTime ?? now,
     };
   } catch (err) {
-    if (isFirestoreOfflineError(err)) {
+    if (isFirestoreOfflineError(err) || isFirestorePermissionDeniedError(err)) {
       return { ok: false, offline: true };
     }
     throw err;
@@ -1001,6 +1034,9 @@ export async function activateKeyInCloud(params: {
   if (FIREBASE_DB_URL.trim()) {
     return await activateKeyRtdb(FIREBASE_DB_URL, params);
   }
+  if (!isFirebaseSignedIn()) {
+    return { ok: false, offline: true };
+  }
   const normId = toSafeDocId(normalizeDeviceIdInput(params.deviceId));
   const cleanKey = String(params.key || '').trim().toUpperCase();
   if (!normId || !cleanKey) {
@@ -1008,8 +1044,9 @@ export async function activateKeyInCloud(params: {
   }
 
   try {
+    const isAdmin = isFirebaseAdminUser();
     const safeKey = toSafeDocId(cleanKey);
-    const revokedDoc = await readServerDoc<{ key: string }>('revokedKeys', safeKey);
+    const revokedDoc = isAdmin ? await readServerDoc<{ key: string }>('revokedKeys', safeKey) : null;
     if (revokedDoc) {
       return {
         ok: false,
@@ -1018,11 +1055,15 @@ export async function activateKeyInCloud(params: {
       };
     }
 
-    const adminKeysSnap = await getDocs(query(collection(db, 'adminKeys'), limit(500)));
-    const matchingKeyRevoked = adminKeysSnap.docs.some((d) => {
-      const k = d.data() as AdminKeyRecord;
-      return String(k.key || '').trim().toUpperCase() === cleanKey && Boolean(k.revoked);
-    });
+    const adminKeysSnap = isAdmin
+      ? await getDocs(query(collection(db, 'adminKeys'), limit(500)))
+      : null;
+    const matchingKeyRevoked = adminKeysSnap
+      ? adminKeysSnap.docs.some((d) => {
+          const k = d.data() as AdminKeyRecord;
+          return String(k.key || '').trim().toUpperCase() === cleanKey && Boolean(k.revoked);
+        })
+      : false;
     if (matchingKeyRevoked) {
       return {
         ok: false,
@@ -1109,11 +1150,13 @@ export async function activateKeyInCloud(params: {
     try {
       await setDoc(doc(db, 'devices', normId), nextDevice);
     } catch (err) {
-      if (isFirestoreOfflineError(err)) return { ok: false, offline: true };
+      if (isFirestoreOfflineError(err) || isFirestorePermissionDeniedError(err)) {
+        return { ok: false, offline: true };
+      }
       handleFirestoreError(err, existing ? OperationType.UPDATE : OperationType.CREATE, devPath);
     }
 
-    if (cleanLinkedEmail) {
+    if (cleanLinkedEmail && adminKeysSnap) {
       for (const d of adminKeysSnap.docs) {
         const kRec = d.data() as AdminKeyRecord;
         const kCode = String(kRec.key || '').trim().toUpperCase();
@@ -1128,6 +1171,14 @@ export async function activateKeyInCloud(params: {
       }
     }
 
+    if (!isAdmin) {
+      return {
+        ok: true,
+        device: nextDevice,
+        serverTime: now,
+      };
+    }
+
     const snapshot = await fetchAllCollectionsSnapshot(now, nextDevice);
     return {
       ok: true,
@@ -1139,7 +1190,7 @@ export async function activateKeyInCloud(params: {
       serverTime: snapshot.serverTime,
     };
   } catch (err) {
-    if (isFirestoreOfflineError(err)) {
+    if (isFirestoreOfflineError(err) || isFirestorePermissionDeniedError(err)) {
       return { ok: false, offline: true };
     }
     throw err;
@@ -1161,6 +1212,9 @@ export async function updateDeviceLicenseInCloud(params: {
 }): Promise<CloudSyncSnapshot | null> {
   if (FIREBASE_DB_URL.trim()) {
     return await updateDeviceLicenseRtdb(FIREBASE_DB_URL, params);
+  }
+  if (!isFirebaseAdminUser()) {
+    return null;
   }
   const normId = toSafeDocId(normalizeDeviceIdInput(params.deviceId));
   if (!normId) return null;
@@ -1484,7 +1538,7 @@ export async function updateDeviceLicenseInCloud(params: {
       try {
         await setDoc(doc(db, 'devices', normId), nextDevice);
       } catch (err) {
-        if (isFirestoreOfflineError(err)) return null;
+        if (isFirestoreOfflineError(err) || isFirestorePermissionDeniedError(err)) return null;
         handleFirestoreError(err, existing ? OperationType.UPDATE : OperationType.CREATE, `devices/${normId}`);
       }
     } else if (!existing) {
@@ -1518,7 +1572,7 @@ export async function updateDeviceLicenseInCloud(params: {
       try {
         await setDoc(doc(db, 'devices', normId), nextDevice);
       } catch (err) {
-        if (isFirestoreOfflineError(err)) return null;
+        if (isFirestoreOfflineError(err) || isFirestorePermissionDeniedError(err)) return null;
         handleFirestoreError(err, OperationType.CREATE, `devices/${normId}`);
       }
     } else if (bodyKeyClean) {
@@ -1539,14 +1593,14 @@ export async function updateDeviceLicenseInCloud(params: {
       try {
         await setDoc(doc(db, 'devices', normId), nextDevice);
       } catch (err) {
-        if (isFirestoreOfflineError(err)) return null;
+        if (isFirestoreOfflineError(err) || isFirestorePermissionDeniedError(err)) return null;
         handleFirestoreError(err, OperationType.UPDATE, `devices/${normId}`);
       }
     }
 
     return await fetchAllCollectionsSnapshot(now, nextDevice);
   } catch (err) {
-    if (isFirestoreOfflineError(err)) return null;
+    if (isFirestoreOfflineError(err) || isFirestorePermissionDeniedError(err)) return null;
     throw err;
   }
 }
@@ -1559,6 +1613,9 @@ export async function deleteAdminKeyInCloud(params: {
 }): Promise<CloudSyncSnapshot | null> {
   if (FIREBASE_DB_URL.trim()) {
     return await deleteAdminKeyRtdb(FIREBASE_DB_URL, params);
+  }
+  if (!isFirebaseAdminUser()) {
+    return null;
   }
   const idClean = typeof params.id === 'string' ? params.id.trim() : '';
   const deviceClean = toSafeDocId(normalizeDeviceIdInput(String(params.deviceId || '')));
@@ -1581,7 +1638,7 @@ export async function deleteAdminKeyInCloud(params: {
         try {
           await deleteDoc(doc(db, 'adminKeys', d.id));
         } catch (err) {
-          if (!isFirestoreOfflineError(err)) {
+          if (!isFirestoreOfflineError(err) && !isFirestorePermissionDeniedError(err)) {
             handleFirestoreError(err, OperationType.DELETE, `adminKeys/${d.id}`);
           }
         }
@@ -1592,14 +1649,14 @@ export async function deleteAdminKeyInCloud(params: {
       try {
         await deleteDoc(doc(db, 'devices', deviceClean));
       } catch (err) {
-        if (!isFirestoreOfflineError(err)) {
+        if (!isFirestoreOfflineError(err) && !isFirestorePermissionDeniedError(err)) {
           handleFirestoreError(err, OperationType.DELETE, `devices/${deviceClean}`);
         }
       }
       try {
         await deleteDoc(doc(db, 'blockedDevices', deviceClean));
       } catch (err) {
-        if (!isFirestoreOfflineError(err)) {
+        if (!isFirestoreOfflineError(err) && !isFirestorePermissionDeniedError(err)) {
           handleFirestoreError(err, OperationType.DELETE, `blockedDevices/${deviceClean}`);
         }
       }
@@ -1607,7 +1664,7 @@ export async function deleteAdminKeyInCloud(params: {
 
     return await fetchAllCollectionsSnapshot(Date.now());
   } catch (err) {
-    if (isFirestoreOfflineError(err)) return null;
+    if (isFirestoreOfflineError(err) || isFirestorePermissionDeniedError(err)) return null;
     throw err;
   }
 }
@@ -1625,91 +1682,116 @@ export function subscribeCloudDevices(
   }
 
   let closed = false;
-  let rawDevices: CloudDeviceRecord[] = [];
-  let rawAdminKeys: AdminKeyRecord[] = [];
-  let revokedKeysList: string[] = [];
-  let blockedDeviceIds = new Set<string>();
   let emitTimer: number | null = null;
+  let detachListeners: (() => void) | null = null;
 
-  const scheduleEmit = () => {
-    if (closed) return;
-    if (emitTimer !== null) window.clearTimeout(emitTimer);
-    emitTimer = window.setTimeout(() => {
-      if (closed) return;
-      onStatusChange?.(true);
-      onSync(
-        buildNormalizedSnapshot({
-          rawDevices,
-          rawAdminKeys,
-          revokedKeysList,
-          blockedDeviceIds,
-          now: Date.now(),
-        })
-      );
-    }, 60);
+  const stopListeners = () => {
+    if (emitTimer !== null) {
+      window.clearTimeout(emitTimer);
+      emitTimer = null;
+    }
+    if (detachListeners) {
+      detachListeners();
+      detachListeners = null;
+    }
   };
 
-  const unsubDevices = onSnapshot(
-    query(collection(db, 'devices'), limit(500)),
-    (snap) => {
-      rawDevices = snap.docs.map((d) => d.data() as CloudDeviceRecord);
-      scheduleEmit();
-    },
-    (error) => {
-      onStatusChange?.(false);
-      handleFirestoreError(error, OperationType.LIST, 'devices');
-    }
-  );
+  const unsubAuth = subscribeFirebaseAuth((user) => {
+    stopListeners();
+    if (closed) return;
 
-  const unsubKeys = onSnapshot(
-    query(collection(db, 'adminKeys'), limit(500)),
-    (snap) => {
-      rawAdminKeys = snap.docs.map((d) => d.data() as AdminKeyRecord);
-      scheduleEmit();
-    },
-    (error) => {
+    // Las colecciones globales (devices, adminKeys, revokedKeys, blockedDevices)
+    // están protegidas por reglas estrictas: solo adjuntar listeners si hay sesión Admin autenticada.
+    if (!isFirebaseAdminUser(user)) {
       onStatusChange?.(false);
-      handleFirestoreError(error, OperationType.LIST, 'adminKeys');
+      return;
     }
-  );
 
-  const unsubRevoked = onSnapshot(
-    query(collection(db, 'revokedKeys'), limit(500)),
-    (snap) => {
-      revokedKeysList = snap.docs
-        .map((d) => String((d.data() as { key?: string }).key || d.id || '').trim().toUpperCase())
-        .filter(Boolean);
-      scheduleEmit();
-    },
-    (error) => {
-      onStatusChange?.(false);
-      handleFirestoreError(error, OperationType.LIST, 'revokedKeys');
-    }
-  );
+    let rawDevices: CloudDeviceRecord[] = [];
+    let rawAdminKeys: AdminKeyRecord[] = [];
+    let revokedKeysList: string[] = [];
+    let blockedDeviceIds = new Set<string>();
 
-  const unsubBlocked = onSnapshot(
-    query(collection(db, 'blockedDevices'), limit(500)),
-    (snap) => {
-      blockedDeviceIds = new Set(
-        snap.docs
-          .map((d) => toSafeDocId(String((d.data() as { deviceId?: string }).deviceId || d.id || '')))
-          .filter(Boolean)
-      );
-      scheduleEmit();
-    },
-    (error) => {
+    const scheduleEmit = () => {
+      if (closed) return;
+      if (emitTimer !== null) window.clearTimeout(emitTimer);
+      emitTimer = window.setTimeout(() => {
+        if (closed) return;
+        onStatusChange?.(true);
+        onSync(
+          buildNormalizedSnapshot({
+            rawDevices,
+            rawAdminKeys,
+            revokedKeysList,
+            blockedDeviceIds,
+            now: Date.now(),
+          })
+        );
+      }, 60);
+    };
+
+    const handleListenerError = (error: unknown, path: string) => {
       onStatusChange?.(false);
-      handleFirestoreError(error, OperationType.LIST, 'blockedDevices');
-    }
-  );
+      if (isFirestoreOfflineError(error) || isFirestorePermissionDeniedError(error)) {
+        return;
+      }
+      handleFirestoreError(error, OperationType.LIST, path);
+    };
+
+    const unsubDevices = onSnapshot(
+      query(collection(db, 'devices'), limit(500)),
+      (snap) => {
+        rawDevices = snap.docs.map((d) => d.data() as CloudDeviceRecord);
+        scheduleEmit();
+      },
+      (error) => handleListenerError(error, 'devices')
+    );
+
+    const unsubKeys = onSnapshot(
+      query(collection(db, 'adminKeys'), limit(500)),
+      (snap) => {
+        rawAdminKeys = snap.docs.map((d) => d.data() as AdminKeyRecord);
+        scheduleEmit();
+      },
+      (error) => handleListenerError(error, 'adminKeys')
+    );
+
+    const unsubRevoked = onSnapshot(
+      query(collection(db, 'revokedKeys'), limit(500)),
+      (snap) => {
+        revokedKeysList = snap.docs
+          .map((d) => String((d.data() as { key?: string }).key || d.id || '').trim().toUpperCase())
+          .filter(Boolean);
+        scheduleEmit();
+      },
+      (error) => handleListenerError(error, 'revokedKeys')
+    );
+
+    const unsubBlocked = onSnapshot(
+      query(collection(db, 'blockedDevices'), limit(500)),
+      (snap) => {
+        blockedDeviceIds = new Set(
+          snap.docs
+            .map((d) => toSafeDocId(String((d.data() as { deviceId?: string }).deviceId || d.id || '')))
+            .filter(Boolean)
+        );
+        scheduleEmit();
+      },
+      (error) => handleListenerError(error, 'blockedDevices')
+    );
+
+    detachListeners = () => {
+      unsubDevices();
+      unsubKeys();
+      unsubRevoked();
+      unsubBlocked();
+    };
+  });
 
   return () => {
     closed = true;
-    if (emitTimer !== null) window.clearTimeout(emitTimer);
-    unsubDevices();
-    unsubKeys();
-    unsubRevoked();
-    unsubBlocked();
+    stopListeners();
+    unsubAuth();
   };
 }
 
@@ -1727,6 +1809,9 @@ export async function verifyAdminPasswordWithServer(
   if (!candidate) {
     return { ok: false, error: 'Contraseña incorrecta' };
   }
+  if (!isFirebaseAdminUser()) {
+    return { ok: false, offline: true };
+  }
   try {
     const cfg = await readServerDoc<{
       adminPasswordSalt?: string;
@@ -1743,12 +1828,7 @@ export async function verifyAdminPasswordWithServer(
       return { ok: true };
     }
     return { ok: false, error: 'Contraseña incorrecta' };
-  } catch (err) {
-    // Si Firestore está sin conexión o restringido por reglas sin sesión Firebase Auth,
-    // devolver offline: true para permitir verificación local inmediata sin bloquear el modal.
-    if (isFirestoreOfflineError(err)) {
-      return { ok: false, offline: true };
-    }
+  } catch {
     return { ok: false, offline: true };
   }
 }
@@ -1772,20 +1852,20 @@ export async function resetAdminPasswordWithServer(
   if (cleanNew.length < 4) {
     return { ok: false, error: 'La nueva contraseña debe tener al menos 4 caracteres' };
   }
+  if (!isFirebaseAdminUser()) {
+    return { ok: false, offline: true };
+  }
 
   try {
     const salt = randomHex(16);
     const hash = await sha256Hex(`${salt}:${cleanNew}`);
     await setDoc(doc(db, 'config', 'admin'), {
-      adminPasswordSalt: salt,
-      adminPasswordHash: hash,
+      passwordSalt: salt,
+      passwordHash: hash,
       updatedAt: Date.now(),
     });
     return { ok: true };
-  } catch (err) {
-    if (isFirestoreOfflineError(err)) {
-      return { ok: false, offline: true };
-    }
+  } catch {
     return { ok: false, offline: true };
   }
 }
@@ -1874,6 +1954,13 @@ export async function registerCloudAccount(params: {
   }
   if (!deviceId) {
     return { ok: false, error: 'ID de dispositivo requerido.' };
+  }
+  if (!isFirebaseSignedIn()) {
+    return {
+      ok: false,
+      offline: true,
+      error: 'Conecta tu cuenta de Google para activar el respaldo en la nube.',
+    };
   }
 
   try {
@@ -1973,21 +2060,24 @@ export async function registerCloudAccount(params: {
       }
     }
 
-    const adminKeysSnap = await getDocs(query(collection(db, 'adminKeys'), limit(500)));
-    for (const d of adminKeysSnap.docs) {
-      const k = d.data() as AdminKeyRecord;
-      if (toSafeDocId(normalizeDeviceIdInput(k.deviceId)) === deviceId) {
-        try {
-          await updateDoc(doc(db, 'adminKeys', d.id), { linkedEmail: email });
-        } catch (err) {
-          if (!isFirestoreOfflineError(err)) {
-            handleFirestoreError(err, OperationType.UPDATE, `adminKeys/${d.id}`);
+    const isAdmin = isFirebaseAdminUser();
+    if (isAdmin) {
+      const adminKeysSnap = await getDocs(query(collection(db, 'adminKeys'), limit(500)));
+      for (const d of adminKeysSnap.docs) {
+        const k = d.data() as AdminKeyRecord;
+        if (toSafeDocId(normalizeDeviceIdInput(k.deviceId)) === deviceId) {
+          try {
+            await updateDoc(doc(db, 'adminKeys', d.id), { linkedEmail: email });
+          } catch (err) {
+            if (!isFirestoreOfflineError(err) && !isFirestorePermissionDeniedError(err)) {
+              handleFirestoreError(err, OperationType.UPDATE, `adminKeys/${d.id}`);
+            }
           }
         }
       }
     }
 
-    const snapshot = await fetchAllCollectionsSnapshot(now, updatedDev);
+    const snapshot = isAdmin ? await fetchAllCollectionsSnapshot(now, updatedDev) : undefined;
 
     return {
       ok: true,
@@ -1998,11 +2088,11 @@ export async function registerCloudAccount(params: {
       snapshot,
     };
   } catch (err) {
-    if (isFirestoreOfflineError(err)) {
+    if (isFirestoreOfflineError(err) || isFirestorePermissionDeniedError(err)) {
       return {
         ok: false,
         offline: true,
-        error: 'Sin conexión con el servidor de respaldo en la nube.',
+        error: 'Sin conexión o permisos suficientes con el servidor de respaldo en la nube.',
       };
     }
     throw err;
@@ -2025,6 +2115,13 @@ export async function loginCloudAccount(params: {
 
   if (!isValidEmailFormat(email) || !password || !deviceId) {
     return { ok: false, error: 'Ingresa tu correo y contraseña completos.' };
+  }
+  if (!isFirebaseSignedIn()) {
+    return {
+      ok: false,
+      offline: true,
+      error: 'Conecta tu cuenta de Google para sincronizar tu respaldo en la nube.',
+    };
   }
 
   try {
@@ -2160,7 +2257,9 @@ export async function loginCloudAccount(params: {
       }
     }
 
-    const snapshot = await fetchAllCollectionsSnapshot(now, nextDev);
+    const snapshot = isFirebaseAdminUser()
+      ? await fetchAllCollectionsSnapshot(now, nextDev)
+      : undefined;
 
     return {
       ok: true,
@@ -2173,11 +2272,11 @@ export async function loginCloudAccount(params: {
       snapshot,
     };
   } catch (err) {
-    if (isFirestoreOfflineError(err)) {
+    if (isFirestoreOfflineError(err) || isFirestorePermissionDeniedError(err)) {
       return {
         ok: false,
         offline: true,
-        error: 'Sin conexión con el servidor de respaldo en la nube.',
+        error: 'Sin conexión o permisos suficientes con el servidor de respaldo en la nube.',
       };
     }
     throw err;
@@ -2200,6 +2299,9 @@ export async function uploadCloudAccountBackup(params: {
 
   if (!email || !params.sessionToken || !deviceId) {
     return { ok: false, error: 'Datos de sesión incompletos.' };
+  }
+  if (!isFirebaseSignedIn()) {
+    return { ok: false, offline: true };
   }
 
   try {
@@ -2237,7 +2339,7 @@ export async function uploadCloudAccountBackup(params: {
 
     return { ok: true, updatedAt: now };
   } catch (err) {
-    if (isFirestoreOfflineError(err)) {
+    if (isFirestoreOfflineError(err) || isFirestorePermissionDeniedError(err)) {
       return { ok: false, offline: true };
     }
     handleFirestoreError(err, OperationType.UPDATE, `accounts/${email}`);
@@ -2257,6 +2359,9 @@ export async function checkCloudAccountSession(params: {
   if (!email || !params.sessionToken || !deviceId) {
     return { ok: false, sessionExpired: true };
   }
+  if (!isFirebaseSignedIn()) {
+    return { ok: false, offline: true };
+  }
 
   try {
     const accountId = await sha256Hex(email);
@@ -2274,7 +2379,7 @@ export async function checkCloudAccountSession(params: {
     }
     return { ok: true, updatedAt: acc.lastBackedUpAt ?? acc.updatedAt };
   } catch (err) {
-    if (isFirestoreOfflineError(err)) {
+    if (isFirestoreOfflineError(err) || isFirestorePermissionDeniedError(err)) {
       return { ok: false, offline: true };
     }
     throw err;
@@ -2290,6 +2395,7 @@ export async function logoutCloudAccount(params: {
     await logoutCloudAccountRtdb(FIREBASE_DB_URL, params);
     return;
   }
+  if (!isFirebaseSignedIn()) return;
   const email = normalizeEmail(params.email);
   const deviceId = toSafeDocId(normalizeDeviceIdInput(params.deviceId));
   if (!email || !params.sessionToken || !deviceId) return;
@@ -2327,50 +2433,26 @@ export async function fetchPromocionesEnviadasCount(): Promise<number> {
       return loadCachedPromoCount();
     }
   }
+  if (!isFirebaseAdminUser()) {
+    return loadCachedPromoCount();
+  }
 
-  const ref = doc(db, 'stats', 'promociones_enviadas');
+  const ref = doc(db, 'config', 'promos');
   try {
     const snap = await getDocFromServer(ref);
     if (snap.exists()) {
-      const data = snap.data() as Partial<PromoStatsDoc>;
-      const total = typeof data.total === 'number' && Number.isFinite(data.total) && data.total >= 1
-        ? Math.round(data.total)
-        : 1;
+      const data = snap.data() as { promocionesEnviadas?: number };
+      const total =
+        typeof data.promocionesEnviadas === 'number' &&
+        Number.isFinite(data.promocionesEnviadas) &&
+        data.promocionesEnviadas >= 1
+          ? Math.round(data.promocionesEnviadas)
+          : 1;
       saveCachedPromoCount(total);
       return total;
     }
-
-    // Inicializar en 1 si aún no existe en Firebase
-    const initializedTotal = await runTransaction(db, async (tx) => {
-      const txSnap = await tx.get(ref);
-      if (txSnap.exists()) {
-        const existingData = txSnap.data() as Partial<PromoStatsDoc>;
-        if (typeof existingData.total === 'number' && existingData.total >= 1) {
-          return Math.round(existingData.total);
-        }
-      }
-      const now = Date.now();
-      tx.set(ref, { total: 1, updatedAt: now });
-      return 1;
-    });
-    saveCachedPromoCount(initializedTotal);
-    return initializedTotal;
-  } catch (err) {
-    if (isFirestoreOfflineError(err)) {
-      try {
-        const cached = await getDoc(ref);
-        if (cached.exists()) {
-          const data = cached.data() as Partial<PromoStatsDoc>;
-          if (typeof data.total === 'number' && data.total >= 1) {
-            return Math.round(data.total);
-          }
-        }
-      } catch {
-        // fallback a caché local
-      }
-      return loadCachedPromoCount();
-    }
-    console.warn('No se pudo leer stats/promociones_enviadas:', err);
+    return loadCachedPromoCount();
+  } catch {
     return loadCachedPromoCount();
   }
 }
@@ -2388,30 +2470,35 @@ export async function incrementPromocionesEnviadasCount(): Promise<number> {
     }
   }
 
-  const ref = doc(db, 'stats', 'promociones_enviadas');
+  if (!isFirebaseAdminUser()) {
+    const fallback = loadCachedPromoCount() + 1;
+    saveCachedPromoCount(fallback);
+    return fallback;
+  }
+
+  const ref = doc(db, 'config', 'promos');
   try {
     const nextTotal = await runTransaction(db, async (tx) => {
       const txSnap = await tx.get(ref);
       const now = Date.now();
       if (!txSnap.exists()) {
-        tx.set(ref, { total: 2, updatedAt: now });
+        tx.set(ref, { promocionesEnviadas: 2, updatedAt: now });
         return 2;
       }
-      const data = txSnap.data() as Partial<PromoStatsDoc>;
+      const data = txSnap.data() as { promocionesEnviadas?: number };
       const current =
-        typeof data.total === 'number' && Number.isFinite(data.total) && data.total >= 1
-          ? Math.round(data.total)
+        typeof data.promocionesEnviadas === 'number' &&
+        Number.isFinite(data.promocionesEnviadas) &&
+        data.promocionesEnviadas >= 1
+          ? Math.round(data.promocionesEnviadas)
           : 1;
       const updated = current + 1;
-      tx.update(ref, { total: updated, updatedAt: now });
+      tx.update(ref, { promocionesEnviadas: updated, updatedAt: now });
       return updated;
     });
     saveCachedPromoCount(nextTotal);
     return nextTotal;
-  } catch (err) {
-    if (!isFirestoreOfflineError(err)) {
-      console.warn('No se pudo incrementar stats/promociones_enviadas:', err);
-    }
+  } catch {
     const fallback = loadCachedPromoCount() + 1;
     saveCachedPromoCount(fallback);
     return fallback;
@@ -2429,6 +2516,7 @@ export async function syncTallerProfileToCloud(params: {
   preferredTheme?: AppTheme;
   preferredSkin?: AppSkin;
 }): Promise<void> {
+  if (!isFirebaseSignedIn()) return;
   const normId = toSafeDocId(normalizeDeviceIdInput(params.deviceId));
   if (!normId) return;
   const nombre = String(params.nombre || '').trim().slice(0, 120);
@@ -2457,7 +2545,7 @@ export async function syncTallerProfileToCloud(params: {
     );
     await setDoc(doc(db, 'devices', normId), nextRecord);
   } catch (err) {
-    if (isFirestoreOfflineError(err)) return;
+    if (isFirestoreOfflineError(err) || isFirestorePermissionDeniedError(err)) return;
     console.warn('No se pudo sincronizar perfil de Mi Taller:', err);
   }
 }
@@ -2490,6 +2578,9 @@ function normalizeTutorialVideoDoc(raw: Partial<TutorialVideoItem>, docId: strin
 }
 
 export async function fetchTutorialVideosCloud(): Promise<TutorialVideoItem[]> {
+  if (!isFirebaseSignedIn()) {
+    return loadTutorialVideosCache();
+  }
   try {
     const snap = await getDocs(query(collection(db, 'tutorial_videos'), limit(200)));
     const list = snap.docs
@@ -2499,7 +2590,7 @@ export async function fetchTutorialVideosCloud(): Promise<TutorialVideoItem[]> {
     saveTutorialVideosCache(list);
     return list;
   } catch (err) {
-    if (isFirestoreOfflineError(err)) {
+    if (isFirestoreOfflineError(err) || isFirestorePermissionDeniedError(err)) {
       return loadTutorialVideosCache();
     }
     console.warn('No se pudo leer tutorial_videos:', err);
@@ -2511,24 +2602,45 @@ export function subscribeTutorialVideos(
   onUpdate: (videos: TutorialVideoItem[]) => void,
   onError?: (err: unknown) => void
 ): () => void {
-  const q = query(collection(db, 'tutorial_videos'), limit(200));
-  return onSnapshot(
-    q,
-    (snap) => {
-      const list = snap.docs
-        .map((d) => normalizeTutorialVideoDoc(d.data() as Partial<TutorialVideoItem>, d.id))
-        .filter((v) => v.url.length >= 8)
-        .sort((a, b) => a.orden - b.orden || b.updatedAt - a.updatedAt);
-      saveTutorialVideosCache(list);
-      onUpdate(list);
-    },
-    (err) => {
-      if (!isFirestoreOfflineError(err)) {
-        console.warn('Error en suscripción tutorial_videos:', err);
-      }
-      onError?.(err);
+  let closed = false;
+  let unsubSnap: (() => void) | null = null;
+
+  const unsubAuth = subscribeFirebaseAuth((user) => {
+    if (unsubSnap) {
+      unsubSnap();
+      unsubSnap = null;
     }
-  );
+    if (closed) return;
+    if (!isFirebaseSignedIn(user)) {
+      onUpdate(loadTutorialVideosCache());
+      return;
+    }
+    const q = query(collection(db, 'tutorial_videos'), limit(200));
+    unsubSnap = onSnapshot(
+      q,
+      (snap) => {
+        const list = snap.docs
+          .map((d) => normalizeTutorialVideoDoc(d.data() as Partial<TutorialVideoItem>, d.id))
+          .filter((v) => v.url.length >= 8)
+          .sort((a, b) => a.orden - b.orden || b.updatedAt - a.updatedAt);
+        saveTutorialVideosCache(list);
+        onUpdate(list);
+      },
+      (err) => {
+        if (!isFirestoreOfflineError(err) && !isFirestorePermissionDeniedError(err)) {
+          console.warn('Error en suscripción tutorial_videos:', err);
+        }
+        onUpdate(loadTutorialVideosCache());
+        onError?.(err);
+      }
+    );
+  });
+
+  return () => {
+    closed = true;
+    if (unsubSnap) unsubSnap();
+    unsubAuth();
+  };
 }
 
 export async function saveTutorialVideoCloud(input: {
@@ -2559,11 +2671,20 @@ export async function saveTutorialVideoCloud(input: {
     updatedAt: now,
   };
 
+  if (!isFirebaseAdminUser()) {
+    const cached = loadTutorialVideosCache();
+    const next = [...cached.filter((v) => v.id !== safeId), payload].sort(
+      (a, b) => a.orden - b.orden || b.updatedAt - a.updatedAt
+    );
+    saveTutorialVideosCache(next);
+    return payload;
+  }
+
   const path = `tutorial_videos/${safeId}`;
   try {
     await setDoc(doc(db, 'tutorial_videos', safeId), payload);
   } catch (err) {
-    if (!isFirestoreOfflineError(err)) {
+    if (!isFirestoreOfflineError(err) && !isFirestorePermissionDeniedError(err)) {
       handleFirestoreError(err, input.id ? OperationType.UPDATE : OperationType.CREATE, path);
     }
   }
@@ -2573,11 +2694,16 @@ export async function saveTutorialVideoCloud(input: {
 export async function deleteTutorialVideoCloud(videoId: string): Promise<void> {
   const safeId = toSafeKeyRecordId(videoId);
   if (!safeId) return;
+  if (!isFirebaseAdminUser()) {
+    const cached = loadTutorialVideosCache();
+    saveTutorialVideosCache(cached.filter((v) => v.id !== safeId));
+    return;
+  }
   const path = `tutorial_videos/${safeId}`;
   try {
     await deleteDoc(doc(db, 'tutorial_videos', safeId));
   } catch (err) {
-    if (!isFirestoreOfflineError(err)) {
+    if (!isFirestoreOfflineError(err) && !isFirestorePermissionDeniedError(err)) {
       handleFirestoreError(err, OperationType.DELETE, path);
     }
   }
@@ -2626,13 +2752,16 @@ export async function saveReferencePricesCloud(input: {
     items: input.items,
   });
   saveReferencePricesCache(payload);
+  if (!isFirebaseAdminUser()) {
+    return payload;
+  }
   try {
     await setDoc(
       doc(db, 'reference_prices', 'master'),
-      cleanForFirestore({ id: 'master', ...payload })
+      cleanForFirestore(payload)
     );
   } catch (err) {
-    if (!isFirestoreOfflineError(err)) {
+    if (!isFirestoreOfflineError(err) && !isFirestorePermissionDeniedError(err)) {
       handleFirestoreError(err, OperationType.UPDATE, 'reference_prices/master');
     }
   }
@@ -2643,28 +2772,49 @@ export function subscribeReferencePrices(
   onUpdate: (docData: ReferencePricesDoc) => void,
   onError?: (err: unknown) => void
 ): () => void {
-  const ref = doc(db, 'reference_prices', 'master');
-  return onSnapshot(
-    ref,
-    (snap) => {
-      if (snap.exists()) {
-        const normalized = normalizeReferencePricesDoc(snap.data() as Partial<ReferencePricesDoc>);
-        saveReferencePricesCache(normalized);
-        onUpdate(normalized);
-      } else {
-        const fallback = loadReferencePricesCache() || normalizeReferencePricesDoc(null);
-        onUpdate(fallback);
-      }
-    },
-    (err) => {
-      if (!isFirestoreOfflineError(err)) {
-        console.warn('Error en suscripción reference_prices:', err);
-      }
+  let closed = false;
+  let unsubSnap: (() => void) | null = null;
+
+  const unsubAuth = subscribeFirebaseAuth((user) => {
+    if (unsubSnap) {
+      unsubSnap();
+      unsubSnap = null;
+    }
+    if (closed) return;
+    if (!isFirebaseSignedIn(user)) {
       const fallback = loadReferencePricesCache() || normalizeReferencePricesDoc(null);
       onUpdate(fallback);
-      onError?.(err);
+      return;
     }
-  );
+    const ref = doc(db, 'reference_prices', 'master');
+    unsubSnap = onSnapshot(
+      ref,
+      (snap) => {
+        if (snap.exists()) {
+          const normalized = normalizeReferencePricesDoc(snap.data() as Partial<ReferencePricesDoc>);
+          saveReferencePricesCache(normalized);
+          onUpdate(normalized);
+        } else {
+          const fallback = loadReferencePricesCache() || normalizeReferencePricesDoc(null);
+          onUpdate(fallback);
+        }
+      },
+      (err) => {
+        if (!isFirestoreOfflineError(err) && !isFirestorePermissionDeniedError(err)) {
+          console.warn('Error en suscripción reference_prices:', err);
+        }
+        const fallback = loadReferencePricesCache() || normalizeReferencePricesDoc(null);
+        onUpdate(fallback);
+        onError?.(err);
+      }
+    );
+  });
+
+  return () => {
+    closed = true;
+    if (unsubSnap) unsubSnap();
+    unsubAuth();
+  };
 }
 
 // ==================== MENSAJES / AVISOS DEL ADMINISTRADOR (FIRESTORE) ====================
@@ -2715,10 +2865,15 @@ export async function sendAdminMessageCloud(input: {
     },
     safeId
   );
+  if (!isFirebaseAdminUser()) {
+    const cached = loadAdminMessagesCache();
+    saveAdminMessagesCache([payload, ...cached.filter((m) => m.id !== safeId)]);
+    return payload;
+  }
   try {
     await setDoc(doc(db, 'admin_messages', safeId), cleanForFirestore(payload));
   } catch (err) {
-    if (!isFirestoreOfflineError(err)) {
+    if (!isFirestoreOfflineError(err) && !isFirestorePermissionDeniedError(err)) {
       handleFirestoreError(err, OperationType.CREATE, `admin_messages/${safeId}`);
     }
   }
@@ -2728,10 +2883,15 @@ export async function sendAdminMessageCloud(input: {
 export async function deleteAdminMessageCloud(messageId: string): Promise<void> {
   const safeId = toSafeKeyRecordId(messageId);
   if (!safeId) return;
+  if (!isFirebaseAdminUser()) {
+    const cached = loadAdminMessagesCache();
+    saveAdminMessagesCache(cached.filter((m) => m.id !== safeId));
+    return;
+  }
   try {
     await deleteDoc(doc(db, 'admin_messages', safeId));
   } catch (err) {
-    if (!isFirestoreOfflineError(err)) {
+    if (!isFirestoreOfflineError(err) && !isFirestorePermissionDeniedError(err)) {
       handleFirestoreError(err, OperationType.DELETE, `admin_messages/${safeId}`);
     }
   }
@@ -2741,25 +2901,45 @@ export function subscribeAdminMessages(
   onUpdate: (messages: AdminMessageItem[]) => void,
   onError?: (err: unknown) => void
 ): () => void {
-  const q = query(collection(db, 'admin_messages'), limit(100));
-  return onSnapshot(
-    q,
-    (snap) => {
-      const list = snap.docs
-        .map((d) => normalizeAdminMessage(d.data() as Partial<AdminMessageItem>, d.id))
-        .filter((m) => m.cuerpo.length > 0)
-        .sort((a, b) => b.createdAt - a.createdAt);
-      saveAdminMessagesCache(list);
-      onUpdate(list);
-    },
-    (err) => {
-      if (!isFirestoreOfflineError(err)) {
-        console.warn('Error en suscripción admin_messages:', err);
-      }
-      onUpdate(loadAdminMessagesCache());
-      onError?.(err);
+  let closed = false;
+  let unsubSnap: (() => void) | null = null;
+
+  const unsubAuth = subscribeFirebaseAuth((user) => {
+    if (unsubSnap) {
+      unsubSnap();
+      unsubSnap = null;
     }
-  );
+    if (closed) return;
+    if (!isFirebaseSignedIn(user)) {
+      onUpdate(loadAdminMessagesCache());
+      return;
+    }
+    const q = query(collection(db, 'admin_messages'), limit(100));
+    unsubSnap = onSnapshot(
+      q,
+      (snap) => {
+        const list = snap.docs
+          .map((d) => normalizeAdminMessage(d.data() as Partial<AdminMessageItem>, d.id))
+          .filter((m) => m.cuerpo.length > 0)
+          .sort((a, b) => b.createdAt - a.createdAt);
+        saveAdminMessagesCache(list);
+        onUpdate(list);
+      },
+      (err) => {
+        if (!isFirestoreOfflineError(err) && !isFirestorePermissionDeniedError(err)) {
+          console.warn('Error en suscripción admin_messages:', err);
+        }
+        onUpdate(loadAdminMessagesCache());
+        onError?.(err);
+      }
+    );
+  });
+
+  return () => {
+    closed = true;
+    if (unsubSnap) unsubSnap();
+    unsubAuth();
+  };
 }
 
 
