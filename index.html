@@ -27,13 +27,23 @@
       (function () {
         try {
           var t = localStorage.getItem('aluminero_theme_v1');
-          var theme = t === 'light' || t === 'dark' ? t : 'dark';
+          var pref = t === 'light' || t === 'dark' || t === 'system' ? t : 'dark';
+          var sysDark =
+            typeof window.matchMedia === 'function'
+              ? window.matchMedia('(prefers-color-scheme: dark)').matches
+              : true;
+          var theme = pref === 'system' ? (sysDark ? 'dark' : 'light') : pref;
           document.documentElement.setAttribute('data-theme', theme);
           document.documentElement.setAttribute('data-color-mode', theme);
+          document.documentElement.setAttribute('data-theme-preference', pref);
           if (theme === 'dark') {
             document.documentElement.classList.add('dark');
           } else {
             document.documentElement.classList.remove('dark');
+          }
+          var metaThemeColor = document.querySelector('meta[name="theme-color"]');
+          if (metaThemeColor) {
+            metaThemeColor.setAttribute('content', theme === 'dark' ? '#090d16' : '#F1F5F9');
           }
           var s = localStorage.getItem('aluminero_skin_v1');
           var skin = s === 'basica' || s === 'navidena' || s === 'ejecutiva' || s === 'industrial' ? s : 'basica';
@@ -41,6 +51,7 @@
         } catch (e) {
           document.documentElement.setAttribute('data-theme', 'dark');
           document.documentElement.setAttribute('data-color-mode', 'dark');
+          document.documentElement.setAttribute('data-theme-preference', 'dark');
           document.documentElement.setAttribute('data-skin', 'basica');
           document.documentElement.classList.add('dark');
         }

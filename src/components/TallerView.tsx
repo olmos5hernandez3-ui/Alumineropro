@@ -39,7 +39,7 @@ import {
   AlumineroBackupPayload,
   AppSkin,
   AppSkinVariant,
-  AppTheme,
+  ResolvedAppTheme,
   CotizacionGuardada,
   formatMXN,
   FormulaPersonalizada,
@@ -73,7 +73,7 @@ interface Props {
   unlockedSkins?: AppSkin[];
   onSelectSkin?: (skin: AppSkin) => void;
   onSelectSkinVariant?: (variant: AppSkinVariant) => void;
-  colorMode?: AppTheme;
+  colorMode?: ResolvedAppTheme;
   onToggleColorMode?: () => void;
   referencePrices?: ReferencePricesDoc | null;
   onShowToast: (msg: string, topSuccess?: boolean) => void;

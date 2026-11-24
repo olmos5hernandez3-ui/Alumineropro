@@ -128,6 +128,23 @@ button, input, select, textarea { font-family: inherit; }
   will-change: transform, opacity;
 }
 
+@keyframes apCardEditWiggle {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(-0.45deg); }
+  50% { transform: translate3d(0, 0, 0) rotate(0.45deg); }
+}
+.ap-card-reorder-wiggle {
+  animation: apCardEditWiggle 0.38s ease-in-out infinite;
+  will-change: transform;
+}
+.ap-card-reorder-wiggle:nth-child(even) {
+  animation-delay: -0.19s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ap-card-reorder-wiggle {
+    animation: none;
+  }
+}
+
 /* ==================== TEMA OSCURO GLOBAL (AZUL PETRÓLEO + CRISTAL METÁLICO) ==================== */
 html[data-theme="dark"],
 html[data-theme="dark"] body,

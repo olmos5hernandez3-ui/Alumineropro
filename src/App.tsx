@@ -124,8 +124,11 @@ import {
   AppSkin,
   AppSkinVariant,
   AppTheme,
+  getSystemPrefersDark,
   getUnlockedSkinsForLicense,
   isSkinUnlockedForLicense,
+  resolveAppTheme,
+  ResolvedAppTheme,
   loadAdminMessagesCache,
   loadLegalDisclaimerAccepted,
   loadPromoColegaUsage,
@@ -208,6 +211,12 @@ import {
   OFFLINE_SYNC_QUEUE_EVENT,
   type OfflineCotizacionQueueItem,
 } from './utils/offlineSyncQueue';
+import {
+  getScreenTransitionClasses,
+  SCREEN_EXIT_DURATION_MS,
+  type NavTransitionDir,
+  type ScreenTransitionPhase,
+} from './utils/screenTransition';
 import { ScreenId, SideDrawer, TopBar } from './components/TopBarAndDrawer';
 import { MainMenuView } from './components/MainMenuView';
 import { TrabajoView } from './components/TrabajoView';
@@ -478,7 +487,13 @@ export default function App() {
       : []
   );
   const [perfilModalId, setPerfilModalId] = useState<PerfilCatalogoId | null>(null);
-  const [navTransitionDir, setNavTransitionDir] = useState<'none' | 'back' | 'forward'>('none');
+  const [navTransitionDir, setNavTransitionDir] = useState<NavTransitionDir>('none');
+  const [displayedView, setDisplayedView] = useState<ScreenId>('menu');
+  const [screenTransitionPhase, setScreenTransitionPhase] =
+    useState<ScreenTransitionPhase>('idle');
+  const screenExitTimerRef = useRef<number | null>(null);
+  const screenEnterRafRef = useRef<number | null>(null);
+  const screenEnterRaf2Ref = useRef<number | null>(null);
 
   const navFramesRef = useRef<NavFrame[]>(
     initialReferralActive && !proActive && Boolean(savedColleagueReferral)
@@ -491,6 +506,74 @@ export default function App() {
 
   const currentViewRef = useRef<ScreenId>(currentView);
   currentViewRef.current = currentView;
+  const displayedViewRef = useRef<ScreenId>(displayedView);
+  displayedViewRef.current = displayedView;
+
+  useEffect(() => {
+    if (currentView === displayedViewRef.current) return;
+
+    if (screenExitTimerRef.current !== null) {
+      window.clearTimeout(screenExitTimerRef.current);
+      screenExitTimerRef.current = null;
+    }
+
+    const prefersReducedMotion =
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    if (prefersReducedMotion) {
+      displayedViewRef.current = currentView;
+      setDisplayedView(currentView);
+      setScreenTransitionPhase('idle');
+      if (typeof window !== 'undefined') {
+        window.scrollTo({ top: 0, behavior: 'instant' });
+      }
+      return;
+    }
+
+    setScreenTransitionPhase('exiting');
+
+    screenExitTimerRef.current = window.setTimeout(() => {
+      screenExitTimerRef.current = null;
+      displayedViewRef.current = currentView;
+      setDisplayedView(currentView);
+      setScreenTransitionPhase('entering');
+      if (typeof window !== 'undefined') {
+        window.scrollTo({ top: 0, behavior: 'instant' });
+      }
+    }, SCREEN_EXIT_DURATION_MS);
+
+    return () => {
+      if (screenExitTimerRef.current !== null) {
+        window.clearTimeout(screenExitTimerRef.current);
+        screenExitTimerRef.current = null;
+      }
+    };
+  }, [currentView]);
+
+  useEffect(() => {
+    if (screenTransitionPhase !== 'entering') return;
+
+    screenEnterRafRef.current = window.requestAnimationFrame(() => {
+      screenEnterRafRef.current = null;
+      screenEnterRaf2Ref.current = window.requestAnimationFrame(() => {
+        screenEnterRaf2Ref.current = null;
+        setScreenTransitionPhase('idle');
+      });
+    });
+
+    return () => {
+      if (screenEnterRafRef.current !== null) {
+        window.cancelAnimationFrame(screenEnterRafRef.current);
+        screenEnterRafRef.current = null;
+      }
+      if (screenEnterRaf2Ref.current !== null) {
+        window.cancelAnimationFrame(screenEnterRaf2Ref.current);
+        screenEnterRaf2Ref.current = null;
+      }
+    };
+  }, [screenTransitionPhase]);
 
   const registerCloseSubModal = useCallback((fn: (() => void) | null) => {
     closeSubModalRef.current = fn;
@@ -538,7 +621,14 @@ export default function App() {
   const [legalAccepted, setLegalAccepted] = useState<boolean>(() =>
     loadLegalDisclaimerAccepted()
   );
-  const [theme, setTheme] = useState<AppTheme>(() => loadTheme());
+  const [themePreference, setThemePreference] = useState<AppTheme>(() => loadTheme());
+  const [systemPrefersDark, setSystemPrefersDark] = useState<boolean>(() =>
+    getSystemPrefersDark()
+  );
+  const resolvedTheme: ResolvedAppTheme = useMemo(
+    () => resolveAppTheme(themePreference, systemPrefersDark),
+    [themePreference, systemPrefersDark]
+  );
   const [skin, setSkin] = useState<AppSkin>(() => loadSkin());
   const [skinVariant, setSkinVariant] = useState<AppSkinVariant>(() =>
     loadSkinVariant(loadSkin())
@@ -649,9 +739,16 @@ export default function App() {
     setReadAdminMessageIds(next);
   }, []);
 
-  const handleToggleTheme = useCallback(() => {
-    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  const handleSelectTheme = useCallback((nextTheme: AppTheme) => {
+    saveTheme(nextTheme);
+    setThemePreference(nextTheme);
   }, []);
+
+  const handleToggleTheme = useCallback(() => {
+    const next: AppTheme = resolvedTheme === 'dark' ? 'light' : 'dark';
+    saveTheme(next);
+    setThemePreference(next);
+  }, [resolvedTheme]);
 
   const homeMenuTier = useMemo(
     () => getHomeMenuTier(licencia, proActive),
@@ -693,6 +790,13 @@ export default function App() {
   );
 
   const [homeMenuLayout, setHomeMenuLayout] = useState<HomeMenuLayout>(() => loadHomeMenuLayout());
+  const [homeReorderMode, setHomeReorderMode] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (homeMenuTier !== 'pro_annual') {
+      setHomeReorderMode(false);
+    }
+  }, [homeMenuTier]);
 
   const handleChangeHomeMenuLayout = useCallback((next: HomeMenuLayout) => {
     const saved = saveHomeMenuLayout(next);
@@ -1104,11 +1208,31 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    saveTheme(theme);
-    document.documentElement.setAttribute('data-theme', theme);
-    document.documentElement.setAttribute('data-color-mode', theme);
-    document.documentElement.classList.toggle('dark', theme === 'dark');
-  }, [theme]);
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const syncSystemTheme = (ev?: MediaQueryListEvent) => {
+      setSystemPrefersDark(typeof ev?.matches === 'boolean' ? ev.matches : mq.matches);
+    };
+    syncSystemTheme();
+    if (typeof mq.addEventListener === 'function') {
+      mq.addEventListener('change', syncSystemTheme);
+      return () => mq.removeEventListener('change', syncSystemTheme);
+    }
+    mq.addListener(syncSystemTheme);
+    return () => mq.removeListener(syncSystemTheme);
+  }, []);
+
+  useEffect(() => {
+    saveTheme(themePreference);
+    document.documentElement.setAttribute('data-theme', resolvedTheme);
+    document.documentElement.setAttribute('data-color-mode', resolvedTheme);
+    document.documentElement.setAttribute('data-theme-preference', themePreference);
+    document.documentElement.classList.toggle('dark', resolvedTheme === 'dark');
+    const metaThemeColor = document.querySelector('meta[name="theme-color"]');
+    if (metaThemeColor) {
+      metaThemeColor.setAttribute('content', resolvedTheme === 'dark' ? '#090d16' : '#F1F5F9');
+    }
+  }, [themePreference, resolvedTheme]);
 
   useEffect(() => {
     const allowed = isSkinUnlockedForLicense(skin, licencia, proActive);
@@ -1140,12 +1264,12 @@ export default function App() {
         responsable: taller.responsable || '',
         tel: taller.tel || '',
         termsAcceptedAt: taller.termsAcceptedAt ?? null,
-        preferredTheme: theme,
+        preferredTheme: resolvedTheme,
         preferredSkin: skin,
         preferredSkinVariant: normalizeSkinVariantForSkin(skin, skinVariant),
       });
     }
-  }, [taller, deviceId, theme, skin, skinVariant]);
+  }, [taller, deviceId, resolvedTheme, skin, skinVariant]);
 
   useEffect(() => {
     saveHoja(hoja);
@@ -1444,7 +1568,7 @@ export default function App() {
         closeSubModalRef.current?.();
       }
 
-      if (!skipScroll && (!prev || prev.view !== next.view || prev.modStep !== next.modStep)) {
+      if (!skipScroll && prev && prev.view === next.view && prev.modStep !== next.modStep) {
         if (typeof window !== 'undefined') {
           window.scrollTo({ top: 0, behavior: 'instant' });
         }
@@ -1634,6 +1758,63 @@ export default function App() {
       }
     }
   }, [applyFrameState]);
+
+  const handleToggleHomeReorderFromDrawer = useCallback(
+    (enabled: boolean) => {
+      if (enabled) {
+        if (homeMenuTier !== 'pro_annual') return;
+        setHomeReorderMode(true);
+        goHome();
+      } else {
+        setHomeReorderMode(false);
+        showToastRef.current('Apartados bloqueados');
+      }
+    },
+    [homeMenuTier, goHome]
+  );
+
+  const handleSaveAndLockHomeMenuLayout = useCallback(
+    (nextLayout: HomeMenuLayout) => {
+      const saved = saveHomeMenuLayout(nextLayout);
+      setHomeMenuLayout(saved);
+      setHomeReorderMode(false);
+      showToastRef.current('Orden guardado y apartados bloqueados', true);
+
+      const curSession = cloudAccountSessionRef.current;
+      if (
+        curSession &&
+        isCloudBackupEligible &&
+        isOnline &&
+        (typeof navigator === 'undefined' || navigator.onLine)
+      ) {
+        skipNextAutoBackupRef.current = true;
+        void uploadCloudAccountBackup({
+          email: curSession.email,
+          sessionToken: curSession.sessionToken,
+          deviceId,
+          licencia: licenciaRef.current,
+          backup: {
+            ...buildCurrentCloudBackup(),
+            homeMenuLayout: saved,
+            updatedAt: Date.now(),
+          },
+        }).then((res) => {
+          if (res.sessionExpired) {
+            handleRemoteSessionClosed();
+            return;
+          }
+          if (res.ok && res.updatedAt) {
+            setCloudAccountSession((prev) =>
+              prev && prev.sessionToken === curSession.sessionToken
+                ? { ...prev, lastBackedUpAt: res.updatedAt ?? Date.now() }
+                : prev
+            );
+          }
+        });
+      }
+    },
+    [isCloudBackupEligible, isOnline, deviceId, buildCurrentCloudBackup]
+  );
 
   const openGlobalModal = useCallback(
     (modalId: GlobalModalId) => {
@@ -2938,12 +3119,12 @@ export default function App() {
       <div
         id="view-session-ended"
         className={`min-h-screen w-full flex items-center justify-center p-5 ${
-          theme === 'light' ? 'bg-[#F1F5F9] text-slate-900' : 'bg-[#0B1120] text-slate-100'
+          resolvedTheme === 'light' ? 'bg-[#F1F5F9] text-slate-900' : 'bg-[#0B1120] text-slate-100'
         }`}
       >
         <div
           className={`w-full max-w-[400px] rounded-2xl border p-6 text-center shadow-2xl ${
-            theme === 'light'
+            resolvedTheme === 'light'
               ? 'bg-white border-slate-200 text-slate-900'
               : 'bg-slate-900/95 border-slate-700 text-slate-100'
           }`}
@@ -3013,7 +3194,7 @@ export default function App() {
               responsable,
               tel,
               termsAcceptedAt: acceptedTs,
-              preferredTheme: theme,
+              preferredTheme: resolvedTheme,
               preferredSkin: skin,
               preferredSkinVariant: normalizeSkinVariantForSkin(skin, skinVariant),
             });
@@ -3037,7 +3218,7 @@ export default function App() {
   return (
     <div
       className={`relative min-h-screen w-full max-w-[100vw] overflow-x-hidden box-border transition-colors ${
-        theme === 'light'
+        resolvedTheme === 'light'
           ? 'bg-[#F1F5F9] text-slate-900'
           : skin !== 'basica'
             ? 'bg-transparent text-slate-100'
@@ -3083,7 +3264,7 @@ export default function App() {
         proActive={proActive}
         licencia={licencia}
         trialExpiresAt={trialExpiresAt}
-        theme={theme}
+        theme={resolvedTheme}
         isOnline={isOnline}
         pendingSyncCount={offlineSyncQueue.length}
         syncingOfflineQueue={syncingOfflineQueue}
@@ -3115,7 +3296,7 @@ export default function App() {
 
       <main
         className={`w-full ${
-          currentView === 'admin' ? 'max-w-[1440px] px-4 sm:px-6 lg:px-8' : 'max-w-[1120px] px-3 sm:px-4'
+          displayedView === 'admin' ? 'max-w-[1440px] px-4 sm:px-6 lg:px-8' : 'max-w-[1120px] px-3 sm:px-4'
         } mx-auto pt-5 pb-24 box-border overflow-x-hidden`}
       >
         {!isOnline ? (
@@ -3159,7 +3340,7 @@ export default function App() {
           </div>
         ) : null}
 
-        <ErrorBoundary resetKey={currentView} onGoHome={goHome}>
+        <ErrorBoundary resetKey={displayedView} onGoHome={goHome}>
         <Suspense
           fallback={
             <div className="p-8 rounded-2xl border border-slate-700/70 bg-slate-900/90 text-center text-slate-300 text-[13px] font-bold">
@@ -3168,16 +3349,13 @@ export default function App() {
           }
         >
         <div
-          key={currentView}
-          className={
-            navTransitionDir === 'back'
-              ? 'ap-view-back'
-              : navTransitionDir === 'forward'
-                ? 'ap-view-forward'
-                : ''
-          }
+          id="screen-transition-stage"
+          data-view={displayedView}
+          data-transition-phase={screenTransitionPhase}
+          data-transition-dir={navTransitionDir}
+          className={getScreenTransitionClasses(screenTransitionPhase, navTransitionDir)}
         >
-        {currentView === 'menu' && (
+        {displayedView === 'menu' && (
           <MainMenuView
             proActive={proActive}
             hojaPiezasCount={hojaPiezasCount}
@@ -3207,12 +3385,14 @@ export default function App() {
             onOpenReminders={() => openGlobalModal('reminders')}
             menuTier={homeMenuTier}
             menuLayout={homeMenuLayout}
+            reorderMode={homeReorderMode}
             onChangeMenuLayout={handleChangeHomeMenuLayout}
+            onSaveAndLockLayout={handleSaveAndLockHomeMenuLayout}
             onResetMenuLayout={handleResetHomeMenuLayout}
           />
         )}
 
-        {currentView === 'trabajo' && (
+        {displayedView === 'trabajo' && (
           <TrabajoView
             categoria={categoria}
             params={params}
@@ -3327,7 +3507,7 @@ export default function App() {
           />
         )}
 
-        {currentView === 'hoja' && (
+        {displayedView === 'hoja' && (
           <HojaCotizacionView
             hoja={hoja}
             taller={taller}
@@ -3440,7 +3620,7 @@ export default function App() {
           />
         )}
 
-        {currentView === 'taller' && (
+        {displayedView === 'taller' && (
           <TallerView
             taller={taller}
             proActive={proActive}
@@ -3467,14 +3647,14 @@ export default function App() {
             unlockedSkins={unlockedSkins}
             onSelectSkin={handleSelectSkin}
             onSelectSkinVariant={handleSelectSkinVariant}
-            colorMode={theme}
+            colorMode={resolvedTheme}
             onToggleColorMode={handleToggleTheme}
             referencePrices={referencePrices}
             onShowToast={showToast}
           />
         )}
 
-        {currentView === 'cotizaciones' && (
+        {displayedView === 'cotizaciones' && (
           <HistorialCotizacionesView
             isOnline={isOnline}
             onSyncPendingQueue={() => void handleFlushOfflineCotizacionesQueue({ manual: true })}
@@ -3483,7 +3663,7 @@ export default function App() {
           />
         )}
 
-        {currentView === 'inventario' && (
+        {displayedView === 'inventario' && (
           <InventarioView
               inventario={inventario}
               inventarioHerrajes={inventarioHerrajes}
@@ -3575,7 +3755,7 @@ export default function App() {
             />
         )}
 
-        {currentView === 'notas' && (
+        {displayedView === 'notas' && (
           <NotasView
             notas={notas}
             onAddNota={(n) =>
@@ -3590,7 +3770,7 @@ export default function App() {
           />
         )}
 
-        {currentView === 'modulacion' && (
+        {displayedView === 'modulacion' && (
           <ModulacionCortesView
               tarifasBase={taller.tarifasBase}
               proActive={proActive}
@@ -3667,7 +3847,7 @@ export default function App() {
             />
         )}
 
-        {currentView === 'vidrio' && (
+        {displayedView === 'vidrio' && (
           <VidrioOptimizerView
             hojasVidrio={hojasVidrio}
             hojaPartidas={hoja.partidas}
@@ -3677,7 +3857,7 @@ export default function App() {
           />
         )}
 
-        {currentView === 'catalogo' && (
+        {displayedView === 'catalogo' && (
           <CatalogoView
             perfilFotos={perfilFotos}
             catalogoTab={catalogoTab}
@@ -3691,7 +3871,7 @@ export default function App() {
           />
         )}
 
-        {currentView === 'videos' && (
+        {displayedView === 'videos' && (
           <Suspense
             fallback={
               <div className="p-8 rounded-2xl border border-slate-700/70 bg-slate-900/90 text-center text-slate-300 text-[13px] font-bold">
@@ -3703,15 +3883,15 @@ export default function App() {
           </Suspense>
         )}
 
-        {currentView === 'terminos' && (
+        {displayedView === 'terminos' && (
           <TerminosCondicionesView onBack={requestBack} />
         )}
 
-        {currentView === 'privacidad' && (
+        {displayedView === 'privacidad' && (
           <AvisoPrivacidadView onBack={requestBack} />
         )}
 
-        {currentView === 'admin' && (
+        {displayedView === 'admin' && (
           <Suspense
             fallback={
               <div className="p-8 rounded-2xl border border-slate-700/70 bg-slate-900/90 text-center text-slate-300 text-[13px] font-bold">
@@ -4017,7 +4197,8 @@ export default function App() {
         isTrialActive={isTrialActive}
         licencia={licencia}
         deviceId={deviceId}
-        theme={theme}
+        theme={resolvedTheme}
+        themePreference={themePreference}
         skin={skin}
         cloudAccountEmail={cloudAccountSession?.email || null}
         isCloudBackupEligible={isCloudBackupEligible}
@@ -4025,6 +4206,7 @@ export default function App() {
         googleAuthLoading={googleAuthLoading}
         googleAuthError={googleAuthError}
         pendingSyncCount={offlineSyncQueue.length}
+        onSelectTheme={handleSelectTheme}
         onToggleTheme={handleToggleTheme}
         onSelectSkin={handleSelectSkin}
         onConnectGoogle={handleConnectGoogle}
@@ -4053,6 +4235,9 @@ export default function App() {
         onOpenVideos={() => openScreenFromDrawer('videos')}
         onOpenAdminSecret={() => openModalFromDrawer('adminAuth')}
         tallerOnboardingComplete={tallerOnboardingComplete}
+        canOrganizeHomeMenu={homeMenuTier === 'pro_annual'}
+        homeReorderMode={homeReorderMode}
+        onToggleHomeReorderMode={handleToggleHomeReorderFromDrawer}
       />
 
       <LegalModal
@@ -4952,6 +5137,7 @@ export default function App() {
       <FloatingInstallButton
         visible={
           currentView === 'menu' &&
+          !homeReorderMode &&
           !pwa.isInstalled &&
           !installFabDismissed &&
           !accessBlocked &&
@@ -4961,15 +5147,17 @@ export default function App() {
         onDismiss={() => setInstallFabDismissed(true)}
       />
 
-      <FloatingAssistant
-        whatsappNumber={sugerenciasWhatsapp}
-        deviceId={deviceId}
-        skin={skin}
-        skinVariant={skinVariant}
-        proActive={proActive}
-        onOpenPro={() => openGlobalModal('pro')}
-        onShowToast={showToast}
-      />
+      {!(currentView === 'menu' && homeReorderMode) && (
+        <FloatingAssistant
+          whatsappNumber={sugerenciasWhatsapp}
+          deviceId={deviceId}
+          skin={skin}
+          skinVariant={skinVariant}
+          proActive={proActive}
+          onOpenPro={() => openGlobalModal('pro')}
+          onShowToast={showToast}
+        />
+      )}
 
       <AnnualCelebrationOverlay
         open={annualCelebrationOpen}

@@ -36,14 +36,26 @@ import {
   Users,
   Video,
 } from 'lucide-react';
-import type { User } from 'firebase/auth';
+import {
+  getRedirectResult,
+  signInWithPopup,
+  signInWithRedirect,
+  type User,
+} from 'firebase/auth';
 import {
   auth,
+  getLastGoogleRedirectOutcome,
+  googleProvider,
   isFirebaseAdminUser,
-  signInWithGoogleFirebase,
   signOutFirebase,
   subscribeFirebaseAuth,
 } from '../firebase';
+import {
+  extractFirebaseAuthCode,
+  formatAdminAuthDiagnostic,
+  shouldAdminFallbackToRedirect,
+  type AdminAuthDiagnostic,
+} from '../utils/firebaseAuthHelpers';
 import {
   Area,
   AreaChart,
@@ -313,38 +325,132 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const [phonePlaceholder] = useState<string>(() => generateRandomMxPhonePlaceholder());
   const [firebaseUser, setFirebaseUser] = useState<User | null>(() => auth.currentUser);
   const [firebaseAuthBusy, setFirebaseAuthBusy] = useState(false);
+  const [firebaseAuthDiagnostic, setFirebaseAuthDiagnostic] = useState<AdminAuthDiagnostic | null>(
+    null
+  );
+  const lastSyncedAdminUidRef = useRef<string | null>(null);
+  const onRefreshCloudRef = useRef(onRefreshCloud);
+  onRefreshCloudRef.current = onRefreshCloud;
+  const onShowToastRef = useRef(onShowToast);
+  onShowToastRef.current = onShowToast;
 
   useEffect(() => {
-    return subscribeFirebaseAuth((user) => {
+    let active = true;
+
+    const handleAuthenticatedAdminUser = (user: User, showSuccessToast = false) => {
+      if (!active) return;
       setFirebaseUser(user);
+      setFirebaseAuthDiagnostic(null);
+      if (isFirebaseAdminUser(user)) {
+        if (lastSyncedAdminUidRef.current !== user.uid) {
+          lastSyncedAdminUidRef.current = user.uid;
+          if (showSuccessToast) {
+            onShowToastRef.current('Conectado en Nube como Administrador', true);
+          }
+          void onRefreshCloudRef.current();
+        }
+      } else if (showSuccessToast) {
+        onShowToastRef.current(
+          'Sesión iniciada, pero solo el correo de Administrador tiene acceso completo a Firestore.'
+        );
+      }
+    };
+
+    const unsub = subscribeFirebaseAuth((user) => {
+      if (!active) return;
+      if (user) {
+        handleAuthenticatedAdminUser(user, false);
+      } else {
+        lastSyncedAdminUidRef.current = null;
+        setFirebaseUser(null);
+      }
     });
+
+    // Al montar AdminDashboardView, recibir resultado de signInWithRedirect en móvil / PWA
+    void (async () => {
+      try {
+        const redirectCred = await getRedirectResult(auth);
+        if (!active) return;
+        if (redirectCred?.user) {
+          handleAuthenticatedAdminUser(redirectCred.user, true);
+          return;
+        }
+        // Si App.tsx consumió getRedirectResult antes de montar el panel, respetar resultado/error
+        const cachedOutcome = getLastGoogleRedirectOutcome();
+        if (cachedOutcome?.status === 'signed_in') {
+          handleAuthenticatedAdminUser(cachedOutcome.user, false);
+        } else if (cachedOutcome?.status === 'error' && !auth.currentUser) {
+          const diag = formatAdminAuthDiagnostic({
+            code: cachedOutcome.code,
+            message: cachedOutcome.message,
+          });
+          setFirebaseAuthDiagnostic(diag);
+        }
+      } catch (redirectErr) {
+        if (!active) return;
+        const diag = formatAdminAuthDiagnostic(redirectErr);
+        setFirebaseAuthDiagnostic(diag);
+        onShowToastRef.current(diag.fullMessage);
+      }
+    })();
+
+    return () => {
+      active = false;
+      unsub();
+    };
   }, []);
 
   const isFirebaseAdminSignedIn = isFirebaseAdminUser(firebaseUser);
+  const isAdminCloudOnline = cloudConnected || isFirebaseAdminSignedIn;
 
   const handleToggleFirebaseGoogleAuth = async () => {
     if (firebaseAuthBusy) return;
     setFirebaseAuthBusy(true);
+    setFirebaseAuthDiagnostic(null);
     try {
       if (firebaseUser) {
         await signOutFirebase();
+        lastSyncedAdminUidRef.current = null;
         onShowToast('Sesión de nube desconectada');
-      } else {
-        const signedInUser = await signInWithGoogleFirebase();
-        if (isFirebaseAdminUser(signedInUser)) {
-          onShowToast('Conectado a Firebase como Administrador', true);
+        return;
+      }
+
+      try {
+        const cred = await signInWithPopup(auth, googleProvider);
+        setFirebaseUser(cred.user);
+        setFirebaseAuthDiagnostic(null);
+        if (isFirebaseAdminUser(cred.user)) {
+          lastSyncedAdminUidRef.current = cred.user.uid;
+          onShowToast('Conectado en Nube como Administrador', true);
           void onRefreshCloud();
         } else {
           onShowToast(
             'Sesión iniciada, pero solo el correo de Administrador tiene acceso completo a Firestore.'
           );
         }
-      }
-    } catch (err) {
-      const code =
-        err && typeof err === 'object' && 'code' in err ? String((err as { code?: unknown }).code || '') : '';
-      if (code !== 'auth/popup-closed-by-user' && code !== 'auth/cancelled-popup-request') {
-        onShowToast('No se pudo conectar con Google. Revisa que las ventanas emergentes estén permitidas.');
+      } catch (popupErr) {
+        if (shouldAdminFallbackToRedirect(popupErr)) {
+          onShowToast('Redirigiendo a Google para iniciar sesión...');
+          try {
+            await signInWithRedirect(auth, googleProvider);
+            return;
+          } catch (redirectErr) {
+            const diag = formatAdminAuthDiagnostic(redirectErr);
+            setFirebaseAuthDiagnostic(diag);
+            onShowToast(diag.fullMessage);
+            return;
+          }
+        }
+
+        const code = extractFirebaseAuthCode(popupErr);
+        if (code === 'auth/popup-closed-by-user') {
+          onShowToast('Ventana de Google cerrada antes de completar el inicio de sesión.');
+          return;
+        }
+
+        const diag = formatAdminAuthDiagnostic(popupErr);
+        setFirebaseAuthDiagnostic(diag);
+        onShowToast(diag.fullMessage);
       }
     } finally {
       setFirebaseAuthBusy(false);
@@ -1624,16 +1730,19 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 Gestión centralizada de licencias PRO, usuarios, gráficas, precios de referencia, avisos y video tutoriales
               </p>
               <div className="mt-2 flex flex-wrap items-center gap-2.5 text-[11.5px] text-slate-400">
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 font-semibold">
+                <span
+                  id="admin-cloud-status-badge"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 font-semibold"
+                >
                   <span
-                    className={`w-2 h-2 rounded-full ${cloudConnected ? 'bg-emerald-400' : 'bg-amber-400'}`}
+                    className={`w-2 h-2 rounded-full ${isAdminCloudOnline ? 'bg-emerald-400' : 'bg-amber-400'}`}
                     aria-hidden="true"
                   />
-                  {cloudConnected
-                    ? 'Conectado a Firestore'
-                    : isFirebaseAdminSignedIn
-                      ? 'Sincronizando Firestore...'
-                      : 'Modo Local'}
+                  {isAdminCloudOnline
+                    ? cloudRefreshing
+                      ? 'Sincronizando Nube...'
+                      : 'Conectado en Nube'
+                    : 'Modo Local'}
                 </span>
                 {firebaseUser?.email && (
                   <span className="text-slate-300 font-medium truncate max-w-[220px]">
@@ -1695,6 +1804,40 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
             </button>
           </div>
         </div>
+
+        {firebaseAuthDiagnostic && (
+          <div
+            id="admin-google-auth-diagnostic"
+            role="alert"
+            className="mt-3.5 rounded-xl border border-rose-500/50 bg-rose-950/60 px-3.5 py-3 text-[12px] text-rose-100 flex items-start justify-between gap-3"
+          >
+            <div className="min-w-0 space-y-1">
+              <div className="flex flex-wrap items-center gap-2 font-extrabold text-rose-100">
+                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" aria-hidden="true" />
+                <span>{firebaseAuthDiagnostic.summary}</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold">
+                <span className="px-2 py-0.5 rounded-md bg-rose-900/80 border border-rose-500/40 text-rose-100 mono">
+                  Código: {firebaseAuthDiagnostic.code}
+                </span>
+                <span className="px-2 py-0.5 rounded-md bg-slate-900/80 border border-slate-700 text-sky-200 mono break-all">
+                  Dominio: {firebaseAuthDiagnostic.hostname}
+                </span>
+              </div>
+              <p className="m-0 text-[11.5px] text-rose-200/90 leading-snug">
+                {firebaseAuthDiagnostic.detail}
+              </p>
+            </div>
+            <button
+              type="button"
+              aria-label="Cerrar diagnóstico de Firebase"
+              onClick={() => setFirebaseAuthDiagnostic(null)}
+              className="px-2 py-1 rounded-lg bg-rose-900/60 hover:bg-rose-800/80 text-rose-100 text-[11px] font-bold cursor-pointer shrink-0"
+            >
+              Cerrar
+            </button>
+          </div>
+        )}
 
         {/* Acción Principal Compacta: Generar Claves PRO (naranja translúcido, navegación directa) */}
         <div className="mt-4 pt-3.5 border-t border-slate-800 flex flex-col gap-2.5">

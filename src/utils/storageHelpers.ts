@@ -69,7 +69,8 @@ export const KEYS = {
 
 export const REFERRED_BY_ID_STORAGE_KEY = 'referred_by_id';
 
-export type AppTheme = 'light' | 'dark';
+export type ResolvedAppTheme = 'light' | 'dark';
+export type AppTheme = 'light' | 'dark' | 'system';
 
 export interface LicenciaState {
   active: boolean;
@@ -1037,15 +1038,44 @@ export function formatMXN(val: number): string {
   })}`;
 }
 
-export function loadTheme(): AppTheme {
-  if (typeof localStorage === 'undefined') return 'dark';
-  const stored = localStorage.getItem(KEYS.THEME);
-  return stored === 'light' || stored === 'dark' ? stored : 'dark';
+export function getSystemPrefersDark(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    return true;
+  }
+  try {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  } catch {
+    return true;
+  }
 }
 
-export function saveTheme(theme: AppTheme): void {
-  if (typeof localStorage === 'undefined') return;
-  localStorage.setItem(KEYS.THEME, theme);
+export function resolveAppTheme(
+  preference: AppTheme,
+  systemPrefersDark: boolean = getSystemPrefersDark()
+): ResolvedAppTheme {
+  if (preference === 'light') return 'light';
+  if (preference === 'dark') return 'dark';
+  return systemPrefersDark ? 'dark' : 'light';
+}
+
+export function loadTheme(storage?: Pick<Storage, 'getItem'>): AppTheme {
+  const store =
+    storage ?? (typeof localStorage !== 'undefined' ? localStorage : null);
+  if (!store) return 'dark';
+  const stored = store.getItem(KEYS.THEME);
+  return stored === 'light' || stored === 'dark' || stored === 'system'
+    ? stored
+    : 'dark';
+}
+
+export function saveTheme(
+  theme: AppTheme,
+  storage?: Pick<Storage, 'setItem'>
+): void {
+  const store =
+    storage ?? (typeof localStorage !== 'undefined' ? localStorage : null);
+  if (!store) return;
+  store.setItem(KEYS.THEME, theme);
 }
 
 const LEGACY_ADMIN_STORAGE_KEYS = [

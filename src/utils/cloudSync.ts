@@ -52,7 +52,7 @@ import {
   saveTutorialVideosCache,
   type AdminKeyRecord,
   type AppSkin,
-  type AppTheme,
+  type ResolvedAppTheme,
   type CloudAccountBackupPayload,
   type LicenciaState,
   type TutorialVideoCategory,
@@ -2513,7 +2513,7 @@ export async function syncTallerProfileToCloud(params: {
   responsable: string;
   tel: string;
   termsAcceptedAt?: number | null;
-  preferredTheme?: AppTheme;
+  preferredTheme?: ResolvedAppTheme;
   preferredSkin?: AppSkin;
   preferredSkinVariant?: string;
 }): Promise<void> {

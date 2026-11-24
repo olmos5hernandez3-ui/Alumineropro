@@ -1,5 +1,21 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Bell, Check, ChevronDown, ChevronUp, CloudUpload, Crown, Lock, Palette, RefreshCw, Scale, WifiOff } from 'lucide-react';
+import {
+  Bell,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  CloudUpload,
+  Crown,
+  LayoutGrid,
+  Lock,
+  Monitor,
+  Moon,
+  Palette,
+  RefreshCw,
+  Scale,
+  Sun,
+  WifiOff,
+} from 'lucide-react';
 import {
   APP_VERSION,
   formatLicenseCountdownBadge,
@@ -12,6 +28,7 @@ import {
   getSkinPlanRequirementLabel,
   isSkinUnlockedForLicense,
   LicenciaState,
+  ResolvedAppTheme,
 } from '../utils/storageHelpers';
 import { AlumineroProMetallicLogo } from './MetallicIcons';
 
@@ -37,7 +54,7 @@ interface TopBarProps {
   proActive: boolean;
   licencia: LicenciaState | null;
   trialExpiresAt: number | null;
-  theme: AppTheme;
+  theme: ResolvedAppTheme;
   isOnline?: boolean;
   pendingSyncCount?: number;
   syncingOfflineQueue?: boolean;
@@ -335,7 +352,8 @@ interface SideDrawerProps {
   isTrialActive?: boolean;
   licencia?: LicenciaState | null;
   deviceId: string;
-  theme: AppTheme;
+  theme: ResolvedAppTheme;
+  themePreference?: AppTheme;
   skin: AppSkin;
   skinVariant?: AppSkinVariant;
   cloudAccountEmail?: string | null;
@@ -344,6 +362,7 @@ interface SideDrawerProps {
   googleAuthLoading?: boolean;
   googleAuthError?: string | null;
   pendingSyncCount?: number;
+  onSelectTheme?: (theme: AppTheme) => void;
   onToggleTheme: () => void;
   onSelectSkin: (skin: AppSkin) => void;
   onSelectSkinVariant?: (variant: AppSkinVariant) => void;
@@ -366,6 +385,9 @@ interface SideDrawerProps {
   onOpenVideos?: () => void;
   onOpenAdminSecret?: () => void;
   tallerOnboardingComplete?: boolean;
+  canOrganizeHomeMenu?: boolean;
+  homeReorderMode?: boolean;
+  onToggleHomeReorderMode?: (enabled: boolean) => void;
 }
 
 interface SkinOptionMeta {
@@ -434,6 +456,7 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
   licencia = null,
   deviceId,
   theme,
+  themePreference,
   skin,
   cloudAccountEmail = null,
   isCloudBackupEligible = false,
@@ -441,6 +464,7 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
   googleAuthLoading = false,
   googleAuthError = null,
   pendingSyncCount = 0,
+  onSelectTheme,
   onToggleTheme,
   onSelectSkin,
   onConnectGoogle,
@@ -462,6 +486,9 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
   onOpenVideos,
   onOpenAdminSecret,
   tallerOnboardingComplete = true,
+  canOrganizeHomeMenu = false,
+  homeReorderMode = false,
+  onToggleHomeReorderMode,
 }) => {
   const [skinsExpanded, setSkinsExpanded] = useState(false);
   const [missionExpanded, setMissionExpanded] = useState(false);
@@ -586,22 +613,145 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
           </button>
         </div>
 
-        {/* 1. Cambiar Tema (Modo Claro / Modo Oscuro) */}
-        <button
-          type="button"
-          id="btn-drawer-theme"
-          onClick={onToggleTheme}
-          className={`flex items-center justify-between w-full min-h-[48px] px-3.5 py-2.5 rounded-xl border text-[13.5px] font-extrabold text-left cursor-pointer transition-colors ${itemNeutralClass}`}
+        {/* 1. Apariencia / Tema (Modo Oscuro, Modo Claro, Seguir el sistema) */}
+        <div
+          id="drawer-theme-selector"
+          role="radiogroup"
+          aria-label="Tema de apariencia"
+          className={`rounded-xl border p-2.5 shrink-0 ${
+            isDark
+              ? 'border-sky-400/25 bg-slate-950/35'
+              : 'border-slate-200 bg-slate-50'
+          }`}
         >
-          <span>{isDark ? '☀️ Modo Claro' : '🌙 Modo Oscuro'}</span>
-          <span
-            className={`px-2.5 py-0.5 rounded-lg text-[11px] font-extrabold ${
-              isDark ? 'bg-white/15 text-sky-200' : 'bg-slate-200 text-slate-800'
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <span className={`text-[10.5px] font-extrabold uppercase tracking-wider ${subTextClass}`}>
+              Tema de la aplicación
+            </span>
+            <span
+              id="drawer-theme-active-badge"
+              className={`px-2 py-0.5 rounded-md text-[10.5px] font-extrabold ${
+                isDark ? 'bg-white/10 text-sky-200' : 'bg-slate-200 text-slate-800'
+              }`}
+            >
+              {(themePreference ?? theme) === 'system'
+                ? `Sistema (${isDark ? 'Oscuro' : 'Claro'})`
+                : isDark
+                  ? 'Oscuro'
+                  : 'Claro'}
+            </span>
+          </div>
+          <div className="grid grid-cols-3 gap-1.5">
+            {(
+              [
+                { id: 'dark', label: 'Modo Oscuro', Icon: Moon },
+                { id: 'light', label: 'Modo Claro', Icon: Sun },
+                { id: 'system', label: 'Seguir el sistema', Icon: Monitor },
+              ] as const
+            ).map(({ id, label, Icon }) => {
+              const selected = (themePreference ?? theme) === id;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  id={`btn-drawer-theme-${id}`}
+                  onClick={() => {
+                    if (onSelectTheme) {
+                      onSelectTheme(id);
+                    } else if (id !== theme) {
+                      onToggleTheme();
+                    }
+                  }}
+                  className={`min-h-[52px] px-1.5 py-2 rounded-lg border text-[11px] font-extrabold leading-tight cursor-pointer flex flex-col items-center justify-center gap-1 text-center transition-colors ${
+                    selected
+                      ? isDark
+                        ? 'border-sky-400 bg-blue-600/90 text-white shadow-sm'
+                        : 'border-blue-600 bg-blue-600 text-white shadow-sm'
+                      : isDark
+                        ? 'border-white/15 bg-white/5 text-slate-200 hover:bg-white/10'
+                        : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  <Icon className="w-4 h-4 shrink-0" aria-hidden="true" />
+                  <span>{label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* 1.1 Configuración de Pantalla (Exclusivo Plan 1 Año PRO) */}
+        {canOrganizeHomeMenu && onToggleHomeReorderMode && (
+          <div
+            id="drawer-screen-config-section"
+            className={`rounded-xl border p-2.5 shrink-0 ${
+              isDark
+                ? 'border-emerald-400/35 bg-emerald-950/25'
+                : 'border-emerald-200 bg-emerald-50/70'
             }`}
           >
-            Actual: {isDark ? 'Oscuro' : 'Claro'}
-          </span>
-        </button>
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <span className={`inline-flex items-center gap-1.5 text-[10.5px] font-extrabold uppercase tracking-wider ${
+                isDark ? 'text-emerald-300' : 'text-emerald-800'
+              }`}>
+                <LayoutGrid className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                <span>Configuración de Pantalla</span>
+              </span>
+              <span
+                className={`px-1.5 py-0.5 rounded-md text-[9.5px] font-extrabold ${
+                  isDark ? 'bg-emerald-500/25 text-emerald-200 border border-emerald-400/40' : 'bg-emerald-600 text-white'
+                }`}
+              >
+                1 Año PRO
+              </span>
+            </div>
+            <button
+              type="button"
+              id="btn-drawer-organize-cards"
+              role="switch"
+              aria-checked={homeReorderMode}
+              onClick={() => onToggleHomeReorderMode(!homeReorderMode)}
+              className={`w-full min-h-[46px] px-3 py-2 rounded-lg border text-left cursor-pointer flex items-center justify-between gap-3 transition-colors ${
+                homeReorderMode
+                  ? isDark
+                    ? 'border-emerald-400/75 bg-emerald-600/30 text-white'
+                    : 'border-emerald-500 bg-emerald-100 text-emerald-950'
+                  : isDark
+                    ? 'border-white/15 bg-white/5 hover:bg-white/10 text-white'
+                    : 'border-slate-300 bg-white hover:bg-slate-50 text-slate-900'
+              }`}
+            >
+              <div className="min-w-0 flex-1">
+                <span className="block text-[13px] font-extrabold leading-tight">
+                  Organizar apartados
+                </span>
+                <span className={`block text-[10.5px] leading-snug mt-0.5 ${subTextClass}`}>
+                  {homeReorderMode
+                    ? 'Edición activa: arrastra tus tarjetas en inicio'
+                    : 'Desbloquea para mover tarjetas sin arrastres accidentales'}
+                </span>
+              </div>
+              <span
+                aria-hidden="true"
+                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors ${
+                  homeReorderMode
+                    ? 'bg-emerald-500 border-emerald-400'
+                    : isDark
+                      ? 'bg-slate-700 border-slate-500'
+                      : 'bg-slate-300 border-slate-400'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${
+                    homeReorderMode ? 'translate-x-5' : 'translate-x-1'
+                  }`}
+                />
+              </span>
+            </button>
+          </div>
+        )}
 
         {/* 1.2 Selector rápido Básica vs Navideña */}
         <div className={`rounded-xl border p-2.5 shrink-0 ${isDark ? 'border-sky-400/25 bg-slate-950/35' : 'border-slate-200 bg-slate-50'}`}>

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { GripVertical, RotateCcw, ArrowUpDown, Check, ChevronLeft, ChevronRight, ArrowRightLeft } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { GripVertical, RotateCcw, Lock, ChevronLeft, ChevronRight, ArrowRightLeft } from 'lucide-react';
 import {
   AdminMessageItem,
   CATALOGO_PERFILES,
@@ -41,7 +42,9 @@ interface Props {
   unreadAdminMessages?: AdminMessageItem[];
   menuTier?: HomeMenuTier;
   menuLayout?: HomeMenuLayout;
+  reorderMode?: boolean;
   onChangeMenuLayout?: (next: HomeMenuLayout) => void;
+  onSaveAndLockLayout?: (layout: HomeMenuLayout) => void;
   onResetMenuLayout?: () => void;
   onMarkAdminMessageRead?: (id: string) => void;
   onClaimColleaguePromo?: () => void;
@@ -152,7 +155,9 @@ export const MainMenuView: React.FC<Props> = ({
   unreadAdminMessages = [],
   menuTier,
   menuLayout,
+  reorderMode = false,
   onChangeMenuLayout,
+  onSaveAndLockLayout,
   onResetMenuLayout,
   onMarkAdminMessageRead,
   onClaimColleaguePromo,
@@ -169,6 +174,7 @@ export const MainMenuView: React.FC<Props> = ({
   const effectiveTier: HomeMenuTier = menuTier ?? (proActive ? 'pro_paged' : 'free');
   const isPaged = effectiveTier === 'pro_paged' || effectiveTier === 'pro_annual';
   const canReorder = Boolean(effectiveTier === 'pro_annual' && onChangeMenuLayout);
+  const isEditModeActive = Boolean(canReorder && reorderMode);
 
   const effectiveLayout = useMemo<HomeMenuLayout>(
     () => (effectiveTier === 'pro_annual' ? normalizeHomeMenuLayout(menuLayout) : DEFAULT_HOME_MENU_LAYOUT),
@@ -180,7 +186,6 @@ export const MainMenuView: React.FC<Props> = ({
   );
 
   const [activePage, setActivePage] = useState<0 | 1>(0);
-  const [reorderMode, setReorderMode] = useState(false);
   const [dragState, setDragState] = useState<ActiveDragState | null>(null);
   const [dropTarget, setDropTarget] = useState<DropTargetState | null>(null);
 
@@ -206,14 +211,24 @@ export const MainMenuView: React.FC<Props> = ({
 
   const suppressClickUntilRef = useRef<number>(0);
 
-  // Si cambia el plan a Gratis o 30d/90d, desactivar estado de arrastre/edición
+  const clearPendingPress = useCallback(() => {
+    const p = pendingPressRef.current;
+    if (p && p.longPressTimer !== null) {
+      window.clearTimeout(p.longPressTimer);
+    }
+    pendingPressRef.current = null;
+  }, []);
+
+  // Si se desactiva el modo edición o cambia el plan, limpiar cualquier arrastre en curso
   useEffect(() => {
-    if (!canReorder) {
-      setReorderMode(false);
+    if (!isEditModeActive) {
+      clearPendingPress();
+      dragStateRef.current = null;
+      dropTargetRef.current = null;
       setDragState(null);
       setDropTarget(null);
     }
-  }, [canReorder]);
+  }, [isEditModeActive, clearPendingPress]);
 
   useEffect(() => {
     if (!isPaged) {
@@ -226,7 +241,7 @@ export const MainMenuView: React.FC<Props> = ({
   }, []);
 
   const handleCarouselTouchStart = (e: React.TouchEvent) => {
-    if (!isPaged || dragStateRef.current || e.touches.length !== 1) return;
+    if (!isPaged || isEditModeActive || dragStateRef.current || e.touches.length !== 1) return;
     swipeStartRef.current = {
       x: e.touches[0].clientX,
       y: e.touches[0].clientY,
@@ -234,7 +249,7 @@ export const MainMenuView: React.FC<Props> = ({
   };
 
   const handleCarouselTouchEnd = (e: React.TouchEvent) => {
-    if (!isPaged || dragStateRef.current || !swipeStartRef.current || e.changedTouches.length === 0) {
+    if (!isPaged || isEditModeActive || dragStateRef.current || !swipeStartRef.current || e.changedTouches.length === 0) {
       swipeStartRef.current = null;
       return;
     }
@@ -264,13 +279,7 @@ export const MainMenuView: React.FC<Props> = ({
     };
   }, [Boolean(dragState)]);
 
-  const clearPendingPress = useCallback(() => {
-    const p = pendingPressRef.current;
-    if (p && p.longPressTimer !== null) {
-      window.clearTimeout(p.longPressTimer);
-    }
-    pendingPressRef.current = null;
-  }, []);
+  // Nota: clearPendingPress está declarado arriba para el efecto de limpieza de edición
 
   const resolveDropTargetAtPoint = useCallback(
     (clientX: number, clientY: number, draggingId: HomeMenuCardId): DropTargetState | null => {
@@ -362,7 +371,7 @@ export const MainMenuView: React.FC<Props> = ({
   );
 
   useEffect(() => {
-    if (!canReorder) return;
+    if (!isEditModeActive) return;
 
     const handlePointerMove = (e: PointerEvent) => {
       const active = dragStateRef.current;
@@ -460,7 +469,7 @@ export const MainMenuView: React.FC<Props> = ({
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onCancel);
     };
-  }, [canReorder, clearPendingPress, onChangeMenuLayout, resolveDropTargetAtPoint]);
+  }, [isEditModeActive, clearPendingPress, onChangeMenuLayout, resolveDropTargetAtPoint]);
 
   useEffect(() => {
     return () => clearPendingPress();
@@ -471,7 +480,7 @@ export const MainMenuView: React.FC<Props> = ({
     e: React.PointerEvent,
     immediate: boolean
   ) => {
-    if (!canReorder) return;
+    if (!isEditModeActive) return;
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     if (immediate) {
       e.preventDefault();
@@ -532,7 +541,7 @@ export const MainMenuView: React.FC<Props> = ({
     if (dragStateRef.current || Date.now() < suppressClickUntilRef.current) {
       return;
     }
-    if (reorderMode && canReorder) {
+    if (isEditModeActive) {
       return;
     }
     action();
@@ -576,7 +585,7 @@ export const MainMenuView: React.FC<Props> = ({
             className="group !m-0 w-full"
           >
             <MetallicSetSquareIcon size={46} className="shrink-0 transition-transform duration-200 group-hover:scale-105" />
-            <span style={{ flex: 1, minWidth: 0 }} className={canReorder ? 'pr-7' : ''}>
+            <span style={{ flex: 1, minWidth: 0 }} className={isEditModeActive ? 'pr-7' : ''}>
               <span className="block text-[17.5px] sm:text-[19px] font-extrabold text-slate-900 dark:text-white tracking-[-0.015em] leading-tight">
                 Levantamiento Rápido
               </span>
@@ -968,7 +977,7 @@ export const MainMenuView: React.FC<Props> = ({
                 </span>
               </div>
             </div>
-            <span className={`metal-emerald-pill inline-flex items-center justify-center px-3 py-1 rounded-full text-[10.5px] font-extrabold leading-none whitespace-nowrap shrink-0 ${canReorder ? 'mr-7' : ''}`}>
+            <span className={`metal-emerald-pill inline-flex items-center justify-center px-3 py-1 rounded-full text-[10.5px] font-extrabold leading-none whitespace-nowrap shrink-0 ${isEditModeActive ? 'mr-7' : ''}`}>
               Academia
             </span>
           </button>
@@ -1013,14 +1022,18 @@ export const MainMenuView: React.FC<Props> = ({
                 data-menu-section={sectionId}
                 data-menu-index={idx}
                 onPointerDown={
-                  canReorder
-                    ? (e) => startPendingDrag(cardId, e, reorderMode)
+                  isEditModeActive
+                    ? (e) => startPendingDrag(cardId, e, true)
                     : undefined
                 }
                 className={`relative rounded-[18px] transition-all duration-150 ${
                   isFullWidth ? 'col-span-2' : 'col-span-1'
                 } ${cardId === 'catalogo' ? 'mb-1.5' : ''} ${
-                  canReorder && reorderMode ? 'touch-none select-none cursor-grab active:cursor-grabbing ring-1 ring-sky-400/50' : ''
+                  isEditModeActive
+                    ? 'touch-none select-none cursor-grab active:cursor-grabbing ring-1 ring-emerald-400/60'
+                    : ''
+                } ${
+                  isEditModeActive && !isDraggingThis && !isOverThis ? 'ap-card-reorder-wiggle' : ''
                 } ${
                   isDraggingThis
                     ? 'opacity-35 scale-[0.97] ring-2 ring-dashed ring-sky-400'
@@ -1031,23 +1044,19 @@ export const MainMenuView: React.FC<Props> = ({
               >
                 {renderCardButton(cardId)}
 
-                {/* Manija de arrastre discreta SOLO visible en versión PRO */}
-                {canReorder && (
+                {/* Manija de arrastre visible SOLO cuando el modo edición "Organizar apartados" está activo */}
+                {isEditModeActive && (
                   <button
                     type="button"
                     data-drag-handle={cardId}
                     aria-label={`Arrastrar ${CARD_DISPLAY_LABELS[cardId]}`}
-                    title="Arrastra para mover o cambiar de sección"
+                    title="Arrastra para mover o cambiar de página"
                     onPointerDown={(e) => startPendingDrag(cardId, e, true)}
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
                     }}
-                    className={`absolute top-2 right-2 z-20 inline-flex items-center justify-center w-6 h-6 rounded-lg border touch-none select-none cursor-grab active:cursor-grabbing transition-all ${
-                      reorderMode
-                        ? 'border-emerald-400/80 bg-emerald-600/85 text-white shadow-md'
-                        : 'border-white/15 bg-slate-950/60 hover:bg-slate-900/85 text-slate-200/85 opacity-80 hover:opacity-100'
-                    }`}
+                    className="absolute top-2 right-2 z-20 inline-flex items-center justify-center w-6 h-6 rounded-lg border border-emerald-400/85 bg-emerald-600/90 text-white shadow-md touch-none select-none cursor-grab active:cursor-grabbing transition-transform"
                   >
                     <GripVertical className="w-3.5 h-3.5" aria-hidden="true" />
                   </button>
@@ -1066,8 +1075,8 @@ export const MainMenuView: React.FC<Props> = ({
       id="view-menu"
       data-pro-active={proActive ? 'true' : 'false'}
       data-reorder-enabled={canReorder ? 'true' : 'false'}
-      data-reorder-mode={reorderMode ? 'true' : 'false'}
-      className={`screen-animate pb-28 sm:pb-14 ${dragState || reorderMode ? 'select-none' : ''}`}
+      data-reorder-mode={isEditModeActive ? 'true' : 'false'}
+      className={`screen-animate ${isEditModeActive ? 'pb-36 sm:pb-28 select-none' : 'pb-28 sm:pb-14'} ${dragState ? 'select-none' : ''}`}
     >
       {/* Avisos / Mensajes del Administrador (sin leer) */}
       {unreadAdminMessages.length > 0 && (
@@ -1129,104 +1138,62 @@ export const MainMenuView: React.FC<Props> = ({
           </span>
         )}
 
-        {/* Controles de paginación (Planes 30d, 90d y 1 Año PRO) y reorganización (exclusivo 1 Año / Permanente) */}
-        {(isPaged || canReorder) && (
+        {/* Controles de paginación (Planes 30d, 90d y 1 Año PRO) */}
+        {isPaged && (
           <div
             id="menu-pro-controls-bar"
             data-menu-tier={effectiveTier}
             className="mt-1.5 w-full flex flex-wrap items-center justify-center gap-2"
           >
-            {isPaged && (
-              <div
-                id="menu-page-switcher"
-                className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full border border-slate-300 dark:border-[#4A6072]/70 bg-white/90 dark:bg-[#0D1E2B]/90 shadow-xs"
+            <div
+              id="menu-page-switcher"
+              className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full border border-slate-300 dark:border-[#4A6072]/70 bg-white/90 dark:bg-[#0D1E2B]/90 shadow-xs"
+            >
+              <button
+                type="button"
+                id="btn-menu-page-prev"
+                onClick={handleTogglePage}
+                aria-label="Página anterior"
+                className="w-7 h-7 rounded-full inline-flex items-center justify-center bg-slate-100 dark:bg-white/10 hover:bg-slate-200 dark:hover:bg-white/20 text-slate-700 dark:text-sky-200 cursor-pointer transition-all active:scale-95"
               >
-                <button
-                  type="button"
-                  id="btn-menu-page-prev"
-                  onClick={handleTogglePage}
-                  aria-label="Página anterior"
-                  className="w-7 h-7 rounded-full inline-flex items-center justify-center bg-slate-100 dark:bg-white/10 hover:bg-slate-200 dark:hover:bg-white/20 text-slate-700 dark:text-sky-200 cursor-pointer transition-all active:scale-95"
-                >
-                  <ChevronLeft className="w-4 h-4" aria-hidden="true" />
-                </button>
-                <button
-                  type="button"
-                  id="btn-menu-page-1"
-                  onClick={() => setActivePage(0)}
-                  aria-pressed={activePage === 0}
-                  className={`px-2.5 py-1 rounded-full text-[11px] font-extrabold cursor-pointer transition-all ${
-                    activePage === 0
-                      ? 'bg-blue-600 text-white shadow-xs'
-                      : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10'
-                  }`}
-                >
-                  Pág. 1 · Principal
-                </button>
-                <button
-                  type="button"
-                  id="btn-menu-page-2"
-                  onClick={() => setActivePage(1)}
-                  aria-pressed={activePage === 1}
-                  className={`px-2.5 py-1 rounded-full text-[11px] font-extrabold cursor-pointer transition-all ${
-                    activePage === 1
-                      ? 'bg-blue-600 text-white shadow-xs'
-                      : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10'
-                  }`}
-                >
-                  Pág. 2 · Taller
-                </button>
-                <button
-                  type="button"
-                  id="btn-menu-page-next"
-                  onClick={handleTogglePage}
-                  aria-label="Página siguiente"
-                  className="w-7 h-7 rounded-full inline-flex items-center justify-center bg-slate-100 dark:bg-white/10 hover:bg-slate-200 dark:hover:bg-white/20 text-slate-700 dark:text-sky-200 cursor-pointer transition-all active:scale-95"
-                >
-                  <ChevronRight className="w-4 h-4" aria-hidden="true" />
-                </button>
-              </div>
-            )}
-
-            {canReorder && (
-              <div id="menu-pro-reorder-bar" className="inline-flex items-center gap-1.5 flex-wrap justify-center">
-                <button
-                  type="button"
-                  id="btn-menu-toggle-reorder"
-                  onClick={() => setReorderMode((prev) => !prev)}
-                  aria-pressed={reorderMode}
-                  className={`inline-flex items-center gap-1.5 min-h-[32px] px-3 py-1 rounded-full border text-[11px] font-extrabold cursor-pointer transition-all active:scale-95 ${
-                    reorderMode
-                      ? 'border-emerald-400 bg-emerald-600 text-white shadow-sm'
-                      : 'border-slate-300 dark:border-[#4A6072]/70 bg-white/85 dark:bg-[#0D1E2B]/85 text-slate-700 dark:text-sky-200 hover:border-sky-400'
-                  }`}
-                >
-                  {reorderMode ? (
-                    <>
-                      <Check className="w-3.5 h-3.5" aria-hidden="true" />
-                      <span>Listo (arrastra tarjetas)</span>
-                    </>
-                  ) : (
-                    <>
-                      <ArrowUpDown className="w-3.5 h-3.5" aria-hidden="true" />
-                      <span>Ordenar (1 Año PRO)</span>
-                    </>
-                  )}
-                </button>
-
-                {isCustomLayout && onResetMenuLayout && (
-                  <button
-                    type="button"
-                    id="btn-menu-reset-layout"
-                    onClick={onResetMenuLayout}
-                    className="inline-flex items-center gap-1 min-h-[32px] px-2.5 py-1 rounded-full border border-slate-300 dark:border-white/15 bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/15 text-slate-700 dark:text-slate-200 text-[11px] font-bold cursor-pointer transition-all active:scale-95"
-                  >
-                    <RotateCcw className="w-3 h-3" aria-hidden="true" />
-                    <span>Restaurar</span>
-                  </button>
-                )}
-              </div>
-            )}
+                <ChevronLeft className="w-4 h-4" aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                id="btn-menu-page-1"
+                onClick={() => setActivePage(0)}
+                aria-pressed={activePage === 0}
+                className={`px-2.5 py-1 rounded-full text-[11px] font-extrabold cursor-pointer transition-all ${
+                  activePage === 0
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10'
+                }`}
+              >
+                Pág. 1 · Principal
+              </button>
+              <button
+                type="button"
+                id="btn-menu-page-2"
+                onClick={() => setActivePage(1)}
+                aria-pressed={activePage === 1}
+                className={`px-2.5 py-1 rounded-full text-[11px] font-extrabold cursor-pointer transition-all ${
+                  activePage === 1
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10'
+                }`}
+              >
+                Pág. 2 · Taller
+              </button>
+              <button
+                type="button"
+                id="btn-menu-page-next"
+                onClick={handleTogglePage}
+                aria-label="Página siguiente"
+                className="w-7 h-7 rounded-full inline-flex items-center justify-center bg-slate-100 dark:bg-white/10 hover:bg-slate-200 dark:hover:bg-white/20 text-slate-700 dark:text-sky-200 cursor-pointer transition-all active:scale-95"
+              >
+                <ChevronRight className="w-4 h-4" aria-hidden="true" />
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -1382,28 +1349,28 @@ export const MainMenuView: React.FC<Props> = ({
           onTouchEnd={handleCarouselTouchEnd}
           className="relative"
         >
-          {/* Zona interactiva para soltar y mover una tarjeta a la otra página (solo 1 Año / Permanente PRO) */}
-          {canReorder && (dragState || reorderMode) && (() => {
+          {/* Zona interactiva para soltar y mover una tarjeta a la otra página (solo en modo edición 1 Año PRO) */}
+          {isEditModeActive && (() => {
             const targetSec: HomeMenuSectionId = activePage === 0 ? 'herramientas' : 'principal';
-            const targetLabel = activePage === 0 ? 'Página 2 · Herramientas' : 'Página 1 · Principal';
+            const targetLabel = activePage === 0 ? 'Página 2 · Taller' : 'Página 1 · Principal';
             const isHovering = Boolean(dragState && dropTarget?.section === targetSec);
             return (
               <div
                 id="menu-cross-page-dropzone"
                 data-cross-page-target={targetSec}
-                className={`mb-3 px-4 py-3 rounded-2xl border-2 border-dashed flex items-center justify-center gap-2 text-[12.5px] font-extrabold transition-all ${
+                className={`mb-3 px-4 py-3 rounded-2xl border-2 border-dashed flex items-center justify-center gap-2 text-[12px] font-extrabold transition-all ${
                   isHovering
-                    ? 'border-emerald-400 bg-emerald-500/25 text-emerald-100 scale-[1.01] shadow-lg'
+                    ? 'border-emerald-400 bg-emerald-500/25 text-emerald-950 dark:text-emerald-100 scale-[1.01] shadow-lg'
                     : dragState
-                      ? 'border-sky-400/80 bg-sky-500/15 text-sky-100'
-                      : 'border-slate-500/40 bg-slate-800/40 text-slate-300'
+                      ? 'border-sky-400/80 bg-sky-500/15 text-sky-950 dark:text-sky-100'
+                      : 'border-emerald-400/55 bg-emerald-500/10 text-emerald-900 dark:text-emerald-100'
                 }`}
               >
                 <ArrowRightLeft className="w-4 h-4 shrink-0" aria-hidden="true" />
                 <span>
                   {dragState
                     ? `Soltar aquí para mover a ${targetLabel}`
-                    : `Mantén presionada cualquier tarjeta y arrástrala aquí para moverla a ${targetLabel}`}
+                    : `Arrastra cualquier tarjeta aquí para moverla a ${targetLabel}`}
                 </span>
               </div>
             );
@@ -1451,21 +1418,58 @@ export const MainMenuView: React.FC<Props> = ({
         </div>
       )}
 
-      {/* Vista fantasma flotante durante arrastre PRO */}
-      {dragState && (
-        <div
-          id="menu-drag-ghost"
-          aria-hidden="true"
-          style={{
-            left: dragState.x,
-            top: dragState.y,
-          }}
-          className="fixed z-[80] pointer-events-none -translate-x-1/2 -translate-y-1/2 px-4 py-2.5 rounded-2xl border-2 border-emerald-400 bg-[#0A1E2E]/95 text-white shadow-[0_14px_34px_rgba(0,0,0,0.7)] flex items-center gap-2 text-[13px] font-extrabold whitespace-nowrap"
-        >
-          <GripVertical className="w-4 h-4 text-emerald-300 shrink-0" />
-          <span>{CARD_DISPLAY_LABELS[dragState.cardId]}</span>
-        </div>
-      )}
+      {/* Barra flotante discreta abajo en modo edición (portal al body para position:fixed real) */}
+      {isEditModeActive &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            id="menu-reorder-floating-bar"
+            role="region"
+            aria-label="Controles de organización de apartados"
+            className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[9960] max-w-[calc(100vw-24px)] px-2.5 py-2 rounded-2xl border border-emerald-400/75 bg-slate-950/94 backdrop-blur-md shadow-[0_14px_36px_rgba(0,0,0,0.68)] flex items-center gap-2"
+          >
+            {isCustomLayout && onResetMenuLayout && (
+              <button
+                type="button"
+                id="btn-menu-reset-layout"
+                onClick={onResetMenuLayout}
+                className="inline-flex items-center gap-1 min-h-[38px] px-3 py-1.5 rounded-xl border border-white/20 bg-white/10 hover:bg-white/20 text-slate-100 text-[12px] font-bold cursor-pointer whitespace-nowrap transition-transform active:scale-95"
+              >
+                <RotateCcw className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                <span>Restaurar</span>
+              </button>
+            )}
+            <button
+              type="button"
+              id="btn-menu-save-lock-layout"
+              onClick={() => onSaveAndLockLayout?.(effectiveLayout)}
+              className="inline-flex items-center justify-center gap-1.5 min-h-[38px] px-4 py-1.5 rounded-xl border border-emerald-300/80 bg-emerald-600 hover:bg-emerald-500 text-white text-[12.5px] font-extrabold shadow-md cursor-pointer whitespace-nowrap transition-transform active:scale-95"
+            >
+              <Lock className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+              <span>Guardar y Bloquear</span>
+            </button>
+          </div>,
+          document.body
+        )}
+
+      {/* Vista fantasma flotante durante arrastre PRO (portal al body para coordenadas exactas) */}
+      {dragState &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            id="menu-drag-ghost"
+            aria-hidden="true"
+            style={{
+              left: dragState.x,
+              top: dragState.y,
+            }}
+            className="fixed z-[9970] pointer-events-none -translate-x-1/2 -translate-y-1/2 px-4 py-2.5 rounded-2xl border-2 border-emerald-400 bg-[#0A1E2E]/95 text-white shadow-[0_14px_34px_rgba(0,0,0,0.7)] flex items-center gap-2 text-[13px] font-extrabold whitespace-nowrap"
+          >
+            <GripVertical className="w-4 h-4 text-emerald-300 shrink-0" />
+            <span>{CARD_DISPLAY_LABELS[dragState.cardId]}</span>
+          </div>,
+          document.body
+        )}
     </section>
   );
 };

@@ -51,6 +51,14 @@ function buildGoogleProvider(): GoogleAuthProvider {
   return provider;
 }
 
+export const googleProvider: GoogleAuthProvider = buildGoogleProvider();
+
+let lastRedirectOutcome: GoogleAuthFlowResult | null = null;
+
+export function getLastGoogleRedirectOutcome(): GoogleAuthFlowResult | null {
+  return lastRedirectOutcome;
+}
+
 export async function connectGoogleAccountWithFallback(): Promise<GoogleAuthFlowResult> {
   const provider = buildGoogleProvider();
   try {
@@ -88,17 +96,19 @@ export async function consumeGoogleRedirectResult(): Promise<GoogleAuthFlowResul
   try {
     const cred = await getRedirectResult(auth);
     if (cred?.user) {
-      return { status: 'signed_in', user: cred.user };
+      lastRedirectOutcome = { status: 'signed_in', user: cred.user };
+      return lastRedirectOutcome;
     }
     return null;
   } catch (err) {
     const info = formatFirebaseAuthError(err);
-    return {
+    lastRedirectOutcome = {
       status: 'error',
       code: info.code,
       message: info.message,
       isUnauthorizedDomain: info.isUnauthorizedDomain,
     };
+    return lastRedirectOutcome;
   }
 }
 
