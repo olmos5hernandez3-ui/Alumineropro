@@ -15,6 +15,9 @@ import {
   ReferencePricesDoc,
 } from './alumineroLogic';
 import type { CotizacionReminder } from './pushReminders';
+import { DEFAULT_CATALOG_VIGENCIA_LABEL } from './officialCatalog2026';
+
+export { DEFAULT_CATALOG_VIGENCIA_LABEL };
 
 export const KEYS = {
   DEVICE_ID: 'aluminero_device_id_v1',
@@ -65,6 +68,7 @@ export const KEYS = {
   REFERENCE_PRICES_CACHE: 'aluminero_reference_prices_cache_v1',
   ADMIN_MESSAGES_CACHE: 'aluminero_admin_messages_cache_v1',
   HOME_MENU_LAYOUT: 'aluminero_home_menu_layout_v1',
+  CATALOG_VIGENCIA_LABEL: 'aluminero_catalog_vigencia_v1',
 };
 
 export const REFERRED_BY_ID_STORAGE_KEY = 'referred_by_id';
@@ -151,6 +155,7 @@ export interface TallerConfig {
   tarifasBase: Partial<Record<LineaId, number>>;
   rellenoPreciosM2?: Record<string, number>;
   herrajesPrecios?: Record<string, number>;
+  inventarioPreciosUnitarios?: Record<string, number>;
   ajusteDescuentos?: Partial<AjusteDescuentosConfig>;
   optimizador?: Partial<OptimizadorConfig>;
   ivaPorDefecto?: boolean;
@@ -1664,15 +1669,14 @@ export const SKIN_VARIANTS_BY_SKIN: Record<
   basica: [],
   navidena: [],
   ejecutiva: [
-    { id: 'default', label: 'Azul', swatchBg: 'linear-gradient(135deg, #38BDF8, #0284C7)' },
-    { id: 'verde', label: 'Verde', swatchBg: 'linear-gradient(135deg, #34D399, #059669)' },
-    { id: 'naranja', label: 'Naranja', swatchBg: 'linear-gradient(135deg, #FB923C, #EA580C)' },
+    { id: 'default', label: 'Azul', swatchBg: '#1D4ED8' },
+    { id: 'naranja', label: 'Naranja', swatchBg: '#EA580C' },
   ],
   industrial: [
-    { id: 'default', label: 'Verde', swatchBg: 'linear-gradient(135deg, #10B981, #047857)' },
-    { id: 'plateada', label: 'Plata', swatchBg: 'linear-gradient(135deg, #E2E8F0, #64748B)' },
-    { id: 'dorada', label: 'Oro', swatchBg: 'linear-gradient(135deg, #FACC15, #B45309)' },
-    { id: 'bronce', label: 'Bronce', swatchBg: 'linear-gradient(135deg, #D98A4E, #7C3F19)' },
+    { id: 'default', label: 'Verde', swatchBg: '#15803D' },
+    { id: 'dorada', label: 'Oro', swatchBg: '#CA8A04' },
+    { id: 'plateada', label: 'Plata', swatchBg: '#64748B' },
+    { id: 'bronce', label: 'Bronce', swatchBg: '#9A5B2C' },
   ],
 };
 
@@ -2055,6 +2059,34 @@ export function saveHomeMenuLayout(layout: HomeMenuLayout): HomeMenuLayout {
   }
   return normalized;
 }
+
+export function normalizeCatalogVigenciaLabel(raw: unknown): string {
+  const clean = typeof raw === 'string' ? raw.trim().slice(0, 140) : '';
+  return clean || DEFAULT_CATALOG_VIGENCIA_LABEL;
+}
+
+export function loadCatalogVigenciaLabel(): string {
+  if (typeof localStorage === 'undefined') return DEFAULT_CATALOG_VIGENCIA_LABEL;
+  try {
+    const raw = localStorage.getItem(KEYS.CATALOG_VIGENCIA_LABEL);
+    return normalizeCatalogVigenciaLabel(raw);
+  } catch {
+    return DEFAULT_CATALOG_VIGENCIA_LABEL;
+  }
+}
+
+export function saveCatalogVigenciaLabel(label: string): string {
+  const normalized = normalizeCatalogVigenciaLabel(label);
+  if (typeof localStorage !== 'undefined') {
+    try {
+      localStorage.setItem(KEYS.CATALOG_VIGENCIA_LABEL, normalized);
+    } catch {
+      // ignorar
+    }
+  }
+  return normalized;
+}
+
 
 
 

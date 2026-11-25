@@ -4,6 +4,9 @@ export type LineaId =
   | '3'
   | '2'
   | 'europea'
+  | 'euroalum-2500'
+  | 'euroalum-2800'
+  | 'euroalum-3800'
   | 'cancel-bano'
   | 'mosq-fijo'
   | 'mosq-corredizo'
@@ -327,6 +330,33 @@ export const LINEAS_CONFIG: Record<LineaId, LineaConfig> = {
     pro: true,
     tarifaBaseDefault: 4100,
     toleranciasDefault: { marcoH: 0, hojaV: 5.4, hojaH: 6.0, vidAncho: 7.5, vidAlto: 11.5 },
+  },
+  'euroalum-2500': {
+    id: 'euroalum-2500',
+    categoria: 'ventanas',
+    nombre: 'EuroAlum 2500 (45°)',
+    desc: 'Indalum · Riel 1695 · Hoja 1699 · Traslape 1619',
+    pro: false,
+    tarifaBaseDefault: 3650,
+    toleranciasDefault: { marcoH: 0, hojaV: 6.3, hojaH: 0.4, vidAncho: 21.5, vidAlto: 17.0 },
+  },
+  'euroalum-2800': {
+    id: 'euroalum-2800',
+    categoria: 'ventanas',
+    nombre: 'EuroAlum 2800 (90°)',
+    desc: 'Indalum · Riel 12150/12151 · Jamba 12152 · Cerco 12154',
+    pro: false,
+    tarifaBaseDefault: 3450,
+    toleranciasDefault: { marcoH: 1.2, hojaV: 4.4, hojaH: 4.5, vidAncho: 14.1, vidAlto: 13.0 },
+  },
+  'euroalum-3800': {
+    id: 'euroalum-3800',
+    categoria: 'ventanas',
+    nombre: 'EuroAlum 3800 (90°)',
+    desc: 'Indalum · Riel 12263 · Jamba 12208 · Goterón 12301',
+    pro: false,
+    tarifaBaseDefault: 4250,
+    toleranciasDefault: { marcoH: 2.5, hojaV: 6.8, hojaH: 10.2, vidAncho: 19.8, vidAlto: 19.1 },
   },
   'cancel-bano': {
     id: 'cancel-bano',
@@ -1265,242 +1295,242 @@ export const CATALOGO_PERFILES: PerfilCatalogoItem[] = [
     notasTaller: 'Estética premium con mayor agarre en escuadras.',
   },
 
-  // ================= LÍNEA NACIONAL 2" =================
+  // ================= LÍNEA NACIONAL 2" (CLAVES OFICIALES) =================
   {
     id: 'nac2_cabezal_2401',
     familia: 'nacional2',
-    nombre: 'Cabezal Nacional 2" (2401 / 7236)',
-    codigoRef: 'Nacional 2" · 2401 / Perfileto PF-201',
-    uso: 'Marco superior doble carril para ventana corrediza económica 2"',
+    nombre: 'Cabezal / Jamba Nacional 2" (67518 / 7518)',
+    codigoRef: 'Panorama-Cuprum 67518 · Perfiletto 67518/7518 · Indalum 2086',
+    uso: 'Marco superior y jambas laterales para ventana corrediza nacional 2"',
     dimensiones: '50.80 × 38.10 mm · Tramo 6.10 m',
     pesoAprox: '0.78 kg/m',
-    notasTaller: 'Descuento estándar entre jambas de 5.1 cm en línea Nacional 2".',
-    marcaCatalogo: 'Alumer / Cuprum / Perfileto',
+    notasTaller: 'Claves oficiales 2026: Cuprum/Perfiletto 67518, Ext. Met. 7518, Indalum 2086.',
+    marcaCatalogo: 'Panorama / Cuprum / Perfiletto / Indalum / Extrusiones Metálicas',
     sistemaCatalogo: 'Línea Nacional 2"',
   },
   {
     id: 'nac2_riel_2402',
     familia: 'nacional2',
-    nombre: 'Riel Inferior Nacional 2" (2402 / 7257)',
-    codigoRef: 'Nacional 2" · 2402 / Perfileto PF-202',
-    uso: 'Riel inferior doble vía para carretillas simples de 2"',
+    nombre: 'Riel Doble Nacional 2" (14286 / 69953 / 9953)',
+    codigoRef: 'Panorama-Cuprum 14286 · Perfiletto 69953/9953 · Indalum 2094',
+    uso: 'Riel inferior doble vía para carretillas simples de 2" (Herralum 2008)',
     dimensiones: '50.80 × 28.50 mm · Tramo 6.10 m',
     pesoAprox: '0.81 kg/m',
     notasTaller: 'Hacer drenes en el canal externo y calzar a nivel sobre pretil.',
-    marcaCatalogo: 'Alumer / Cuprum / Perfileto',
+    marcaCatalogo: 'Panorama / Cuprum / Perfiletto / Indalum / Extrusiones Metálicas',
     sistemaCatalogo: 'Línea Nacional 2"',
   },
   {
     id: 'nac2_jamba_2403',
     familia: 'nacional2',
-    nombre: 'Jamba Lateral Nacional 2" (2403 / 7225)',
-    codigoRef: 'Nacional 2" · 2403 / Perfileto PF-203',
-    uso: 'Marco vertical lateral de 2 pulgadas para ventana y fijo económico',
+    nombre: 'Bolsa / Escalonado Fijo 2" (69083 / 39084)',
+    codigoRef: 'Panorama-Cuprum 69083/39084 · Perfiletto 69083/9083 · Indalum 2050',
+    uso: 'Marco perimetral bolsa y escalonado de 2 pulgadas para fijo comercial',
     dimensiones: '50.80 × 22.20 mm · Tramo 6.10 m',
     pesoAprox: '0.68 kg/m',
-    notasTaller: 'Corte a 90° a altura total del vano con tolerancia de holgura.',
-    marcaCatalogo: 'Alumer / Cuprum / Perfileto',
+    notasTaller: 'Compatible con junquillo oficial 9088 / 39088 y tapas 69085 / 24051.',
+    marcaCatalogo: 'Panorama / Cuprum / Perfiletto / Indalum / Extrusiones Metálicas',
     sistemaCatalogo: 'Línea Nacional 2"',
   },
   {
     id: 'nac2_cerco_2404',
     familia: 'nacional2',
-    nombre: 'Cerco y Traslape Nacional 2" (2404 / 2405)',
-    codigoRef: 'Nacional 2" · 2404-2405 / Perfileto PF-204',
+    nombre: 'Cerco y Traslape Nacional 2" (8320 / 67821 / 39954)',
+    codigoRef: 'Panorama-Cuprum 8320/67821/39954 · Perfiletto 69954/69955 · Indalum 2098/2097',
     uso: 'Verticales de hoja corrediza de 2" para cristal 4–6 mm',
     dimensiones: '34.90 × 22.20 mm · Tramo 6.10 m',
     pesoAprox: '0.62 kg/m',
-    notasTaller: 'Compatible con vinil pata #10/#11 y jaladera automática estándar.',
-    marcaCatalogo: 'Alumer / Cuprum / Perfileto',
+    notasTaller: 'Compatible con vinil Herralum 185/187 y cierre embutido 1280200.',
+    marcaCatalogo: 'Panorama / Cuprum / Perfiletto / Indalum / Extrusiones Metálicas',
     sistemaCatalogo: 'Línea Nacional 2"',
   },
 
-  // ================= SERIE 1400 (PANORAMA / COMERCIAL) =================
+  // ================= SERIE 1400 (PANORAMA / CUPRUM OFICIAL) =================
   {
     id: 's1400_marco_1401',
     familia: 'serie1400',
-    nombre: 'Marco Bolsa Serie 1400 (1401 / 1450)',
-    codigoRef: 'Serie 1400 · 1401 / Perfileto PF-1401',
-    uso: 'Marco estructural perimetral para canceles comerciales y puertas ligeras',
+    nombre: 'Cerco Liso / Pilastra Serie 1400 (73971 / 73972)',
+    codigoRef: 'Panorama-Cuprum Serie 1400 · 73971 Cerco Liso / 73972 Pilastra',
+    uso: 'Marco estructural perimetral y pilastra para fijos y canceles Serie 1400',
     dimensiones: '44.45 × 38.10 mm · Tramo 6.10 m',
     pesoAprox: '0.94 kg/m',
-    notasTaller: 'Ideal para fijos, puertas de servicio y divisiones de oficina Serie 1400.',
-    marcaCatalogo: 'Cuprum / Indalum / Perfileto',
+    notasTaller: 'Armado oficial con escuadra marco Herralum 204801400.',
+    marcaCatalogo: 'Panorama / Cuprum',
     sistemaCatalogo: 'Serie 1400',
   },
   {
     id: 's1400_hoja_1402',
     familia: 'serie1400',
-    nombre: 'Hoja / Larguero Serie 1400 (1402)',
-    codigoRef: 'Serie 1400 · 1402 / Perfileto PF-1402',
-    uso: 'Bastidor tubular perimetral de hoja proyectable o abatible Serie 1400',
+    nombre: 'Hoja Ventana / Puerta Serie 1400 (73981 / 73983)',
+    codigoRef: 'Panorama-Cuprum Serie 1400 · 73981 Ventana / 73983 Puerta / 73974 Monumental',
+    uso: 'Bastidor tubular perimetral de hoja abatible o puerta Serie 1400',
     dimensiones: '44.45 × 31.75 mm · Tramo 6.10 m',
     pesoAprox: '0.89 kg/m',
-    notasTaller: 'Armado con escuadras de inyección a 45° o tornillería oculta.',
-    marcaCatalogo: 'Cuprum / Indalum / Perfileto',
+    notasTaller: 'Armado oficial con escuadra hoja Herralum 204901400 y chapa 1096.',
+    marcaCatalogo: 'Panorama / Cuprum',
     sistemaCatalogo: 'Serie 1400',
   },
   {
     id: 's1400_junquillo_1405',
     familia: 'serie1400',
-    nombre: 'Junquillo Serie 1400 (1405)',
-    codigoRef: 'Serie 1400 · 1405 / Perfileto PF-1405',
-    uso: 'Junquillo clip recto para cristal de 6 mm o duoble acristalamiento ligero',
+    nombre: 'Junquillos Serie 1400 (74073 / 73978 / 74634)',
+    codigoRef: 'Panorama-Cuprum Serie 1400 · 74073 Redondo / 73978 Ancho / 74634-74635 Estrecho',
+    uso: 'Junquillos clip oficiales Serie 1400 para cristal 6 mm a doble vidrio',
     dimensiones: '19.05 × 15.80 mm · Tramo 6.10 m',
     pesoAprox: '0.31 kg/m',
-    notasTaller: 'Ajuste a presión con empaque EPDM o vinil de cuña.',
-    marcaCatalogo: 'Cuprum / Indalum / Perfileto',
+    notasTaller: 'Ajuste a presión con empaque EPDM Herralum 194 o vinil 185.',
+    marcaCatalogo: 'Panorama / Cuprum',
     sistemaCatalogo: 'Serie 1400',
   },
 
-  // ================= LÍNEA ESPAÑOLA / EUROPEA =================
+  // ================= LÍNEA ESPAÑOLA / EUROPEA (CLAVES OFICIALES) =================
   {
     id: 'esp_marco_s35',
     familia: 'espanola',
-    nombre: 'Marco Canal Europeo Serie 35/45 (EU-3501)',
-    codigoRef: 'Española / Eurovent · S35 / S45',
-    uso: 'Marco perimetral con canal europeo para abatible y oscilobatiente',
+    nombre: 'Marco Canal Europeo S-35 / S-6000 (12606 / 3501 / 6001)',
+    codigoRef: 'Perfiletto S-35: 12606 · Ext. Met. S-3500: 3501 · S-6000: 6001',
+    uso: 'Marco perimetral canal europeo para abatible y oscilobatiente',
     dimensiones: '45.00 × 52.00 mm · Tramo 6.10 m',
     pesoAprox: '1.28 kg/m',
-    notasTaller: 'Ensamble a 45° con escuadras de tetón y doble empaque EPDM.',
-    marcaCatalogo: 'Eurovent / Cuprum / Perfileto',
+    notasTaller: 'Ensamble 45° con escuadras Monticelli 1068149079 / Ext. Met. 7004-0.',
+    marcaCatalogo: 'Perfiletto / Extrusiones Metálicas / EuroAlum',
     sistemaCatalogo: 'Línea Española / Europea',
   },
   {
     id: 'esp_hoja_s70',
     familia: 'espanola',
-    nombre: 'Hoja Corrediza Serie 70 (EU-7012)',
-    codigoRef: 'Española / Eurovent · Serie 70',
+    nombre: 'Hoja Corrediza Europea S-70 / EuroAlum 2500 (628408 / 1699 / 4603)',
+    codigoRef: 'Perfiletto S-70: 628408 · EuroAlum 2500: 1699 · Ext. Met. S-4600: 4603',
     uso: 'Hoja perimetral corte 45° para ventanales corredizos herméticos',
     dimensiones: '70.00 × 32.00 mm · Tramo 6.10 m',
     pesoAprox: '1.36 kg/m',
-    notasTaller: 'Acepta cristal monolítico 6–10 mm o insulado (duovent) hasta 20 mm.',
-    marcaCatalogo: 'Eurovent / Cuprum / Perfileto',
+    notasTaller: 'Acepta cristal monolítico 6–10 mm o insulado (duovent) con empaque 328-10.',
+    marcaCatalogo: 'Perfiletto / Indalum EuroAlum / Extrusiones Metálicas',
     sistemaCatalogo: 'Línea Española / Europea',
   },
   {
     id: 'esp_riel_s80',
     familia: 'espanola',
-    nombre: 'Marco Riel Monumental Serie 80/100 (EU-8001)',
-    codigoRef: 'Española / Eurovent · S80 / S100',
+    nombre: 'Riel Monumental S-80 / S-100 / LE 8500 (638407 / 13614 / 68500)',
+    codigoRef: 'Perfiletto S-80: 638407 · S-100: 13614 · Ext. Met. LE 8500: 68500 / S-10000: 10001',
     uso: 'Marco riel reforzado con guía inoxidable para hojas de gran peso',
     dimensiones: '80.00 × 48.00 mm · Tramo 6.10 m',
     pesoAprox: '1.72 kg/m',
-    notasTaller: 'Recomendado para canceles monumentales de hasta 2.80 m de altura.',
-    marcaCatalogo: 'Eurovent / Perfileto',
+    notasTaller: 'Compatible con carretillas tándem 8524-0 / 7155-0 y multipunto 7260.',
+    marcaCatalogo: 'Perfiletto / Extrusiones Metálicas',
     sistemaCatalogo: 'Línea Española / Europea',
   },
 
-  // ================= HERRALUM (TEMPLADO Y CANCELERÍA) =================
+  // ================= HERRALUM (CATÁLOGO OFICIAL 2026) =================
   {
     id: 'herralum_riel_1500',
     familia: 'herralum',
-    nombre: 'Riel Colgante Serie 1500 Templado (HER-1500)',
-    codigoRef: 'Herralum · Serie 1500 / 1504',
-    uso: 'Riel superior tubular para puerta corrediza de cristal templado 10 mm',
-    dimensiones: '52.00 × 48.00 mm · Tramo 6.10 m',
-    pesoAprox: '1.65 kg/m',
-    notasTaller: 'Compatible con carretillas colgantes Herralum 1502/1503 hasta 120 kg.',
+    nombre: 'Cancel de Baño Herralum 1300 Curvo / 1301 Río Bravo',
+    codigoRef: 'Herralum 2026 · 1300 Curvo / 1301 Río Bravo / 1305 Bacalar',
+    uso: 'Sistema corredizo con herrajes en acero inoxidable para cristal templado 8–10 mm',
+    dimensiones: 'Kit Cancel Templado · Largo estándar 1.80–2.40 m',
+    pesoAprox: 'Kit completo',
+    notasTaller: 'Compatible con vinil sello baño Herralum 208 y chapas templado 1285/1298.',
     marcaCatalogo: 'Herralum',
-    sistemaCatalogo: 'Herralum',
+    sistemaCatalogo: 'Herralum 2026',
   },
   {
     id: 'herralum_u_templado',
     familia: 'herralum',
-    nombre: 'Perfil U para Cristal Templado 10 mm (HER-U10)',
-    codigoRef: 'Herralum · Canal U 10 mm',
-    uso: 'Canal perimetral en piso, muro y techo para fijar fijos templados',
-    dimensiones: '19.05 × 19.05 mm · Tramo 6.10 m',
-    pesoAprox: '0.46 kg/m',
-    notasTaller: 'Usar calzas de neopreno de 3 mm y sellado con silicón estructural.',
+    nombre: 'Escuadras Monticelli y Serie 1400 (1068149079 / 204801400)',
+    codigoRef: 'Herralum 2026 · Monticelli 1068149079/1068224104 · S1400 204801400/204901400',
+    uso: 'Escuadras de alineación y apriete excéntrico para series europeas y Serie 1400',
+    dimensiones: 'Aleación aluminio fundido · Unidad: Pieza',
+    pesoAprox: 'Pieza',
+    notasTaller: 'Asegura unión hermética a 45° sin torsión en marcos y hojas pesadas.',
     marcaCatalogo: 'Herralum',
-    sistemaCatalogo: 'Herralum',
+    sistemaCatalogo: 'Herralum 2026',
   },
   {
     id: 'herralum_marco_templado',
     familia: 'herralum',
-    nombre: 'Cabezal y Tapa Clip Templado (HER-1510)',
-    codigoRef: 'Herralum · 1510 / Tapa Clip',
-    uso: 'Cubierta frontal y cabezal reforzado para canceles de baño y oficina',
-    dimensiones: '54.00 × 45.00 mm · Tramo 6.10 m',
-    pesoAprox: '1.18 kg/m',
-    notasTaller: 'Acabados disponibles en Natural Anodizado, Negro Mate y Satín.',
+    nombre: 'Cancel de Baño Herralum 1306 Cozumel / 1338 Mexicali',
+    codigoRef: 'Herralum 2026 · 1306 Cozumel / 1338 Mexicali',
+    uso: 'Sistemas corredizos y abatibles para baño en acero inoxidable cepillado o negro mate',
+    dimensiones: 'Kit Cancel Templado 8–10 mm',
+    pesoAprox: 'Kit completo',
+    notasTaller: 'Incluye riel, carretillas, guías de piso, topes y jaladera toallero.',
     marcaCatalogo: 'Herralum',
-    sistemaCatalogo: 'Herralum',
+    sistemaCatalogo: 'Herralum 2026',
   },
 
-  // ================= PERFILETO (CATÁLOGO MÉXICO) =================
+  // ================= PERFILETTO (CATÁLOGO OFICIAL MÉXICO 2026) =================
   {
     id: 'perfileto_cabezal_3',
     familia: 'perfileto',
-    nombre: 'Perfileto Cabezal 3" Reforzado (PF-301)',
-    codigoRef: 'Perfileto PF-301 · Nacional 3"',
-    uso: 'Cabezal doble vía 3" de extrusión nacional marca Perfileto',
+    nombre: 'Perfiletto Cabezal / Jamba 3" (77826 / 67826 / 7826)',
+    codigoRef: 'Perfiletto 77826 / 67826 / 7826 · T77826 Tubular · Línea 3"',
+    uso: 'Cabezal y jamba doble vía 3" de extrusión oficial marca Perfiletto',
     dimensiones: '76.20 × 44.45 mm · Tramo 6.10 m',
     pesoAprox: '1.16 kg/m',
-    notasTaller: 'Compatible 100% con herrajes y felpas de Línea Nacional 3" en México.',
-    marcaCatalogo: 'Perfileto',
-    sistemaCatalogo: 'Perfileto · Nacional 3"',
+    notasTaller: 'Compatible 100% con riel Perfiletto 79957/9957 y herrajes Herralum 2004.',
+    marcaCatalogo: 'Perfileto / Perfiletto',
+    sistemaCatalogo: 'Perfiletto · Línea 3"',
   },
   {
     id: 'perfileto_riel_3',
     familia: 'perfileto',
-    nombre: 'Perfileto Riel Doble 3" (PF-302)',
-    codigoRef: 'Perfileto PF-302 · Nacional 3"',
+    nombre: 'Perfiletto Riel Doble 3" (79957 / 9957)',
+    codigoRef: 'Perfiletto 79957 / 9957 · Línea 3"',
     uso: 'Riel inferior 3" con vena guía reforzada para carretillas tándem',
     dimensiones: '76.20 × 36.00 mm · Tramo 6.10 m',
     pesoAprox: '1.19 kg/m',
     notasTaller: 'Desagüe en cámara externa; disponible en Natural, Blanco, Negro y Madera.',
-    marcaCatalogo: 'Perfileto',
-    sistemaCatalogo: 'Perfileto · Nacional 3"',
+    marcaCatalogo: 'Perfileto / Perfiletto',
+    sistemaCatalogo: 'Perfiletto · Línea 3"',
   },
   {
     id: 'perfileto_cerco_3',
     familia: 'perfileto',
-    nombre: 'Perfileto Cerco / Traslape 3" (PF-304 / PF-305)',
-    codigoRef: 'Perfileto PF-304 / PF-305 · Corrediza 3"',
-    uso: 'Perfiles verticales de hoja corrediza 3" catálogo Perfileto',
+    nombre: 'Perfiletto Cerco y Traslape 3" (67847 / 77848)',
+    codigoRef: 'Perfiletto 67847/7847 Cerco · 77848/67848/7848 Traslape · Línea 3"',
+    uso: 'Perfiles verticales de hoja corrediza 3" catálogo oficial Perfiletto',
     dimensiones: '44.00 × 28.50 mm · Tramo 6.10 m',
     pesoAprox: '0.87 kg/m',
-    notasTaller: 'Alojamiento limpio para jaladera embutida o seguro automático.',
-    marcaCatalogo: 'Perfileto',
-    sistemaCatalogo: 'Perfileto · Nacional 3"',
+    notasTaller: 'Alojamiento limpio para cierre embutido Herralum 1280200 o chapa 1131.',
+    marcaCatalogo: 'Perfileto / Perfiletto',
+    sistemaCatalogo: 'Perfiletto · Línea 3"',
   },
   {
     id: 'perfileto_marco_1400',
     familia: 'perfileto',
-    nombre: 'Perfileto Marco Serie 1400 (PF-1401)',
-    codigoRef: 'Perfileto PF-1401 · Serie 1400',
-    uso: 'Perfil tubular de bolsa Serie 1400 para cancelería residencial y comercial',
-    dimensiones: '44.45 × 38.10 mm · Tramo 6.10 m',
-    pesoAprox: '0.95 kg/m',
-    notasTaller: 'Alta precisión dimensional para ensamble rápido con junquillo clip.',
-    marcaCatalogo: 'Perfileto',
-    sistemaCatalogo: 'Perfileto · Serie 1400',
+    nombre: 'Perfiletto Bolsa Fijo 2" / 3" (69083 / 69135)',
+    codigoRef: 'Perfiletto 69083/9083 (2") · 69135/9135 (3") · Junquillos 69088/69112',
+    uso: 'Perfiles bolsa y escalonado oficiales Perfiletto para canceles fijos',
+    dimensiones: '76.20 × 44.45 mm · Tramo 6.10 m',
+    pesoAprox: '1.15 kg/m',
+    notasTaller: 'Alta precisión dimensional para ensamble rápido con junquillo 69112.',
+    marcaCatalogo: 'Perfileto / Perfiletto',
+    sistemaCatalogo: 'Perfiletto · Fijos 2" y 3"',
   },
   {
     id: 'perfileto_euro_70',
     familia: 'perfileto',
-    nombre: 'Perfileto Serie Europea 70 (PF-EU70)',
-    codigoRef: 'Perfileto PF-EU70 · Línea Española/Europea',
-    uso: 'Sistema corredizo hermético perimetral a 45° línea Europea Perfileto',
+    nombre: 'Perfiletto Serie Europea S-70 (628407 / 628408 / 22504)',
+    codigoRef: 'Perfiletto S-70 · 628407 Riel / 628408 Hoja / 28411 Traslape / 22547 Junq.',
+    uso: 'Sistema corredizo y abatible hermético perimetral a 45° Serie S-70 Perfiletto',
     dimensiones: '70.00 × 32.00 mm · Tramo 6.10 m',
     pesoAprox: '1.35 kg/m',
-    notasTaller: 'Admite cierre multipunto y doble vidrio insulado de alto aislamiento.',
-    marcaCatalogo: 'Perfileto',
-    sistemaCatalogo: 'Perfileto · Europea',
+    notasTaller: 'Admite cierre multipunto y doble vidrio insulado; riel triple 662373.',
+    marcaCatalogo: 'Perfileto / Perfiletto',
+    sistemaCatalogo: 'Perfiletto · Europea S-70',
   },
   {
     id: 'perfileto_cancel_bano',
     familia: 'perfileto',
-    nombre: 'Perfileto Kit Cancel de Baño Semilujo (PF-CB01)',
-    codigoRef: 'Perfileto PF-CB01 · Cancel de Baño',
-    uso: 'Riel superior, guía inferior y bastidor semilujo para regadera',
-    dimensiones: '44.45 × 14.30 mm · Tramo 6.10 m',
+    nombre: 'Perfiletto C-Light / U-Light (15309 / 15310 / 9073)',
+    codigoRef: 'Perfiletto U-Light 9073/49074 · C-Light 15309/15310/15311/11041',
+    uso: 'Sistema ligero residencial U-Light y C-Light catálogo oficial Perfiletto',
+    dimensiones: '38.10 × 25.40 mm · Tramo 6.10 m',
     pesoAprox: '0.64 kg/m',
-    notasTaller: 'Acabado brillante/anodizado resistente a humedad y jabón.',
-    marcaCatalogo: 'Perfileto',
-    sistemaCatalogo: 'Perfileto · Cancel Baño',
+    notasTaller: 'Excelente relación rigidez-peso para ventanería residencial económica.',
+    marcaCatalogo: 'Perfileto / Perfiletto',
+    sistemaCatalogo: 'Perfiletto · U-Light / C-Light',
   },
 
   // ================= MOSQUITEROS =================
@@ -1739,7 +1769,12 @@ export function getOfficialShareUrl(): string {
 }
 
 export function isFeatureProRequired(linea: LineaId, apertura: AperturaVentanaId, cantidad = 1): boolean {
-  if (linea !== '3') return true;
+  const freeLinea =
+    linea === '3' ||
+    linea === 'euroalum-2500' ||
+    linea === 'euroalum-2800' ||
+    linea === 'euroalum-3800';
+  if (!freeLinea) return true;
   if (apertura !== 'corrediza') return true;
   if (cantidad > 1) return true;
   return false;
@@ -1783,7 +1818,308 @@ export function calcularDespiece(params: TrabajoParams): DespieceCalculado {
   let colaDeRataM = 0;
   let carretillasMosq = 0;
 
-  if (linea === 'mosq-fijo') {
+  if (linea === 'euroalum-2500') {
+    // Tabla Oficial EuroAlum 2500 (2 hojas, corte 45°) — fórmulas exactas en mm (H = ancho, V = alto)
+    const Hmm = A * 10;
+    const Vmm = H * 10;
+    const rielH = round2(Math.max(10, Hmm / 10));
+    const rielV = round2(Math.max(10, Vmm / 10));
+    const hojaH = round2(Math.max(10, (Hmm - 4) / 2 / 10));
+    const hojaV = round2(Math.max(10, (Vmm - 63) / 10));
+    const traslapeV = round2(Math.max(10, (Vmm - 65) / 10));
+    const vidW = round2(Math.max(5, (Hmm - 215) / 2 / 10));
+    const vidH = round2(Math.max(5, (Vmm - 170) / 10));
+
+    perfiles.push(
+      {
+        perfilId: 'esp_riel_s80',
+        nombre: 'Riel Doble 1695 Horizontal (EuroAlum 2500)',
+        funcion: 'Marco superior e inferior · Fórmula: H (mm) ×2',
+        pzas: 2 * qty,
+        angulo: '45°',
+        medidaCm: rielH,
+      },
+      {
+        perfilId: 'esp_riel_s80',
+        nombre: 'Riel Doble 1695 Vertical (EuroAlum 2500)',
+        funcion: 'Jambas marco perimetral · Fórmula: V (mm) ×2',
+        pzas: 2 * qty,
+        angulo: '45°',
+        medidaCm: rielV,
+      },
+      {
+        perfilId: 'esp_hoja_s70',
+        nombre: 'Hoja 1699 Horizontal (EuroAlum 2500)',
+        funcion: 'Horizontales 2 hojas · Fórmula: (H - 4) / 2 ×4',
+        pzas: 4 * qty,
+        angulo: '45°',
+        medidaCm: hojaH,
+      },
+      {
+        perfilId: 'esp_hoja_s70',
+        nombre: 'Hoja 1699 Vertical (EuroAlum 2500)',
+        funcion: 'Verticales 2 hojas · Fórmula: V - 63 ×4',
+        pzas: 4 * qty,
+        angulo: '45°',
+        medidaCm: hojaV,
+      },
+      {
+        perfilId: 'traslape',
+        nombre: 'Adaptador Traslape 1619 (EuroAlum 2500)',
+        funcion: 'Encuentro central 2 hojas · Fórmula: V - 65 ×2',
+        pzas: 2 * qty,
+        angulo: '90°',
+        medidaCm: traslapeV,
+      }
+    );
+
+    vidrios.push({
+      tipo: 'vidrio',
+      nombre: `Cristal EuroAlum 2500 (${vidLabel})`,
+      pzas: 2 * qty,
+      anchoCm: vidW,
+      altoCm: vidH,
+      areaM2: round2(((vidW * vidH) / 10000) * 2 * qty),
+      espesorLabel: `${vidLabel} · (H-215)/2 × (V-170) mm`,
+      permitirRotacion: permitirRotacionPanel,
+    });
+
+    escuadrasCount = 12 * qty;
+    herrajes.push(
+      {
+        nombre: 'Kit Herrajes EuroAlum 2500 (A-2501 – A-2525)',
+        detalle: 'Carretillas, guías, topes y drenes oficiales Línea 2500',
+        cantidad: 1 * qty,
+        unidad: 'jgo',
+      },
+      {
+        nombre: 'Escuadras de alineación 45° EuroAlum 2500',
+        detalle: '4 marco 1695 + 8 hojas 1699',
+        cantidad: escuadrasCount,
+        unidad: 'pzas',
+      },
+      {
+        nombre: 'Broche automático EuroAlum (F-304 AS / F-304 AT)',
+        detalle: 'Cierre lateral embutido para corrediza 2500',
+        cantidad: 2 * qty,
+        unidad: 'pzas',
+      },
+      {
+        nombre: 'Felpa Especial EuroAlum (FELPA ESP)',
+        detalle: 'Sellado en marco 1695 y traslape 1619',
+        cantidad: round2((((rielH * 2 + rielV * 2 + traslapeV * 2) / 100) * 1.1) * qty),
+        unidad: 'm',
+      },
+      {
+        nombre: 'Empaque EPDM EuroAlum (328-10 / 328-11)',
+        detalle: 'Acristalamiento perimetral vidrio 6 mm (2 hojas)',
+        cantidad: round2((((vidW + vidH) * 4) / 100) * qty),
+        unidad: 'm',
+      }
+    );
+  } else if (linea === 'euroalum-2800') {
+    // Tabla Oficial EuroAlum 2800 (2 hojas, corte 90°) — fórmulas exactas en mm
+    const Hmm = A * 10;
+    const Vmm = H * 10;
+    const rielInf = round2(Math.max(10, (Hmm - 12) / 10));
+    const rielSup = round2(Math.max(10, (Hmm - 12) / 10));
+    const jambaV = round2(Math.max(10, Vmm / 10));
+    const zocloH = round2(Math.max(10, (Hmm - 45) / 2 / 10));
+    const cercoV = round2(Math.max(10, (Vmm - 44) / 10));
+    const traslapeV = round2(Math.max(10, (Vmm - 44) / 10));
+    const vidW = round2(Math.max(5, (Hmm - 141) / 2 / 10));
+    const vidH = round2(Math.max(5, (Vmm - 130) / 10));
+
+    perfiles.push(
+      {
+        perfilId: 'riel',
+        nombre: 'Riel Inferior 12150 (EuroAlum 2800)',
+        funcion: 'Base doble carril · Fórmula: H - 12 (mm) ×1',
+        pzas: 1 * qty,
+        angulo: '90°',
+        medidaCm: rielInf,
+      },
+      {
+        perfilId: 'cabezal',
+        nombre: 'Riel Superior 12151 (EuroAlum 2800)',
+        funcion: 'Cabezal superior · Fórmula: H - 12 (mm) ×1',
+        pzas: 1 * qty,
+        angulo: '90°',
+        medidaCm: rielSup,
+      },
+      {
+        perfilId: 'jamba',
+        nombre: 'Jamba 12152 (EuroAlum 2800)',
+        funcion: 'Marcos laterales · Fórmula: V (mm) ×2',
+        pzas: 2 * qty,
+        angulo: '90°',
+        medidaCm: jambaV,
+      },
+      {
+        perfilId: 'cabecero',
+        nombre: 'Zoclo / Cabecero 12153 (EuroAlum 2800)',
+        funcion: 'Horizontales 2 hojas · Fórmula: (H - 45) / 2 ×4',
+        pzas: 4 * qty,
+        angulo: '90°',
+        medidaCm: zocloH,
+      },
+      {
+        perfilId: 'cerco',
+        nombre: 'Cerco 12154 (EuroAlum 2800)',
+        funcion: 'Verticales exteriores 2 hojas · Fórmula: V - 44 ×2',
+        pzas: 2 * qty,
+        angulo: '90°',
+        medidaCm: cercoV,
+      },
+      {
+        perfilId: 'traslape',
+        nombre: 'Traslape 12155 (EuroAlum 2800)',
+        funcion: 'Encuentro central 2 hojas · Fórmula: V - 44 ×2',
+        pzas: 2 * qty,
+        angulo: '90°',
+        medidaCm: traslapeV,
+      }
+    );
+
+    vidrios.push({
+      tipo: 'vidrio',
+      nombre: `Cristal EuroAlum 2800 (${vidLabel})`,
+      pzas: 2 * qty,
+      anchoCm: vidW,
+      altoCm: vidH,
+      areaM2: round2(((vidW * vidH) / 10000) * 2 * qty),
+      espesorLabel: `${vidLabel} · (H-141)/2 × (V-130) mm`,
+      permitirRotacion: permitirRotacionPanel,
+    });
+
+    herrajes.push(
+      {
+        nombre: 'Kit Herrajes EuroAlum 2800 (A-2801 – A-2807)',
+        detalle: 'Carretillas, guías superiores, topes y tapas dren Línea 2800',
+        cantidad: 1 * qty,
+        unidad: 'jgo',
+      },
+      {
+        nombre: 'Broche automático EuroAlum (F-304 AS / Uñero F-243i)',
+        detalle: 'Cierre lateral embutido corrediza 2800',
+        cantidad: 2 * qty,
+        unidad: 'pzas',
+      },
+      {
+        nombre: 'Felpa Especial EuroAlum (FELPA ESP)',
+        detalle: 'Sellado perimetral en marco y traslape 12155',
+        cantidad: round2((((rielInf * 2 + jambaV * 2 + traslapeV * 2) / 100) * 1.1) * qty),
+        unidad: 'm',
+      },
+      {
+        nombre: 'Empaque EPDM EuroAlum (328-10 / 195-11)',
+        detalle: 'Acristalamiento perimetral (2 hojas)',
+        cantidad: round2((((vidW + vidH) * 4) / 100) * qty),
+        unidad: 'm',
+      }
+    );
+  } else if (linea === 'euroalum-3800') {
+    // Tabla Oficial EuroAlum 3800 (Ventana 2 hojas, corte 90°) — fórmulas exactas en mm
+    const Hmm = A * 10;
+    const Vmm = H * 10;
+    const rielH = round2(Math.max(10, (Hmm - 25) / 10));
+    const jambaV = round2(Math.max(10, Vmm / 10));
+    const zocloCabH = round2(Math.max(10, (Hmm - 102) / 2 / 10));
+    const cercoV = round2(Math.max(10, (Vmm - 68) / 10));
+    const traslapeV = round2(Math.max(10, (Vmm - 68) / 10));
+    const goteronH = round2(Math.max(10, Hmm / 10));
+    const vidW = round2(Math.max(5, (Hmm - 198) / 2 / 10));
+    const vidH = round2(Math.max(5, (Vmm - 191) / 10));
+
+    perfiles.push(
+      {
+        perfilId: 'riel',
+        nombre: 'Riel Doble 12263 (EuroAlum 3800)',
+        funcion: 'Superior e inferior · Fórmula: H - 25 (mm) ×2',
+        pzas: 2 * qty,
+        angulo: '90°',
+        medidaCm: rielH,
+      },
+      {
+        perfilId: 'jamba',
+        nombre: 'Jamba 12208 (EuroAlum 3800)',
+        funcion: 'Marcos laterales · Fórmula: V (mm) ×2',
+        pzas: 2 * qty,
+        angulo: '90°',
+        medidaCm: jambaV,
+      },
+      {
+        perfilId: 'cabecero',
+        nombre: 'Zoclo / Cabecero 12240 (EuroAlum 3800)',
+        funcion: 'Horizontales ventana 2 hojas · Fórmula: (H - 102) / 2 ×4',
+        pzas: 4 * qty,
+        angulo: '90°',
+        medidaCm: zocloCabH,
+      },
+      {
+        perfilId: 'cerco',
+        nombre: 'Cerco Ventana 12288 (EuroAlum 3800)',
+        funcion: 'Verticales exteriores 2 hojas · Fórmula: V - 68 ×2',
+        pzas: 2 * qty,
+        angulo: '90°',
+        medidaCm: cercoV,
+      },
+      {
+        perfilId: 'traslape',
+        nombre: 'Traslape Ventana 12297 (EuroAlum 3800)',
+        funcion: 'Encuentro central 2 hojas · Fórmula: V - 68 ×2',
+        pzas: 2 * qty,
+        angulo: '90°',
+        medidaCm: traslapeV,
+      },
+      {
+        perfilId: 'chambrana',
+        nombre: 'Goterón 12301 (EuroAlum 3800)',
+        funcion: 'Botaguas / goterón exterior · Fórmula: H (mm) ×1',
+        pzas: 1 * qty,
+        angulo: '90°',
+        medidaCm: goteronH,
+      }
+    );
+
+    vidrios.push({
+      tipo: 'vidrio',
+      nombre: `Cristal EuroAlum 3800 (${vidLabel})`,
+      pzas: 2 * qty,
+      anchoCm: vidW,
+      altoCm: vidH,
+      areaM2: round2(((vidW * vidH) / 10000) * 2 * qty),
+      espesorLabel: `${vidLabel} · (H-198)/2 × (V-191) mm`,
+      permitirRotacion: permitirRotacionPanel,
+    });
+
+    herrajes.push(
+      {
+        nombre: 'Kit Herrajes EuroAlum 3800 (A-3801 – A-3810)',
+        detalle: 'Carretillas regulables, guías, topes y tapas dren Línea 3800',
+        cantidad: 1 * qty,
+        unidad: 'jgo',
+      },
+      {
+        nombre: 'Broche automático / Uñero (F-304 AT / F-243i)',
+        detalle: 'Cierre lateral embutido para ventana EuroAlum 3800',
+        cantidad: 2 * qty,
+        unidad: 'pzas',
+      },
+      {
+        nombre: 'Felpa Especial EuroAlum (FELPA ESP)',
+        detalle: 'Sellado perimetral en riel 12263, jambas y traslape 12297',
+        cantidad: round2((((rielH * 2 + jambaV * 2 + traslapeV * 2) / 100) * 1.1) * qty),
+        unidad: 'm',
+      },
+      {
+        nombre: 'Empaque EPDM EuroAlum (328-11 / E-3540/6-7)',
+        detalle: 'Acristalamiento perimetral (2 hojas)',
+        cantidad: round2((((vidW + vidH) * 4) / 100) * qty),
+        unidad: 'm',
+      }
+    );
+  } else if (linea === 'mosq-fijo') {
     const bastidorH = round1(Math.max(10, A - tolerancias.marcoH));
     const bastidorV = round1(Math.max(10, H - tolerancias.hojaV));
     perfiles.push(
@@ -5934,6 +6270,119 @@ export function buildCompactExistenciasList(
   }
 
   return items;
+}
+
+export interface ExistenciasPriceContext {
+  inventarioPreciosUnitarios?: Record<string, number>;
+  precioListaTramo?: number;
+  rellenoPreciosM2?: Record<string, number>;
+  herrajesPrecios?: Record<string, number>;
+}
+
+export function resolveExistenciaUnitPrice(
+  item: CompactExistenciaItem,
+  ctx: ExistenciasPriceContext = {}
+): { price: number; unitLabel: string } {
+  const custom = ctx.inventarioPreciosUnitarios?.[item.id];
+  if (typeof custom === 'number' && Number.isFinite(custom) && custom > 0) {
+    const unitLabel =
+      item.tipo === 'perfil' ? 'tramo' : item.tipo === 'vidrio' ? 'm²' : item.unidad || 'pza';
+    return { price: round2(custom), unitLabel };
+  }
+
+  if (item.tipo === 'perfil') {
+    const baseTramo = Number(ctx.precioListaTramo) > 0 ? Number(ctx.precioListaTramo) : 890;
+    return { price: round2(baseTramo), unitLabel: 'tramo' };
+  }
+
+  if (item.tipo === 'herraje') {
+    const hKey = item.herrajeId || '';
+    const customH = hKey ? ctx.herrajesPrecios?.[hKey] : undefined;
+    if (typeof customH === 'number' && Number.isFinite(customH) && customH > 0) {
+      return { price: round2(customH), unitLabel: item.unidad || 'pza' };
+    }
+    const lowerTitle = item.titulo.toLowerCase();
+    const fallback = lowerTitle.includes('cerradura') || lowerTitle.includes('chapa')
+      ? 480
+      : lowerTitle.includes('jaladera') || lowerTitle.includes('cierre')
+        ? 110
+        : lowerTitle.includes('bisagra')
+          ? 95
+          : 85;
+    return { price: fallback, unitLabel: item.unidad || 'pza' };
+  }
+
+  // Vidrio: precio referencial por m²
+  const lowerVid = item.titulo.toLowerCase();
+  const rellenoPrices = ctx.rellenoPreciosM2 || {};
+  let fallbackM2 = 460;
+  if (lowerVid.includes('templado')) {
+    fallbackM2 = rellenoPrices['temp-claro__9.5'] ?? 1520;
+  } else if (lowerVid.includes('filtrasol')) {
+    fallbackM2 = rellenoPrices['flot-filtrasol__6'] ?? 750;
+  } else if (lowerVid.includes('tintex')) {
+    fallbackM2 = rellenoPrices['flot-tintex__6'] ?? 790;
+  } else if (lowerVid.includes('4 mm')) {
+    fallbackM2 = rellenoPrices['flot-claro__4'] ?? 310;
+  } else {
+    fallbackM2 = rellenoPrices['flot-claro__6'] ?? 460;
+  }
+  return { price: round2(fallbackM2), unitLabel: 'm²' };
+}
+
+export interface BulkExistenciasAdjustmentResult {
+  inventarioPreciosUnitarios: Record<string, number>;
+  herrajesPrecios: Record<string, number>;
+  updatedCount: number;
+  signedPct: number;
+  changes: Array<{ id: string; titulo: string; before: number; after: number; unitLabel: string }>;
+}
+
+export function applyBulkExistenciasPriceAdjustment(params: {
+  selectedItems: CompactExistenciaItem[];
+  mode: 'incremento' | 'descuento';
+  pct: number;
+  ctx: ExistenciasPriceContext;
+}): BulkExistenciasAdjustmentResult {
+  const rawAbs = Math.abs(Number(params.pct) || 0);
+  const clampedAbs =
+    params.mode === 'descuento'
+      ? Math.min(90, Math.max(0, rawAbs))
+      : Math.min(200, Math.max(0, rawAbs));
+  const signedPct = params.mode === 'descuento' ? -clampedAbs : clampedAbs;
+  const factor = 1 + signedPct / 100;
+
+  const nextUnitMap: Record<string, number> = { ...(params.ctx.inventarioPreciosUnitarios || {}) };
+  const nextHerrajes: Record<string, number> = { ...(params.ctx.herrajesPrecios || {}) };
+  const changes: BulkExistenciasAdjustmentResult['changes'] = [];
+
+  if (clampedAbs <= 0 || params.selectedItems.length === 0) {
+    return {
+      inventarioPreciosUnitarios: nextUnitMap,
+      herrajesPrecios: nextHerrajes,
+      updatedCount: 0,
+      signedPct: 0,
+      changes,
+    };
+  }
+
+  for (const item of params.selectedItems) {
+    const { price: before, unitLabel } = resolveExistenciaUnitPrice(item, params.ctx);
+    const after = Math.max(1, round2(before * factor));
+    nextUnitMap[item.id] = after;
+    if (item.tipo === 'herraje' && item.herrajeId) {
+      nextHerrajes[item.herrajeId] = after;
+    }
+    changes.push({ id: item.id, titulo: item.titulo, before, after, unitLabel });
+  }
+
+  return {
+    inventarioPreciosUnitarios: nextUnitMap,
+    herrajesPrecios: nextHerrajes,
+    updatedCount: changes.length,
+    signedPct,
+    changes,
+  };
 }
 
 // ==================== ANALÍTICA ADMIN: COTIZACIONES POR MES Y MATERIALES ====================

@@ -62,6 +62,7 @@ interface ModulacionCortesViewProps {
   onRegisterCloseSubModal?: (fn: (() => void) | null) => void;
   ajusteDescuentos?: Partial<AjusteDescuentosConfig>;
   optimizadorConfig?: Partial<OptimizadorConfig>;
+  catalogVigenciaLabel?: string;
   onShowToast: (msg: string, topSuccess?: boolean) => void;
 }
 
@@ -189,6 +190,7 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
   onRegisterCloseSubModal,
   ajusteDescuentos,
   optimizadorConfig,
+  catalogVigenciaLabel,
   onShowToast,
 }) => {
   const resolvedOptCfg = useMemo(
@@ -211,8 +213,6 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
   // Sub-pestaña en Paso 5: Lista de Cortes y Checklist vs Optimizador 1D (6.10 m)
   const [localPaso5Tab, setLocalPaso5Tab] = useState<'cortes' | 'tramos'>('cortes');
   const [cortadosMap, setCortadosMap] = useState<Record<string, number>>({});
-  const [colorParaSobrantes, setColorParaSobrantes] = useState<ColorId>('natural');
-  const [marcaParaSobrantes, setMarcaParaSobrantes] = useState<string>('Alumer');
   const [discoKerfMm, setDiscoKerfMm] = useState<number>(() => round2(resolvedOptCfg.kerfCm * 10));
   const [umbralSobranteCm, setUmbralSobranteCm] = useState<number>(() => resolvedOptCfg.umbralSobranteUsableCm);
   const [zoomPerfil, setZoomPerfil] = useState<PerfilZoomData | null>(null);
@@ -292,9 +292,6 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
       }
       if (p.serieMod) {
         setSerieId(p.serieMod);
-      }
-      if (p.color) {
-        setColorParaSobrantes(p.color);
       }
       if (typeof p.conMosquitero === 'boolean') {
         setConMosquitero(p.conMosquitero);
@@ -388,7 +385,6 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
     setCategoria(resolved.cat);
     setModeloId(resolved.modelo);
     setSerieId(resolved.serieMod);
-    setColorParaSobrantes(resolveColorAluminioFromLevantamiento(p.colorAluminio));
     setConMosquitero(resolveMosquiteroFromLevantamiento(p.mosquitero));
     const vRaw = String(p.colorVidrio || 'Vidrio claro').trim();
     setVidrioSeleccionado(
@@ -818,28 +814,6 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
     );
   };
 
-  const handleGuardarSobrantesGenerados = () => {
-    if (optimizacion1D.sobrantesGeneradosGuardables.length === 0) {
-      onShowToast(`No hay sobrantes útiles (>= ${umbralSobranteCm} cm) para guardar`);
-      return;
-    }
-    optimizacion1D.sobrantesGeneradosGuardables.forEach((s) => {
-      onAddSobrante({
-        marca: marcaParaSobrantes || 'Alumer',
-        linea: lineaCompatible,
-        perfilId: s.perfilId,
-        color: colorParaSobrantes,
-        largoM: s.largoM,
-        cantidad: s.cantidad,
-        nota: `Sobrante de Modulación (${selectedModelo.nombre} ${calculoCortes.anchoCm}×${calculoCortes.altoCm} cm)`,
-      });
-    });
-    onShowToast(
-      `${optimizacion1D.sobrantesGeneradosGuardables.length} medida(s) de sobrante guardada(s) en Inventario`,
-      true
-    );
-  };
-
   return (
     <section id="view-modulacion" className="screen-animate pb-28 sm:pb-14">
       {/* Encabezado y barra de pasos */}
@@ -1242,13 +1216,22 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
       {/* ==================== PASO 3: LÍNEA / SERIE Y SUBLÍNEA ==================== */}
       {step === 3 && (
         <div className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[20px] p-4 sm:p-5 shadow-xl flex flex-col gap-5">
-          <div>
-            <h2 className="m-0 text-[18px] font-extrabold">
-              Paso 3: Selecciona Línea / Serie y Sublínea
-            </h2>
-            <p className="m-0 text-[12.5px] text-slate-600 mt-0.5">
-              Define la serie del perfil y la categoría hermética para ajustar los descuentos estándar
-            </p>
+          <div className="flex flex-wrap items-start justify-between gap-2.5">
+            <div>
+              <h2 className="m-0 text-[18px] font-extrabold">
+                Paso 3: Selecciona Línea / Serie y Sublínea
+              </h2>
+              <p className="m-0 text-[12.5px] text-slate-600 mt-0.5">
+                Define la serie del perfil y la categoría hermética para ajustar los descuentos estándar
+              </p>
+            </div>
+            <div
+              data-testid="modulacion-vigencia-badge"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-emerald-300 bg-emerald-50 text-emerald-900 text-[11.5px] font-extrabold"
+            >
+              <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
+              <span>{catalogVigenciaLabel || 'Catálogos Oficiales Vigentes 2026 • Próxima Actualización Anual: 2027'}</span>
+            </div>
           </div>
 
           <div>
@@ -2134,67 +2117,6 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
                 ))}
               </div>
 
-              {/* Guardar sobrantes generados hacia Inventario de Taller */}
-              {optimizacion1D.sobrantesGeneradosGuardables.length > 0 && (
-                <div className="p-3.5 rounded-2xl border border-amber-300 bg-amber-50 flex flex-col gap-2.5">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <strong className="block text-[13.5px] text-amber-950 font-extrabold">
-                        Sobrantes reutilizables generados (≥ {umbralSobranteCm} cm)
-                      </strong>
-                      <span className="text-[11.5px] text-amber-900">
-                        Guarda estos retazos útiles en tu Inventario de Taller (los menores a {umbralSobranteCm} cm ya se separaron como Merma / Chatarra)
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap gap-1.5">
-                    {optimizacion1D.sobrantesGeneradosGuardables.map((s, i) => (
-                      <span
-                        key={i}
-                        className="px-2.5 py-1 rounded-lg bg-white border border-amber-300 text-amber-950 text-[11.5px] font-bold mono"
-                      >
-                        {s.cantidad}× {s.perfilNombre} de {s.largoCm.toFixed(0)} cm ({s.largoM.toFixed(2)} m)
-                      </span>
-                    ))}
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2 pt-1">
-                    <select
-                      aria-label="Marca para guardar sobrantes"
-                      value={marcaParaSobrantes}
-                      onChange={(e) => setMarcaParaSobrantes(e.target.value)}
-                      className="min-h-[38px] rounded-xl border border-amber-300 bg-white px-2.5 text-[12px] font-bold"
-                    >
-                      <option value="Alumer">Marca: Alumer</option>
-                      <option value="Cuprum">Marca: Cuprum</option>
-                      <option value="Indalum">Marca: Indalum</option>
-                      <option value="Extrusiones Metálicas">Marca: Extrusiones Metálicas</option>
-                      <option value="Perfiles LM">Marca: Perfiles LM</option>
-                    </select>
-                    <select
-                      aria-label="Color para guardar sobrantes"
-                      value={colorParaSobrantes}
-                      onChange={(e) => setColorParaSobrantes(e.target.value as ColorId)}
-                      className="min-h-[38px] rounded-xl border border-amber-300 bg-white px-2.5 text-[12px] font-bold"
-                    >
-                      {Object.values(COLORES_CONFIG).map((c) => (
-                        <option key={c.id} value={c.id}>
-                          Acabado: {c.corto}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      id="btn-mod-save-sobrantes"
-                      onClick={handleGuardarSobrantesGenerados}
-                      className="min-h-[40px] px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[12.5px] font-extrabold cursor-pointer active:scale-95"
-                    >
-                      + Guardar en Mi Inventario
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
           )}
 

@@ -107,6 +107,7 @@ import {
   AdminKeyRecord,
   AlumineroBackupPayload,
   compressImageToDataUrl,
+  DEFAULT_CATALOG_VIGENCIA_LABEL,
   formatDateTimeExact,
   FormulaPersonalizada,
   LicenciaState,
@@ -184,6 +185,8 @@ export interface AdminDashboardViewProps {
   onAddReferralRecord: (rec: Omit<ReferralHistoryRecord, 'id' | 'createdAt'>) => void;
   onDeleteReferralRecord: (id: string) => void;
   onResetCounters?: () => void;
+  catalogVigenciaLabel?: string;
+  onUpdateCatalogVigenciaLabel?: (next: string) => Promise<void> | void;
   onShowToast: (msg: string, topSuccess?: boolean) => void;
 }
 
@@ -298,9 +301,21 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   onAddReferralRecord,
   onDeleteReferralRecord,
   onResetCounters,
+  catalogVigenciaLabel,
+  onUpdateCatalogVigenciaLabel,
   onShowToast,
 }) => {
   const [activeTab, setActiveTab] = useState<AdminTabId>('dashboard');
+  const [vigenciaDraft, setVigenciaDraft] = useState<string>(
+    () => catalogVigenciaLabel || DEFAULT_CATALOG_VIGENCIA_LABEL
+  );
+  const [vigenciaSaving, setVigenciaSaving] = useState(false);
+
+  useEffect(() => {
+    if (catalogVigenciaLabel) {
+      setVigenciaDraft(catalogVigenciaLabel);
+    }
+  }, [catalogVigenciaLabel]);
   const [nowTick, setNowTick] = useState<number>(() => Date.now());
   const [countersResetAt, setCountersResetAt] = useState<number>(() => {
     try {
@@ -4131,9 +4146,76 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         </div>
       )}
 
-      {/* ==================== TAB: PRECIOS DE REFERENCIA (FIRESTORE) ==================== */}
+      {/* ==================== TAB: PRECIOS DE REFERENCIA (FIRESTORE) Y VIGENCIA CATÁLOGOS ==================== */}
       {activeTab === 'precios' && (
-        <div id="admin-panel-precios" className="rounded-2xl border border-slate-700/80 bg-slate-900/95 p-4 sm:p-6 shadow-md flex flex-col gap-4">
+        <div id="admin-panel-precios" className="rounded-2xl border border-slate-700/80 bg-slate-900/95 p-4 sm:p-6 shadow-md flex flex-col gap-5">
+          {/* Control de Insignia de Vigencia Anual de Catálogos Oficiales */}
+          <div
+            id="admin-catalog-vigencia-card"
+            className="rounded-2xl border border-emerald-500/40 bg-emerald-950/30 p-4 flex flex-col gap-3"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <h3 className="m-0 text-[15px] font-extrabold text-emerald-200">
+                  Insignia de Vigencia Anual de Catálogos Oficiales (2026–2027)
+                </h3>
+                <p className="m-0 mt-0.5 text-[12px] text-slate-300">
+                  Edita el año o texto de actualización que se muestra en la cabecera del Catálogo y en el selector de marcas del Cotizador cuando subas los catálogos 2027.
+                </p>
+              </div>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border border-emerald-400/50 bg-emerald-500/15 text-emerald-100 text-[11px] font-extrabold">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" aria-hidden="true" />
+                <span>{vigenciaDraft.trim() || DEFAULT_CATALOG_VIGENCIA_LABEL}</span>
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                id="input-admin-catalog-vigencia"
+                type="text"
+                maxLength={140}
+                value={vigenciaDraft}
+                onChange={(e) => setVigenciaDraft(e.target.value)}
+                placeholder={DEFAULT_CATALOG_VIGENCIA_LABEL}
+                className="flex-1 min-w-[240px] min-h-[42px] px-3 rounded-xl border border-emerald-500/40 bg-slate-950 text-white text-[13px] font-semibold"
+              />
+              <button
+                type="button"
+                id="btn-admin-save-catalog-vigencia"
+                disabled={vigenciaSaving}
+                onClick={async () => {
+                  if (!onUpdateCatalogVigenciaLabel) return;
+                  setVigenciaSaving(true);
+                  try {
+                    await onUpdateCatalogVigenciaLabel(vigenciaDraft);
+                  } finally {
+                    setVigenciaSaving(false);
+                  }
+                }}
+                className="min-h-[42px] px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-60 text-slate-950 text-[12.5px] font-black cursor-pointer"
+              >
+                {vigenciaSaving ? 'Guardando...' : 'Guardar Vigencia'}
+              </button>
+              <button
+                type="button"
+                id="btn-admin-reset-catalog-vigencia"
+                disabled={vigenciaSaving}
+                onClick={async () => {
+                  setVigenciaDraft(DEFAULT_CATALOG_VIGENCIA_LABEL);
+                  if (!onUpdateCatalogVigenciaLabel) return;
+                  setVigenciaSaving(true);
+                  try {
+                    await onUpdateCatalogVigenciaLabel(DEFAULT_CATALOG_VIGENCIA_LABEL);
+                  } finally {
+                    setVigenciaSaving(false);
+                  }
+                }}
+                className="min-h-[42px] px-3 rounded-xl border border-slate-600 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[12px] font-bold cursor-pointer"
+              >
+                Restaurar 2026–2027
+              </button>
+            </div>
+          </div>
+
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="m-0 text-[18px] font-extrabold text-white flex items-center gap-2">

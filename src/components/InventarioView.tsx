@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  applyBulkExistenciasPriceAdjustment,
   buildCompactExistenciasList,
   calcularMetrosObraAprobada,
   CATALOGO_PERFILES,
   COLORES_CONFIG,
   ColorId,
+  ExistenciasPriceContext,
   HERRAJES_INVENTARIO_CATALOGO,
   HerrajeCategoria,
   INVENTARIO_DEFAULT_MARCA,
@@ -13,6 +15,7 @@ import {
   makeInventarioKey,
   parseInventarioKey,
   PerfilCatalogoId,
+  resolveExistenciaUnitPrice,
   resumirObrasAprobadas,
   round2,
   TRAMO_COMPROMETIDO_M,
@@ -58,6 +61,11 @@ interface Props {
   onRequestBack?: () => void;
   onRegisterCloseSubModal?: (fn: (() => void) | null) => void;
   onReplaceSubModalWithPerfil?: (perfilId: PerfilCatalogoId) => void;
+  existenciasPriceCtx?: ExistenciasPriceContext;
+  onSaveExistenciasPrices?: (next: {
+    inventarioPreciosUnitarios: Record<string, number>;
+    herrajesPrecios: Record<string, number>;
+  }) => void;
   onShowToast: (msg: string, topSuccess?: boolean) => void;
 }
 
@@ -182,6 +190,8 @@ export const InventarioView: React.FC<Props> = ({
   onRequestBack,
   onRegisterCloseSubModal,
   onReplaceSubModalWithPerfil,
+  existenciasPriceCtx,
+  onSaveExistenciasPrices,
   onShowToast,
 }) => {
   const [localInvTab, setLocalInvTab] = useState<'existencias' | 'perfiles' | 'vidrios' | 'herrajes'>('existencias');
@@ -194,6 +204,21 @@ export const InventarioView: React.FC<Props> = ({
   const [expandedExistenciaId, setExpandedExistenciaId] = useState<string | null>(null);
   const [existenciasFiltroTipo, setExistenciasFiltroTipo] = useState<'todos' | 'perfil' | 'herraje' | 'vidrio'>('todos');
   const [existenciasQuery, setExistenciasQuery] = useState('');
+  const [selectedExistenciasIds, setSelectedExistenciasIds] = useState<string[]>([]);
+  const [bulkPriceMode, setBulkPriceMode] = useState<'incremento' | 'descuento'>('incremento');
+  const [bulkPricePct, setBulkPricePct] = useState<string>('10');
+  const [lastBulkUndoSnapshot, setLastBulkUndoSnapshot] = useState<{
+    inventarioPreciosUnitarios: Record<string, number>;
+    herrajesPrecios: Record<string, number>;
+    summary: string;
+  } | null>(null);
+
+  const effectivePriceCtx: ExistenciasPriceContext = existenciasPriceCtx ?? {
+    inventarioPreciosUnitarios: {},
+    precioListaTramo: 890,
+    rellenoPreciosM2: {},
+    herrajesPrecios: {},
+  };
 
   const compactExistencias = useMemo(
     () => buildCompactExistenciasList(inventario, inventarioHerrajes, hojasVidrio),
@@ -232,6 +257,108 @@ export const InventarioView: React.FC<Props> = ({
       onShowToast(`Descontada ${amount} hoja de ${item.titulo}`);
     }
   };
+
+  const selectedExistenciasSet = useMemo(
+    () => new Set(selectedExistenciasIds),
+    [selectedExistenciasIds]
+  );
+
+  const selectedExistenciasItems = useMemo(
+    () => compactExistencias.filter((it) => selectedExistenciasSet.has(it.id)),
+    [compactExistencias, selectedExistenciasSet]
+  );
+
+  const allVisibleSelected =
+    compactExistenciasFiltradas.length > 0 &&
+    compactExistenciasFiltradas.every((it) => selectedExistenciasSet.has(it.id));
+
+  const toggleSelectExistencia = (id: string) => {
+    setSelectedExistenciasIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleToggleSelectAllVisible = () => {
+    const visibleIds = compactExistenciasFiltradas.map((it) => it.id);
+    if (allVisibleSelected) {
+      const visibleSet = new Set(visibleIds);
+      setSelectedExistenciasIds((prev) => prev.filter((id) => !visibleSet.has(id)));
+    } else {
+      setSelectedExistenciasIds((prev) => Array.from(new Set([...prev, ...visibleIds])));
+    }
+  };
+
+  const handleApplyBulkExistenciasPrice = () => {
+    const pctNum = Math.abs(Number(bulkPricePct) || 0);
+    if (selectedExistenciasItems.length === 0) {
+      onShowToast('Selecciona al menos un material de la lista');
+      return;
+    }
+    if (!Number.isFinite(pctNum) || pctNum <= 0) {
+      onShowToast('Ingresa un porcentaje mayor a 0 (ej. 5, 10 o 15)');
+      return;
+    }
+    if (bulkPriceMode === 'descuento' && pctNum > 90) {
+      onShowToast('El descuento máximo permitido es 90%');
+      return;
+    }
+    const prevSnapshot = {
+      inventarioPreciosUnitarios: { ...(effectivePriceCtx.inventarioPreciosUnitarios || {}) },
+      herrajesPrecios: { ...(effectivePriceCtx.herrajesPrecios || {}) },
+    };
+    const res = applyBulkExistenciasPriceAdjustment({
+      selectedItems: selectedExistenciasItems,
+      mode: bulkPriceMode,
+      pct: pctNum,
+      ctx: effectivePriceCtx,
+    });
+    if (res.updatedCount === 0) {
+      onShowToast('No se aplicaron cambios de precio');
+      return;
+    }
+    const signLabel = res.signedPct > 0 ? `+${res.signedPct}%` : `${res.signedPct}%`;
+    onSaveExistenciasPrices?.({
+      inventarioPreciosUnitarios: res.inventarioPreciosUnitarios,
+      herrajesPrecios: res.herrajesPrecios,
+    });
+    setLastBulkUndoSnapshot({
+      ...prevSnapshot,
+      summary: `${signLabel} en ${res.updatedCount} material(es)`,
+    });
+    onShowToast(
+      `Ajuste ${signLabel} aplicado a ${res.updatedCount} material(es) de inventario`,
+      true
+    );
+  };
+
+  const handleUndoBulkExistenciasPrice = () => {
+    if (!lastBulkUndoSnapshot) return;
+    onSaveExistenciasPrices?.({
+      inventarioPreciosUnitarios: lastBulkUndoSnapshot.inventarioPreciosUnitarios,
+      herrajesPrecios: lastBulkUndoSnapshot.herrajesPrecios,
+    });
+    const prevSummary = lastBulkUndoSnapshot.summary;
+    setLastBulkUndoSnapshot(null);
+    onShowToast(`Se revirtió el ajuste (${prevSummary})`, true);
+  };
+
+  const handleSetSingleExistenciaPrice = (item: (typeof compactExistencias)[number], rawVal: string) => {
+    const parsed = Number(rawVal);
+    if (!Number.isFinite(parsed) || parsed <= 0) return;
+    const clean = Math.max(1, round2(parsed));
+    const nextUnitMap = {
+      ...(effectivePriceCtx.inventarioPreciosUnitarios || {}),
+      [item.id]: clean,
+    };
+    const nextHerrajes = { ...(effectivePriceCtx.herrajesPrecios || {}) };
+    if (item.tipo === 'herraje' && item.herrajeId) {
+      nextHerrajes[item.herrajeId] = clean;
+    }
+    onSaveExistenciasPrices?.({
+      inventarioPreciosUnitarios: nextUnitMap,
+      herrajesPrecios: nextHerrajes,
+    });
+  };
   const [invMarca, setInvMarca] = useState(INVENTARIO_DEFAULT_MARCA);
   const [invMarcaOtra, setInvMarcaOtra] = useState('');
   const [invLinea, setInvLinea] = useState<LineaId>('3');
@@ -244,62 +371,20 @@ export const InventarioView: React.FC<Props> = ({
   const [perfilInputUnit, setPerfilInputUnit] = useState<'tramos' | 'm' | 'cm'>('tramos');
   const [perfilDraftMap, setPerfilDraftMap] = useState<Record<string, string>>({});
 
-  // Sobrantes (< 6.00 m) vinculados a Marca + Línea + Perfil + Color (sincronizados con Tramos completos)
-  const [sobMarca, setSobMarca] = useState(INVENTARIO_DEFAULT_MARCA);
-  const [sobMarcaOtra, setSobMarcaOtra] = useState('');
-  const [sobLinea, setSobLinea] = useState<LineaId>('3');
-  const [sobColor, setSobColor] = useState<ColorId>('natural');
-  const [sobPerfil, setSobPerfil] = useState<PerfilCatalogoId>('cabezal');
-  const [sobUnit, setSobUnit] = useState<'cm' | 'm'>('cm');
-  const [sobLargoStr, setSobLargoStr] = useState('120');
-  const [sobCantidad, setSobCantidad] = useState(1);
-  const [sobNota, setSobNota] = useState('');
-  const [highlightedSobranteId, setHighlightedSobranteId] = useState<string | null>(null);
-  const prevSobranteIdsRef = useRef<Set<string>>(new Set(sobrantes.map((s) => s.id)));
-  const sobranteHighlightTimerRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    const prevIds = prevSobranteIdsRef.current;
-    const newlyAdded = sobrantes.find((s) => !prevIds.has(s.id));
-    prevSobranteIdsRef.current = new Set(sobrantes.map((s) => s.id));
-    if (newlyAdded) {
-      setHighlightedSobranteId(newlyAdded.id);
-      if (sobranteHighlightTimerRef.current !== null) {
-        window.clearTimeout(sobranteHighlightTimerRef.current);
-      }
-      sobranteHighlightTimerRef.current = window.setTimeout(() => {
-        setHighlightedSobranteId((curr) => (curr === newlyAdded.id ? null : curr));
-        sobranteHighlightTimerRef.current = null;
-      }, 2000);
-    }
-  }, [sobrantes]);
-
-  useEffect(() => {
-    return () => {
-      if (sobranteHighlightTimerRef.current !== null) {
-        window.clearTimeout(sobranteHighlightTimerRef.current);
-      }
-    };
-  }, []);
-
   const handleSelectLinea = (nextLinea: LineaId) => {
     setInvLinea(nextLinea);
-    setSobLinea(nextLinea);
   };
 
   const handleSelectColor = (nextColor: ColorId) => {
     setInvColor(nextColor);
-    setSobColor(nextColor);
   };
 
   const handleSelectMarca = (nextMarca: string) => {
     setInvMarca(nextMarca);
-    setSobMarca(nextMarca);
   };
 
   const handleSelectMarcaOtra = (nextVal: string) => {
     setInvMarcaOtra(nextVal);
-    setSobMarcaOtra(nextVal);
   };
 
   const activeMarcaFinal =
@@ -335,9 +420,6 @@ export const InventarioView: React.FC<Props> = ({
 
   const totalTramosGlobal = round2(
     Object.values(inventario).reduce((acc, v) => acc + (Number(v) || 0), 0)
-  );
-  const totalSobrantesM = round2(
-    sobrantes.reduce((acc, s) => acc + (Number(s.largoM) || 0) * Math.max(1, Number(s.cantidad) || 1), 0)
   );
   const totalHojasVidrio = hojasVidrio.reduce((acc, h) => acc + Math.max(0, Number(h.cantidad) || 0), 0);
   const totalVidrioM2 = round2(
@@ -386,56 +468,6 @@ export const InventarioView: React.FC<Props> = ({
       tramos: Math.max(0.5, Number(aprTramos) || 1),
     });
     setAprProyecto('');
-  };
-
-  const handleToggleSobUnit = (nextUnit: 'cm' | 'm') => {
-    if (nextUnit === sobUnit) return;
-    const raw = Number(sobLargoStr);
-    if (Number.isFinite(raw) && raw > 0) {
-      if (nextUnit === 'm') {
-        setSobLargoStr((raw / 100).toFixed(2));
-      } else {
-        setSobLargoStr(String(Math.round(raw * 100)));
-      }
-    } else {
-      setSobLargoStr(nextUnit === 'cm' ? '120' : '1.20');
-    }
-    setSobUnit(nextUnit);
-  };
-
-  const handleAgregarSobrante = (e: React.FormEvent) => {
-    e.preventDefault();
-    const raw = Number(sobLargoStr);
-    const largoNum = sobUnit === 'cm' ? round2(raw / 100) : round2(raw);
-    if (!Number.isFinite(largoNum) || largoNum <= 0 || largoNum >= 6) {
-      onShowToast(
-        sobUnit === 'cm'
-          ? 'Ingresa un largo válido menor a 600 cm (ej. 60, 120 o 300 cm)'
-          : 'Ingresa un largo válido menor a 6.00 m (ej. 0.60, 1.20 o 3.00 m)'
-      );
-      return;
-    }
-    const marcaFinal = sobMarca === 'Otra' ? sobMarcaOtra.trim() : sobMarca.trim();
-    if (!marcaFinal) {
-      onShowToast('Selecciona o escribe la marca del aluminio para vincular el sobrante');
-      return;
-    }
-    const cant = Math.max(1, Math.round(Number(sobCantidad) || 1));
-    onAddSobrante({
-      marca: marcaFinal,
-      linea: sobLinea,
-      perfilId: sobPerfil,
-      color: sobColor,
-      largoM: largoNum,
-      cantidad: cant,
-      nota: sobNota.trim() || undefined,
-    });
-    setSobNota('');
-    setSobCantidad(1);
-    onShowToast(
-      `Sobrante de ${Math.round(largoNum * 100)} cm (${largoNum.toFixed(2)} m) · ${marcaFinal} agregado`,
-      true
-    );
   };
 
   const handleToggleVidUnit = (nextUnit: 'cm' | 'm') => {
@@ -638,6 +670,138 @@ export const InventarioView: React.FC<Props> = ({
             />
           </div>
 
+          {/* Herramienta de ajuste masivo de precio (%) por proveedor */}
+          {compactExistencias.length > 0 && (
+            <div
+              id="inv-bulk-price-panel"
+              className="mb-3 p-3 rounded-xl border border-slate-300 bg-slate-50 flex flex-col gap-2.5"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <strong className="block text-[13px] font-extrabold text-[#1E293B]">
+                    Actualización Masiva de Precios (Proveedor)
+                  </strong>
+                  <span className="block text-[11.5px] text-slate-600">
+                    Marca varios materiales y aplica un incremento o descuento porcentual al instante.
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    id="btn-existencias-select-all"
+                    onClick={handleToggleSelectAllVisible}
+                    className="min-h-[32px] px-2.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-slate-800 text-[11.5px] font-extrabold cursor-pointer"
+                  >
+                    {allVisibleSelected
+                      ? `Quitar visibles (${compactExistenciasFiltradas.length})`
+                      : `Seleccionar visibles (${compactExistenciasFiltradas.length})`}
+                  </button>
+                  {selectedExistenciasItems.length > 0 && (
+                    <button
+                      type="button"
+                      id="btn-existencias-clear-selection"
+                      onClick={() => setSelectedExistenciasIds([])}
+                      className="min-h-[32px] px-2.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-slate-600 text-[11.5px] font-bold cursor-pointer"
+                    >
+                      Limpiar ({selectedExistenciasItems.length})
+                    </button>
+                  )}
+                  {lastBulkUndoSnapshot && (
+                    <button
+                      type="button"
+                      id="btn-undo-bulk-existencias-price"
+                      onClick={handleUndoBulkExistenciasPrice}
+                      className="min-h-[32px] px-2.5 rounded-lg border border-amber-400 bg-amber-50 hover:bg-amber-100 text-amber-900 text-[11.5px] font-extrabold cursor-pointer"
+                    >
+                      ↩ Deshacer ({lastBulkUndoSnapshot.summary})
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <div
+                  role="group"
+                  aria-label="Tipo de ajuste de precio"
+                  className="inline-flex rounded-lg border border-slate-300 bg-white p-0.5 shrink-0"
+                >
+                  <button
+                    type="button"
+                    id="btn-bulk-mode-inc"
+                    onClick={() => setBulkPriceMode('incremento')}
+                    className={`min-h-[34px] px-2.5 rounded-md text-[11.5px] font-extrabold cursor-pointer transition-colors ${
+                      bulkPriceMode === 'incremento'
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-transparent text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    + Incremento
+                  </button>
+                  <button
+                    type="button"
+                    id="btn-bulk-mode-dec"
+                    onClick={() => setBulkPriceMode('descuento')}
+                    className={`min-h-[34px] px-2.5 rounded-md text-[11.5px] font-extrabold cursor-pointer transition-colors ${
+                      bulkPriceMode === 'descuento'
+                        ? 'bg-rose-600 text-white'
+                        : 'bg-transparent text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    − Descuento
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-1 shrink-0">
+                  <input
+                    id="input-bulk-price-pct"
+                    type="number"
+                    min="0.5"
+                    max={bulkPriceMode === 'descuento' ? '90' : '200'}
+                    step="0.5"
+                    value={bulkPricePct}
+                    onChange={(e) => setBulkPricePct(e.target.value)}
+                    aria-label="Porcentaje de ajuste de precio"
+                    className="w-[74px] min-h-[36px] rounded-lg border border-slate-300 bg-white px-2.5 text-[13px] font-extrabold text-right mono text-slate-900"
+                  />
+                  <span className="text-[13px] font-extrabold text-slate-700">%</span>
+                </div>
+
+                <div className="flex items-center gap-1 flex-wrap">
+                  {[5, 10, 15, 20].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setBulkPricePct(String(preset))}
+                      className={`min-h-[32px] px-2 rounded-lg border text-[11px] font-extrabold mono cursor-pointer ${
+                        Number(bulkPricePct) === preset
+                          ? 'bg-[#0B2545] text-white border-[#0B2545]'
+                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                      }`}
+                    >
+                      {bulkPriceMode === 'incremento' ? `+${preset}%` : `-${preset}%`}
+                    </button>
+                  ))}
+                </div>
+
+                <button
+                  type="button"
+                  id="btn-apply-bulk-existencias-price"
+                  disabled={selectedExistenciasItems.length === 0}
+                  onClick={handleApplyBulkExistenciasPrice}
+                  className={`ml-auto min-h-[38px] px-3.5 rounded-lg text-[12px] font-extrabold cursor-pointer transition-colors disabled:opacity-45 disabled:cursor-not-allowed ${
+                    bulkPriceMode === 'incremento'
+                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                      : 'bg-rose-600 hover:bg-rose-700 text-white'
+                  }`}
+                >
+                  Aplicar {bulkPriceMode === 'incremento' ? '+' : '−'}
+                  {Math.abs(Number(bulkPricePct) || 0)}% a {selectedExistenciasItems.length}{' '}
+                  {selectedExistenciasItems.length === 1 ? 'material' : 'materiales'}
+                </button>
+              </div>
+            </div>
+          )}
+
           {compactExistenciasFiltradas.length === 0 ? (
             <div className="p-6 text-center rounded-xl border border-dashed border-slate-300 bg-slate-50">
               <p className="m-0 text-[13.5px] font-extrabold text-slate-700">
@@ -653,6 +817,14 @@ export const InventarioView: React.FC<Props> = ({
             <div className="flex flex-col divide-y divide-slate-200 border border-slate-200 rounded-xl overflow-hidden">
               {compactExistenciasFiltradas.map((item) => {
                 const isExpanded = expandedExistenciaId === item.id;
+                const isSelected = selectedExistenciasSet.has(item.id);
+                const priceInfo = resolveExistenciaUnitPrice(item, effectivePriceCtx);
+                const previewPct = Math.abs(Number(bulkPricePct) || 0);
+                const previewFactor =
+                  bulkPriceMode === 'descuento'
+                    ? Math.max(0.1, 1 - Math.min(90, previewPct) / 100)
+                    : 1 + Math.min(200, previewPct) / 100;
+                const previewNextPrice = Math.max(1, round2(priceInfo.price * previewFactor));
                 const badgeStyle =
                   item.tipo === 'perfil'
                     ? 'bg-blue-100 text-blue-800 border-blue-200'
@@ -663,8 +835,22 @@ export const InventarioView: React.FC<Props> = ({
                   item.tipo === 'perfil' ? 'Perfil' : item.tipo === 'herraje' ? 'Herraje' : 'Hoja';
 
                 return (
-                  <div key={item.id} className="bg-white hover:bg-slate-50/70 transition-colors">
+                  <div
+                    key={item.id}
+                    className={`transition-colors ${
+                      isSelected ? 'bg-blue-50/70' : 'bg-white hover:bg-slate-50/70'
+                    }`}
+                  >
                     <div className="px-3 py-2 flex items-center justify-between gap-2">
+                      <label className="inline-flex items-center cursor-pointer shrink-0 pr-1">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelectExistencia(item.id)}
+                          aria-label={`Seleccionar ${item.titulo} para ajuste de precio`}
+                          className="w-4 h-4 accent-blue-600 cursor-pointer"
+                        />
+                      </label>
                       <button
                         type="button"
                         onClick={() =>
@@ -691,8 +877,23 @@ export const InventarioView: React.FC<Props> = ({
                         </span>
                       </button>
 
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <span className="mono px-2 py-0.5 rounded-md bg-emerald-50 border border-emerald-300 text-emerald-800 text-[12px] font-extrabold">
+                      <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+                        <span
+                          className="mono px-2 py-0.5 rounded-md bg-slate-100 border border-slate-300 text-slate-900 text-[11.5px] font-extrabold tabular-nums"
+                          title={`Precio unitario actual por ${priceInfo.unitLabel}`}
+                        >
+                          ${priceInfo.price.toLocaleString('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}/{priceInfo.unitLabel}
+                          {isSelected && previewPct > 0 && (
+                            <span
+                              className={`ml-1 font-extrabold ${
+                                bulkPriceMode === 'incremento' ? 'text-emerald-700' : 'text-rose-700'
+                              }`}
+                            >
+                              → ${previewNextPrice.toLocaleString('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                            </span>
+                          )}
+                        </span>
+                        <span className="mono px-2 py-0.5 rounded-md bg-emerald-50 border border-emerald-300 text-emerald-800 text-[12px] font-extrabold tabular-nums">
                           {item.cantidad} {item.unidad}
                         </span>
                         <button
@@ -707,9 +908,21 @@ export const InventarioView: React.FC<Props> = ({
                     </div>
 
                     {isExpanded && (
-                      <div className="px-3 pb-2.5 pt-1 bg-slate-50 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-[12px]">
+                      <div className="px-3 pb-2.5 pt-1.5 bg-slate-50 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-[12px]">
                         <div className="text-slate-600 font-semibold">{item.subtitulo}</div>
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <label className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-700">
+                            <span>Precio ({priceInfo.unitLabel}): $</span>
+                            <input
+                              type="number"
+                              min="1"
+                              step="0.5"
+                              defaultValue={priceInfo.price}
+                              key={`${item.id}-${priceInfo.price}`}
+                              onBlur={(e) => handleSetSingleExistenciaPrice(item, e.target.value)}
+                              className="w-[82px] min-h-[28px] rounded-md border border-slate-300 bg-white px-2 text-[11.5px] font-extrabold mono text-slate-900"
+                            />
+                          </label>
                           {item.tipo === 'perfil' && (
                             <button
                               type="button"
@@ -1437,13 +1650,13 @@ export const InventarioView: React.FC<Props> = ({
                     </div>
                     <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200">
                       <span className="block text-[10.5px] font-extrabold uppercase tracking-wide text-emerald-800">
-                        Sobrantes libres
+                        Metros libres estimados
                       </span>
                       <strong className="block mono text-[16px] font-extrabold text-emerald-950 mt-0.5">
                         {resumenObras.totalMetrosLibres.toFixed(2)} m
                       </strong>
                       <span className="block text-[11px] text-emerald-800 font-semibold">
-                        Disponibles para reutilizar
+                        Balance disponible en obra
                       </span>
                     </div>
                   </div>

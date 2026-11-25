@@ -6,9 +6,12 @@ import {
   ChevronUp,
   CloudUpload,
   Crown,
+  ExternalLink,
+  Flame,
   HelpCircle,
   LayoutGrid,
   Lock,
+  MessageCircle,
   Monitor,
   Moon,
   Palette,
@@ -29,7 +32,9 @@ import {
   getSkinPlanRequirementLabel,
   isSkinUnlockedForLicense,
   LicenciaState,
+  normalizeSkinVariantForSkin,
   ResolvedAppTheme,
+  SKIN_VARIANTS_BY_SKIN,
 } from '../utils/storageHelpers';
 import { AlumineroProMetallicLogo } from './MetallicIcons';
 
@@ -366,7 +371,7 @@ interface SideDrawerProps {
   onSelectTheme?: (theme: AppTheme) => void;
   onToggleTheme: () => void;
   onSelectSkin: (skin: AppSkin) => void;
-  onSelectSkinVariant?: (variant: AppSkinVariant) => void;
+  onSelectSkinVariant?: (variant: AppSkinVariant, targetSkin?: AppSkin) => void;
   onConnectGoogle?: () => Promise<void> | void;
   onDisconnectGoogle?: () => Promise<void> | void;
   onClearGoogleAuthError?: () => void;
@@ -408,46 +413,46 @@ const SKIN_OPTIONS: SkinOptionMeta[] = [
   {
     id: 'basica',
     title: 'Básica',
-    subtitle: 'Diseño limpio y sólido de alto contraste',
+    subtitle: 'Colores planos (plastas sólidas y limpias)',
     tierBadge: 'Gratis y PRO',
-    previewBg: '#0B1120',
-    previewCardA: 'linear-gradient(135deg, #2563EB, #1D4ED8)',
-    previewCardB: 'linear-gradient(135deg, #1E293B, #0F172A)',
-    previewBorder: 'rgba(148, 163, 184, 0.35)',
-    previewAccent: '#38bdf8',
+    previewBg: '#0F172A',
+    previewCardA: '#1D4ED8',
+    previewCardB: '#1E293B',
+    previewBorder: '#475569',
+    previewAccent: '#3B82F6',
   },
   {
     id: 'navidena',
     title: 'Navideña ❄️',
-    subtitle: 'Invierno oscuro elegante, luces cálidas y gorro navideño',
+    subtitle: 'Invierno elegante en plastas, luces cálidas y gorro navideño',
     tierBadge: 'Gratis y PRO',
-    previewBg: 'linear-gradient(145deg, #071320, #16101D)',
-    previewCardA: 'linear-gradient(135deg, #991B1B, #7F1D1D)',
-    previewCardB: 'linear-gradient(135deg, #0F2334, #091622)',
-    previewBorder: 'rgba(245, 194, 107, 0.65)',
+    previewBg: '#091828',
+    previewCardA: '#B91C1C',
+    previewCardB: '#102438',
+    previewBorder: '#D97706',
     previewAccent: '#F59E0B',
   },
   {
     id: 'ejecutiva',
     title: 'Ejecutiva',
-    subtitle: 'Oscuro luminoso de alta visibilidad',
+    subtitle: 'Plastas ejecutivas en Azul o Naranja',
     tierBadge: 'Exclusiva Planes PRO',
-    previewBg: 'linear-gradient(145deg, #07152e, #0c234a)',
-    previewCardA: 'linear-gradient(135deg, #163d75, #0f2c59)',
-    previewCardB: 'linear-gradient(135deg, #142f5c, #0a1934)',
-    previewBorder: 'rgba(56, 189, 248, 0.72)',
-    previewAccent: '#38bdf8',
+    previewBg: '#0A192F',
+    previewCardA: '#1D4ED8',
+    previewCardB: '#132E57',
+    previewBorder: '#3B82F6',
+    previewAccent: '#60A5FA',
   },
   {
     id: 'industrial',
     title: 'Industrial PRO',
-    subtitle: 'Cuadrícula técnica metálica profesional',
+    subtitle: 'Plastas industriales: Verde, Oro, Plata y Bronce',
     tierBadge: 'Exclusiva Planes PRO',
-    previewBg: 'linear-gradient(145deg, #071A13, #0B261C)',
-    previewCardA: 'linear-gradient(135deg, #059669, #047857)',
-    previewCardB: 'linear-gradient(135deg, #0F3025, #071813)',
-    previewBorder: 'rgba(52, 211, 153, 0.78)',
-    previewAccent: '#10b981',
+    previewBg: '#071F17',
+    previewCardA: '#15803D',
+    previewCardB: '#0E3326',
+    previewBorder: '#22C55E',
+    previewAccent: '#4ADE80',
   },
 ];
 
@@ -460,6 +465,7 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
   theme,
   themePreference,
   skin,
+  skinVariant = 'default',
   cloudAccountEmail = null,
   isCloudBackupEligible = false,
   googleUserEmail = null,
@@ -469,6 +475,7 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
   onSelectTheme,
   onToggleTheme,
   onSelectSkin,
+  onSelectSkinVariant,
   onConnectGoogle,
   onDisconnectGoogle,
   onClearGoogleAuthError,
@@ -494,6 +501,7 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
   onToggleHomeReorderMode,
 }) => {
   const [skinsExpanded, setSkinsExpanded] = useState(false);
+  const [promoFlyerExpanded, setPromoFlyerExpanded] = useState(true);
   const [missionExpanded, setMissionExpanded] = useState(false);
   const [lockedSkinPrompt, setLockedSkinPrompt] = useState<SkinOptionMeta | null>(null);
   const drawerBrandTapsRef = useRef<{ count: number; lastTs: number }>({ count: 0, lastTs: 0 });
@@ -546,6 +554,8 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
 
   const isDark = theme === 'dark';
   const currentSkinMeta = SKIN_OPTIONS.find((s) => s.id === skin) || SKIN_OPTIONS[0];
+  const normalizedActiveVariant = normalizeSkinVariantForSkin(skin, skinVariant);
+  const currentSkinVariantMeta = SKIN_VARIANTS_BY_SKIN[skin]?.find((v) => v.id === normalizedActiveVariant);
 
   const handleSkinTap = (option: SkinOptionMeta) => {
     const unlocked = isSkinUnlockedForLicense(option.id, licencia, proActive);
@@ -555,6 +565,20 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
     }
     setLockedSkinPrompt(null);
     onSelectSkin(option.id);
+  };
+
+  const handleVariantTap = (option: SkinOptionMeta, variantId: AppSkinVariant) => {
+    const unlocked = isSkinUnlockedForLicense(option.id, licencia, proActive);
+    if (!unlocked) {
+      setLockedSkinPrompt(option);
+      return;
+    }
+    setLockedSkinPrompt(null);
+    if (onSelectSkinVariant) {
+      onSelectSkinVariant(variantId, option.id);
+    } else if (skin !== option.id) {
+      onSelectSkin(option.id);
+    }
   };
 
   const panelClass = isDark
@@ -818,6 +842,7 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
                 </span>
                 <span className={`block text-[11px] font-semibold ${isDark ? 'text-sky-200/90' : 'text-blue-700'}`}>
                   Activa: {currentSkinMeta.title}
+                  {currentSkinVariantMeta ? ` · ${currentSkinVariantMeta.label}` : ''}
                 </span>
               </div>
             </div>
@@ -836,6 +861,12 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
               {SKIN_OPTIONS.map((opt) => {
                 const unlocked = isSkinUnlockedForLicense(opt.id, licencia, proActive);
                 const isSelected = skin === opt.id;
+                const variants = SKIN_VARIANTS_BY_SKIN[opt.id] || [];
+                const activeVariantForCard = isSelected
+                  ? normalizeSkinVariantForSkin(opt.id, skinVariant)
+                  : 'default';
+                const activeSwatchObj = variants.find((v) => v.id === activeVariantForCard);
+                const cardPreviewAccent = activeSwatchObj?.swatchBg || opt.previewCardA;
                 return (
                   <div
                     key={opt.id}
@@ -861,33 +892,32 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
                     >
                       <div className="flex items-center gap-2.5">
                         <div
-                          className="w-11 h-11 rounded-lg p-1.5 flex flex-col justify-between shrink-0 shadow-inner"
+                          className="w-11 h-11 rounded-lg p-1.5 flex flex-col justify-between shrink-0"
                           style={{
-                            background: opt.previewBg,
-                            border: `1.5px solid ${opt.previewBorder}`,
+                            backgroundColor: isDark ? opt.previewBg : '#F8FAFC',
+                            border: `2px solid ${cardPreviewAccent}`,
                           }}
                           aria-hidden="true"
                         >
                           <div
                             className="h-2.5 w-full rounded-[3px]"
                             style={{
-                              background: opt.previewCardA,
-                              borderTop: `1.5px solid ${opt.previewAccent}`,
+                              backgroundColor: cardPreviewAccent,
                             }}
                           />
                           <div className="grid grid-cols-2 gap-1">
                             <span
                               className="h-3 rounded-[3px]"
                               style={{
-                                background: opt.previewCardB,
-                                border: `1px solid ${opt.previewBorder}`,
+                                backgroundColor: isDark ? opt.previewCardB : '#FFFFFF',
+                                border: `1px solid ${cardPreviewAccent}`,
                               }}
                             />
                             <span
                               className="h-3 rounded-[3px]"
                               style={{
-                                background: opt.previewCardB,
-                                border: `1px solid ${opt.previewBorder}`,
+                                backgroundColor: isDark ? opt.previewCardB : '#FFFFFF',
+                                border: `1px solid ${cardPreviewAccent}`,
                               }}
                             />
                           </div>
@@ -919,6 +949,50 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
                         </div>
                       </div>
                     </button>
+
+                    {variants.length > 0 && (
+                      <div
+                        id={`skin-variants-${opt.id}`}
+                        className={`px-2.5 pb-2.5 pt-2 border-t ${
+                          isDark ? 'border-white/10' : 'border-slate-200'
+                        }`}
+                      >
+                        <div className={`text-[10px] font-extrabold uppercase tracking-wider mb-1.5 ${subTextClass}`}>
+                          Color plano (plasta):
+                        </div>
+                        <div className={`grid gap-1.5 ${variants.length === 2 ? 'grid-cols-2' : 'grid-cols-2'}`}>
+                          {variants.map((variant) => {
+                            const isVariantSelected = isSelected && activeVariantForCard === variant.id;
+                            return (
+                              <button
+                                key={variant.id}
+                                type="button"
+                                id={`btn-skin-${opt.id}-variant-${variant.id}`}
+                                aria-pressed={isVariantSelected}
+                                onClick={() => handleVariantTap(opt, variant.id)}
+                                className={`min-h-[34px] px-2 py-1 rounded-lg border text-[11px] font-extrabold cursor-pointer flex items-center justify-center gap-1.5 transition-colors ${
+                                  isVariantSelected
+                                    ? isDark
+                                      ? 'border-white bg-white/15 text-white'
+                                      : 'border-slate-900 bg-slate-900 text-white'
+                                    : isDark
+                                      ? 'border-white/15 bg-slate-950/50 text-slate-200 hover:bg-white/10'
+                                      : 'border-slate-300 bg-white text-slate-800 hover:bg-slate-100'
+                                }`}
+                              >
+                                <span
+                                  className="w-3 h-3 rounded-sm shrink-0 border border-white/60"
+                                  style={{ backgroundColor: variant.swatchBg }}
+                                  aria-hidden="true"
+                                />
+                                <span className="truncate">{variant.label}</span>
+                                {isVariantSelected && <Check className="w-3 h-3 shrink-0" aria-hidden="true" />}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -972,6 +1046,201 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
             </div>
           )}
         </div>
+
+        {/* 1.8 Flyer Promocional de Lanzamiento Desplegable con Animación de Flama */}
+        <section
+          id="drawer-launch-promo-flyer"
+          aria-label="Promoción exclusiva de lanzamiento Aluminero Pro"
+          className={`rounded-xl border-2 overflow-hidden shrink-0 ${
+            isDark
+              ? 'border-orange-500 bg-[#1B120C] text-white'
+              : 'border-orange-500 bg-[#FFF7ED] text-slate-900'
+          }`}
+        >
+          <button
+            type="button"
+            id="btn-drawer-promo-flyer-toggle"
+            aria-expanded={promoFlyerExpanded}
+            onClick={() => setPromoFlyerExpanded((prev) => !prev)}
+            className="w-full px-3 py-2.5 bg-[#EA580C] hover:bg-[#DC4E07] text-white flex items-center justify-between gap-2 text-left cursor-pointer border-0 transition-colors"
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <span
+                className="promo-flame-badge inline-flex items-center justify-center w-7 h-7 rounded-lg bg-[#7C2D12] text-amber-300 shrink-0"
+                aria-hidden="true"
+              >
+                <Flame className="w-4 h-4 promo-flame-anim fill-amber-400 text-yellow-200" />
+              </span>
+              <div className="min-w-0">
+                <span className="block text-[11px] font-black tracking-wide uppercase leading-tight text-white">
+                  🔥 PROMOCIÓN EXCLUSIVA DE LANZAMIENTO
+                </span>
+                <span className="block text-[10.5px] font-bold text-orange-100 leading-tight mt-0.5">
+                  {promoFlyerExpanded ? 'Toca para minimizar ofertas' : 'Hasta 50% OFF este mes · Ver planes'}
+                </span>
+              </div>
+            </div>
+            {promoFlyerExpanded ? (
+              <ChevronUp className="w-4 h-4 text-white shrink-0" aria-hidden="true" />
+            ) : (
+              <ChevronDown className="w-4 h-4 text-white shrink-0" aria-hidden="true" />
+            )}
+          </button>
+
+          {promoFlyerExpanded && (
+            <div id="drawer-launch-promo-body" className="p-3 flex flex-col gap-2.5">
+              <p
+                className={`m-0 text-[11.5px] font-extrabold leading-snug ${
+                  isDark ? 'text-orange-100' : 'text-orange-950'
+                }`}
+              >
+                ¡Aprovecha este mes hasta 50% de descuento antes de que suban a su precio regular!
+              </p>
+
+              {/* Plan 30 días */}
+              <div
+                className={`rounded-lg border p-2.5 flex flex-col gap-1.5 ${
+                  isDark
+                    ? 'border-orange-400/35 bg-[#261810]'
+                    : 'border-orange-200 bg-white'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className={`text-[11.5px] font-black tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                    PLAN 30 DÍAS PRO
+                  </span>
+                  <span className="px-1.5 py-0.5 rounded bg-orange-600 text-white text-[9.5px] font-black uppercase">
+                    Lanzamiento
+                  </span>
+                </div>
+                <div className="flex items-baseline justify-between gap-2">
+                  <div className="flex items-baseline gap-2">
+                    <span className={`text-[11.5px] line-through font-bold ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                      $699 MXN
+                    </span>
+                    <span className={`text-[16px] font-black ${isDark ? 'text-amber-300' : 'text-orange-700'}`}>
+                      $369 MXN
+                    </span>
+                  </div>
+                  <span className={`text-[10px] font-bold ${isDark ? 'text-orange-200' : 'text-slate-600'}`}>
+                    Precio Final
+                  </span>
+                </div>
+                <a
+                  href="https://mpago.la/2evqS3r"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  id="link-promo-plan-30"
+                  className="w-full min-h-[34px] px-2.5 py-1.5 rounded-lg bg-[#009EE3] hover:bg-[#0089C7] text-white text-[11.5px] font-extrabold no-underline inline-flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <span>Pagar Plan 30 Días · $369</span>
+                  <ExternalLink className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                </a>
+              </div>
+
+              {/* Plan 90 días */}
+              <div
+                className={`rounded-lg border p-2.5 flex flex-col gap-1.5 ${
+                  isDark
+                    ? 'border-orange-400/35 bg-[#261810]'
+                    : 'border-orange-200 bg-white'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className={`text-[11.5px] font-black tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                    PLAN 90 DÍAS PRO
+                  </span>
+                  <span className="px-1.5 py-0.5 rounded bg-blue-600 text-white text-[9.5px] font-black uppercase">
+                    -48% OFF
+                  </span>
+                </div>
+                <div className="flex items-baseline justify-between gap-2">
+                  <div className="flex items-baseline gap-2">
+                    <span className={`text-[11.5px] line-through font-bold ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                      $1,899 MXN
+                    </span>
+                    <span className={`text-[16px] font-black ${isDark ? 'text-amber-300' : 'text-orange-700'}`}>
+                      $989 MXN
+                    </span>
+                  </div>
+                  <span className={`text-[10px] font-bold ${isDark ? 'text-orange-200' : 'text-slate-600'}`}>
+                    Precio Final
+                  </span>
+                </div>
+                <a
+                  href="https://mpago.la/2xXek7s"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  id="link-promo-plan-90"
+                  className="w-full min-h-[34px] px-2.5 py-1.5 rounded-lg bg-[#009EE3] hover:bg-[#0089C7] text-white text-[11.5px] font-extrabold no-underline inline-flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <span>Pagar Plan 90 Días · $989</span>
+                  <ExternalLink className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                </a>
+              </div>
+
+              {/* Plan 1 Año PRO (Mejor Ahorro) */}
+              <div
+                className={`rounded-lg border-2 p-2.5 flex flex-col gap-1.5 ${
+                  isDark
+                    ? 'border-emerald-400 bg-[#0D2A20]'
+                    : 'border-emerald-600 bg-[#ECFDF5]'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-1.5">
+                  <span className={`text-[11.5px] font-black tracking-tight ${isDark ? 'text-white' : 'text-emerald-950'}`}>
+                    PLAN 1 AÑO PRO
+                  </span>
+                  <span className="px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[9.5px] font-black uppercase">
+                    ¡MEJOR AHORRO!
+                  </span>
+                </div>
+                <div className="flex items-baseline justify-between gap-2">
+                  <div className="flex items-baseline gap-2">
+                    <span className={`text-[11.5px] line-through font-bold ${isDark ? 'text-emerald-200/70' : 'text-slate-500'}`}>
+                      $3,499 MXN
+                    </span>
+                    <span className={`text-[17px] font-black ${isDark ? 'text-emerald-300' : 'text-emerald-800'}`}>
+                      $1,799 MXN
+                    </span>
+                  </div>
+                  <span className={`text-[10px] font-extrabold ${isDark ? 'text-emerald-200' : 'text-emerald-800'}`}>
+                    Precio Final
+                  </span>
+                </div>
+                <a
+                  href="https://mpago.la/335TCqb"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  id="link-promo-plan-anual"
+                  className="w-full min-h-[36px] px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11.5px] font-extrabold no-underline inline-flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <span>Pagar Plan 1 Año · $1,799</span>
+                  <ExternalLink className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                </a>
+              </div>
+
+              {/* Pie de contacto WhatsApp directo */}
+              <a
+                href="https://wa.me/527351631532"
+                target="_blank"
+                rel="noopener noreferrer"
+                id="link-promo-whatsapp"
+                className="w-full min-h-[40px] px-3 py-2 rounded-lg bg-[#16A34A] hover:bg-[#15803D] text-white no-underline flex items-center justify-between gap-2 transition-colors"
+              >
+                <span className="inline-flex items-center gap-2 min-w-0">
+                  <MessageCircle className="w-4 h-4 shrink-0" aria-hidden="true" />
+                  <span className="text-[11.5px] font-extrabold leading-tight">
+                    Contáctanos por WhatsApp
+                  </span>
+                </span>
+                <span className="text-[11.5px] font-black tracking-tight whitespace-nowrap bg-white/20 px-2 py-0.5 rounded">
+                  735 163 1532
+                </span>
+              </a>
+            </div>
+          )}
+        </section>
 
         {/* 2. Estado de Licencia PRO (con ID Equipo) */}
         <button

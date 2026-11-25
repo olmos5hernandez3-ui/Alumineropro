@@ -169,6 +169,8 @@ import {
   saveGuidedTutorialSeen,
   loadHomeMenuLayout,
   saveHomeMenuLayout,
+  loadCatalogVigenciaLabel,
+  saveCatalogVigenciaLabel,
   loadTheme,
   SobranteItem,
   TallerConfig,
@@ -777,12 +779,17 @@ export default function App() {
   }, []);
 
   const handleSelectSkinVariant = useCallback(
-    (variant: AppSkinVariant) => {
-      const normalized = normalizeSkinVariantForSkin(skin, variant);
-      saveSkinVariant(skin, normalized);
+    (variant: AppSkinVariant, targetSkin?: AppSkin) => {
+      const effectiveSkin = targetSkin ?? skin;
+      const normalized = normalizeSkinVariantForSkin(effectiveSkin, variant);
+      if (effectiveSkin !== skin) {
+        saveSkin(effectiveSkin);
+        setSkin(effectiveSkin);
+      }
+      saveSkinVariant(effectiveSkin, normalized);
       setSkinVariant(normalized);
       const variantLabelMap: Record<AppSkinVariant, string> = {
-        default: skin === 'industrial' ? 'Verde' : 'Azul',
+        default: effectiveSkin === 'industrial' ? 'Verde' : 'Azul',
         verde: 'Verde',
         naranja: 'Naranja',
         plateada: 'Plata',
@@ -790,7 +797,7 @@ export default function App() {
         bronce: 'Bronce',
       };
       showToastRef.current(
-        `Variante "${variantLabelMap[normalized]}" aplicada`,
+        `Color plano "${variantLabelMap[normalized]}" aplicado`,
         true
       );
     },
@@ -815,6 +822,42 @@ export default function App() {
     const saved = saveHomeMenuLayout(cloneHomeMenuLayout(DEFAULT_HOME_MENU_LAYOUT));
     setHomeMenuLayout(saved);
     showToastRef.current('Orden predeterminado restaurado', true);
+  }, []);
+
+  const [catalogVigenciaLabel, setCatalogVigenciaLabel] = useState<string>(() =>
+    loadCatalogVigenciaLabel()
+  );
+
+  useEffect(() => {
+    let active = true;
+    fetch('/api/config/catalog-vigencia')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!active || !data || typeof data.label !== 'string') return;
+        const saved = saveCatalogVigenciaLabel(data.label);
+        setCatalogVigenciaLabel(saved);
+      })
+      .catch(() => {
+        // offline fallback: mantener valor en localStorage
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const handleUpdateCatalogVigenciaLabel = useCallback(async (nextLabel: string) => {
+    const saved = saveCatalogVigenciaLabel(nextLabel);
+    setCatalogVigenciaLabel(saved);
+    try {
+      await fetch('/api/config/catalog-vigencia', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label: saved }),
+      });
+    } catch {
+      // guardado local ya aplicado
+    }
+    showToastRef.current('Etiqueta de vigencia de catálogos actualizada', true);
   }, []);
 
   const [toast, setToast] = useState<{ msg: string; topSuccess: boolean } | null>(null);
@@ -1252,7 +1295,7 @@ export default function App() {
     if (effectiveSkin !== skin) {
       setSkin('basica');
     }
-    const effectiveVariant: AppSkinVariant = 'default';
+    const effectiveVariant: AppSkinVariant = normalizeSkinVariantForSkin(effectiveSkin, skinVariant);
     if (skinVariant !== effectiveVariant) {
       setSkinVariant(effectiveVariant);
     }
@@ -3495,6 +3538,7 @@ export default function App() {
             selectedFormulaId={selectedFormulaId}
             perfilFotos={perfilFotos}
             workTab={workTab}
+            catalogVigenciaLabel={catalogVigenciaLabel}
             onChangeWorkTab={(tab) => {
               if (tab !== workTab) pushNavFrame({ workTab: tab });
             }}
@@ -3832,6 +3876,19 @@ export default function App() {
               onRequestBack={requestBack}
               onRegisterCloseSubModal={registerCloseSubModal}
               onReplaceSubModalWithPerfil={replaceSubModalWithPerfil}
+              existenciasPriceCtx={{
+                inventarioPreciosUnitarios: taller.inventarioPreciosUnitarios || {},
+                precioListaTramo: taller.precioListaTramo,
+                rellenoPreciosM2: taller.rellenoPreciosM2 || {},
+                herrajesPrecios: taller.herrajesPrecios || {},
+              }}
+              onSaveExistenciasPrices={({ inventarioPreciosUnitarios, herrajesPrecios }) => {
+                setTaller((prev) => ({
+                  ...prev,
+                  inventarioPreciosUnitarios,
+                  herrajesPrecios,
+                }));
+              }}
               onShowToast={showToast}
             />
         )}
@@ -3858,6 +3915,7 @@ export default function App() {
               sobrantes={sobrantes}
               ajusteDescuentos={taller.ajusteDescuentos}
               optimizadorConfig={taller.optimizador}
+              catalogVigenciaLabel={catalogVigenciaLabel}
               step={modStep}
               paso5Tab={modPaso5Tab}
               mosquiteroModalOpen={modMosqOpen}
@@ -3942,6 +4000,13 @@ export default function App() {
           <CatalogoView
             perfilFotos={perfilFotos}
             catalogoTab={catalogoTab}
+            catalogVigenciaLabel={catalogVigenciaLabel}
+            onSelectLineaFromCatalog={(linea) => {
+              setCategoria('ventanas');
+              handleSelectLinea(linea);
+              navigateTo('trabajo');
+              showToast(`Serie ${LINEAS_CONFIG[linea].nombre} cargada en Cotizador`, true);
+            }}
             onChangeCatalogoTab={(tab) => {
               if (tab !== catalogoTab) pushNavFrame({ catalogoTab: tab });
             }}
@@ -3982,6 +4047,8 @@ export default function App() {
           >
           <AdminDashboardView
             deviceId={deviceId}
+            catalogVigenciaLabel={catalogVigenciaLabel}
+            onUpdateCatalogVigenciaLabel={handleUpdateCatalogVigenciaLabel}
             licencia={licencia}
             adminKeys={adminKeys}
             revokedDevicesMap={revokedDevicesMap}
@@ -4281,6 +4348,7 @@ export default function App() {
         theme={resolvedTheme}
         themePreference={themePreference}
         skin={skin}
+        skinVariant={skinVariant}
         cloudAccountEmail={cloudAccountSession?.email || null}
         isCloudBackupEligible={isCloudBackupEligible}
         googleUserEmail={firebaseUser?.email || null}
@@ -4290,6 +4358,7 @@ export default function App() {
         onSelectTheme={handleSelectTheme}
         onToggleTheme={handleToggleTheme}
         onSelectSkin={handleSelectSkin}
+        onSelectSkinVariant={handleSelectSkinVariant}
         onConnectGoogle={handleConnectGoogle}
         onDisconnectGoogle={handleDisconnectGoogle}
         onClearGoogleAuthError={() => setGoogleAuthError(null)}

@@ -3028,7 +3028,7 @@ test('85. Carátulas y sub-variantes desbloqueadas por plan (Free/3d: Básica+Na
     ['basica', 'navidena', 'ejecutiva', 'industrial']
   );
 
-  assert.equal(normalizeSkinVariantForSkin('ejecutiva', 'verde'), 'verde');
+  assert.equal(normalizeSkinVariantForSkin('ejecutiva', 'verde'), 'default');
   assert.equal(normalizeSkinVariantForSkin('ejecutiva', 'naranja'), 'naranja');
   assert.equal(normalizeSkinVariantForSkin('ejecutiva', 'bronce'), 'default');
   assert.equal(normalizeSkinVariantForSkin('industrial', 'bronce'), 'bronce');
@@ -3295,4 +3295,287 @@ test('92. Ayuda y Preguntas Frecuentes: contiene exactamente las 5 preguntas cla
   assert.ok(WORKSHOP_FAQ_ITEMS[4].answer.includes('90 días ($989)'));
   assert.ok(WORKSHOP_FAQ_ITEMS[4].answer.includes('1 Año completo ($1,799 MXN)'));
 });
+
+test('93. EuroAlum 2500 (2 hojas, corte 45°): fórmulas oficiales de perfiles, vidrio y 12 escuadras', async () => {
+  const { calcularDespiece } = await import('./alumineroLogic.ts');
+  // 120 × 100 cm -> H = 1200 mm, V = 1000 mm
+  const res = calcularDespiece({
+    anchoCm: 120,
+    altoCm: 100,
+    cantidad: 1,
+    linea: 'euroalum-2500',
+    color: 'natural',
+    vidrio: 'claro6',
+    hojas: 2,
+    apertura: 'corrediza',
+    puertaIntermedio: false,
+    puertaEconomica: false,
+    sentidoPuerta: 'der',
+    invertido: false,
+    tolerancias: { marcoH: 0, hojaV: 0, hojaH: 0, vidAncho: 0, vidAlto: 0 },
+  });
+
+  const findPerfil = (code: string) => res.perfiles.filter((p) => p.nombre.includes(code));
+  // Riel 1695: H×2 = 120 cm, V×2 = 100 cm (45°)
+  const rieles = findPerfil('1695');
+  assert.equal(rieles.length, 2);
+  assert.ok(rieles.some((p) => Math.abs(p.medidaCm - 120) < 0.01 && p.pzas === 2 && p.angulo === '45°'));
+  assert.ok(rieles.some((p) => Math.abs(p.medidaCm - 100) < 0.01 && p.pzas === 2 && p.angulo === '45°'));
+
+  // Hoja 1699: ((1200-4)/2)/10 = 59.8 cm ×4, (1000-63)/10 = 93.7 cm ×4 (45°)
+  const hojas = findPerfil('1699');
+  assert.equal(hojas.length, 2);
+  assert.ok(hojas.some((p) => Math.abs(p.medidaCm - 59.8) < 0.01 && p.pzas === 4 && p.angulo === '45°'));
+  assert.ok(hojas.some((p) => Math.abs(p.medidaCm - 93.7) < 0.01 && p.pzas === 4 && p.angulo === '45°'));
+
+  // Traslape 1619: (1000-65)/10 = 93.5 cm ×2 (90°)
+  const traslape = findPerfil('1619');
+  assert.equal(traslape.length, 1);
+  assert.ok(Math.abs(traslape[0].medidaCm - 93.5) < 0.01);
+  assert.equal(traslape[0].pzas, 2);
+  assert.equal(traslape[0].angulo, '90°');
+
+  // Vidrio: ((1200-215)/2)/10 = 49.25 cm × (1000-170)/10 = 83.0 cm (2 pzas)
+  assert.equal(res.vidrios.length, 1);
+  assert.ok(Math.abs(res.vidrios[0].anchoCm - 49.25) < 0.01);
+  assert.ok(Math.abs(res.vidrios[0].altoCm - 83.0) < 0.01);
+  assert.equal(res.vidrios[0].pzas, 2);
+
+  // 12 escuadras de unión 45° (4 marco + 8 hojas)
+  const escuadras = res.herrajes.find((h) => h.nombre.toLowerCase().includes('escuadra'));
+  assert.ok(escuadras);
+  assert.equal(escuadras.cantidad, 12);
+});
+
+test('94. EuroAlum 2800 (2 hojas, 90°) y EuroAlum 3800 (2 hojas, 90°): fórmulas exactas de corte y vidrio', async () => {
+  const { calcularDespiece } = await import('./alumineroLogic.ts');
+  const baseInput = {
+    anchoCm: 120,
+    altoCm: 100,
+    cantidad: 1,
+    color: 'negro' as const,
+    vidrio: 'claro6' as const,
+    hojas: 2 as const,
+    apertura: 'corrediza' as const,
+    puertaIntermedio: false,
+    puertaEconomica: false,
+    sentidoPuerta: 'der' as const,
+    invertido: false,
+    tolerancias: { marcoH: 0, hojaV: 0, hojaH: 0, vidAncho: 0, vidAlto: 0 },
+  };
+
+  // --- EuroAlum 2800 ---
+  const r2800 = calcularDespiece({ ...baseInput, linea: 'euroalum-2800' });
+  const p28 = (code: string) => r2800.perfiles.find((p) => p.nombre.includes(code));
+  assert.ok(Math.abs((p28('12150')?.medidaCm ?? 0) - 118.8) < 0.01);
+  assert.equal(p28('12150')?.pzas, 1);
+  assert.ok(Math.abs((p28('12151')?.medidaCm ?? 0) - 118.8) < 0.01);
+  assert.equal(p28('12151')?.pzas, 1);
+  assert.ok(Math.abs((p28('12152')?.medidaCm ?? 0) - 100) < 0.01);
+  assert.equal(p28('12152')?.pzas, 2);
+  assert.ok(Math.abs((p28('12153')?.medidaCm ?? 0) - 57.75) < 0.01);
+  assert.equal(p28('12153')?.pzas, 4);
+  assert.ok(Math.abs((p28('12154')?.medidaCm ?? 0) - 95.6) < 0.01);
+  assert.equal(p28('12154')?.pzas, 2);
+  assert.ok(Math.abs((p28('12155')?.medidaCm ?? 0) - 95.6) < 0.01);
+  assert.equal(p28('12155')?.pzas, 2);
+  assert.ok(r2800.perfiles.every((p) => p.angulo === '90°'));
+  assert.ok(Math.abs(r2800.vidrios[0].anchoCm - 52.95) < 0.01);
+  assert.ok(Math.abs(r2800.vidrios[0].altoCm - 87.0) < 0.01);
+  assert.equal(r2800.vidrios[0].pzas, 2);
+
+  // --- EuroAlum 3800 ---
+  const r3800 = calcularDespiece({ ...baseInput, linea: 'euroalum-3800' });
+  const p38 = (code: string) => r3800.perfiles.find((p) => p.nombre.includes(code));
+  assert.ok(Math.abs((p38('12263')?.medidaCm ?? 0) - 117.5) < 0.01);
+  assert.equal(p38('12263')?.pzas, 2);
+  assert.ok(Math.abs((p38('12208')?.medidaCm ?? 0) - 100) < 0.01);
+  assert.equal(p38('12208')?.pzas, 2);
+  assert.ok(Math.abs((p38('12240')?.medidaCm ?? 0) - 54.9) < 0.01);
+  assert.equal(p38('12240')?.pzas, 4);
+  assert.ok(Math.abs((p38('12288')?.medidaCm ?? 0) - 93.2) < 0.01);
+  assert.equal(p38('12288')?.pzas, 2);
+  assert.ok(Math.abs((p38('12297')?.medidaCm ?? 0) - 93.2) < 0.01);
+  assert.equal(p38('12297')?.pzas, 2);
+  assert.ok(Math.abs((p38('12301')?.medidaCm ?? 0) - 120) < 0.01);
+  assert.equal(p38('12301')?.pzas, 1);
+  assert.ok(r3800.perfiles.every((p) => p.angulo === '90°'));
+  assert.ok(Math.abs(r3800.vidrios[0].anchoCm - 50.1) < 0.01);
+  assert.ok(Math.abs(r3800.vidrios[0].altoCm - 80.9) < 0.01);
+  assert.equal(r3800.vidrios[0].pzas, 2);
+});
+
+test('95. Catálogo Oficial 2026–2027: 5 marcas oficiales, claves reales sin códigos ficticios y tablas EuroAlum', async () => {
+  const {
+    OFFICIAL_BRANDS_2026,
+    OFFICIAL_CATALOG_2026,
+    OFFICIAL_EUROALUM_CUT_TABLES,
+    DEFAULT_CATALOG_VIGENCIA_LABEL,
+    filterOfficialCatalog,
+  } = await import('./officialCatalog2026.ts');
+  const { CATALOGO_PERFILES } = await import('./alumineroLogic.ts');
+
+  assert.equal(
+    DEFAULT_CATALOG_VIGENCIA_LABEL,
+    'Catálogos Oficiales Vigentes 2026 • Próxima Actualización Anual: 2027'
+  );
+  assert.equal(OFFICIAL_BRANDS_2026.length, 5);
+  assert.equal(OFFICIAL_EUROALUM_CUT_TABLES.length, 3);
+
+  // Claves clave presentes en OFFICIAL_CATALOG_2026
+  const requiredClaves = [
+    '39073',
+    '73971',
+    '69135',
+    '67826',
+    '628407',
+    '13614',
+    '1695',
+    '12150',
+    '12263',
+    'A-2501',
+    '6001',
+    '68500',
+    '10001',
+    '2008',
+    '138201700',
+    '1068149079',
+    '1305 Bacalar',
+  ];
+  for (const clave of requiredClaves) {
+    assert.ok(
+      OFFICIAL_CATALOG_2026.some((item) => item.clave === clave || item.clave.includes(clave)),
+      `Falta clave oficial en catálogo 2026: ${clave}`
+    );
+  }
+
+  // Búsqueda por marca y texto funciona incluyendo Perfileto/Perfiletto
+  assert.ok(filterOfficialCatalog('perfiletto', '').length >= 15);
+  assert.ok(filterOfficialCatalog('all', '12263').some((i) => i.clave === '12263'));
+  assert.ok(filterOfficialCatalog('all', 'Bacalar').some((i) => i.brandId === 'herralum'));
+
+  // Ninguna clave ficticia heredada debe existir en CATALOGO_PERFILES
+  const allRuntimeClaves = CATALOGO_PERFILES.map((p) => p.codigoRef);
+  for (const fake of ['PF-301', 'PF-302', 'PF-CB01', 'EU-3501', 'EU-7012', 'HER-1500', '2401', '1401']) {
+    assert.ok(!allRuntimeClaves.includes(fake), `Se encontró clave ficticia residual: ${fake}`);
+  }
+});
+
+test('96. normalizeCatalogVigenciaLabel conserva vigencia 2026–2027 por defecto y acepta edición de Admin', async () => {
+  const { normalizeCatalogVigenciaLabel, DEFAULT_CATALOG_VIGENCIA_LABEL } = await import('./storageHelpers.ts');
+
+  assert.equal(normalizeCatalogVigenciaLabel(''), DEFAULT_CATALOG_VIGENCIA_LABEL);
+  assert.equal(normalizeCatalogVigenciaLabel('   '), DEFAULT_CATALOG_VIGENCIA_LABEL);
+  assert.equal(
+    normalizeCatalogVigenciaLabel('Catálogos Oficiales Vigentes 2027 • Próxima Actualización Anual: 2028'),
+    'Catálogos Oficiales Vigentes 2027 • Próxima Actualización Anual: 2028'
+  );
+});
+
+test('97. applyBulkExistenciasPriceAdjustment aplica incremento y descuento masivo sobre múltiples materiales y sincroniza herrajesPrecios', async () => {
+  const {
+    buildCompactExistenciasList,
+    makeInventarioKey,
+    resolveExistenciaUnitPrice,
+    applyBulkExistenciasPriceAdjustment,
+  } = await import('./alumineroLogic.ts');
+
+  const kPerfil = makeInventarioKey('3', 'cabezal', 'natural', 'Perfileto');
+  const herrajeId = HERRAJES_INVENTARIO_CATALOGO[0].id;
+  const compactItems = buildCompactExistenciasList(
+    { [kPerfil]: 4 },
+    { [herrajeId]: 6 },
+    [{ id: 'v-bulk-1', tipoNombre: 'Claro 6 mm', anchoCm: 260, altoCm: 180, cantidad: 3 }]
+  );
+
+  assert.equal(compactItems.length, 3);
+  const perfilItem = compactItems.find((i) => i.tipo === 'perfil')!;
+  const herrajeItem = compactItems.find((i) => i.tipo === 'herraje')!;
+  const vidrioItem = compactItems.find((i) => i.tipo === 'vidrio')!;
+
+  const baseCtx = {
+    inventarioPreciosUnitarios: {
+      [perfilItem.id]: 400,
+      [vidrioItem.id]: 1000,
+    },
+    herrajesPrecios: {
+      [herrajeId]: 200,
+    },
+  };
+
+  assert.equal(resolveExistenciaUnitPrice(perfilItem, baseCtx).price, 400);
+  assert.equal(resolveExistenciaUnitPrice(herrajeItem, baseCtx).price, 200);
+  assert.equal(resolveExistenciaUnitPrice(vidrioItem, baseCtx).price, 1000);
+
+  // Incremento masivo +10% sobre perfil y herraje
+  const incRes = applyBulkExistenciasPriceAdjustment({
+    selectedItems: [perfilItem, herrajeItem],
+    mode: 'incremento',
+    pct: 10,
+    ctx: baseCtx,
+  });
+  assert.equal(incRes.updatedCount, 2);
+  assert.equal(incRes.signedPct, 10);
+  assert.equal(incRes.inventarioPreciosUnitarios[perfilItem.id], 440);
+  assert.equal(incRes.inventarioPreciosUnitarios[herrajeItem.id], 220);
+  assert.equal(incRes.herrajesPrecios[herrajeId], 220);
+  assert.equal(incRes.inventarioPreciosUnitarios[vidrioItem.id], 1000);
+
+  // Descuento masivo -15% sobre todos
+  const discRes = applyBulkExistenciasPriceAdjustment({
+    selectedItems: [perfilItem, herrajeItem, vidrioItem],
+    mode: 'descuento',
+    pct: 15,
+    ctx: {
+      inventarioPreciosUnitarios: incRes.inventarioPreciosUnitarios,
+      herrajesPrecios: incRes.herrajesPrecios,
+    },
+  });
+  assert.equal(discRes.updatedCount, 3);
+  assert.equal(discRes.signedPct, -15);
+  assert.equal(discRes.inventarioPreciosUnitarios[perfilItem.id], 374);
+  assert.equal(discRes.inventarioPreciosUnitarios[herrajeItem.id], 187);
+  assert.equal(discRes.herrajesPrecios[herrajeId], 187);
+  assert.equal(discRes.inventarioPreciosUnitarios[vidrioItem.id], 850);
+
+  // Tope máximo de descuento 90% (no permite precios negativos o cero)
+  const clampedDisc = applyBulkExistenciasPriceAdjustment({
+    selectedItems: [vidrioItem],
+    mode: 'descuento',
+    pct: 150,
+    ctx: baseCtx,
+  });
+  assert.equal(clampedDisc.signedPct, -90);
+  assert.equal(clampedDisc.inventarioPreciosUnitarios[vidrioItem.id], 100);
+});
+
+test('98. SKIN_VARIANTS_BY_SKIN define exactamente colores planos (plastas) para Ejecutiva (Azul, Naranja) e Industrial PRO (Verde, Oro, Plata, Bronce)', async () => {
+  const { SKIN_VARIANTS_BY_SKIN } = await import('./storageHelpers.ts');
+
+  assert.deepEqual(
+    SKIN_VARIANTS_BY_SKIN.ejecutiva.map((v) => ({ id: v.id, label: v.label })),
+    [
+      { id: 'default', label: 'Azul' },
+      { id: 'naranja', label: 'Naranja' },
+    ]
+  );
+
+  assert.deepEqual(
+    SKIN_VARIANTS_BY_SKIN.industrial.map((v) => ({ id: v.id, label: v.label })),
+    [
+      { id: 'default', label: 'Verde' },
+      { id: 'dorada', label: 'Oro' },
+      { id: 'plateada', label: 'Plata' },
+      { id: 'bronce', label: 'Bronce' },
+    ]
+  );
+
+  for (const list of Object.values(SKIN_VARIANTS_BY_SKIN)) {
+    for (const variant of list) {
+      assert.match(variant.swatchBg, /^#[0-9A-Fa-f]{6}$/);
+      assert.ok(!variant.swatchBg.includes('gradient'));
+    }
+  }
+});
+
 

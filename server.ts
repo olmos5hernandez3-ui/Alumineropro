@@ -77,6 +77,7 @@ interface CloudDbShape {
   };
   pushSubscriptions?: Record<string, PushSubscriptionRecord>;
   quoteReminders?: Record<string, unknown[]>;
+  catalogVigenciaLabel?: string;
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -143,6 +144,9 @@ function loadDb(): CloudDbShape {
           parsed.pushSubscriptions && typeof parsed.pushSubscriptions === 'object' ? parsed.pushSubscriptions : {},
         quoteReminders:
           parsed.quoteReminders && typeof parsed.quoteReminders === 'object' ? parsed.quoteReminders : {},
+        ...(typeof parsed.catalogVigenciaLabel === 'string' && parsed.catalogVigenciaLabel.trim()
+          ? { catalogVigenciaLabel: parsed.catalogVigenciaLabel.trim().slice(0, 140) }
+          : {}),
       };
       if (cleanedAutoTrials) {
         try {
@@ -1639,6 +1643,26 @@ async function startServer(): Promise<void> {
     }
 
     res.json({ ok: true });
+  });
+
+  const DEFAULT_CATALOG_VIGENCIA =
+    'Catálogos Oficiales Vigentes 2026 • Próxima Actualización Anual: 2027';
+
+  app.get('/api/config/catalog-vigencia', (_req: Request, res: Response) => {
+    syncExternalDbDeletion();
+    res.json({
+      ok: true,
+      label: db.catalogVigenciaLabel?.trim() || DEFAULT_CATALOG_VIGENCIA,
+    });
+  });
+
+  app.post('/api/config/catalog-vigencia', (req: Request, res: Response) => {
+    syncExternalDbDeletion();
+    const raw = typeof req.body?.label === 'string' ? req.body.label.trim().slice(0, 140) : '';
+    const finalLabel = raw || DEFAULT_CATALOG_VIGENCIA;
+    db.catalogVigenciaLabel = finalLabel;
+    saveDb(db);
+    res.json({ ok: true, label: finalLabel });
   });
 
   for (const zipName of [

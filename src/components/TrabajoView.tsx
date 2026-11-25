@@ -84,6 +84,7 @@ interface Props {
   workTab?: 'descuentos' | 'cotizacion';
   onChangeWorkTab?: (tab: 'descuentos' | 'cotizacion') => void;
   onOpenGlassOptimizerFromJobs?: (piezas: LevantamientoPieza[]) => void;
+  catalogVigenciaLabel?: string;
   onShowToast: (msg: string, topSuccess?: boolean) => void;
 }
 
@@ -152,6 +153,7 @@ export const TrabajoView: React.FC<Props> = ({
   workTab: controlledWorkTab,
   onChangeWorkTab,
   onOpenGlassOptimizerFromJobs,
+  catalogVigenciaLabel,
   onShowToast,
 }) => {
   const [localWorkTab, setLocalWorkTab] = useState<'descuentos' | 'cotizacion'>('descuentos');
@@ -281,6 +283,9 @@ export const TrabajoView: React.FC<Props> = ({
     '3',
     '2',
     'europea',
+    'euroalum-2500',
+    'euroalum-2800',
+    'euroalum-3800',
     'cancel-bano',
     'mosq-fijo',
     'mosq-corredizo',
@@ -292,6 +297,10 @@ export const TrabajoView: React.FC<Props> = ({
   const lineasDeCategoria = LINEAS_ORDER.map((id) => LINEAS_CONFIG[id]).filter(
     (l) => l.categoria === categoria
   );
+  const esEuroAlum =
+    params.linea === 'euroalum-2500' ||
+    params.linea === 'euroalum-2800' ||
+    params.linea === 'euroalum-3800';
 
   useEffect(() => {
     if (!simPlaying) return;
@@ -396,8 +405,25 @@ export const TrabajoView: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* Selector de Línea (incluye Mosquiteros en Ventanas) */}
-      <div id="work-lineas-grid" className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 mb-4">
+      {/* Insignia de Vigencia Oficial de Catálogos en el selector de líneas/marcas */}
+      <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
+        <span className="text-[11.5px] font-extrabold uppercase tracking-wider text-slate-300">
+          Selector de Marca / Línea y Serie
+        </span>
+        <div
+          id="trabajo-catalog-vigencia-badge"
+          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl border border-emerald-400/50 bg-emerald-500/15 text-emerald-100 text-[11.5px] font-extrabold shadow-sm"
+        >
+          <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" aria-hidden="true" />
+          <span>
+            {catalogVigenciaLabel ||
+              'Catálogos Oficiales Vigentes 2026 • Próxima Actualización Anual: 2027'}
+          </span>
+        </div>
+      </div>
+
+      {/* Selector de Línea (incluye EuroAlum 2500/2800/3800 y Mosquiteros en Ventanas) */}
+      <div id="work-lineas-grid" className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 mb-4">
         {lineasDeCategoria.map((l) => {
           const active = params.linea === l.id;
           const locked = l.pro && !proActive;
@@ -543,8 +569,27 @@ export const TrabajoView: React.FC<Props> = ({
                 </div>
               )}
 
+              {/* Nota técnica oficial para series EuroAlum 2500 / 2800 / 3800 */}
+              {esEuroAlum && (
+                <div
+                  id="euroalum-formula-banner"
+                  className="mb-2.5 p-2.5 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-950 text-[11.5px] leading-snug"
+                >
+                  <strong className="block font-extrabold text-emerald-900">
+                    ✓ Tabla Oficial Indalum {lineaCfg.nombre} activa (cálculo exacto en mm → cm)
+                  </strong>
+                  <span>
+                    {params.linea === 'euroalum-2500'
+                      ? 'Corte 45° · Riel 1695 (H×2, V×2) · Hoja 1699 ((H-4)/2 ×4, V-63 ×4) · Traslape 1619 (V-65 ×2) · Vidrio 6 mm ((H-215)/2 × V-170)'
+                      : params.linea === 'euroalum-2800'
+                        ? 'Corte 90° · Riel Inf 12150 (H-12) · Riel Sup 12151 (H-12) · Jamba 12152 (V×2) · Zoclo 12153 ((H-45)/2 ×4) · Cerco 12154 & Traslape 12155 (V-44 ×2) · Vidrio ((H-141)/2 × V-130)'
+                        : 'Corte 90° · Riel 12263 (H-25 ×2) · Jamba 12208 (V×2) · Zoclo/Cab 12240 ((H-102)/2 ×4) · Cerco 12288 & Traslape 12297 (V-68 ×2) · Goterón 12301 (H×1) · Vidrio ((H-198)/2 × V-191)'}
+                  </span>
+                </div>
+              )}
+
               {/* Opciones específicas de ventana estándar */}
-              {!esPuerta && !esMosq && !esCancel && (
+              {!esPuerta && !esMosq && !esCancel && !esEuroAlum && (
                 <>
                   <div className="mb-2.5">
                     <div className="text-[12px] font-extrabold text-slate-500 mb-1.5">Tipo de apertura</div>

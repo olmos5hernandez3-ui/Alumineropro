@@ -2197,17 +2197,17 @@ html[data-theme="dark"] #view-menu .menu-card-sub {
   }
 }
 
-/* ==================== SISTEMA GLOBAL DE 3 CARÁTULAS + SUB-VARIANTES ==================== */
+/* ==================== SISTEMA GLOBAL DE CARÁTULAS EN COLORES PLANOS (PLASTAS) ==================== */
 
-/* 1. CARÁTULA BÁSICA — MODO CLARO (DÍA) */
+/* 1A. CARÁTULA BÁSICA — MODO CLARO (PLASTAS LIMPIAS Y LUMINOSAS) */
 html[data-skin="basica"][data-theme="light"],
 html[data-skin="basica"][data-theme="light"] body,
 html[data-skin="basica"][data-theme="light"] #root,
 html[data-theme="light"],
 html[data-theme="light"] body,
 html[data-theme="light"] #root {
-  background-color: #F8FAFC !important;
-  background-image: linear-gradient(180deg, #F8FAFC 0%, #F1F5F9 100%) !important;
+  background-color: #F1F5F9 !important;
+  background-image: none !important;
   color: #0F172A !important;
 }
 
@@ -2215,17 +2215,19 @@ html[data-skin="basica"][data-theme="light"] header,
 html[data-skin="basica"][data-theme="light"] .metal-topbar-dark,
 html[data-theme="light"] header,
 html[data-theme="light"] .metal-topbar-dark {
-  background: rgba(255, 255, 255, 0.97) !important;
+  background: #FFFFFF !important;
+  background-image: none !important;
   border-bottom: 1.5px solid #CBD5E1 !important;
-  box-shadow: 0 3px 14px rgba(15, 23, 42, 0.06) !important;
+  box-shadow: none !important;
   color: #0F172A !important;
 }
 
 html[data-theme="light"] .metal-icon-btn {
   background: #F1F5F9 !important;
+  background-image: none !important;
   border: 1px solid #CBD5E1 !important;
   color: #0F172A !important;
-  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.05) !important;
+  box-shadow: none !important;
 }
 html[data-theme="light"] .metal-icon-btn:hover {
   background: #E2E8F0 !important;
@@ -2234,6 +2236,7 @@ html[data-theme="light"] .metal-icon-btn:hover {
 
 html[data-theme="light"] #drawer-panel-surface {
   background: #FFFFFF !important;
+  background-image: none !important;
   border-left: 1.5px solid #CBD5E1 !important;
   color: #0F172A !important;
 }
@@ -2246,8 +2249,9 @@ html[data-theme="light"] #view-menu h2 {
 
 html[data-theme="light"] #lev-entry {
   background: #FFFFFF !important;
-  border: 2px solid #F97316 !important;
-  box-shadow: 0 6px 18px rgba(249, 115, 22, 0.14) !important;
+  background-image: none !important;
+  border: 2px solid #EA580C !important;
+  box-shadow: none !important;
   color: #0F172A !important;
 }
 html[data-theme="light"] #lev-entry small {
@@ -2257,8 +2261,9 @@ html[data-theme="light"] #lev-entry small {
 html[data-theme="light"] #view-menu .menu-hero-card,
 html[data-theme="light"] #view-menu .metal-hero-card {
   background: #1D4ED8 !important;
-  border: 1.5px solid #1E40AF !important;
-  box-shadow: 0 10px 26px rgba(29, 78, 216, 0.24) !important;
+  background-image: none !important;
+  border: 2px solid #1E40AF !important;
+  box-shadow: none !important;
   color: #FFFFFF !important;
 }
 html[data-theme="light"] #view-menu .menu-hero-card p {
@@ -2268,8 +2273,9 @@ html[data-theme="light"] #view-menu .menu-hero-card p {
 html[data-theme="light"] #view-menu .menu-grid-card,
 html[data-theme="light"] #view-menu .metal-grid-card {
   background: #FFFFFF !important;
-  border: 1.5px solid #E2E8F0 !important;
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06) !important;
+  background-image: none !important;
+  border: 1.5px solid #CBD5E1 !important;
+  box-shadow: none !important;
   color: #0F172A !important;
 }
 html[data-theme="light"] #view-menu .menu-grid-card .menu-card-sub {
@@ -2277,41 +2283,47 @@ html[data-theme="light"] #view-menu .menu-grid-card .menu-card-sub {
 }
 
 html[data-theme="light"] #view-menu .menu-icon-box {
-  background: #EFF6FF !important;
-  border: 1px solid #BFDBFE !important;
+  background: #DBEAFE !important;
+  background-image: none !important;
+  border: 1px solid #93C5FD !important;
   color: #1D4ED8 !important;
   box-shadow: none !important;
 }
 
 html[data-theme="light"] .metal-bronze-free-badge {
-  background: #ECFDF5 !important;
-  border: 1px solid #6EE7B7 !important;
-  color: #065F46 !important;
+  background: #DCFCE7 !important;
+  background-image: none !important;
+  border: 1px solid #4ADE80 !important;
+  color: #14532D !important;
   box-shadow: none !important;
 }
 html[data-theme="light"] .metal-gold-pro-badge {
-  background: #EFF6FF !important;
-  border: 1px solid #93C5FD !important;
-  color: #1D4ED8 !important;
+  background: #DBEAFE !important;
+  background-image: none !important;
+  border: 1px solid #60A5FA !important;
+  color: #1E3A8A !important;
   box-shadow: none !important;
 }
 html[data-theme="light"] .metal-colleague-banner {
-  background: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%) !important;
-  border: 1.5px solid #34D399 !important;
-  box-shadow: 0 6px 18px rgba(16, 185, 129, 0.14) !important;
+  background: #DCFCE7 !important;
+  background-image: none !important;
+  border: 1.5px solid #22C55E !important;
+  box-shadow: none !important;
   color: #064E3B !important;
 }
 
 html[data-theme="light"] #lev-root .shell {
-  background: #F8FAFC !important;
+  background: #F1F5F9 !important;
+  background-image: none !important;
   border: 1px solid #CBD5E1 !important;
   color: #0F172A !important;
 }
 html[data-theme="light"] #lev-root .card {
   background: #FFFFFF !important;
+  background-image: none !important;
   border: 1px solid #CBD5E1 !important;
   color: #0F172A !important;
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06) !important;
+  box-shadow: none !important;
 }
 html[data-theme="light"] #lev-root input,
 html[data-theme="light"] #lev-root select,
@@ -2321,477 +2333,808 @@ html[data-theme="light"] #lev-root textarea {
   color: #0F172A !important;
 }
 
-/* 1B. CARÁTULA BÁSICA — MODO OSCURO (NOCHE: #0B1120 / #131C31) */
+/* 1B. CARÁTULA BÁSICA — MODO OSCURO (PLASTAS SÓLIDAS Y LIMPIAS, SIN DEGRADADOS) */
 html[data-skin="basica"][data-theme="dark"],
 html[data-skin="basica"][data-theme="dark"] body,
 html[data-skin="basica"][data-theme="dark"] #root {
-  background-color: #0B1120 !important;
-  background-image: linear-gradient(180deg, #0B1120 0%, #090E1B 100%) !important;
+  background-color: #0F172A !important;
+  background-image: none !important;
   color: #F8FAFC !important;
 }
-html[data-skin="basica"][data-theme="dark"] header {
-  background: rgba(15, 23, 42, 0.96) !important;
-  border-bottom: 1.5px solid rgba(51, 65, 85, 0.9) !important;
+html[data-skin="basica"][data-theme="dark"] header,
+html[data-skin="basica"][data-theme="dark"] .metal-topbar-dark {
+  background: #1E293B !important;
+  background-image: none !important;
+  border-bottom: 1.5px solid #334155 !important;
+  box-shadow: none !important;
+  color: #FFFFFF !important;
+}
+html[data-skin="basica"][data-theme="dark"] #drawer-panel-surface {
+  background: #0F172A !important;
+  background-image: none !important;
+  border-left: 1.5px solid #334155 !important;
+  color: #F8FAFC !important;
+}
+html[data-skin="basica"][data-theme="dark"] .metal-icon-btn {
+  background: #1E293B !important;
+  background-image: none !important;
+  border: 1px solid #475569 !important;
+  color: #F1F5F9 !important;
+  box-shadow: none !important;
 }
 html[data-skin="basica"][data-theme="dark"] #lev-entry {
-  background: #131C31 !important;
-  border: 1.5px solid #F97316 !important;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45) !important;
+  background: #1E293B !important;
+  background-image: none !important;
+  border: 2px solid #F97316 !important;
+  box-shadow: none !important;
   color: #FFFFFF !important;
 }
 html[data-skin="basica"][data-theme="dark"] #view-menu .menu-hero-card,
 html[data-skin="basica"][data-theme="dark"] #view-menu .metal-hero-card {
-  background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%) !important;
-  border: 1.5px solid #3B82F6 !important;
-  box-shadow: 0 12px 28px rgba(29, 78, 216, 0.32) !important;
+  background: #1D4ED8 !important;
+  background-image: none !important;
+  border: 2px solid #3B82F6 !important;
+  box-shadow: none !important;
   color: #FFFFFF !important;
 }
 html[data-skin="basica"][data-theme="dark"] #view-menu .menu-grid-card,
 html[data-skin="basica"][data-theme="dark"] #view-menu .metal-grid-card {
-  background: #131C31 !important;
-  border: 1.5px solid rgba(71, 85, 105, 0.65) !important;
-  box-shadow: 0 6px 16px rgba(2, 6, 23, 0.5) !important;
+  background: #1E293B !important;
+  background-image: none !important;
+  border: 1.5px solid #334155 !important;
+  box-shadow: none !important;
   color: #F8FAFC !important;
+}
+html[data-skin="basica"][data-theme="dark"] #view-menu .menu-icon-box {
+  background: #1E3A8A !important;
+  background-image: none !important;
+  border: 1px solid #3B82F6 !important;
+  color: #DBEAFE !important;
+  box-shadow: none !important;
 }
 
 /* ============================================================================
-   2. CARÁTULA EJECUTIVA (PRO 30d & 90d) — METÁLICA CON TEXTURA LINEAL SUTIL
-   Sub-variante por defecto: AZUL (#071324, #38BDF8, #F59E0B)
+   2A. CARÁTULA EJECUTIVA — MODO OSCURO · AZUL (PLASTA SÓLIDA)
    ============================================================================ */
-html[data-skin="ejecutiva"],
-html[data-skin="ejecutiva"] body,
-html[data-skin="ejecutiva"] #root {
-  background-color: #071324 !important;
-  background-image:
-    repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.018) 0px, rgba(255, 255, 255, 0.018) 1px, transparent 1px, transparent 7px),
-    radial-gradient(ellipse 85% 50% at 50% -10%, rgba(56, 189, 248, 0.22), transparent 65%),
-    radial-gradient(circle at 90% 88%, rgba(245, 158, 11, 0.13), transparent 45%),
-    linear-gradient(180deg, #071324 0%, #050C18 100%) !important;
-  background-attachment: fixed !important;
+html[data-skin="ejecutiva"][data-theme="dark"],
+html[data-skin="ejecutiva"][data-theme="dark"] body,
+html[data-skin="ejecutiva"][data-theme="dark"] #root {
+  background-color: #0A192F !important;
+  background-image: none !important;
   color: #F8FAFC !important;
 }
-
-html[data-skin="ejecutiva"] header,
-html[data-skin="ejecutiva"] .metal-topbar-dark {
-  background: linear-gradient(180deg, rgba(11, 28, 58, 0.96) 0%, rgba(7, 19, 36, 0.97) 100%) !important;
-  border-bottom: 1px solid rgba(56, 189, 248, 0.55) !important;
-  box-shadow: 0 6px 24px rgba(2, 12, 32, 0.65), inset 0 -1px 0 rgba(245, 158, 11, 0.3) !important;
+html[data-skin="ejecutiva"][data-theme="dark"] header,
+html[data-skin="ejecutiva"][data-theme="dark"] .metal-topbar-dark {
+  background: #0F274A !important;
+  background-image: none !important;
+  border-bottom: 2px solid #2563EB !important;
+  box-shadow: none !important;
   color: #FFFFFF !important;
 }
-
-html[data-skin="ejecutiva"] #view-menu h1,
-html[data-skin="ejecutiva"] #view-menu h2 {
+html[data-skin="ejecutiva"][data-theme="dark"] #view-menu h1,
+html[data-skin="ejecutiva"][data-theme="dark"] #view-menu h2 {
   color: #FFFFFF !important;
 }
-
-html[data-skin="ejecutiva"] #drawer-panel-surface {
-  background: linear-gradient(180deg, #0C2146 0%, #071324 100%) !important;
-  border-left: 1px solid rgba(56, 189, 248, 0.52) !important;
+html[data-skin="ejecutiva"][data-theme="dark"] #drawer-panel-surface {
+  background: #0D203E !important;
+  background-image: none !important;
+  border-left: 2px solid #2563EB !important;
   color: #F8FAFC !important;
 }
-
-html[data-skin="ejecutiva"] .metal-icon-btn {
-  background: linear-gradient(145deg, rgba(24, 54, 96, 0.92), rgba(10, 26, 52, 0.95)) !important;
-  border: 1px solid rgba(56, 189, 248, 0.45) !important;
-  color: #E0F2FE !important;
+html[data-skin="ejecutiva"][data-theme="dark"] .metal-icon-btn {
+  background: #163360 !important;
+  background-image: none !important;
+  border: 1px solid #3B82F6 !important;
+  color: #DBEAFE !important;
+  box-shadow: none !important;
 }
-
-html[data-skin="ejecutiva"] #lev-entry {
-  position: relative;
-  overflow: hidden;
-  background:
-    repeating-linear-gradient(120deg, rgba(255, 255, 255, 0.024) 0px, rgba(255, 255, 255, 0.024) 1px, transparent 1px, transparent 6px),
-    linear-gradient(145deg, #153463 0%, #0E2448 55%, #091832 100%) !important;
-  border: 1px solid rgba(56, 189, 248, 0.72) !important;
-  box-shadow:
-    0 10px 26px rgba(2, 12, 32, 0.55),
-    0 0 18px rgba(56, 189, 248, 0.16),
-    inset 0 2.5px 0 #F59E0B !important;
+html[data-skin="ejecutiva"][data-theme="dark"] #lev-entry {
+  background: #132E57 !important;
+  background-image: none !important;
+  border: 2px solid #3B82F6 !important;
+  box-shadow: inset 0 3px 0 #60A5FA !important;
   color: #FFFFFF !important;
 }
-html[data-skin="ejecutiva"] #lev-entry small {
-  color: #BAE6FD !important;
+html[data-skin="ejecutiva"][data-theme="dark"] #lev-entry small {
+  color: #BFDBFE !important;
 }
-
-html[data-skin="ejecutiva"] #view-menu .menu-hero-card,
-html[data-skin="ejecutiva"] #view-menu .metal-hero-card {
-  position: relative;
-  overflow: hidden;
-  background:
-    repeating-linear-gradient(120deg, rgba(255, 255, 255, 0.025) 0px, rgba(255, 255, 255, 0.025) 1px, transparent 1px, transparent 6px),
-    linear-gradient(140deg, #18427D 0%, #102F60 52%, #0A1E40 100%) !important;
-  border: 1px solid rgba(56, 189, 248, 0.78) !important;
-  box-shadow:
-    0 14px 34px rgba(3, 15, 38, 0.72),
-    0 0 24px rgba(56, 189, 248, 0.22),
-    inset 0 3px 0 #F59E0B !important;
+html[data-skin="ejecutiva"][data-theme="dark"] #view-menu .menu-hero-card,
+html[data-skin="ejecutiva"][data-theme="dark"] #view-menu .metal-hero-card {
+  background: #1D4ED8 !important;
+  background-image: none !important;
+  border: 2px solid #60A5FA !important;
+  box-shadow: none !important;
   color: #FFFFFF !important;
 }
-
-html[data-skin="ejecutiva"] #view-menu .menu-grid-card,
-html[data-skin="ejecutiva"] #view-menu .metal-grid-card {
-  position: relative;
-  overflow: hidden;
-  background:
-    repeating-linear-gradient(125deg, rgba(255, 255, 255, 0.02) 0px, rgba(255, 255, 255, 0.02) 1px, transparent 1px, transparent 7px),
-    linear-gradient(155deg, #142F5C 0%, #0D2244 55%, #091833 100%) !important;
-  border: 1px solid rgba(56, 189, 248, 0.55) !important;
-  box-shadow:
-    0 8px 22px rgba(2, 11, 28, 0.55),
-    0 0 12px rgba(56, 189, 248, 0.12),
-    inset 0 2px 0 rgba(245, 158, 11, 0.85) !important;
+html[data-skin="ejecutiva"][data-theme="dark"] #view-menu .menu-grid-card,
+html[data-skin="ejecutiva"][data-theme="dark"] #view-menu .metal-grid-card {
+  background: #12294D !important;
+  background-image: none !important;
+  border: 1.5px solid #2563EB !important;
+  box-shadow: inset 0 2px 0 #3B82F6 !important;
   color: #F8FAFC !important;
 }
-html[data-skin="ejecutiva"] #view-menu .menu-grid-card span:first-of-type {
-  color: #FFFFFF;
+html[data-skin="ejecutiva"][data-theme="dark"] #view-menu .menu-grid-card .menu-card-sub {
+  color: #BFDBFE !important;
 }
-html[data-skin="ejecutiva"] #view-menu .menu-grid-card .menu-card-sub {
-  color: #CBD5E1 !important;
+html[data-skin="ejecutiva"][data-theme="dark"] #view-menu .menu-icon-box {
+  background: #1E40AF !important;
+  background-image: none !important;
+  border: 1px solid #60A5FA !important;
+  color: #EFF6FF !important;
+  box-shadow: none !important;
 }
-
-html[data-skin="ejecutiva"] #view-menu .menu-icon-box {
-  background: linear-gradient(145deg, rgba(186, 230, 253, 0.22) 0%, rgba(14, 116, 144, 0.42) 100%) !important;
-  border: 1px solid rgba(56, 189, 248, 0.55) !important;
-  color: #E0F2FE !important;
-}
-
-html[data-skin="ejecutiva"] main .bg-white,
-html[data-skin="ejecutiva"] main .bg-slate-900,
-html[data-skin="ejecutiva"] [role="dialog"] > div.bg-white {
-  background: linear-gradient(160deg, #122A52 0%, #0B1D3A 100%) !important;
-  border-color: rgba(56, 189, 248, 0.45) !important;
+html[data-skin="ejecutiva"][data-theme="dark"] main .bg-white,
+html[data-skin="ejecutiva"][data-theme="dark"] main .bg-slate-900,
+html[data-skin="ejecutiva"][data-theme="dark"] [role="dialog"] > div.bg-white,
+html[data-skin="ejecutiva"][data-theme="dark"] #lev-root .shell,
+html[data-skin="ejecutiva"][data-theme="dark"] #lev-root .card {
+  background: #102546 !important;
+  background-image: none !important;
+  border-color: #2563EB !important;
   color: #F8FAFC !important;
+  box-shadow: none !important;
 }
 
-html[data-skin="ejecutiva"] #lev-root .shell {
-  background: linear-gradient(180deg, #0B1F44 0%, #071324 100%) !important;
-  border: 1px solid rgba(56, 189, 248, 0.42) !important;
-  color: #F8FAFC !important;
+/* 2B. CARÁTULA EJECUTIVA — MODO OSCURO · NARANJA (PLASTA SÓLIDA) */
+html[data-skin="ejecutiva"][data-skin-variant="naranja"][data-theme="dark"],
+html[data-skin="ejecutiva"][data-skin-variant="naranja"][data-theme="dark"] body,
+html[data-skin="ejecutiva"][data-skin-variant="naranja"][data-theme="dark"] #root {
+  background-color: #1C110A !important;
+  background-image: none !important;
+  color: #FFF7ED !important;
 }
-html[data-skin="ejecutiva"] #lev-root .card {
-  background: linear-gradient(155deg, #132D59 0%, #0C1F40 100%) !important;
-  border: 1px solid rgba(56, 189, 248, 0.45) !important;
-  box-shadow: inset 0 2px 0 rgba(245, 158, 11, 0.78) !important;
-  color: #F8FAFC !important;
+html[data-skin="ejecutiva"][data-skin-variant="naranja"][data-theme="dark"] header,
+html[data-skin="ejecutiva"][data-skin-variant="naranja"][data-theme="dark"] .metal-topbar-dark {
+  background: #2C180D !important;
+  background-image: none !important;
+  border-bottom: 2px solid #EA580C !important;
+  box-shadow: none !important;
 }
-
-/* 2B. CARÁTULA EJECUTIVA — VARIANTE ANARANJADA (#140D07, #F97316, #FB923C) */
-html[data-skin="ejecutiva"][data-skin-variant="naranja"],
-html[data-skin="ejecutiva"][data-skin-variant="naranja"] body,
-html[data-skin="ejecutiva"][data-skin-variant="naranja"] #root {
-  background-color: #140D07 !important;
-  background-image:
-    repeating-linear-gradient(115deg, rgba(251, 146, 60, 0.028) 0px, rgba(251, 146, 60, 0.028) 1px, transparent 1px, transparent 7px),
-    radial-gradient(ellipse 85% 50% at 50% -10%, rgba(249, 115, 22, 0.26), transparent 65%),
-    radial-gradient(circle at 88% 88%, rgba(251, 146, 60, 0.14), transparent 48%),
-    linear-gradient(180deg, #181008 0%, #0F0905 100%) !important;
+html[data-skin="ejecutiva"][data-skin-variant="naranja"][data-theme="dark"] #drawer-panel-surface {
+  background: #24140B !important;
+  background-image: none !important;
+  border-left: 2px solid #EA580C !important;
 }
-
-html[data-skin="ejecutiva"][data-skin-variant="naranja"] header,
-html[data-skin="ejecutiva"][data-skin-variant="naranja"] .metal-topbar-dark {
-  background: linear-gradient(180deg, rgba(38, 22, 11, 0.96) 0%, rgba(20, 13, 7, 0.97) 100%) !important;
-  border-bottom: 1px solid rgba(249, 115, 22, 0.6) !important;
-  box-shadow: 0 6px 24px rgba(10, 5, 2, 0.72), inset 0 -1px 0 rgba(251, 146, 60, 0.35) !important;
-}
-
-html[data-skin="ejecutiva"][data-skin-variant="naranja"] #drawer-panel-surface {
-  background: linear-gradient(180deg, #21140B 0%, #140D07 100%) !important;
-  border-left: 1px solid rgba(249, 115, 22, 0.58) !important;
-}
-
-html[data-skin="ejecutiva"][data-skin-variant="naranja"] .metal-icon-btn {
-  background: linear-gradient(145deg, rgba(64, 34, 15, 0.92), rgba(29, 17, 9, 0.95)) !important;
-  border: 1px solid rgba(251, 146, 60, 0.55) !important;
+html[data-skin="ejecutiva"][data-skin-variant="naranja"][data-theme="dark"] .metal-icon-btn {
+  background: #3F2110 !important;
+  background-image: none !important;
+  border: 1px solid #F97316 !important;
   color: #FFEDD5 !important;
 }
-
-html[data-skin="ejecutiva"][data-skin-variant="naranja"] #lev-entry {
-  background:
-    repeating-linear-gradient(120deg, rgba(255, 237, 213, 0.025) 0px, rgba(255, 237, 213, 0.025) 1px, transparent 1px, transparent 6px),
-    linear-gradient(145deg, #3A1F0E 0%, #261409 55%, #1A0E06 100%) !important;
-  border: 1px solid rgba(249, 115, 22, 0.78) !important;
-  box-shadow:
-    0 10px 26px rgba(12, 6, 2, 0.65),
-    0 0 18px rgba(249, 115, 22, 0.2),
-    inset 0 2.5px 0 #FB923C !important;
+html[data-skin="ejecutiva"][data-skin-variant="naranja"][data-theme="dark"] #lev-entry {
+  background: #351C0E !important;
+  background-image: none !important;
+  border: 2px solid #F97316 !important;
+  box-shadow: inset 0 3px 0 #FB923C !important;
 }
-html[data-skin="ejecutiva"][data-skin-variant="naranja"] #lev-entry small {
+html[data-skin="ejecutiva"][data-skin-variant="naranja"][data-theme="dark"] #lev-entry small {
   color: #FED7AA !important;
 }
-
-html[data-skin="ejecutiva"][data-skin-variant="naranja"] #view-menu .menu-hero-card,
-html[data-skin="ejecutiva"][data-skin-variant="naranja"] #view-menu .metal-hero-card {
-  background:
-    repeating-linear-gradient(120deg, rgba(255, 237, 213, 0.028) 0px, rgba(255, 237, 213, 0.028) 1px, transparent 1px, transparent 6px),
-    linear-gradient(140deg, #522810 0%, #361A0A 52%, #221006 100%) !important;
-  border: 1px solid rgba(251, 146, 60, 0.82) !important;
-  box-shadow:
-    0 14px 34px rgba(15, 7, 2, 0.76),
-    0 0 24px rgba(249, 115, 22, 0.24),
-    inset 0 3px 0 #FB923C !important;
+html[data-skin="ejecutiva"][data-skin-variant="naranja"][data-theme="dark"] #view-menu .menu-hero-card,
+html[data-skin="ejecutiva"][data-skin-variant="naranja"][data-theme="dark"] #view-menu .metal-hero-card {
+  background: #EA580C !important;
+  background-image: none !important;
+  border: 2px solid #FDBA74 !important;
+  box-shadow: none !important;
+  color: #FFFFFF !important;
 }
-
-html[data-skin="ejecutiva"][data-skin-variant="naranja"] #view-menu .menu-grid-card,
-html[data-skin="ejecutiva"][data-skin-variant="naranja"] #view-menu .metal-grid-card {
-  background:
-    repeating-linear-gradient(125deg, rgba(255, 237, 213, 0.02) 0px, rgba(255, 237, 213, 0.02) 1px, transparent 1px, transparent 7px),
-    linear-gradient(155deg, #2D190C 0%, #1F1209 55%, #160D06 100%) !important;
-  border: 1px solid rgba(249, 115, 22, 0.6) !important;
-  box-shadow:
-    0 8px 22px rgba(10, 5, 2, 0.62),
-    0 0 12px rgba(249, 115, 22, 0.14),
-    inset 0 2px 0 rgba(251, 146, 60, 0.85) !important;
+html[data-skin="ejecutiva"][data-skin-variant="naranja"][data-theme="dark"] #view-menu .menu-grid-card,
+html[data-skin="ejecutiva"][data-skin-variant="naranja"][data-theme="dark"] #view-menu .metal-grid-card {
+  background: #2E190D !important;
+  background-image: none !important;
+  border: 1.5px solid #EA580C !important;
+  box-shadow: inset 0 2px 0 #FB923C !important;
 }
-html[data-skin="ejecutiva"][data-skin-variant="naranja"] #view-menu .menu-grid-card .menu-card-sub {
+html[data-skin="ejecutiva"][data-skin-variant="naranja"][data-theme="dark"] #view-menu .menu-grid-card .menu-card-sub {
   color: #FED7AA !important;
 }
-
-html[data-skin="ejecutiva"][data-skin-variant="naranja"] main .bg-white,
-html[data-skin="ejecutiva"][data-skin-variant="naranja"] main .bg-slate-900,
-html[data-skin="ejecutiva"][data-skin-variant="naranja"] [role="dialog"] > div.bg-white,
-html[data-skin="ejecutiva"][data-skin-variant="naranja"] #lev-root .shell,
-html[data-skin="ejecutiva"][data-skin-variant="naranja"] #lev-root .card {
-  background: linear-gradient(160deg, #28160B 0%, #170D06 100%) !important;
-  border-color: rgba(249, 115, 22, 0.5) !important;
+html[data-skin="ejecutiva"][data-skin-variant="naranja"][data-theme="dark"] #view-menu .menu-icon-box {
+  background: #9A3412 !important;
+  background-image: none !important;
+  border: 1px solid #FB923C !important;
+  color: #FFF7ED !important;
+}
+html[data-skin="ejecutiva"][data-skin-variant="naranja"][data-theme="dark"] main .bg-white,
+html[data-skin="ejecutiva"][data-skin-variant="naranja"][data-theme="dark"] main .bg-slate-900,
+html[data-skin="ejecutiva"][data-skin-variant="naranja"][data-theme="dark"] [role="dialog"] > div.bg-white,
+html[data-skin="ejecutiva"][data-skin-variant="naranja"][data-theme="dark"] #lev-root .shell,
+html[data-skin="ejecutiva"][data-skin-variant="naranja"][data-theme="dark"] #lev-root .card {
+  background: #28160C !important;
+  background-image: none !important;
+  border-color: #EA580C !important;
 }
 
 /* ============================================================================
-   3. CARÁTULA INDUSTRIAL PRO (EXCLUSIVO PRO 1 AÑO)
-   Sub-variante por defecto: VERDE ESMERALDA (#061A14, #0D2B22, #10B981)
+   2C. CARÁTULA EJECUTIVA — MODO CLARO (PLASTAS LIMPIAS Y LUMINOSAS: AZUL & NARANJA)
    ============================================================================ */
-html[data-skin="industrial"],
-html[data-skin="industrial"] body,
-html[data-skin="industrial"] #root {
-  background-color: #061A14 !important;
-  background-image:
-    radial-gradient(ellipse 90% 45% at 50% -8%, rgba(16, 185, 129, 0.26), transparent 62%),
-    radial-gradient(circle at 85% 90%, rgba(5, 150, 105, 0.18), transparent 48%),
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140' viewBox='0 0 140 140'%3E%3Cg fill='none' stroke='%2310b981' stroke-opacity='0.09' stroke-width='1'%3E%3Cpath d='M0 20h140M0 60h140M0 100h140'/%3E%3Cpath d='M20 0v140M60 0v140M100 0v140'/%3E%3C/g%3E%3C/svg%3E"),
-    linear-gradient(180deg, #061A14 0%, #04110D 100%) !important;
-  background-attachment: fixed !important;
-  color: #F8FAFC !important;
+/* Helper compartido para cabeceras planas de color en Modo Claro */
+html[data-skin="ejecutiva"][data-theme="light"] header #title-ap,
+html[data-skin="industrial"][data-theme="light"] header #title-ap,
+html[data-skin="navidena"][data-theme="light"] header #title-ap {
+  color: #FFFFFF !important;
+  text-shadow: none !important;
 }
-
-html[data-skin="industrial"] header,
-html[data-skin="industrial"] .metal-topbar-dark {
-  background: linear-gradient(180deg, rgba(13, 43, 34, 0.96) 0%, rgba(6, 26, 20, 0.97) 100%) !important;
-  border-bottom: 1.5px solid rgba(16, 185, 129, 0.58) !important;
-  box-shadow: 0 6px 26px rgba(0, 0, 0, 0.72), inset 0 1px 0 rgba(167, 243, 208, 0.22) !important;
+html[data-skin="ejecutiva"][data-theme="light"] header #btn-top-back,
+html[data-skin="ejecutiva"][data-theme="light"] header #btn-top-calculadora,
+html[data-skin="ejecutiva"][data-theme="light"] header #btn-open-drawer,
+html[data-skin="industrial"][data-theme="light"] header #btn-top-back,
+html[data-skin="industrial"][data-theme="light"] header #btn-top-calculadora,
+html[data-skin="industrial"][data-theme="light"] header #btn-open-drawer,
+html[data-skin="navidena"][data-theme="light"] header #btn-top-back,
+html[data-skin="navidena"][data-theme="light"] header #btn-top-calculadora,
+html[data-skin="navidena"][data-theme="light"] header #btn-open-drawer {
+  background: rgba(255, 255, 255, 0.18) !important;
+  border-color: rgba(255, 255, 255, 0.48) !important;
   color: #FFFFFF !important;
 }
 
-html[data-skin="industrial"] #view-menu h1,
-html[data-skin="industrial"] #view-menu h2 {
+/* Ejecutiva Azul — Modo Claro */
+html[data-skin="ejecutiva"][data-theme="light"],
+html[data-skin="ejecutiva"][data-theme="light"] body,
+html[data-skin="ejecutiva"][data-theme="light"] #root {
+  background-color: #EFF6FF !important;
+  background-image: none !important;
+  color: #0F172A !important;
+}
+html[data-skin="ejecutiva"][data-theme="light"] header {
+  background: #1D4ED8 !important;
+  border-bottom: 2px solid #1E40AF !important;
   color: #FFFFFF !important;
 }
-
-html[data-skin="industrial"] #drawer-panel-surface {
-  background: linear-gradient(180deg, #0D2B22 0%, #061A14 100%) !important;
-  border-left: 1.5px solid rgba(16, 185, 129, 0.55) !important;
-  color: #F8FAFC !important;
+html[data-skin="ejecutiva"][data-theme="light"] #drawer-panel-surface {
+  background: #FFFFFF !important;
+  border-left: 2px solid #93C5FD !important;
+  color: #0F172A !important;
 }
-
-html[data-skin="industrial"] .metal-icon-btn {
-  background: linear-gradient(145deg, #0D3528, #072018) !important;
-  border: 1px solid rgba(16, 185, 129, 0.55) !important;
-  color: #A7F3D0 !important;
+html[data-skin="ejecutiva"][data-theme="light"] #lev-entry {
+  background: #FFFFFF !important;
+  border: 2px solid #2563EB !important;
+  box-shadow: inset 0 3px 0 #1D4ED8 !important;
+  color: #0F172A !important;
 }
-
-html[data-skin="industrial"] #lev-entry {
-  background: linear-gradient(145deg, #113C2E 0%, #0D2B22 52%, #071B15 100%) !important;
-  border: 1.5px solid rgba(16, 185, 129, 0.68) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(209, 250, 229, 0.3),
-    inset 0 -1px 0 rgba(16, 185, 129, 0.5),
-    0 10px 26px rgba(0, 0, 0, 0.65) !important;
-  color: #F8FAFC !important;
+html[data-skin="ejecutiva"][data-theme="light"] #lev-entry small {
+  color: #1E40AF !important;
 }
-html[data-skin="industrial"] #lev-entry small {
-  color: #A7F3D0 !important;
-}
-
-html[data-skin="industrial"] #view-menu .menu-hero-card,
-html[data-skin="industrial"] #view-menu .metal-hero-card {
-  background: linear-gradient(135deg, #065F46 0%, #0D2B22 54%, #082018 100%) !important;
-  border: 1.5px solid rgba(16, 185, 129, 0.78) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(209, 250, 229, 0.35),
-    inset 0 -1px 0 rgba(16, 185, 129, 0.55),
-    0 14px 36px rgba(0, 0, 0, 0.72),
-    0 0 22px rgba(16, 185, 129, 0.24) !important;
+html[data-skin="ejecutiva"][data-theme="light"] #view-menu .menu-hero-card,
+html[data-skin="ejecutiva"][data-theme="light"] #view-menu .metal-hero-card {
+  background: #1E40AF !important;
+  border: 2px solid #1D4ED8 !important;
   color: #FFFFFF !important;
 }
+html[data-skin="ejecutiva"][data-theme="light"] #view-menu .menu-grid-card,
+html[data-skin="ejecutiva"][data-theme="light"] #view-menu .metal-grid-card {
+  background: #FFFFFF !important;
+  border: 1.5px solid #93C5FD !important;
+  box-shadow: inset 0 3px 0 #2563EB !important;
+  color: #0F172A !important;
+}
+html[data-skin="ejecutiva"][data-theme="light"] #view-menu .menu-grid-card .menu-card-sub {
+  color: #334155 !important;
+}
+html[data-skin="ejecutiva"][data-theme="light"] #view-menu .menu-icon-box {
+  background: #DBEAFE !important;
+  border: 1px solid #60A5FA !important;
+  color: #1E3A8A !important;
+}
 
-html[data-skin="industrial"] #view-menu .menu-grid-card,
-html[data-skin="industrial"] #view-menu .metal-grid-card {
-  background: linear-gradient(155deg, #0F3429 0%, #0D2B22 55%, #071B15 100%) !important;
-  border: 1.5px solid rgba(16, 185, 129, 0.54) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(167, 243, 208, 0.25),
-    0 10px 24px rgba(0, 0, 0, 0.62) !important;
+/* Ejecutiva Naranja — Modo Claro */
+html[data-skin="ejecutiva"][data-skin-variant="naranja"][data-theme="light"],
+html[data-skin="ejecutiva"][data-skin-variant="naranja"][data-theme="light"] body,
+html[data-skin="ejecutiva"][data-skin-variant="naranja"][data-theme="light"] #root {
+  background-color: #FFF7ED !important;
+  background-image: none !important;
+  color: #1C1917 !important;
+}
+html[data-skin="ejecutiva"][data-skin-variant="naranja"][data-theme="light"] header {
+  background: #EA580C !important;
+  border-bottom: 2px solid #C2410C !important;
+  color: #FFFFFF !important;
+}
+html[data-skin="ejecutiva"][data-skin-variant="naranja"][data-theme="light"] #drawer-panel-surface {
+  background: #FFFFFF !important;
+  border-left: 2px solid #FDBA74 !important;
+  color: #1C1917 !important;
+}
+html[data-skin="ejecutiva"][data-skin-variant="naranja"][data-theme="light"] #lev-entry {
+  background: #FFFFFF !important;
+  border: 2px solid #EA580C !important;
+  box-shadow: inset 0 3px 0 #EA580C !important;
+  color: #1C1917 !important;
+}
+html[data-skin="ejecutiva"][data-skin-variant="naranja"][data-theme="light"] #lev-entry small {
+  color: #9A3412 !important;
+}
+html[data-skin="ejecutiva"][data-skin-variant="naranja"][data-theme="light"] #view-menu .menu-hero-card,
+html[data-skin="ejecutiva"][data-skin-variant="naranja"][data-theme="light"] #view-menu .metal-hero-card {
+  background: #C2410C !important;
+  border: 2px solid #9A3412 !important;
+  color: #FFFFFF !important;
+}
+html[data-skin="ejecutiva"][data-skin-variant="naranja"][data-theme="light"] #view-menu .menu-hero-card p {
+  color: #FFEDD5 !important;
+}
+html[data-skin="ejecutiva"][data-skin-variant="naranja"][data-theme="light"] #view-menu .menu-grid-card,
+html[data-skin="ejecutiva"][data-skin-variant="naranja"][data-theme="light"] #view-menu .metal-grid-card {
+  background: #FFFFFF !important;
+  border: 1.5px solid #FDBA74 !important;
+  box-shadow: inset 0 3px 0 #EA580C !important;
+  color: #1C1917 !important;
+}
+html[data-skin="ejecutiva"][data-skin-variant="naranja"][data-theme="light"] #view-menu .menu-grid-card .menu-card-sub {
+  color: #57534E !important;
+}
+html[data-skin="ejecutiva"][data-skin-variant="naranja"][data-theme="light"] #view-menu .menu-icon-box {
+  background: #FFEDD5 !important;
+  border: 1px solid #FB923C !important;
+  color: #9A3412 !important;
+}
+
+/* ============================================================================
+   3A. CARÁTULA INDUSTRIAL PRO — MODO OSCURO · VERDE (PLASTA SÓLIDA)
+   ============================================================================ */
+html[data-skin="industrial"][data-theme="dark"],
+html[data-skin="industrial"][data-theme="dark"] body,
+html[data-skin="industrial"][data-theme="dark"] #root {
+  background-color: #071F17 !important;
+  background-image: none !important;
   color: #F8FAFC !important;
 }
-html[data-skin="industrial"] #view-menu .menu-grid-card .menu-card-sub {
-  color: #D1FAE5 !important;
+html[data-skin="industrial"][data-theme="dark"] header,
+html[data-skin="industrial"][data-theme="dark"] .metal-topbar-dark {
+  background: #0B2E22 !important;
+  background-image: none !important;
+  border-bottom: 2px solid #16A34A !important;
+  box-shadow: none !important;
+  color: #FFFFFF !important;
 }
-
-html[data-skin="industrial"] main .bg-white,
-html[data-skin="industrial"] main .bg-slate-900,
-html[data-skin="industrial"] [role="dialog"] > div.bg-white,
-html[data-skin="industrial"] #lev-root .shell,
-html[data-skin="industrial"] #lev-root .card {
-  background: linear-gradient(160deg, #0D2B22 0%, #061A14 100%) !important;
-  border-color: rgba(16, 185, 129, 0.48) !important;
+html[data-skin="industrial"][data-theme="dark"] #view-menu h1,
+html[data-skin="industrial"][data-theme="dark"] #view-menu h2 {
+  color: #FFFFFF !important;
+}
+html[data-skin="industrial"][data-theme="dark"] #drawer-panel-surface {
+  background: #0A261D !important;
+  background-image: none !important;
+  border-left: 2px solid #16A34A !important;
   color: #F8FAFC !important;
 }
-
-/* 3B. CARÁTULA INDUSTRIAL PRO — VARIANTE PLATEADA / ACERO (#090E17, #162030, #94A3B8/#E2E8F0) */
-html[data-skin="industrial"][data-skin-variant="plateada"],
-html[data-skin="industrial"][data-skin-variant="plateada"] body,
-html[data-skin="industrial"][data-skin-variant="plateada"] #root {
-  background-color: #090E17 !important;
-  background-image:
-    radial-gradient(ellipse 90% 45% at 50% -8%, rgba(226, 232, 240, 0.16), transparent 62%),
-    radial-gradient(circle at 85% 90%, rgba(148, 163, 184, 0.14), transparent 48%),
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140' viewBox='0 0 140 140'%3E%3Cg fill='none' stroke='%23cbd5e1' stroke-opacity='0.07' stroke-width='1'%3E%3Cpath d='M0 20h140M0 60h140M0 100h140'/%3E%3Cpath d='M20 0v140M60 0v140M100 0v140'/%3E%3C/g%3E%3C/svg%3E"),
-    linear-gradient(180deg, #0B111C 0%, #070B12 100%) !important;
+html[data-skin="industrial"][data-theme="dark"] .metal-icon-btn {
+  background: #113D2D !important;
+  background-image: none !important;
+  border: 1px solid #22C55E !important;
+  color: #DCFCE7 !important;
+  box-shadow: none !important;
+}
+html[data-skin="industrial"][data-theme="dark"] #lev-entry {
+  background: #0F3527 !important;
+  background-image: none !important;
+  border: 2px solid #22C55E !important;
+  box-shadow: inset 0 3px 0 #4ADE80 !important;
+  color: #F8FAFC !important;
+}
+html[data-skin="industrial"][data-theme="dark"] #lev-entry small {
+  color: #BBF7D0 !important;
+}
+html[data-skin="industrial"][data-theme="dark"] #view-menu .menu-hero-card,
+html[data-skin="industrial"][data-theme="dark"] #view-menu .metal-hero-card {
+  background: #15803D !important;
+  background-image: none !important;
+  border: 2px solid #4ADE80 !important;
+  box-shadow: none !important;
+  color: #FFFFFF !important;
+}
+html[data-skin="industrial"][data-theme="dark"] #view-menu .menu-grid-card,
+html[data-skin="industrial"][data-theme="dark"] #view-menu .metal-grid-card {
+  background: #0E3124 !important;
+  background-image: none !important;
+  border: 1.5px solid #16A34A !important;
+  box-shadow: inset 0 2px 0 #22C55E !important;
+  color: #F8FAFC !important;
+}
+html[data-skin="industrial"][data-theme="dark"] #view-menu .menu-grid-card .menu-card-sub {
+  color: #DCFCE7 !important;
+}
+html[data-skin="industrial"][data-theme="dark"] #view-menu .menu-icon-box {
+  background: #166534 !important;
+  background-image: none !important;
+  border: 1px solid #4ADE80 !important;
+  color: #ECFDF5 !important;
+}
+html[data-skin="industrial"][data-theme="dark"] main .bg-white,
+html[data-skin="industrial"][data-theme="dark"] main .bg-slate-900,
+html[data-skin="industrial"][data-theme="dark"] [role="dialog"] > div.bg-white,
+html[data-skin="industrial"][data-theme="dark"] #lev-root .shell,
+html[data-skin="industrial"][data-theme="dark"] #lev-root .card {
+  background: #0C2A20 !important;
+  background-image: none !important;
+  border-color: #16A34A !important;
+  color: #F8FAFC !important;
+  box-shadow: none !important;
 }
 
-html[data-skin="industrial"][data-skin-variant="plateada"] header,
-html[data-skin="industrial"][data-skin-variant="plateada"] .metal-topbar-dark {
-  background: linear-gradient(180deg, rgba(22, 32, 48, 0.96) 0%, rgba(11, 17, 28, 0.97) 100%) !important;
-  border-bottom: 1.5px solid rgba(203, 213, 225, 0.5) !important;
-  box-shadow: 0 6px 26px rgba(0, 0, 0, 0.72), inset 0 1px 0 rgba(248, 250, 252, 0.25) !important;
+/* 3B. CARÁTULA INDUSTRIAL PRO — MODO OSCURO · ORO (dorada · PLASTA SÓLIDA) */
+html[data-skin="industrial"][data-skin-variant="dorada"][data-theme="dark"],
+html[data-skin="industrial"][data-skin-variant="dorada"][data-theme="dark"] body,
+html[data-skin="industrial"][data-skin-variant="dorada"][data-theme="dark"] #root {
+  background-color: #171308 !important;
+  background-image: none !important;
 }
-
-html[data-skin="industrial"][data-skin-variant="plateada"] #drawer-panel-surface {
-  background: linear-gradient(180deg, #162030 0%, #090E17 100%) !important;
-  border-left: 1.5px solid rgba(148, 163, 184, 0.55) !important;
+html[data-skin="industrial"][data-skin-variant="dorada"][data-theme="dark"] header,
+html[data-skin="industrial"][data-skin-variant="dorada"][data-theme="dark"] .metal-topbar-dark {
+  background: #261F0D !important;
+  border-bottom: 2px solid #CA8A04 !important;
 }
-
-html[data-skin="industrial"][data-skin-variant="plateada"] .metal-icon-btn {
-  background: linear-gradient(145deg, #273549, #131C2B) !important;
-  border: 1px solid rgba(226, 232, 240, 0.45) !important;
-  color: #F1F5F9 !important;
+html[data-skin="industrial"][data-skin-variant="dorada"][data-theme="dark"] #drawer-panel-surface {
+  background: #1F1A0B !important;
+  border-left: 2px solid #CA8A04 !important;
 }
-
-html[data-skin="industrial"][data-skin-variant="plateada"] #lev-entry {
-  background:
-    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.025) 0px, rgba(255, 255, 255, 0.025) 1px, transparent 1px, transparent 5px),
-    linear-gradient(145deg, #223045 0%, #162030 52%, #0E1521 100%) !important;
-  border: 1.5px solid rgba(226, 232, 240, 0.65) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.35),
-    inset 0 -1px 0 rgba(148, 163, 184, 0.45),
-    0 10px 26px rgba(0, 0, 0, 0.65) !important;
+html[data-skin="industrial"][data-skin-variant="dorada"][data-theme="dark"] .metal-icon-btn {
+  background: #362C12 !important;
+  border: 1px solid #EAB308 !important;
+  color: #FEF9C3 !important;
 }
-html[data-skin="industrial"][data-skin-variant="plateada"] #lev-entry small {
-  color: #CBD5E1 !important;
+html[data-skin="industrial"][data-skin-variant="dorada"][data-theme="dark"] #lev-entry {
+  background: #2D240F !important;
+  border: 2px solid #EAB308 !important;
+  box-shadow: inset 0 3px 0 #FACC15 !important;
 }
-
-html[data-skin="industrial"][data-skin-variant="plateada"] #view-menu .menu-hero-card,
-html[data-skin="industrial"][data-skin-variant="plateada"] #view-menu .metal-hero-card {
-  background: linear-gradient(135deg, #334155 0%, #1E293B 50%, #111827 100%) !important;
-  border: 1.5px solid rgba(226, 232, 240, 0.78) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.42),
-    inset 0 -1px 0 rgba(148, 163, 184, 0.55),
-    0 14px 36px rgba(0, 0, 0, 0.75) !important;
-}
-
-html[data-skin="industrial"][data-skin-variant="plateada"] #view-menu .menu-grid-card,
-html[data-skin="industrial"][data-skin-variant="plateada"] #view-menu .metal-grid-card {
-  background: linear-gradient(155deg, #1E2A3D 0%, #162030 55%, #0E1521 100%) !important;
-  border: 1.5px solid rgba(148, 163, 184, 0.6) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(226, 232, 240, 0.3),
-    0 10px 24px rgba(0, 0, 0, 0.62) !important;
-}
-html[data-skin="industrial"][data-skin-variant="plateada"] #view-menu .menu-grid-card .menu-card-sub {
-  color: #CBD5E1 !important;
-}
-
-html[data-skin="industrial"][data-skin-variant="plateada"] main .bg-white,
-html[data-skin="industrial"][data-skin-variant="plateada"] main .bg-slate-900,
-html[data-skin="industrial"][data-skin-variant="plateada"] [role="dialog"] > div.bg-white,
-html[data-skin="industrial"][data-skin-variant="plateada"] #lev-root .shell,
-html[data-skin="industrial"][data-skin-variant="plateada"] #lev-root .card {
-  background: linear-gradient(160deg, #162030 0%, #0B111C 100%) !important;
-  border-color: rgba(148, 163, 184, 0.5) !important;
-}
-
-/* 3C. CARÁTULA INDUSTRIAL PRO — VARIANTE DORADA (#0B0A08, #181510, #D4AF37/#FACC15) */
-html[data-skin="industrial"][data-skin-variant="dorada"],
-html[data-skin="industrial"][data-skin-variant="dorada"] body,
-html[data-skin="industrial"][data-skin-variant="dorada"] #root {
-  background-color: #0B0A08 !important;
-  background-image:
-    radial-gradient(ellipse 90% 45% at 50% -8%, rgba(212, 175, 55, 0.22), transparent 62%),
-    radial-gradient(circle at 85% 90%, rgba(250, 204, 21, 0.12), transparent 48%),
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140' viewBox='0 0 140 140'%3E%3Cg fill='none' stroke='%23d4af37' stroke-opacity='0.08' stroke-width='1'%3E%3Cpath d='M0 20h140M0 60h140M0 100h140'/%3E%3Cpath d='M20 0v140M60 0v140M100 0v140'/%3E%3C/g%3E%3C/svg%3E"),
-    linear-gradient(180deg, #0D0B08 0%, #070604 100%) !important;
-}
-
-html[data-skin="industrial"][data-skin-variant="dorada"] header,
-html[data-skin="industrial"][data-skin-variant="dorada"] .metal-topbar-dark {
-  background: linear-gradient(180deg, rgba(28, 24, 16, 0.97) 0%, rgba(11, 10, 8, 0.98) 100%) !important;
-  border-bottom: 1.5px solid rgba(212, 175, 55, 0.65) !important;
-  box-shadow: 0 6px 26px rgba(0, 0, 0, 0.78), inset 0 1px 0 rgba(250, 204, 21, 0.25) !important;
-}
-
-html[data-skin="industrial"][data-skin-variant="dorada"] #drawer-panel-surface {
-  background: linear-gradient(180deg, #181510 0%, #0B0A08 100%) !important;
-  border-left: 1.5px solid rgba(212, 175, 55, 0.65) !important;
-}
-
-html[data-skin="industrial"][data-skin-variant="dorada"] .metal-icon-btn {
-  background: linear-gradient(145deg, #2B2416, #14110B) !important;
-  border: 1px solid rgba(212, 175, 55, 0.62) !important;
+html[data-skin="industrial"][data-skin-variant="dorada"][data-theme="dark"] #lev-entry small {
   color: #FEF08A !important;
 }
-
-html[data-skin="industrial"][data-skin-variant="dorada"] #lev-entry {
-  background: linear-gradient(145deg, #272115 0%, #181510 52%, #100E0A 100%) !important;
-  border: 1.5px solid rgba(212, 175, 55, 0.78) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(254, 240, 138, 0.38),
-    inset 0 -1px 0 rgba(212, 175, 55, 0.55),
-    0 10px 26px rgba(0, 0, 0, 0.72) !important;
+html[data-skin="industrial"][data-skin-variant="dorada"][data-theme="dark"] #view-menu .menu-hero-card,
+html[data-skin="industrial"][data-skin-variant="dorada"][data-theme="dark"] #view-menu .metal-hero-card {
+  background: #A16207 !important;
+  border: 2px solid #FACC15 !important;
+  color: #FFFFFF !important;
 }
-html[data-skin="industrial"][data-skin-variant="dorada"] #lev-entry small {
-  color: #FDE68A !important;
+html[data-skin="industrial"][data-skin-variant="dorada"][data-theme="dark"] #view-menu .menu-grid-card,
+html[data-skin="industrial"][data-skin-variant="dorada"][data-theme="dark"] #view-menu .metal-grid-card {
+  background: #261F0D !important;
+  border: 1.5px solid #CA8A04 !important;
+  box-shadow: inset 0 2px 0 #EAB308 !important;
 }
-
-html[data-skin="industrial"][data-skin-variant="dorada"] #view-menu .menu-hero-card,
-html[data-skin="industrial"][data-skin-variant="dorada"] #view-menu .metal-hero-card {
-  background: linear-gradient(135deg, #3A2E14 0%, #221C10 48%, #14110A 100%) !important;
-  border: 1.5px solid rgba(250, 204, 21, 0.82) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(254, 249, 195, 0.42),
-    inset 0 -1px 0 rgba(212, 175, 55, 0.65),
-    0 14px 36px rgba(0, 0, 0, 0.8),
-    0 0 22px rgba(212, 175, 55, 0.2) !important;
+html[data-skin="industrial"][data-skin-variant="dorada"][data-theme="dark"] #view-menu .menu-grid-card .menu-card-sub {
+  color: #FEF08A !important;
 }
-
-html[data-skin="industrial"][data-skin-variant="dorada"] #view-menu .menu-grid-card,
-html[data-skin="industrial"][data-skin-variant="dorada"] #view-menu .metal-grid-card {
-  background: linear-gradient(155deg, #221D14 0%, #181510 55%, #110F0B 100%) !important;
-  border: 1.5px solid rgba(212, 175, 55, 0.62) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(254, 240, 138, 0.28),
-    0 10px 24px rgba(0, 0, 0, 0.7) !important;
+html[data-skin="industrial"][data-skin-variant="dorada"][data-theme="dark"] #view-menu .menu-icon-box {
+  background: #854D0E !important;
+  border: 1px solid #FACC15 !important;
+  color: #FEF9C3 !important;
 }
-html[data-skin="industrial"][data-skin-variant="dorada"] #view-menu .menu-grid-card .menu-card-sub {
-  color: #FDE68A !important;
+html[data-skin="industrial"][data-skin-variant="dorada"][data-theme="dark"] main .bg-white,
+html[data-skin="industrial"][data-skin-variant="dorada"][data-theme="dark"] main .bg-slate-900,
+html[data-skin="industrial"][data-skin-variant="dorada"][data-theme="dark"] [role="dialog"] > div.bg-white,
+html[data-skin="industrial"][data-skin-variant="dorada"][data-theme="dark"] #lev-root .shell,
+html[data-skin="industrial"][data-skin-variant="dorada"][data-theme="dark"] #lev-root .card {
+  background: #221C0C !important;
+  border-color: #CA8A04 !important;
 }
 
-html[data-skin="industrial"][data-skin-variant="dorada"] main .bg-white,
-html[data-skin="industrial"][data-skin-variant="dorada"] main .bg-slate-900,
-html[data-skin="industrial"][data-skin-variant="dorada"] [role="dialog"] > div.bg-white,
-html[data-skin="industrial"][data-skin-variant="dorada"] #lev-root .shell,
-html[data-skin="industrial"][data-skin-variant="dorada"] #lev-root .card {
-  background: linear-gradient(160deg, #181510 0%, #0B0A08 100%) !important;
-  border-color: rgba(212, 175, 55, 0.55) !important;
+/* 3C. CARÁTULA INDUSTRIAL PRO — MODO OSCURO · PLATA (plateada · PLASTA SÓLIDA) */
+html[data-skin="industrial"][data-skin-variant="plateada"][data-theme="dark"],
+html[data-skin="industrial"][data-skin-variant="plateada"][data-theme="dark"] body,
+html[data-skin="industrial"][data-skin-variant="plateada"][data-theme="dark"] #root {
+  background-color: #111827 !important;
+  background-image: none !important;
+}
+html[data-skin="industrial"][data-skin-variant="plateada"][data-theme="dark"] header,
+html[data-skin="industrial"][data-skin-variant="plateada"][data-theme="dark"] .metal-topbar-dark {
+  background: #1F2937 !important;
+  border-bottom: 2px solid #94A3B8 !important;
+}
+html[data-skin="industrial"][data-skin-variant="plateada"][data-theme="dark"] #drawer-panel-surface {
+  background: #18202E !important;
+  border-left: 2px solid #94A3B8 !important;
+}
+html[data-skin="industrial"][data-skin-variant="plateada"][data-theme="dark"] .metal-icon-btn {
+  background: #334155 !important;
+  border: 1px solid #CBD5E1 !important;
+  color: #F8FAFC !important;
+}
+html[data-skin="industrial"][data-skin-variant="plateada"][data-theme="dark"] #lev-entry {
+  background: #1E293B !important;
+  border: 2px solid #CBD5E1 !important;
+  box-shadow: inset 0 3px 0 #E2E8F0 !important;
+}
+html[data-skin="industrial"][data-skin-variant="plateada"][data-theme="dark"] #lev-entry small {
+  color: #E2E8F0 !important;
+}
+html[data-skin="industrial"][data-skin-variant="plateada"][data-theme="dark"] #view-menu .menu-hero-card,
+html[data-skin="industrial"][data-skin-variant="plateada"][data-theme="dark"] #view-menu .metal-hero-card {
+  background: #475569 !important;
+  border: 2px solid #CBD5E1 !important;
+  color: #FFFFFF !important;
+}
+html[data-skin="industrial"][data-skin-variant="plateada"][data-theme="dark"] #view-menu .menu-grid-card,
+html[data-skin="industrial"][data-skin-variant="plateada"][data-theme="dark"] #view-menu .metal-grid-card {
+  background: #1E293B !important;
+  border: 1.5px solid #64748B !important;
+  box-shadow: inset 0 2px 0 #CBD5E1 !important;
+}
+html[data-skin="industrial"][data-skin-variant="plateada"][data-theme="dark"] #view-menu .menu-grid-card .menu-card-sub {
+  color: #CBD5E1 !important;
+}
+html[data-skin="industrial"][data-skin-variant="plateada"][data-theme="dark"] #view-menu .menu-icon-box {
+  background: #334155 !important;
+  border: 1px solid #CBD5E1 !important;
+  color: #F8FAFC !important;
+}
+html[data-skin="industrial"][data-skin-variant="plateada"][data-theme="dark"] main .bg-white,
+html[data-skin="industrial"][data-skin-variant="plateada"][data-theme="dark"] main .bg-slate-900,
+html[data-skin="industrial"][data-skin-variant="plateada"][data-theme="dark"] [role="dialog"] > div.bg-white,
+html[data-skin="industrial"][data-skin-variant="plateada"][data-theme="dark"] #lev-root .shell,
+html[data-skin="industrial"][data-skin-variant="plateada"][data-theme="dark"] #lev-root .card {
+  background: #1A2332 !important;
+  border-color: #64748B !important;
+}
+
+/* 3D. CARÁTULA INDUSTRIAL PRO — MODO OSCURO · BRONCE (PLASTA SÓLIDA) */
+html[data-skin="industrial"][data-skin-variant="bronce"][data-theme="dark"],
+html[data-skin="industrial"][data-skin-variant="bronce"][data-theme="dark"] body,
+html[data-skin="industrial"][data-skin-variant="bronce"][data-theme="dark"] #root {
+  background-color: #1A110B !important;
+  background-image: none !important;
+}
+html[data-skin="industrial"][data-skin-variant="bronce"][data-theme="dark"] header,
+html[data-skin="industrial"][data-skin-variant="bronce"][data-theme="dark"] .metal-topbar-dark {
+  background: #2A1B12 !important;
+  border-bottom: 2px solid #9A5B2C !important;
+}
+html[data-skin="industrial"][data-skin-variant="bronce"][data-theme="dark"] #drawer-panel-surface {
+  background: #22160E !important;
+  border-left: 2px solid #9A5B2C !important;
+}
+html[data-skin="industrial"][data-skin-variant="bronce"][data-theme="dark"] .metal-icon-btn {
+  background: #3D2618 !important;
+  border: 1px solid #C6834E !important;
+  color: #FDE8D7 !important;
+}
+html[data-skin="industrial"][data-skin-variant="bronce"][data-theme="dark"] #lev-entry {
+  background: #332014 !important;
+  border: 2px solid #B56E39 !important;
+  box-shadow: inset 0 3px 0 #D89B6B !important;
+}
+html[data-skin="industrial"][data-skin-variant="bronce"][data-theme="dark"] #lev-entry small {
+  color: #F5D0B2 !important;
+}
+html[data-skin="industrial"][data-skin-variant="bronce"][data-theme="dark"] #view-menu .menu-hero-card,
+html[data-skin="industrial"][data-skin-variant="bronce"][data-theme="dark"] #view-menu .metal-hero-card {
+  background: #8C4A27 !important;
+  border: 2px solid #D89B6B !important;
+  color: #FFFFFF !important;
+}
+html[data-skin="industrial"][data-skin-variant="bronce"][data-theme="dark"] #view-menu .menu-grid-card,
+html[data-skin="industrial"][data-skin-variant="bronce"][data-theme="dark"] #view-menu .metal-grid-card {
+  background: #291A11 !important;
+  border: 1.5px solid #9A5B2C !important;
+  box-shadow: inset 0 2px 0 #C6834E !important;
+}
+html[data-skin="industrial"][data-skin-variant="bronce"][data-theme="dark"] #view-menu .menu-grid-card .menu-card-sub {
+  color: #F5D0B2 !important;
+}
+html[data-skin="industrial"][data-skin-variant="bronce"][data-theme="dark"] #view-menu .menu-icon-box {
+  background: #6B3619 !important;
+  border: 1px solid #D89B6B !important;
+  color: #FAF0E6 !important;
+}
+html[data-skin="industrial"][data-skin-variant="bronce"][data-theme="dark"] main .bg-white,
+html[data-skin="industrial"][data-skin-variant="bronce"][data-theme="dark"] main .bg-slate-900,
+html[data-skin="industrial"][data-skin-variant="bronce"][data-theme="dark"] [role="dialog"] > div.bg-white,
+html[data-skin="industrial"][data-skin-variant="bronce"][data-theme="dark"] #lev-root .shell,
+html[data-skin="industrial"][data-skin-variant="bronce"][data-theme="dark"] #lev-root .card {
+  background: #24170F !important;
+  border-color: #9A5B2C !important;
+}
+
+/* ============================================================================
+   3E. CARÁTULA INDUSTRIAL PRO — MODO CLARO (PLASTAS LUMINOSAS: VERDE, ORO, PLATA, BRONCE)
+   ============================================================================ */
+/* Industrial Verde — Modo Claro */
+html[data-skin="industrial"][data-theme="light"],
+html[data-skin="industrial"][data-theme="light"] body,
+html[data-skin="industrial"][data-theme="light"] #root {
+  background-color: #ECFDF5 !important;
+  background-image: none !important;
+  color: #052E16 !important;
+}
+html[data-skin="industrial"][data-theme="light"] header {
+  background: #15803D !important;
+  border-bottom: 2px solid #166534 !important;
+  color: #FFFFFF !important;
+}
+html[data-skin="industrial"][data-theme="light"] #drawer-panel-surface {
+  background: #FFFFFF !important;
+  border-left: 2px solid #86EFAC !important;
+  color: #052E16 !important;
+}
+html[data-skin="industrial"][data-theme="light"] #lev-entry {
+  background: #FFFFFF !important;
+  border: 2px solid #15803D !important;
+  box-shadow: inset 0 3px 0 #16A34A !important;
+  color: #052E16 !important;
+}
+html[data-skin="industrial"][data-theme="light"] #lev-entry small {
+  color: #166534 !important;
+}
+html[data-skin="industrial"][data-theme="light"] #view-menu .menu-hero-card,
+html[data-skin="industrial"][data-theme="light"] #view-menu .metal-hero-card {
+  background: #166534 !important;
+  border: 2px solid #14532D !important;
+  color: #FFFFFF !important;
+}
+html[data-skin="industrial"][data-theme="light"] #view-menu .menu-hero-card p {
+  color: #DCFCE7 !important;
+}
+html[data-skin="industrial"][data-theme="light"] #view-menu .menu-grid-card,
+html[data-skin="industrial"][data-theme="light"] #view-menu .metal-grid-card {
+  background: #FFFFFF !important;
+  border: 1.5px solid #86EFAC !important;
+  box-shadow: inset 0 3px 0 #15803D !important;
+  color: #052E16 !important;
+}
+html[data-skin="industrial"][data-theme="light"] #view-menu .menu-grid-card .menu-card-sub {
+  color: #166534 !important;
+}
+html[data-skin="industrial"][data-theme="light"] #view-menu .menu-icon-box {
+  background: #DCFCE7 !important;
+  border: 1px solid #4ADE80 !important;
+  color: #14532D !important;
+}
+
+/* Industrial Oro (dorada) — Modo Claro */
+html[data-skin="industrial"][data-skin-variant="dorada"][data-theme="light"],
+html[data-skin="industrial"][data-skin-variant="dorada"][data-theme="light"] body,
+html[data-skin="industrial"][data-skin-variant="dorada"][data-theme="light"] #root {
+  background-color: #FEFCE8 !important;
+  background-image: none !important;
+  color: #1C1917 !important;
+}
+html[data-skin="industrial"][data-skin-variant="dorada"][data-theme="light"] header {
+  background: #A16207 !important;
+  border-bottom: 2px solid #854D0E !important;
+  color: #FFFFFF !important;
+}
+html[data-skin="industrial"][data-skin-variant="dorada"][data-theme="light"] #drawer-panel-surface {
+  background: #FFFFFF !important;
+  border-left: 2px solid #FDE047 !important;
+  color: #1C1917 !important;
+}
+html[data-skin="industrial"][data-skin-variant="dorada"][data-theme="light"] #lev-entry {
+  background: #FFFFFF !important;
+  border: 2px solid #CA8A04 !important;
+  box-shadow: inset 0 3px 0 #CA8A04 !important;
+  color: #1C1917 !important;
+}
+html[data-skin="industrial"][data-skin-variant="dorada"][data-theme="light"] #lev-entry small {
+  color: #854D0E !important;
+}
+html[data-skin="industrial"][data-skin-variant="dorada"][data-theme="light"] #view-menu .menu-hero-card,
+html[data-skin="industrial"][data-skin-variant="dorada"][data-theme="light"] #view-menu .metal-hero-card {
+  background: #A16207 !important;
+  border: 2px solid #854D0E !important;
+  color: #FFFFFF !important;
+}
+html[data-skin="industrial"][data-skin-variant="dorada"][data-theme="light"] #view-menu .menu-hero-card p {
+  color: #FEF9C3 !important;
+}
+html[data-skin="industrial"][data-skin-variant="dorada"][data-theme="light"] #view-menu .menu-grid-card,
+html[data-skin="industrial"][data-skin-variant="dorada"][data-theme="light"] #view-menu .metal-grid-card {
+  background: #FFFFFF !important;
+  border: 1.5px solid #FACC15 !important;
+  box-shadow: inset 0 3px 0 #CA8A04 !important;
+  color: #1C1917 !important;
+}
+html[data-skin="industrial"][data-skin-variant="dorada"][data-theme="light"] #view-menu .menu-grid-card .menu-card-sub {
+  color: #713F12 !important;
+}
+html[data-skin="industrial"][data-skin-variant="dorada"][data-theme="light"] #view-menu .menu-icon-box {
+  background: #FEF9C3 !important;
+  border: 1px solid #EAB308 !important;
+  color: #713F12 !important;
+}
+
+/* Industrial Plata (plateada) — Modo Claro */
+html[data-skin="industrial"][data-skin-variant="plateada"][data-theme="light"],
+html[data-skin="industrial"][data-skin-variant="plateada"][data-theme="light"] body,
+html[data-skin="industrial"][data-skin-variant="plateada"][data-theme="light"] #root {
+  background-color: #F1F5F9 !important;
+  background-image: none !important;
+  color: #0F172A !important;
+}
+html[data-skin="industrial"][data-skin-variant="plateada"][data-theme="light"] header {
+  background: #475569 !important;
+  border-bottom: 2px solid #334155 !important;
+  color: #FFFFFF !important;
+}
+html[data-skin="industrial"][data-skin-variant="plateada"][data-theme="light"] #drawer-panel-surface {
+  background: #FFFFFF !important;
+  border-left: 2px solid #CBD5E1 !important;
+  color: #0F172A !important;
+}
+html[data-skin="industrial"][data-skin-variant="plateada"][data-theme="light"] #lev-entry {
+  background: #FFFFFF !important;
+  border: 2px solid #64748B !important;
+  box-shadow: inset 0 3px 0 #475569 !important;
+  color: #0F172A !important;
+}
+html[data-skin="industrial"][data-skin-variant="plateada"][data-theme="light"] #lev-entry small {
+  color: #334155 !important;
+}
+html[data-skin="industrial"][data-skin-variant="plateada"][data-theme="light"] #view-menu .menu-hero-card,
+html[data-skin="industrial"][data-skin-variant="plateada"][data-theme="light"] #view-menu .metal-hero-card {
+  background: #334155 !important;
+  border: 2px solid #1E293B !important;
+  color: #FFFFFF !important;
+}
+html[data-skin="industrial"][data-skin-variant="plateada"][data-theme="light"] #view-menu .menu-hero-card p {
+  color: #E2E8F0 !important;
+}
+html[data-skin="industrial"][data-skin-variant="plateada"][data-theme="light"] #view-menu .menu-grid-card,
+html[data-skin="industrial"][data-skin-variant="plateada"][data-theme="light"] #view-menu .metal-grid-card {
+  background: #FFFFFF !important;
+  border: 1.5px solid #94A3B8 !important;
+  box-shadow: inset 0 3px 0 #475569 !important;
+  color: #0F172A !important;
+}
+html[data-skin="industrial"][data-skin-variant="plateada"][data-theme="light"] #view-menu .menu-grid-card .menu-card-sub {
+  color: #475569 !important;
+}
+html[data-skin="industrial"][data-skin-variant="plateada"][data-theme="light"] #view-menu .menu-icon-box {
+  background: #E2E8F0 !important;
+  border: 1px solid #94A3B8 !important;
+  color: #1E293B !important;
+}
+
+/* Industrial Bronce — Modo Claro */
+html[data-skin="industrial"][data-skin-variant="bronce"][data-theme="light"],
+html[data-skin="industrial"][data-skin-variant="bronce"][data-theme="light"] body,
+html[data-skin="industrial"][data-skin-variant="bronce"][data-theme="light"] #root {
+  background-color: #FAF5F0 !important;
+  background-image: none !important;
+  color: #1F140E !important;
+}
+html[data-skin="industrial"][data-skin-variant="bronce"][data-theme="light"] header {
+  background: #8C4A27 !important;
+  border-bottom: 2px solid #6B3619 !important;
+  color: #FFFFFF !important;
+}
+html[data-skin="industrial"][data-skin-variant="bronce"][data-theme="light"] #drawer-panel-surface {
+  background: #FFFFFF !important;
+  border-left: 2px solid #D6A984 !important;
+  color: #1F140E !important;
+}
+html[data-skin="industrial"][data-skin-variant="bronce"][data-theme="light"] #lev-entry {
+  background: #FFFFFF !important;
+  border: 2px solid #9A5B2C !important;
+  box-shadow: inset 0 3px 0 #8C4A27 !important;
+  color: #1F140E !important;
+}
+html[data-skin="industrial"][data-skin-variant="bronce"][data-theme="light"] #lev-entry small {
+  color: #6B3619 !important;
+}
+html[data-skin="industrial"][data-skin-variant="bronce"][data-theme="light"] #view-menu .menu-hero-card,
+html[data-skin="industrial"][data-skin-variant="bronce"][data-theme="light"] #view-menu .metal-hero-card {
+  background: #8C4A27 !important;
+  border: 2px solid #6B3619 !important;
+  color: #FFFFFF !important;
+}
+html[data-skin="industrial"][data-skin-variant="bronce"][data-theme="light"] #view-menu .menu-hero-card p {
+  color: #F3E4D7 !important;
+}
+html[data-skin="industrial"][data-skin-variant="bronce"][data-theme="light"] #view-menu .menu-grid-card,
+html[data-skin="industrial"][data-skin-variant="bronce"][data-theme="light"] #view-menu .metal-grid-card {
+  background: #FFFFFF !important;
+  border: 1.5px solid #D6A984 !important;
+  box-shadow: inset 0 3px 0 #9A5B2C !important;
+  color: #1F140E !important;
+}
+html[data-skin="industrial"][data-skin-variant="bronce"][data-theme="light"] #view-menu .menu-grid-card .menu-card-sub {
+  color: #6B3619 !important;
+}
+html[data-skin="industrial"][data-skin-variant="bronce"][data-theme="light"] #view-menu .menu-icon-box {
+  background: #F3E4D7 !important;
+  border: 1px solid #C6834E !important;
+  color: #6B3619 !important;
 }
 
 
@@ -2978,7 +3321,9 @@ html[data-skin="industrial"][data-skin-variant="dorada"] #lev-root .card {
   .sobrante-new-highlight::after,
   .santa-hat-sway,
   .navidena-snow-flake,
-  .navidena-twinkle {
+  .navidena-twinkle,
+  .promo-flame-anim,
+  .promo-flame-badge {
     animation: none !important;
   }
 }
@@ -3112,262 +3457,158 @@ html[data-skin="industrial"][data-skin-variant="dorada"] #lev-root .card {
 }
 
 /* ============================================================================
-   1C. CARÁTULA NAVIDEÑA (GRATIS Y PRO) — NOCHE INVERNAL DE ALTO CONTRASTE
-   Paleta: Azul Noche Invernal (#07131F / #0E1F2F), Carmesí (#DC2626), Oro (#F59E0B)
+   1C. CARÁTULA NAVIDEÑA — MODO OSCURO Y MODO CLARO (PLASTAS LIMPIAS)
    ============================================================================ */
-html[data-skin="navidena"],
-html[data-skin="navidena"] body,
-html[data-skin="navidena"] #root {
-  background-color: #07131F !important;
-  background-image:
-    radial-gradient(ellipse 88% 44% at 50% -8%, rgba(220, 38, 38, 0.22), transparent 62%),
-    radial-gradient(circle at 12% 24%, rgba(245, 158, 11, 0.14), transparent 44%),
-    radial-gradient(circle at 88% 82%, rgba(56, 189, 248, 0.14), transparent 48%),
-    linear-gradient(180deg, #07131F 0%, #0B1A2B 52%, #081320 100%) !important;
-  background-attachment: fixed !important;
+html[data-skin="navidena"][data-theme="dark"],
+html[data-skin="navidena"][data-theme="dark"] body,
+html[data-skin="navidena"][data-theme="dark"] #root {
+  background-color: #091828 !important;
+  background-image: none !important;
   color: #F8FAFC !important;
 }
-
-html[data-skin="navidena"] header,
-html[data-skin="navidena"] .metal-topbar-dark {
-  background: linear-gradient(180deg, rgba(22, 24, 38, 0.96) 0%, rgba(10, 21, 34, 0.97) 100%) !important;
-  border-bottom: 1.5px solid rgba(245, 158, 11, 0.62) !important;
-  box-shadow: 0 6px 24px rgba(2, 8, 18, 0.72), inset 0 -1px 0 rgba(220, 38, 38, 0.45) !important;
+html[data-skin="navidena"][data-theme="dark"] header,
+html[data-skin="navidena"][data-theme="dark"] .metal-topbar-dark {
+  background: #142235 !important;
+  border-bottom: 2px solid #D97706 !important;
+  box-shadow: none !important;
   color: #FFFFFF !important;
 }
-
-html[data-skin="navidena"] #drawer-panel-surface {
-  background: linear-gradient(180deg, #102032 0%, #07131F 100%) !important;
-  border-left: 1.5px solid rgba(245, 158, 11, 0.58) !important;
+html[data-skin="navidena"][data-theme="dark"] #drawer-panel-surface {
+  background: #0F2032 !important;
+  border-left: 2px solid #D97706 !important;
   color: #F8FAFC !important;
 }
-
-html[data-skin="navidena"] .metal-icon-btn {
-  background: linear-gradient(145deg, rgba(58, 23, 30, 0.92), rgba(17, 30, 46, 0.96)) !important;
-  border: 1px solid rgba(251, 191, 36, 0.55) !important;
+html[data-skin="navidena"][data-theme="dark"] .metal-icon-btn {
+  background: #2C1821 !important;
+  border: 1px solid #F59E0B !important;
   color: #FEF3C7 !important;
 }
-
-html[data-skin="navidena"] #view-menu h1,
-html[data-skin="navidena"] #view-menu h2 {
+html[data-skin="navidena"][data-theme="dark"] #view-menu h1,
+html[data-skin="navidena"][data-theme="dark"] #view-menu h2 {
   color: #FFFFFF !important;
 }
-
-html[data-skin="navidena"] #lev-entry {
-  background: linear-gradient(145deg, #2B1721 0%, #142235 55%, #0D1A29 100%) !important;
-  border: 1.5px solid rgba(245, 158, 11, 0.78) !important;
-  box-shadow:
-    0 10px 26px rgba(2, 8, 18, 0.65),
-    0 0 18px rgba(220, 38, 38, 0.16),
-    inset 0 2.5px 0 #F59E0B !important;
+html[data-skin="navidena"][data-theme="dark"] #lev-entry {
+  background: #1D2436 !important;
+  border: 2px solid #F59E0B !important;
+  box-shadow: inset 0 3px 0 #F59E0B !important;
   color: #FFFFFF !important;
 }
-html[data-skin="navidena"] #lev-entry small {
+html[data-skin="navidena"][data-theme="dark"] #lev-entry small {
   color: #FDE68A !important;
 }
-
-html[data-skin="navidena"] #view-menu .menu-hero-card,
-html[data-skin="navidena"] #view-menu .metal-hero-card {
-  background: linear-gradient(135deg, #7F1D1D 0%, #451420 48%, #102338 100%) !important;
-  border: 1.5px solid rgba(251, 191, 36, 0.85) !important;
-  box-shadow:
-    0 14px 34px rgba(3, 10, 20, 0.78),
-    0 0 24px rgba(220, 38, 38, 0.24),
-    inset 0 2.5px 0 rgba(254, 240, 138, 0.75) !important;
+html[data-skin="navidena"][data-theme="dark"] #view-menu .menu-hero-card,
+html[data-skin="navidena"][data-theme="dark"] #view-menu .metal-hero-card {
+  background: #991B1B !important;
+  border: 2px solid #F59E0B !important;
+  box-shadow: none !important;
   color: #FFFFFF !important;
 }
-
-html[data-skin="navidena"] #view-menu .menu-grid-card,
-html[data-skin="navidena"] #view-menu .metal-grid-card {
-  background: linear-gradient(155deg, #13253B 0%, #0E1F32 55%, #0A1726 100%) !important;
-  border: 1.5px solid rgba(245, 158, 11, 0.52) !important;
-  box-shadow:
-    0 10px 24px rgba(2, 8, 18, 0.62),
-    inset 0 1.5px 0 rgba(254, 243, 199, 0.28) !important;
+html[data-skin="navidena"][data-theme="dark"] #view-menu .menu-grid-card,
+html[data-skin="navidena"][data-theme="dark"] #view-menu .metal-grid-card {
+  background: #12243A !important;
+  border: 1.5px solid #D97706 !important;
+  box-shadow: none !important;
   color: #FFFFFF !important;
 }
-html[data-skin="navidena"] #view-menu .menu-grid-card .menu-card-sub {
+html[data-skin="navidena"][data-theme="dark"] #view-menu .menu-grid-card .menu-card-sub {
   color: #E2E8F0 !important;
 }
-
-html[data-skin="navidena"] #view-menu .menu-icon-box {
-  background: linear-gradient(145deg, rgba(185, 28, 28, 0.32) 0%, rgba(14, 42, 68, 0.72) 100%) !important;
-  border: 1px solid rgba(251, 191, 36, 0.58) !important;
+html[data-skin="navidena"][data-theme="dark"] #view-menu .menu-icon-box {
+  background: #7F1D1D !important;
+  border: 1px solid #F59E0B !important;
   color: #FEF3C7 !important;
 }
-
-html[data-skin="navidena"] main .bg-white,
-html[data-skin="navidena"] main .bg-slate-900,
-html[data-skin="navidena"] [role="dialog"] > div.bg-white,
-html[data-skin="navidena"] #lev-root .shell,
-html[data-skin="navidena"] #lev-root .card {
-  background: linear-gradient(160deg, #112338 0%, #0A1726 100%) !important;
-  border-color: rgba(245, 158, 11, 0.48) !important;
+html[data-skin="navidena"][data-theme="dark"] main .bg-white,
+html[data-skin="navidena"][data-theme="dark"] main .bg-slate-900,
+html[data-skin="navidena"][data-theme="dark"] [role="dialog"] > div.bg-white,
+html[data-skin="navidena"][data-theme="dark"] #lev-root .shell,
+html[data-skin="navidena"][data-theme="dark"] #lev-root .card {
+  background: #102236 !important;
+  border-color: #D97706 !important;
   color: #F8FAFC !important;
 }
 
-/* ============================================================================
-   2C. CARÁTULA EJECUTIVA — VARIANTE VERDE (#061813, #10B981, #34D399)
-   ============================================================================ */
-html[data-skin="ejecutiva"][data-skin-variant="verde"],
-html[data-skin="ejecutiva"][data-skin-variant="verde"] body,
-html[data-skin="ejecutiva"][data-skin-variant="verde"] #root {
-  background-color: #061813 !important;
-  background-image:
-    repeating-linear-gradient(115deg, rgba(52, 211, 153, 0.025) 0px, rgba(52, 211, 153, 0.025) 1px, transparent 1px, transparent 7px),
-    radial-gradient(ellipse 85% 50% at 50% -10%, rgba(16, 185, 129, 0.25), transparent 65%),
-    radial-gradient(circle at 88% 88%, rgba(52, 211, 153, 0.14), transparent 48%),
-    linear-gradient(180deg, #082019 0%, #04100C 100%) !important;
+/* Navideña — Modo Claro */
+html[data-skin="navidena"][data-theme="light"],
+html[data-skin="navidena"][data-theme="light"] body,
+html[data-skin="navidena"][data-theme="light"] #root {
+  background-color: #FEF2F2 !important;
+  background-image: none !important;
+  color: #1F2937 !important;
+}
+html[data-skin="navidena"][data-theme="light"] header {
+  background: #B91C1C !important;
+  border-bottom: 2px solid #991B1B !important;
+  color: #FFFFFF !important;
+}
+html[data-skin="navidena"][data-theme="light"] #drawer-panel-surface {
+  background: #FFFFFF !important;
+  border-left: 2px solid #FCA5A5 !important;
+  color: #1F2937 !important;
+}
+html[data-skin="navidena"][data-theme="light"] #lev-entry {
+  background: #FFFFFF !important;
+  border: 2px solid #B91C1C !important;
+  box-shadow: inset 0 3px 0 #D97706 !important;
+  color: #1F2937 !important;
+}
+html[data-skin="navidena"][data-theme="light"] #view-menu .menu-hero-card,
+html[data-skin="navidena"][data-theme="light"] #view-menu .metal-hero-card {
+  background: #991B1B !important;
+  border: 2px solid #D97706 !important;
+  color: #FFFFFF !important;
+}
+html[data-skin="navidena"][data-theme="light"] #view-menu .menu-grid-card,
+html[data-skin="navidena"][data-theme="light"] #view-menu .metal-grid-card {
+  background: #FFFFFF !important;
+  border: 1.5px solid #FCA5A5 !important;
+  box-shadow: inset 0 3px 0 #B91C1C !important;
+  color: #1F2937 !important;
+}
+html[data-skin="navidena"][data-theme="light"] #view-menu .menu-icon-box {
+  background: #FEE2E2 !important;
+  border: 1px solid #F87171 !important;
+  color: #991B1B !important;
 }
 
-html[data-skin="ejecutiva"][data-skin-variant="verde"] header,
-html[data-skin="ejecutiva"][data-skin-variant="verde"] .metal-topbar-dark {
-  background: linear-gradient(180deg, rgba(10, 42, 33, 0.96) 0%, rgba(6, 24, 19, 0.97) 100%) !important;
-  border-bottom: 1px solid rgba(16, 185, 129, 0.62) !important;
-  box-shadow: 0 6px 24px rgba(2, 12, 9, 0.72), inset 0 -1px 0 rgba(52, 211, 153, 0.35) !important;
+/* ==================== ANIMACIÓN FLAMA PROMOCIÓN EXCLUSIVA DE LANZAMIENTO (GPU) ==================== */
+@keyframes promoFlameDance {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale3d(1, 1, 1) rotate(-3deg);
+    opacity: 0.94;
+  }
+  25% {
+    transform: translate3d(0, -1.5px, 0) scale3d(1.12, 1.18, 1) rotate(4deg);
+    opacity: 1;
+  }
+  50% {
+    transform: translate3d(0, -0.5px, 0) scale3d(0.96, 1.06, 1) rotate(-4deg);
+    opacity: 0.92;
+  }
+  75% {
+    transform: translate3d(0, -2px, 0) scale3d(1.1, 1.16, 1) rotate(3deg);
+    opacity: 1;
+  }
 }
 
-html[data-skin="ejecutiva"][data-skin-variant="verde"] #drawer-panel-surface {
-  background: linear-gradient(180deg, #0A2A20 0%, #061813 100%) !important;
-  border-left: 1px solid rgba(16, 185, 129, 0.58) !important;
+@keyframes promoFlameBadgePulse {
+  0%, 100% {
+    transform: scale3d(1, 1, 1);
+  }
+  50% {
+    transform: scale3d(1.06, 1.06, 1);
+  }
 }
 
-html[data-skin="ejecutiva"][data-skin-variant="verde"] .metal-icon-btn {
-  background: linear-gradient(145deg, rgba(13, 62, 47, 0.92), rgba(7, 32, 24, 0.95)) !important;
-  border: 1px solid rgba(52, 211, 153, 0.55) !important;
-  color: #D1FAE5 !important;
+.promo-flame-anim {
+  transform-origin: 50% 80%;
+  animation: promoFlameDance 1.35s ease-in-out infinite;
+  will-change: transform, opacity;
 }
 
-html[data-skin="ejecutiva"][data-skin-variant="verde"] #lev-entry {
-  background:
-    repeating-linear-gradient(120deg, rgba(209, 250, 229, 0.025) 0px, rgba(209, 250, 229, 0.025) 1px, transparent 1px, transparent 6px),
-    linear-gradient(145deg, #0D3C2E 0%, #092920 55%, #061C16 100%) !important;
-  border: 1px solid rgba(16, 185, 129, 0.78) !important;
-  box-shadow:
-    0 10px 26px rgba(2, 12, 9, 0.65),
-    0 0 18px rgba(16, 185, 129, 0.2),
-    inset 0 2.5px 0 #34D399 !important;
-}
-html[data-skin="ejecutiva"][data-skin-variant="verde"] #lev-entry small {
-  color: #A7F3D0 !important;
-}
-
-html[data-skin="ejecutiva"][data-skin-variant="verde"] #view-menu .menu-hero-card,
-html[data-skin="ejecutiva"][data-skin-variant="verde"] #view-menu .metal-hero-card {
-  background:
-    repeating-linear-gradient(120deg, rgba(209, 250, 229, 0.028) 0px, rgba(209, 250, 229, 0.028) 1px, transparent 1px, transparent 6px),
-    linear-gradient(140deg, #0E5540 0%, #0A3A2C 52%, #07261D 100%) !important;
-  border: 1px solid rgba(52, 211, 153, 0.82) !important;
-  box-shadow:
-    0 14px 34px rgba(2, 15, 11, 0.76),
-    0 0 24px rgba(16, 185, 129, 0.24),
-    inset 0 3px 0 #34D399 !important;
-}
-
-html[data-skin="ejecutiva"][data-skin-variant="verde"] #view-menu .menu-grid-card,
-html[data-skin="ejecutiva"][data-skin-variant="verde"] #view-menu .metal-grid-card {
-  background:
-    repeating-linear-gradient(125deg, rgba(209, 250, 229, 0.02) 0px, rgba(209, 250, 229, 0.02) 1px, transparent 1px, transparent 7px),
-    linear-gradient(155deg, #0C3227 0%, #09241C 55%, #061A14 100%) !important;
-  border: 1px solid rgba(16, 185, 129, 0.6) !important;
-  box-shadow:
-    0 8px 22px rgba(2, 11, 8, 0.62),
-    0 0 12px rgba(16, 185, 129, 0.14),
-    inset 0 2px 0 rgba(52, 211, 153, 0.85) !important;
-}
-html[data-skin="ejecutiva"][data-skin-variant="verde"] #view-menu .menu-grid-card .menu-card-sub {
-  color: #D1FAE5 !important;
-}
-
-html[data-skin="ejecutiva"][data-skin-variant="verde"] #view-menu .menu-icon-box {
-  background: linear-gradient(145deg, rgba(167, 243, 208, 0.22) 0%, rgba(5, 150, 105, 0.42) 100%) !important;
-  border: 1px solid rgba(52, 211, 153, 0.55) !important;
-  color: #D1FAE5 !important;
-}
-
-html[data-skin="ejecutiva"][data-skin-variant="verde"] main .bg-white,
-html[data-skin="ejecutiva"][data-skin-variant="verde"] main .bg-slate-900,
-html[data-skin="ejecutiva"][data-skin-variant="verde"] [role="dialog"] > div.bg-white,
-html[data-skin="ejecutiva"][data-skin-variant="verde"] #lev-root .shell,
-html[data-skin="ejecutiva"][data-skin-variant="verde"] #lev-root .card {
-  background: linear-gradient(160deg, #0B2D23 0%, #061813 100%) !important;
-  border-color: rgba(16, 185, 129, 0.5) !important;
-}
-
-/* ============================================================================
-   3D. CARÁTULA INDUSTRIAL PRO — VARIANTE BRONCE (#120C08, #241710, #CD7F32/#F59E0B)
-   ============================================================================ */
-html[data-skin="industrial"][data-skin-variant="bronce"],
-html[data-skin="industrial"][data-skin-variant="bronce"] body,
-html[data-skin="industrial"][data-skin-variant="bronce"] #root {
-  background-color: #120C08 !important;
-  background-image:
-    radial-gradient(ellipse 90% 45% at 50% -8%, rgba(205, 127, 50, 0.24), transparent 62%),
-    radial-gradient(circle at 85% 90%, rgba(180, 83, 9, 0.16), transparent 48%),
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140' viewBox='0 0 140 140'%3E%3Cg fill='none' stroke='%23cd7f32' stroke-opacity='0.09' stroke-width='1'%3E%3Cpath d='M0 20h140M0 60h140M0 100h140'/%3E%3Cpath d='M20 0v140M60 0v140M100 0v140'/%3E%3C/g%3E%3C/svg%3E"),
-    linear-gradient(180deg, #160F0A 0%, #0C0805 100%) !important;
-}
-
-html[data-skin="industrial"][data-skin-variant="bronce"] header,
-html[data-skin="industrial"][data-skin-variant="bronce"] .metal-topbar-dark {
-  background: linear-gradient(180deg, rgba(38, 24, 15, 0.97) 0%, rgba(18, 12, 8, 0.98) 100%) !important;
-  border-bottom: 1.5px solid rgba(205, 127, 50, 0.68) !important;
-  box-shadow: 0 6px 26px rgba(0, 0, 0, 0.78), inset 0 1px 0 rgba(253, 186, 116, 0.25) !important;
-}
-
-html[data-skin="industrial"][data-skin-variant="bronce"] #drawer-panel-surface {
-  background: linear-gradient(180deg, #23160E 0%, #120C08 100%) !important;
-  border-left: 1.5px solid rgba(205, 127, 50, 0.65) !important;
-}
-
-html[data-skin="industrial"][data-skin-variant="bronce"] .metal-icon-btn {
-  background: linear-gradient(145deg, #3B2415, #1D120B) !important;
-  border: 1px solid rgba(205, 127, 50, 0.65) !important;
-  color: #FED7AA !important;
-}
-
-html[data-skin="industrial"][data-skin-variant="bronce"] #lev-entry {
-  background: linear-gradient(145deg, #342014 0%, #23160E 52%, #170E09 100%) !important;
-  border: 1.5px solid rgba(205, 127, 50, 0.8) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(254, 215, 170, 0.35),
-    inset 0 -1px 0 rgba(205, 127, 50, 0.55),
-    0 10px 26px rgba(0, 0, 0, 0.72) !important;
-}
-html[data-skin="industrial"][data-skin-variant="bronce"] #lev-entry small {
-  color: #FED7AA !important;
-}
-
-html[data-skin="industrial"][data-skin-variant="bronce"] #view-menu .menu-hero-card,
-html[data-skin="industrial"][data-skin-variant="bronce"] #view-menu .metal-hero-card {
-  background: linear-gradient(135deg, #522E17 0%, #301C0F 48%, #1B1009 100%) !important;
-  border: 1.5px solid rgba(217, 119, 6, 0.85) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(254, 215, 170, 0.4),
-    inset 0 -1px 0 rgba(205, 127, 50, 0.65),
-    0 14px 36px rgba(0, 0, 0, 0.8),
-    0 0 22px rgba(205, 127, 50, 0.22) !important;
-}
-
-html[data-skin="industrial"][data-skin-variant="bronce"] #view-menu .menu-grid-card,
-html[data-skin="industrial"][data-skin-variant="bronce"] #view-menu .metal-grid-card {
-  background: linear-gradient(155deg, #2C1B11 0%, #20140D 55%, #160E09 100%) !important;
-  border: 1.5px solid rgba(205, 127, 50, 0.64) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(254, 215, 170, 0.28),
-    0 10px 24px rgba(0, 0, 0, 0.7) !important;
-}
-html[data-skin="industrial"][data-skin-variant="bronce"] #view-menu .menu-grid-card .menu-card-sub {
-  color: #FED7AA !important;
-}
-
-html[data-skin="industrial"][data-skin-variant="bronce"] main .bg-white,
-html[data-skin="industrial"][data-skin-variant="bronce"] main .bg-slate-900,
-html[data-skin="industrial"][data-skin-variant="bronce"] [role="dialog"] > div.bg-white,
-html[data-skin="industrial"][data-skin-variant="bronce"] #lev-root .shell,
-html[data-skin="industrial"][data-skin-variant="bronce"] #lev-root .card {
-  background: linear-gradient(160deg, #241710 0%, #120C08 100%) !important;
-  border-color: rgba(205, 127, 50, 0.56) !important;
+.promo-flame-badge {
+  animation: promoFlameBadgePulse 2.2s ease-in-out infinite;
+  will-change: transform;
 }
 
 
