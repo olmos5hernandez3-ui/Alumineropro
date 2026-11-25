@@ -383,6 +383,93 @@ export const VidrioOptimizerView: React.FC<VidrioOptimizerViewProps> = ({
         </div>
       )}
 
+      {/* Tarjeta resumen previo al cálculo: Total de piezas y Área total (m²) */}
+      {(() => {
+        const totalPiezasPrev = piezas.reduce(
+          (acc, p) => acc + Math.max(1, Math.round(Number(p.cantidad) || 1)),
+          0
+        );
+        const areaTotalM2Prev = round2(
+          piezas.reduce((acc, p) => {
+            const qty = Math.max(1, Math.round(Number(p.cantidad) || 1));
+            const w = Math.max(0, Number(p.anchoCm) || 0);
+            const h = Math.max(0, Number(p.altoCm) || 0);
+            return acc + ((w * h) / 10000) * qty;
+          }, 0)
+        );
+        const tiposCountPrev = new Set(piezas.map((p) => p.tipoNombre)).size;
+
+        return (
+          <div
+            id="vidrio-precalc-summary-card"
+            className="mb-4 rounded-[18px] border border-cyan-400/45 bg-gradient-to-r from-[#0F2744] via-[#133258] to-[#0E243F] p-4 shadow-lg"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-cyan-500/20 border border-cyan-300/40 text-cyan-200 text-[15px]">
+                  📐
+                </span>
+                <div>
+                  <h2 className="m-0 text-[14.5px] font-extrabold text-white leading-tight">
+                    Resumen previo a optimizar
+                  </h2>
+                  <p className="m-0 text-[11.5px] text-cyan-100/80">
+                    Conteo en vivo antes de calcular el plano de corte 2D
+                  </p>
+                </div>
+              </div>
+              <span className="px-2.5 py-1 rounded-lg bg-cyan-500/20 border border-cyan-300/35 text-cyan-100 text-[11px] font-extrabold mono">
+                {tiposCountPrev} {tiposCountPrev === 1 ? 'tipo de vidrio' : 'tipos de vidrio'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+              <div className="rounded-xl border border-white/15 bg-slate-950/35 px-3.5 py-2.5">
+                <div className="text-[11px] font-bold uppercase tracking-wide text-slate-300">
+                  Total de piezas
+                </div>
+                <div
+                  id="vidrio-summary-total-pieces"
+                  className="mono text-[22px] font-extrabold text-white leading-tight mt-0.5"
+                >
+                  {totalPiezasPrev}
+                </div>
+                <div className="text-[11px] text-slate-300/85">
+                  {piezas.length} {piezas.length === 1 ? 'partida capturada' : 'partidas capturadas'}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-cyan-400/35 bg-cyan-500/10 px-3.5 py-2.5">
+                <div className="text-[11px] font-bold uppercase tracking-wide text-cyan-200">
+                  Área total a optimizar
+                </div>
+                <div
+                  id="vidrio-summary-total-area"
+                  className="mono text-[22px] font-extrabold text-cyan-200 leading-tight mt-0.5"
+                >
+                  {areaTotalM2Prev.toFixed(2)} m²
+                </div>
+                <div className="text-[11px] text-cyan-100/80">
+                  Superficie neta de cortes
+                </div>
+              </div>
+
+              <div className="col-span-2 sm:col-span-1 rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-3.5 py-2.5 flex flex-col justify-center">
+                <div className="text-[11px] font-bold uppercase tracking-wide text-emerald-200">
+                  Hojas disponibles en stock
+                </div>
+                <div className="mono text-[20px] font-extrabold text-emerald-200 leading-tight mt-0.5">
+                  {totalHojasStock} hojas
+                </div>
+                <div className="text-[11px] text-emerald-100/80">
+                  {totalPiezasPrev > 0 ? 'Listo para optimizar 2D' : 'Agrega medidas abajo'}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
         {/* Columna izquierda: Lista de piezas y configuración */}
         <div className="lg:col-span-5 flex flex-col gap-4">

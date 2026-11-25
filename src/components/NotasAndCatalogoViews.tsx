@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import {
   AperturaVentanaId,
+  CATALOGO_MARCAS_MEXICO,
   CATALOGO_PERFILES,
   HERRAJES_INVENTARIO_CATALOGO,
   HerrajeCategoria,
@@ -276,11 +277,16 @@ interface CatalogoProps {
 }
 
 const FAMILIAS_CATALOGO: { id: PerfilFamilia | 'all'; label: string }[] = [
-  { id: 'all', label: 'Todos' },
-  { id: 'fijo3', label: 'Fijo 3" (Alumer)' },
-  { id: 'corrediza3', label: 'Corrediza 3" (Alumer)' },
-  { id: 'batiente', label: 'Puerta Batiente (Alumer)' },
-  { id: 'cancel', label: 'Cancel Baño (Alumer)' },
+  { id: 'all', label: 'Todos los sistemas' },
+  { id: 'nacional2', label: 'Línea Nacional 2"' },
+  { id: 'fijo3', label: 'Línea Nacional 3" (Fijo)' },
+  { id: 'corrediza3', label: 'Línea Nacional 3" (Corrediza)' },
+  { id: 'serie1400', label: 'Serie 1400' },
+  { id: 'espanola', label: 'Española / Europea' },
+  { id: 'cancel', label: 'Cancel de Baño' },
+  { id: 'herralum', label: 'Herralum' },
+  { id: 'perfileto', label: 'Perfileto' },
+  { id: 'batiente', label: 'Puerta Batiente' },
   { id: 'mosquitero', label: 'Mosquiteros' },
 ];
 
@@ -301,6 +307,7 @@ export const CatalogoView: React.FC<CatalogoProps> = ({
     else setLocalCatalogoTab(next);
   };
   const [busqueda, setBusqueda] = useState('');
+  const [marcaFilter, setMarcaFilter] = useState<string>('Todos');
   const [familiaFilter, setFamiliaFilter] = useState<PerfilFamilia | 'all'>('all');
   const [mxCatFilter, setMxCatFilter] = useState<MexicoAluminumCategoryId | 'all'>('all');
   const [herrajeCat, setHerrajeCat] = useState<HerrajeCategoria | 'all'>('all');
@@ -311,13 +318,22 @@ export const CatalogoView: React.FC<CatalogoProps> = ({
 
   const filtrados = CATALOGO_PERFILES.filter((p) => {
     const matchFam = familiaFilter === 'all' || p.familia === familiaFilter;
-    const q = busqueda.toLowerCase();
+    const itemMarca = (p.marcaCatalogo || 'Alumer').toLowerCase();
+    const selMarca = marcaFilter.toLowerCase();
+    const matchMarca =
+      marcaFilter === 'Todos' ||
+      itemMarca.includes(selMarca) ||
+      p.codigoRef.toLowerCase().includes(selMarca) ||
+      (p.sistemaCatalogo || '').toLowerCase().includes(selMarca);
+    const q = busqueda.trim().toLowerCase();
     const matchText =
       !q ||
       p.nombre.toLowerCase().includes(q) ||
       p.codigoRef.toLowerCase().includes(q) ||
-      p.uso.toLowerCase().includes(q);
-    return matchFam && matchText;
+      p.uso.toLowerCase().includes(q) ||
+      (p.marcaCatalogo || '').toLowerCase().includes(q) ||
+      (p.sistemaCatalogo || '').toLowerCase().includes(q);
+    return matchFam && matchMarca && matchText;
   });
 
   const herrajesCategorias = Array.from(
@@ -351,10 +367,10 @@ export const CatalogoView: React.FC<CatalogoProps> = ({
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="m-0 text-[21px] font-extrabold text-white">
-            Catálogo de Perfiles y Herrajes
+            Catálogo de Perfiles y Herrajes (México)
           </h1>
           <p className="m-0 text-[12.5px] text-slate-300">
-            Perfiles Alumer (sección transversal y fotos máx. 600 px), Viniles, Chapas, Jaladeras y Escuadras
+            Línea Nacional 2"/3", Serie 1400, Española/Europea, Cancel de Baño, Herralum y Perfileto
           </p>
         </div>
         <button
@@ -377,7 +393,7 @@ export const CatalogoView: React.FC<CatalogoProps> = ({
             catalogoTab === 'perfiles' ? 'bg-white text-[#1E293B] shadow' : 'bg-transparent text-slate-300'
           }`}
         >
-          Perfiles Alumer ({CATALOGO_PERFILES.length})
+          Perfiles México ({CATALOGO_PERFILES.length})
         </button>
         <button
           type="button"
@@ -486,6 +502,52 @@ export const CatalogoView: React.FC<CatalogoProps> = ({
         </div>
       ) : (
         <div className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] p-4 sm:p-5 shadow-xl min-w-0">
+          {/* Selector de Marca / Catálogo (incluye Perfileto) */}
+          <div className="mb-3 p-3 rounded-xl bg-slate-50 border border-slate-200">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+              <label
+                htmlFor="sel-catalogo-marca"
+                className="text-[11.5px] font-extrabold uppercase tracking-wide text-slate-700"
+              >
+                Catálogo / Marca comercial (México)
+              </label>
+              <select
+                id="sel-catalogo-marca"
+                value={marcaFilter}
+                onChange={(e) => setMarcaFilter(e.target.value)}
+                className="min-h-[34px] rounded-lg border border-slate-300 bg-white px-2.5 text-[12px] font-extrabold text-slate-900"
+              >
+                <option value="Todos">Todas las marcas</option>
+                {CATALOGO_MARCAS_MEXICO.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {['Todos', ...CATALOGO_MARCAS_MEXICO].map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  data-marca-filter={m}
+                  onClick={() => setMarcaFilter(m)}
+                  className={`px-2.5 py-1 rounded-lg text-[11.5px] font-extrabold border cursor-pointer transition-colors ${
+                    marcaFilter === m
+                      ? m === 'Perfileto'
+                        ? 'bg-emerald-600 text-white border-emerald-700'
+                        : 'bg-blue-700 text-white border-blue-800'
+                      : m === 'Perfileto'
+                        ? 'bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  {m === 'Perfileto' ? '★ Perfileto' : m}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="flex flex-wrap gap-1.5 mb-3">
             {FAMILIAS_CATALOGO.map((f) => (
               <button
@@ -508,7 +570,7 @@ export const CatalogoView: React.FC<CatalogoProps> = ({
               type="search"
               value={busqueda}
               onChange={(e) => setBusqueda(e.target.value)}
-              placeholder="Buscar perfil o código (ej. 9135, 9207, 11174, Bolsa, Zoclo...)"
+              placeholder="Buscar perfil, marca o código (ej. Perfileto, 1400, Herralum, 9135, Zoclo...)"
               className="w-full sm:w-auto sm:flex-1 min-w-0 min-h-[44px] rounded-xl border border-slate-200 px-3 text-[13.5px] font-semibold"
             />
             <span className="text-[12px] font-bold text-slate-500 mono shrink-0">
@@ -520,6 +582,7 @@ export const CatalogoView: React.FC<CatalogoProps> = ({
             {filtrados.map((p) => {
               const fotoUrl = getPerfilFotoUrl(perfilFotos, p.id);
               const tieneFoto = Boolean(fotoUrl);
+              const marcaLabel = p.marcaCatalogo || 'Alumer';
               return (
                 <div
                   key={p.id}
@@ -535,6 +598,22 @@ export const CatalogoView: React.FC<CatalogoProps> = ({
                       className="w-full h-[132px] rounded-[11px] bg-white border border-slate-300 flex items-center justify-center mb-2.5 p-2 overflow-hidden"
                     >
                       <PerfilSectionSvg perfilId={p.id} fotoRealUrl={fotoUrl} size={112} />
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                      <span
+                        className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wide ${
+                          marcaLabel.toLowerCase().includes('perfileto')
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-blue-600 text-white'
+                        }`}
+                      >
+                        {marcaLabel}
+                      </span>
+                      {p.sistemaCatalogo && (
+                        <span className="px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-700 text-[10px] font-bold">
+                          {p.sistemaCatalogo}
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-start justify-between gap-2 min-w-0 flex-wrap">
                       <strong className="text-[14px] text-[#1E293B] break-words min-w-0 flex-1">{p.nombre}</strong>

@@ -17,9 +17,13 @@ import {
   type Firestore,
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
-import { formatFirebaseAuthError, type FirebaseAuthErrorInfo } from './utils/firebaseAuthHelpers';
+import {
+  formatFirebaseAuthError,
+  isMobileOrStandalonePwa,
+  type FirebaseAuthErrorInfo,
+} from './utils/firebaseAuthHelpers';
 
-export { formatFirebaseAuthError, type FirebaseAuthErrorInfo };
+export { formatFirebaseAuthError, isMobileOrStandalonePwa, type FirebaseAuthErrorInfo };
 
 export const app: FirebaseApp = initializeApp(firebaseConfig);
 export const db: Firestore = getFirestore(app, firebaseConfig.firestoreDatabaseId);
@@ -61,6 +65,27 @@ export function getLastGoogleRedirectOutcome(): GoogleAuthFlowResult | null {
 
 export async function connectGoogleAccountWithFallback(): Promise<GoogleAuthFlowResult> {
   const provider = buildGoogleProvider();
+
+  // En celular o app instalada (PWA), usar signInWithRedirect directamente para evitar bloqueo de popups
+  if (isMobileOrStandalonePwa()) {
+    try {
+      await signInWithRedirect(auth, provider);
+      return {
+        status: 'redirecting',
+        message: 'Redirigiendo a Google para iniciar sesión...',
+      };
+    } catch (redirectErr) {
+      const redInfo = formatFirebaseAuthError(redirectErr);
+      return {
+        status: 'error',
+        code: redInfo.code,
+        message: redInfo.message,
+        isUnauthorizedDomain: redInfo.isUnauthorizedDomain,
+      };
+    }
+  }
+
+  // En computadora: signInWithPopup con respaldo automático a signInWithRedirect si bloquean ventana emergente
   try {
     const cred = await signInWithPopup(auth, provider);
     return { status: 'signed_in', user: cred.user };

@@ -3037,6 +3037,262 @@ test('85. Carátulas y sub-variantes desbloqueadas por plan (Free/3d: Básica+Na
   assert.equal(normalizeSkinVariantForSkin('navidena', 'dorada'), 'default');
 });
 
+test('86. optimizarPartidasTramos1D calcula totalCortes por tramo sin duplicar cortes cuando partida.cantidad > 1', async () => {
+  const { optimizarPartidasTramos1D } = await import('./modulacionLogic.ts');
+  const despiece = calcularDespiece({
+    linea: '3',
+    anchoCm: 120,
+    altoCm: 100,
+    color: 'natural',
+    vidrio: 'claro6',
+    hojas: 2,
+    apertura: 'corrediza',
+    sentidoPuerta: 'izq',
+    puertaIntermedio: false,
+    puertaEconomica: false,
+    invertido: false,
+    cantidad: 2,
+    tolerancias: LINEAS_CONFIG['3'].toleranciasDefault,
+  });
 
+  const res = optimizarPartidasTramos1D([
+    {
+      id: 'p-qty2',
+      categoria: 'ventanas',
+      linea: '3',
+      area: 'Sala',
+      etiqueta: 'V-Doble',
+      anchoCm: 120,
+      altoCm: 100,
+      color: 'natural',
+      vidrio: 'claro6',
+      hojas: 2,
+      apertura: 'corrediza',
+      sentidoPuerta: 'izq',
+      puertaIntermedio: false,
+      puertaEconomica: false,
+      invertido: false,
+      cantidad: 2,
+      modoPrecio: 'm2',
+      precioInput: 2850,
+      cobrarMinM2: false,
+      extraPct: 0,
+      totalLinea: 6840,
+      despiece,
+    },
+  ]);
 
+  const cabezalGrupo = res.grupos.find((g) => g.perfilId === 'cabezal');
+  assert.ok(cabezalGrupo, 'Debe existir grupo de cabezal');
+  // calcularDespiece con cantidad=2 ya produce 2 piezas de cabezal (no debe multiplicarse otra vez por 2)
+  assert.equal(cabezalGrupo.barras.length, 1);
+  assert.equal(cabezalGrupo.barras[0].totalCortes, 2);
+  assert.equal(cabezalGrupo.barras[0].cortes.length, 2);
+  assert.ok(cabezalGrupo.barras[0].usadoCm > 235 && cabezalGrupo.barras[0].sobranteCm > 350);
+});
+
+test('87. Catálogo de Perfiles México incluye explícitamente marca Perfileto y sistemas vigentes', async () => {
+  const { CATALOGO_MARCAS_MEXICO, CATALOGO_PERFILES } = await import('./alumineroLogic.ts');
+  assert.ok(CATALOGO_MARCAS_MEXICO.includes('Perfileto'), 'Perfileto debe estar en CATALOGO_MARCAS_MEXICO');
+  assert.ok(CATALOGO_MARCAS_MEXICO.includes('Herralum'), 'Herralum debe estar en CATALOGO_MARCAS_MEXICO');
+  const perfiletoItems = CATALOGO_PERFILES.filter((p) =>
+    `${p.marcaCatalogo || ''} ${p.codigoRef || ''}`.toLowerCase().includes('perfileto')
+  );
+  assert.ok(perfiletoItems.length >= 6, 'Debe haber múltiples perfiles con marca Perfileto');
+  assert.ok(CATALOGO_PERFILES.some((p) => p.sistemaCatalogo === 'Serie 1400'), 'Debe incluir Serie 1400');
+  assert.ok(CATALOGO_PERFILES.some((p) => p.familia === 'cancel'), 'Debe incluir Cancel de Baño');
+});
+
+test('88. consolidarMaterialesObra cruza existencias reales de Mi Inventario incluyendo marca Perfileto y marcasEnBodega', async () => {
+  const { makeInventarioKey } = await import('./alumineroLogic.ts');
+  const despiece = calcularDespiece({
+    linea: '3',
+    anchoCm: 150,
+    altoCm: 120,
+    color: 'blanco',
+    vidrio: 'claro6',
+    hojas: 2,
+    apertura: 'corrediza',
+    sentidoPuerta: 'izq',
+    puertaIntermedio: false,
+    puertaEconomica: false,
+    invertido: false,
+    cantidad: 1,
+    tolerancias: LINEAS_CONFIG['3'].toleranciasDefault,
+  });
+
+  const kPerfileto = makeInventarioKey('3', 'cabezal', 'blanco', 'Perfileto');
+  const cons = consolidarMaterialesObra(
+    [
+      {
+        id: 'p-inv',
+        categoria: 'ventanas',
+        linea: '3',
+        area: 'Recámara',
+        etiqueta: 'V1',
+        anchoCm: 150,
+        altoCm: 120,
+        color: 'blanco',
+        vidrio: 'claro6',
+        hojas: 2,
+        apertura: 'corrediza',
+        sentidoPuerta: 'izq',
+        puertaIntermedio: false,
+        puertaEconomica: false,
+        invertido: false,
+        cantidad: 1,
+        modoPrecio: 'm2',
+        precioInput: 2850,
+        cobrarMinM2: false,
+        extraPct: 0,
+        totalLinea: 5130,
+        despiece,
+      },
+    ],
+    { [kPerfileto]: 3 },
+    {}
+  );
+
+  const cab = cons.find((r) => r.perfilId === 'cabezal');
+  assert.ok(cab);
+  assert.equal(cab.tramosEnBodega, 3);
+  assert.equal(cab.tramosDisponibles, 3);
+  assert.equal(cab.tramosFaltantes, 0);
+  assert.ok(cab.marcasEnBodega?.includes('Perfileto'));
+});
+
+test('89. buildCompactExistenciasList filtra estrictamente existencias > 0 en perfiles, herrajes y vidrio', async () => {
+  const { buildCompactExistenciasList, makeInventarioKey } = await import('./alumineroLogic.ts');
+  const kPos = makeInventarioKey('3', 'cabezal', 'natural', 'Perfileto');
+  const kZero = makeInventarioKey('3', 'jamba', 'negro', 'Cuprum');
+  const firstHerrajeId = HERRAJES_INVENTARIO_CATALOGO[0].id;
+  const secondHerrajeId = HERRAJES_INVENTARIO_CATALOGO[1].id;
+
+  const items = buildCompactExistenciasList(
+    { [kPos]: 4, [kZero]: 0 },
+    { [firstHerrajeId]: 12, [secondHerrajeId]: 0 },
+    [
+      { id: 'v-ok', tipoNombre: 'Claro 6 mm', anchoCm: 260, altoCm: 180, cantidad: 2 },
+      { id: 'v-0', tipoNombre: 'Filtrasol 6 mm', anchoCm: 260, altoCm: 180, cantidad: 0 },
+    ]
+  );
+
+  assert.equal(items.length, 3);
+  assert.ok(items.every((i) => i.cantidad > 0));
+  assert.equal(items.filter((i) => i.tipo === 'perfil').length, 1);
+  assert.equal(items.filter((i) => i.tipo === 'herraje').length, 1);
+  assert.equal(items.filter((i) => i.tipo === 'vidrio').length, 1);
+  assert.equal(items.find((i) => i.tipo === 'perfil')?.marca, 'Perfileto');
+});
+
+test('90. buildMonthlyQuotesSeries y buildTopMaterialsSeries agregan métricas mensuales y materiales top para Admin Recharts', async () => {
+  const { buildMonthlyQuotesSeries, buildTopMaterialsSeries } = await import('./alumineroLogic.ts');
+  const now = new Date('2026-11-20T12:00:00Z').getTime();
+
+  const historial = [
+    { id: 'h1', fecha: '2026-11-05', total: 12000, linea: '3' as const, color: 'negro' as const, cantidad: 2 },
+    { id: 'h2', fecha: '2026-10-15', total: 8500, linea: '3' as const, color: 'natural' as const, cantidad: 3 },
+  ];
+  const cotizaciones = [
+    {
+      id: 'q1',
+      fecha: '2026-11-10',
+      createdAt: now - 5 * 86_400_000,
+      total: 15000,
+      partidas: [
+        { linea: 'europea' as const, color: 'blanco' as const, cantidad: 1 } as never,
+      ],
+    },
+  ];
+
+  const monthly = buildMonthlyQuotesSeries(historial, cotizaciones, now);
+  assert.equal(monthly.length, 6);
+  const totalQuotes = monthly.reduce((acc, m) => acc + m.cotizaciones, 0);
+  assert.equal(totalQuotes, 3);
+
+  const topMaterials = buildTopMaterialsSeries(historial, cotizaciones, {});
+  assert.ok(topMaterials.length >= 2);
+  assert.equal(topMaterials[0].usos, 5);
+  assert.ok(topMaterials[0].nombre.includes('3'));
+});
+
+test('91. Escáner de Croquis IA: normaliza X/O, convierte mm/m a cm, mapea tipo y formatea notas de taller', async () => {
+  const {
+    normalizeLeafDisposition,
+    convertSketchDimensionToCm,
+    mapSketchTypeToLevantamientoTipo,
+    normalizeScannedSketchResult,
+    SKETCH_SCANNER_OFFLINE_MESSAGE,
+  } = await import('./levantamientoLogic.ts');
+
+  assert.equal(normalizeLeafDisposition('o-x-o'), 'OXO');
+  assert.equal(normalizeLeafDisposition('0 x 0'), 'OXO');
+  assert.equal(normalizeLeafDisposition('O / X / X / O'), 'OXXO');
+
+  // Conversión de unidades a cm
+  assert.equal(convertSketchDimensionToCm(1500, 'mm'), 150);
+  assert.equal(convertSketchDimensionToCm('1.85', 'm'), 185);
+  assert.equal(convertSketchDimensionToCm('120', 'cm'), 120);
+  // Heurística cuando viene como número en metros o mm sin etiqueta
+  assert.equal(convertSketchDimensionToCm(1.5, 'cm', true), 150);
+  assert.equal(convertSketchDimensionToCm(2100, 'cm', true), 210);
+  assert.equal(convertSketchDimensionToCm(0, 'cm', true), null);
+
+  // Mapeo de tipos
+  assert.equal(mapSketchTypeToLevantamientoTipo('Ventana proyectante', ''), 'Ventana Abatible / Proyección');
+  assert.equal(mapSketchTypeToLevantamientoTipo('Puerta abatible', ''), 'Puerta');
+  assert.equal(mapSketchTypeToLevantamientoTipo('Cancel de baño', 'OX'), 'Cancel / Otro');
+  assert.equal(mapSketchTypeToLevantamientoTipo('Ventana', 'OO'), 'Ventana Fija');
+  assert.equal(mapSketchTypeToLevantamientoTipo('Ventana', 'OX'), 'Ventana Corrediza');
+
+  // Resultado completo normalizado
+  const res = normalizeScannedSketchResult({
+    tipo: 'Ventana Corrediza',
+    hojas: 3,
+    disposicionHojas: 'O-X-O',
+    anchoCm: 2400, // el modelo devolvió mm por error -> debe corregirse a 240 cm
+    altoCm: 1.2, // el modelo devolvió metros por error -> debe corregirse a 120 cm
+    unidadDetectada: 'mm',
+    area: 'Sala',
+    notas: 'Con mosquitero en hoja central',
+    confianza: 'alta',
+  });
+
+  assert.equal(res.tipo, 'Ventana Corrediza');
+  assert.equal(res.hojas, 3);
+  assert.equal(res.disposicionHojas, 'OXO');
+  assert.equal(res.hojasCorredizas, 1);
+  assert.equal(res.hojasFijas, 2);
+  assert.equal(res.anchoCm, 240);
+  assert.equal(res.altoCm, 120);
+  assert.equal(res.area, 'Sala');
+  assert.equal(res.confianza, 'alta');
+  assert.ok(res.notasFormateadas.includes('O-X-O'));
+  assert.ok(res.notasFormateadas.includes('1 corrediza (X)'));
+  assert.ok(res.notasFormateadas.includes('2 fijas (O)'));
+  assert.ok(SKETCH_SCANNER_OFFLINE_MESSAGE.toLowerCase().includes('internet'));
+});
+
+test('92. Ayuda y Preguntas Frecuentes: contiene exactamente las 5 preguntas clave y respuestas de taller', async () => {
+  const { WORKSHOP_FAQ_ITEMS } = await import('../components/HelpFaqModal.tsx');
+
+  assert.equal(WORKSHOP_FAQ_ITEMS.length, 5);
+  assert.equal(WORKSHOP_FAQ_ITEMS[0].question, '¿Funciona sin internet?');
+  assert.ok(WORKSHOP_FAQ_ITEMS[0].answer.includes('en plena obra aunque no tengas datos ni Wi-Fi'));
+
+  assert.equal(WORKSHOP_FAQ_ITEMS[1].question, '¿Qué marcas y líneas incluye?');
+  assert.ok(WORKSHOP_FAQ_ITEMS[1].answer.includes('Edición 2026–2027'));
+  assert.ok(WORKSHOP_FAQ_ITEMS[1].answer.includes('Panorama, Cuprum, Indalum, EuroAlum, Alugama, Extrusiones Metálicas, Perfiletto y Herralum 2026'));
+
+  assert.equal(WORKSHOP_FAQ_ITEMS[2].question, '¿Con qué precios cotiza?');
+  assert.ok(WORKSHOP_FAQ_ITEMS[2].answer.includes('proveedor local'));
+
+  assert.equal(WORKSHOP_FAQ_ITEMS[3].question, '¿Sirve para puertas y ventanas complejas?');
+  assert.ok(WORKSHOP_FAQ_ITEMS[3].answer.includes('oscilobatientes'));
+
+  assert.equal(WORKSHOP_FAQ_ITEMS[4].question, '¿Tengo que pagar cada mes a la fuerza?');
+  assert.ok(WORKSHOP_FAQ_ITEMS[4].answer.includes('30 días ($369)'));
+  assert.ok(WORKSHOP_FAQ_ITEMS[4].answer.includes('90 días ($989)'));
+  assert.ok(WORKSHOP_FAQ_ITEMS[4].answer.includes('1 Año completo ($1,799 MXN)'));
+});
 

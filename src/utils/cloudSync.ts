@@ -181,20 +181,33 @@ function buildSafeDeviceRecord(
           ? 'pro'
           : 'free';
 
+  const lastSeenAtVal = Math.max(firstSeenAt, Number(input.lastSeenAt ?? now) || now);
+  const resolvedTallerNombre = String(
+    input.tallerNombre ?? input.nombreTaller ?? existing?.tallerNombre ?? existing?.nombreTaller ?? ''
+  )
+    .trim()
+    .slice(0, 120);
+  const resolvedUbicacion = String(input.ubicacion ?? existing?.ubicacion ?? '')
+    .trim()
+    .slice(0, 200);
+  const derivedPlan: 'gratis' | 'pro' = derivedStatus === 'pro' ? 'pro' : 'gratis';
+
   const base: CloudDeviceRecord = {
     deviceId: safeId,
-    cliente: String(input.cliente ?? existing?.cliente ?? '')
+    cliente: String(input.cliente ?? existing?.cliente ?? resolvedTallerNombre)
       .trim()
       .slice(0, 120),
     deviceLabel: String(input.deviceLabel ?? existing?.deviceLabel ?? 'Navegador Web')
       .trim()
       .slice(0, 80) || 'Navegador Web',
     firstSeenAt,
-    lastSeenAt: Math.max(firstSeenAt, Number(input.lastSeenAt ?? now) || now),
+    lastSeenAt: lastSeenAtVal,
+    ultimaConexion: lastSeenAtVal,
     totalSessions: Math.max(0, Math.min(1_000_000, Math.round(Number(input.totalSessions ?? existing?.totalSessions ?? 0) || 0))),
     totalMinutes: Math.max(0, Math.min(100_000_000, Math.round(Number(input.totalMinutes ?? existing?.totalMinutes ?? 0) || 0))),
     activeDays,
     proActive: proVal,
+    plan: derivedPlan,
     planCode: planCodeClean,
     planLabel: String(input.planLabel || 'Versión Gratuita').trim().slice(0, 120) || 'Versión Gratuita',
     status: derivedStatus,
@@ -223,11 +236,10 @@ function buildSafeDeviceRecord(
             .slice(0, 160),
         }
       : {}),
-    ...(input.tallerNombre !== undefined || existing?.tallerNombre
+    ...(resolvedTallerNombre
       ? {
-          tallerNombre: String(input.tallerNombre ?? existing?.tallerNombre ?? '')
-            .trim()
-            .slice(0, 120),
+          tallerNombre: resolvedTallerNombre,
+          nombreTaller: resolvedTallerNombre,
         }
       : {}),
     ...(input.tallerResponsable !== undefined || existing?.tallerResponsable
@@ -244,6 +256,7 @@ function buildSafeDeviceRecord(
             .slice(0, 40),
         }
       : {}),
+    ...(resolvedUbicacion ? { ubicacion: resolvedUbicacion } : {}),
     ...(input.termsAcceptedAt !== undefined || existing?.termsAcceptedAt !== undefined
       ? {
           termsAcceptedAt:
@@ -278,16 +291,23 @@ function buildSafeDeviceRecord(
           ).slice(0, 24),
         }
       : {}),
+    ...(input.homeMenuLayout !== undefined || existing?.homeMenuLayout !== undefined
+      ? {
+          homeMenuLayout:
+            input.homeMenuLayout !== undefined ? input.homeMenuLayout : existing?.homeMenuLayout,
+        }
+      : {}),
   };
 
-  const withOwner = auth.currentUser?.uid
-    ? {
-        ...base,
-        ownerUid:
-          (existing as (CloudDeviceRecord & { ownerUid?: string }) | null)?.ownerUid ||
-          auth.currentUser.uid,
-      }
-    : base;
+  const resolvedOwnerUid =
+    auth.currentUser?.uid ||
+    (existing as (CloudDeviceRecord & { ownerUid?: string }) | null)?.ownerUid ||
+    `free_${safeId}`;
+
+  const withOwner = {
+    ...base,
+    ownerUid: resolvedOwnerUid,
+  };
 
   return cleanForFirestore(withOwner as CloudDeviceRecord);
 }
@@ -571,15 +591,85 @@ export async function syncDeviceToCloud(params: {
   tallerNombre?: string;
   tallerResponsable?: string;
   tallerWhatsapp?: string;
+  ubicacion?: string;
+  termsAcceptedAt?: number | null;
 }): Promise<CloudSyncSnapshot | null> {
   if (FIREBASE_DB_URL.trim()) {
     return await syncDeviceRtdb(FIREBASE_DB_URL, params);
   }
-  if (!isFirebaseSignedIn()) {
-    return null;
-  }
   const normId = toSafeDocId(normalizeDeviceIdInput(params.deviceId));
   if (!normId) return null;
+
+  // Registro y latido automático para dispositivos en Modo Gratuito sin sesión de Google
+  if (!isFirebaseSignedIn()) {
+    try {
+      const now = Date.now();
+      const today = new Date(now).toISOString().slice(0, 10);
+      const firstSeenKey = `aluminero_first_seen_v1_${normId}`;
+      const sessionsKey = `aluminero_free_sessions_v1_${normId}`;
+      let firstSeenAt = now;
+      let totalSessions = 1;
+      try {
+        const storedFirst = Number(localStorage.getItem(firstSeenKey) || '0');
+        if (storedFirst >= 1577836800000 && storedFirst <= now) {
+          firstSeenAt = storedFirst;
+        } else {
+          localStorage.setItem(firstSeenKey, String(now));
+        }
+        const prevSessions = Math.max(0, Number(localStorage.getItem(sessionsKey) || '0') || 0);
+        totalSessions = params.eventType === 'open' ? prevSessions + 1 : Math.max(1, prevSessions);
+        localStorage.setItem(sessionsKey, String(totalSessions));
+      } catch {
+        // Ignorar si localStorage no está disponible
+      }
+
+      const tallerClean = String(params.tallerNombre || params.cliente || '').trim().slice(0, 120);
+      const freeRecord = buildSafeDeviceRecord(
+        {
+          deviceId: normId,
+          cliente: tallerClean,
+          tallerNombre: tallerClean || undefined,
+          nombreTaller: tallerClean || undefined,
+          tallerResponsable: params.tallerResponsable,
+          tallerWhatsapp: params.tallerWhatsapp,
+          ubicacion: params.ubicacion,
+          termsAcceptedAt: params.termsAcceptedAt,
+          deviceLabel: params.deviceLabel || 'Navegador Web',
+          firstSeenAt,
+          lastSeenAt: now,
+          ultimaConexion: now,
+          totalSessions,
+          totalMinutes: Math.max(1, totalSessions),
+          activeDays: [today],
+          proActive: false,
+          plan: 'gratis',
+          planCode: 'FREE',
+          planLabel: 'Versión Gratuita',
+          status: 'free',
+          expiresAt: null,
+          lastKey: '',
+          updatedAt: now,
+          revoked: false,
+          revokedAt: null,
+          blocked: false,
+          blockedAt: null,
+          trialActive: false,
+          adminAssigned: false,
+          promo_colega_usada: false,
+          fecha_activacion_colega: null,
+        },
+        null,
+        now
+      );
+
+      await setDoc(doc(db, 'devices', normId), freeRecord, { merge: true });
+    } catch (err) {
+      if (!isFirestoreOfflineError(err) && !isFirestorePermissionDeniedError(err)) {
+        console.warn('[Aluminero Pro] Latido gratuito en Firestore omitido:', err);
+      }
+    }
+    return null;
+  }
 
   try {
     const now = Date.now();
@@ -587,7 +677,14 @@ export async function syncDeviceToCloud(params: {
     const eventType = params.eventType || 'open';
     const isAdmin = isFirebaseAdminUser();
 
-    const existing = await readServerDoc<CloudDeviceRecord>('devices', normId);
+    let existing: CloudDeviceRecord | null = null;
+    try {
+      existing = await readServerDoc<CloudDeviceRecord>('devices', normId);
+    } catch (readErr) {
+      if (!isFirestorePermissionDeniedError(readErr) && !isFirestoreOfflineError(readErr)) {
+        throw readErr;
+      }
+    }
     const blockedDoc = isAdmin
       ? await readServerDoc<{ deviceId: string; blockedAt: number }>('blockedDevices', normId)
       : null;
@@ -2512,43 +2609,104 @@ export async function syncTallerProfileToCloud(params: {
   nombre: string;
   responsable: string;
   tel: string;
+  ubicacion?: string;
   termsAcceptedAt?: number | null;
   preferredTheme?: ResolvedAppTheme;
   preferredSkin?: AppSkin;
   preferredSkinVariant?: string;
 }): Promise<void> {
-  if (!isFirebaseSignedIn()) return;
   const normId = toSafeDocId(normalizeDeviceIdInput(params.deviceId));
   if (!normId) return;
   const nombre = String(params.nombre || '').trim().slice(0, 120);
   const responsable = String(params.responsable || '').trim().slice(0, 120);
   const tel = String(params.tel || '').trim().slice(0, 40);
+  const ubicacion = String(params.ubicacion || '').trim().slice(0, 200);
   const now = Date.now();
+  const today = new Date(now).toISOString().slice(0, 10);
+
+  if (!isFirebaseSignedIn()) {
+    await syncDeviceToCloud({
+      deviceId: normId,
+      cliente: nombre,
+      tallerNombre: nombre,
+      tallerResponsable: responsable,
+      tallerWhatsapp: tel,
+      ubicacion,
+      termsAcceptedAt: params.termsAcceptedAt ?? now,
+      eventType: 'heartbeat',
+    });
+    return;
+  }
 
   try {
-    const existing = await readServerDoc<CloudDeviceRecord>('devices', normId);
+    let existing: CloudDeviceRecord | null = null;
+    try {
+      existing = await readServerDoc<CloudDeviceRecord>('devices', normId);
+    } catch {
+      existing = null;
+    }
     const nextRecord = buildSafeDeviceRecord(
       {
-        ...(existing || { deviceId: normId }),
+        ...(existing || { deviceId: normId, activeDays: [today] }),
         deviceId: normId,
         cliente: nombre || existing?.cliente || '',
         tallerNombre: nombre,
+        nombreTaller: nombre,
         tallerResponsable: responsable,
         tallerWhatsapp: tel,
+        ...(ubicacion ? { ubicacion } : {}),
         ...(params.termsAcceptedAt !== undefined ? { termsAcceptedAt: params.termsAcceptedAt } : {}),
         ...(params.preferredTheme ? { preferredTheme: params.preferredTheme } : {}),
         ...(params.preferredSkin ? { preferredSkin: params.preferredSkin } : {}),
         ...(params.preferredSkinVariant ? { preferredSkinVariant: params.preferredSkinVariant } : {}),
+        linkedEmail: auth.currentUser?.email || existing?.linkedEmail,
         lastSeenAt: now,
+        ultimaConexion: now,
         updatedAt: existing?.updatedAt ?? now,
       },
       existing,
       now
     );
-    await setDoc(doc(db, 'devices', normId), nextRecord);
+    await setDoc(doc(db, 'devices', normId), nextRecord, { merge: true });
   } catch (err) {
     if (isFirestoreOfflineError(err) || isFirestorePermissionDeniedError(err)) return;
     console.warn('No se pudo sincronizar perfil de Mi Taller:', err);
+  }
+}
+
+export async function saveHomeMenuLayoutToCloud(
+  deviceId: string,
+  homeMenuLayout: unknown
+): Promise<boolean> {
+  if (!isFirebaseSignedIn()) return false;
+  const normId = toSafeDocId(normalizeDeviceIdInput(deviceId));
+  if (!normId) return false;
+  const now = Date.now();
+  try {
+    let existing: CloudDeviceRecord | null = null;
+    try {
+      existing = await readServerDoc<CloudDeviceRecord>('devices', normId);
+    } catch {
+      existing = null;
+    }
+    const nextRecord = buildSafeDeviceRecord(
+      {
+        ...(existing || { deviceId: normId }),
+        deviceId: normId,
+        homeMenuLayout,
+        lastSeenAt: now,
+        ultimaConexion: now,
+        updatedAt: now,
+      },
+      existing,
+      now
+    );
+    await setDoc(doc(db, 'devices', normId), nextRecord, { merge: true });
+    return true;
+  } catch (err) {
+    if (isFirestoreOfflineError(err) || isFirestorePermissionDeniedError(err)) return false;
+    console.warn('No se pudo guardar el orden de pantalla en Firestore:', err);
+    return false;
   }
 }
 

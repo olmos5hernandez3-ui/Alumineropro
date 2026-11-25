@@ -358,7 +358,7 @@ export interface ModulacionCalculoResult {
   tramos610: number;
 }
 
-const PROFILE_CODES: Record<PerfilCatalogoId, string> = {
+const PROFILE_CODES: Record<string, string> = {
   cabezal: 'ALM-7836',
   jamba: 'ALM-7825',
   riel: 'ALM-7857',
@@ -885,6 +885,7 @@ export interface Tramo1DBarraPlan {
   sobranteCm: number;
   esMerma: boolean;
   aprovechamientoPct: number;
+  totalCortes: number;
 }
 
 export interface Tramo1DGrupoPerfil {
@@ -1118,6 +1119,7 @@ export function optimizarTramos1D(input: {
         sobranteCm,
         esMerma,
         aprovechamientoPct: pct,
+        totalCortes: b.cortes.length,
       };
     });
 
@@ -1184,10 +1186,10 @@ export function optimizarPartidasTramos1D(
   const cfg = resolveOptimizadorConfig(optConfig);
   const filas: ModulacionPerfilCorteRow[] = [];
   for (const p of partidas || []) {
-    const qtyPartida = Math.max(1, Math.round(Number(p.cantidad) || 1));
     const list = p.despiece?.perfiles || [];
     list.forEach((c, idx) => {
-      const pzasTotal = Math.max(1, Math.round(Number(c.pzas) || 1)) * qtyPartida;
+      // p.despiece.perfiles ya incluye el multiplicador de cantidad de la partida (calcularDespiece)
+      const pzasTotal = Math.max(1, Math.round(Number(c.pzas) || 1));
       const medidaCm = round1(Math.max(5, Number(c.medidaCm) || 0));
       filas.push({
         id: `${p.id}__${c.perfilId}__${idx}`,

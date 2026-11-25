@@ -243,25 +243,45 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
     }
   };
 
-  const requireGeneratedContractOrWarn = (): ContratoPdfFileResult | null => {
-    if (!generatedContract) {
-      setGateAlertMsg(GENERATE_FIRST_WARNING);
-      onShowToast(GENERATE_FIRST_WARNING);
+  const ensureContractPdfReady = async (): Promise<ContratoPdfFileResult | null> => {
+    if (generatedContract) {
+      setGateAlertMsg(null);
+      return generatedContract;
+    }
+    if (partidasSafe.length === 0) {
+      onShowToast('Agrega al menos una partida para generar el contrato');
       return null;
     }
+    setGeneratingContract(true);
     setGateAlertMsg(null);
-    return generatedContract;
+    try {
+      const result = await buildPdfContratoServicioFile(
+        hoja,
+        taller,
+        cliente,
+        folioActivo,
+        clientSignatureUrl || undefined,
+        providerSignatureUrl || undefined
+      );
+      setGeneratedContract(result);
+      return result;
+    } catch {
+      onShowToast('No se pudo generar el documento PDF del contrato');
+      return null;
+    } finally {
+      setGeneratingContract(false);
+    }
   };
 
-  const handleSaveGeneratedPdf = () => {
-    const docReady = requireGeneratedContractOrWarn();
+  const handleSaveGeneratedPdf = async () => {
+    const docReady = await ensureContractPdfReady();
     if (!docReady) return;
     triggerBlobDownload(docReady.blob, docReady.filename);
     onShowToast(`PDF Contrato ${folioActivo} descargado`, true);
   };
 
   const handleShareWhatsApp = async () => {
-    const docReady = requireGeneratedContractOrWarn();
+    const docReady = await ensureContractPdfReady();
     if (!docReady) return;
 
     const lines = [
@@ -856,55 +876,63 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
                   </tr>
                 </thead>
                 <tbody>
-                  {partidasSafe.map((item, idx) => {
-                    const linea = LINEAS_CONFIG[item.linea] || LINEAS_CONFIG['3'];
-                    const color = COLORES_CONFIG[item.color] || COLORES_CONFIG.natural;
-                    const panelDesc = getRellenoLabel(item.relleno, item.vidrio);
-                    const apTxt =
-                      linea.categoria === 'ventanas' && !linea.esMosquitero && !linea.esCancelBano
-                        ? ` · ${APERTURA_DESC[item.apertura] || item.apertura || ''}`
-                        : '';
-                    const unitPrice = item.cantidad > 0 ? item.totalLinea / item.cantidad : item.totalLinea;
-                    return (
-                      <tr
-                        key={item.id || `part-${idx}`}
-                        style={{ backgroundColor: '#ffffff', color: '#0f172a' }}
-                        className="border-b border-slate-200 last:border-b-0 bg-white"
-                      >
-                        <td className="p-2 align-middle">
-                          <PartidaMiniSvg partida={item} width={112} height={84} />
-                        </td>
-                        <td className="p-2.5 align-middle">
-                          <div style={{ color: '#0f172a' }} className="font-extrabold text-slate-900 text-[12.5px]">
-                            {idx + 1}. {item.etiqueta ? `${item.etiqueta} · ` : ''}
-                            {linea.nombre}
-                            {apTxt}
-                          </div>
-                          <div style={{ color: '#334155' }} className="text-[11.5px] text-slate-700 mt-0.5">
-                            Medidas: <strong className="mono">{item.anchoCm} × {item.altoCm} cm</strong>
-                            {item.area ? ` · Área: ${item.area}` : ''}
-                          </div>
-                          <div style={{ color: '#475569' }} className="text-[11.5px] text-slate-600">
-                            Color: <strong>{color.nombre}</strong> ·{' '}
-                            {linea.esMosquitero ? 'Malla mosquitera' : `Vidrio / Panel: ${panelDesc}`}
-                          </div>
-                        </td>
-                        <td style={{ color: '#0f172a' }} className="p-2.5 text-center align-middle mono font-bold text-slate-900">
-                          {item.cantidad} pza
-                        </td>
-                        <td className="p-2.5 text-right align-middle">
-                          <strong style={{ color: '#0B2545' }} className="mono font-extrabold text-[#0B2545] block">
-                            {formatMXN(item.totalLinea)}
-                          </strong>
-                          {item.cantidad > 1 && (
-                            <span style={{ color: '#64748b' }} className="mono text-[10.5px] text-slate-500">
-                              {formatMXN(unitPrice)} c/u
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {partidasSafe.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="p-4 text-center text-slate-600 font-semibold">
+                        Sin partidas registradas en la hoja de cotización.
+                      </td>
+                    </tr>
+                  ) : (
+                    partidasSafe.map((item, idx) => {
+                      const linea = LINEAS_CONFIG[item.linea] || LINEAS_CONFIG['3'];
+                      const color = COLORES_CONFIG[item.color] || COLORES_CONFIG.natural;
+                      const panelDesc = getRellenoLabel(item.relleno, item.vidrio);
+                      const apTxt =
+                        linea.categoria === 'ventanas' && !linea.esMosquitero && !linea.esCancelBano
+                          ? ` · ${APERTURA_DESC[item.apertura] || item.apertura || ''}`
+                          : '';
+                      const unitPrice = item.cantidad > 0 ? item.totalLinea / item.cantidad : item.totalLinea;
+                      return (
+                        <tr
+                          key={item.id || `part-${idx}`}
+                          style={{ backgroundColor: '#ffffff', color: '#0f172a' }}
+                          className="border-b border-slate-200 last:border-b-0 bg-white"
+                        >
+                          <td className="p-2 align-middle">
+                            <PartidaMiniSvg partida={item} width={112} height={84} />
+                          </td>
+                          <td className="p-2.5 align-middle">
+                            <div style={{ color: '#0f172a' }} className="font-extrabold text-slate-900 text-[12.5px]">
+                              {idx + 1}. {item.etiqueta ? `${item.etiqueta} · ` : ''}
+                              {linea.nombre}
+                              {apTxt}
+                            </div>
+                            <div style={{ color: '#334155' }} className="text-[11.5px] text-slate-700 mt-0.5">
+                              Medidas: <strong className="mono">{item.anchoCm} × {item.altoCm} cm</strong>
+                              {item.area ? ` · Área: ${item.area}` : ''}
+                            </div>
+                            <div style={{ color: '#475569' }} className="text-[11.5px] text-slate-600">
+                              Color: <strong>{color.nombre}</strong> ·{' '}
+                              {linea.esMosquitero ? 'Malla mosquitera' : `Vidrio / Panel: ${panelDesc}`}
+                            </div>
+                          </td>
+                          <td style={{ color: '#0f172a' }} className="p-2.5 text-center align-middle mono font-bold text-slate-900">
+                            {item.cantidad} pza
+                          </td>
+                          <td className="p-2.5 text-right align-middle">
+                            <strong style={{ color: '#0B2545' }} className="mono font-extrabold text-[#0B2545] block">
+                              {formatMXN(item.totalLinea)}
+                            </strong>
+                            {item.cantidad > 1 && (
+                              <span style={{ color: '#64748b' }} className="mono text-[10.5px] text-slate-500">
+                                {formatMXN(unitPrice)} c/u
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>
@@ -1104,29 +1132,21 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
               <button
                 type="button"
                 id="btn-contrato-pdf"
-                aria-disabled={!generatedContract}
-                onClick={handleSaveGeneratedPdf}
-                className={`min-h-[46px] px-3.5 rounded-xl border text-[13px] font-extrabold cursor-pointer transition-all shadow-sm ${
-                  generatedContract
-                    ? 'border-blue-400/65 bg-blue-600 hover:bg-blue-500 text-white'
-                    : 'border-slate-600 bg-slate-800/70 text-slate-400 opacity-65'
-                }`}
+                disabled={generatingContract}
+                onClick={() => void handleSaveGeneratedPdf()}
+                className="min-h-[46px] px-3.5 rounded-xl border border-blue-400/65 bg-blue-600 hover:bg-blue-500 text-white text-[13px] font-extrabold cursor-pointer transition-all shadow-sm disabled:opacity-60"
               >
-                📄 Guardar PDF
+                📄 Descargar PDF
               </button>
 
               <button
                 type="button"
                 id="btn-contrato-whatsapp"
-                aria-disabled={!generatedContract}
+                disabled={generatingContract}
                 onClick={() => void handleShareWhatsApp()}
-                className={`min-h-[46px] px-3.5 rounded-xl border text-[13px] font-extrabold cursor-pointer transition-all shadow-sm ${
-                  generatedContract
-                    ? 'border-emerald-400/65 bg-emerald-600 hover:bg-emerald-500 text-white'
-                    : 'border-slate-600 bg-slate-800/70 text-slate-400 opacity-65'
-                }`}
+                className="min-h-[46px] px-3.5 rounded-xl border border-emerald-400/65 bg-emerald-600 hover:bg-emerald-500 text-white text-[13px] font-extrabold cursor-pointer transition-all shadow-sm disabled:opacity-60"
               >
-                💬 WhatsApp
+                💬 Compartir PDF / WhatsApp
               </button>
             </div>
           </div>

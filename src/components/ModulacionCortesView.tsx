@@ -2027,13 +2027,15 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
                     </div>
 
                     <div className="flex flex-col gap-2.5">
-                      {grupo.barras.map((barra) => (
+                      {grupo.barras.map((barra, bIdx) => {
+                        const numCortes = barra.totalCortes ?? barra.cortes.length;
+                        return (
                         <div
                           key={barra.id}
                           className="p-2.5 rounded-xl bg-white border border-slate-300"
                         >
                           <div className="flex flex-wrap items-center justify-between gap-1.5 text-[11.5px] font-bold mb-1.5">
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
                               <span
                                 className={`px-2 py-0.5 rounded text-[10px] font-extrabold uppercase ${
                                   barra.origen === 'sobrante-inventario'
@@ -2043,20 +2045,22 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
                               >
                                 {barra.origen === 'sobrante-inventario' ? 'Sobrante Inventario' : 'Tramo 6.10 m'}
                               </span>
-                              <span className="text-slate-800">{barra.etiquetaOrigen}</span>
+                              <span className="text-slate-900 font-extrabold">
+                                Tramo #{bIdx + 1} — {numCortes} {numCortes === 1 ? 'corte' : 'cortes'}
+                              </span>
                               {barra.marca && (
                                 <span className="text-slate-500">({barra.marca})</span>
                               )}
                             </div>
                             <span className="mono text-slate-700">
-                              Usado: {barra.usadoCm.toFixed(1)} cm ·{' '}
+                              Usado: <strong>{barra.usadoCm.toFixed(1)} cm</strong> ·{' '}
                               {barra.esMerma ? (
                                 <strong className="text-rose-700">
-                                  Merma ({barra.sobranteCm.toFixed(1)} cm)
+                                  Sobrante: {barra.sobranteCm.toFixed(1)} cm (merma)
                                 </strong>
                               ) : (
                                 <strong className="text-emerald-700">
-                                  Sobrante usable ({barra.sobranteCm.toFixed(1)} cm)
+                                  Sobrante: {barra.sobranteCm.toFixed(1)} cm
                                 </strong>
                               )}
                             </span>
@@ -2123,7 +2127,8 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
                             ))}
                           </div>
                         </div>
-                      ))}
+                      );
+                      })}
                     </div>
                   </div>
                 ))}

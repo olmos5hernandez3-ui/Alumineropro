@@ -1,7 +1,13 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  COLORES_CONFIG,
+  getRellenoLabel,
+  LINEAS_CONFIG,
+} from '../utils/alumineroLogic';
 import { CotizacionPdfBlobResult, generarPdfClienteBlob } from '../utils/pdfExport';
 import {
   ContratoClienteInfo,
+  formatMXN,
   HojaState,
   issueNextCotizacionFolio,
   peekNextCotizacionFolio,
@@ -24,6 +30,16 @@ interface PdfPreviewModalProps {
   onShowToast: (msg: string, topSuccess?: boolean) => void;
 }
 
+const APERTURA_LABELS: Record<string, string> = {
+  corrediza: 'Corrediza',
+  fija: 'Fija',
+  guillotina: 'Guillotina',
+  abatible: 'Abatible',
+  banderola: 'Proyección / Banderola',
+  oscilobatiente: 'Oscilobatiente',
+  plegable: 'Plegable',
+};
+
 export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
   open,
   hoja,
@@ -33,7 +49,7 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
   onFinalPdfDownloaded,
   onShowToast,
 }) => {
-  const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<'documento' | 'pdf_canvas'>('documento');
   const [signatureOpen, setSignatureOpen] = useState(false);
   const [signatureDataUrl, setSignatureDataUrl] = useState<string>('');
   const [acceptedDateLabel, setAcceptedDateLabel] = useState<string>('');
@@ -46,32 +62,27 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
   const pagesContainerRef = useRef<HTMLDivElement | null>(null);
   const issuedFolioForSessionRef = useRef<string | null>(null);
   const sheetHistoryPushedRef = useRef(false);
-  const viewerHistoryPushedRef = useRef(false);
   const sheetOverlayTokenRef = useRef<number | null>(null);
-  const viewerOverlayTokenRef = useRef<number | null>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
-  // Empujar capa de ventana inferior al historial al abrir
   useEffect(() => {
     if (!open) {
       removeHistoryOverlay(sheetOverlayTokenRef.current);
-      removeHistoryOverlay(viewerOverlayTokenRef.current);
       sheetOverlayTokenRef.current = null;
-      viewerOverlayTokenRef.current = null;
       sheetHistoryPushedRef.current = false;
-      viewerHistoryPushedRef.current = false;
-      setViewerOpen(false);
+      setViewMode('documento');
       setSignatureOpen(false);
       setSignatureDataUrl('');
       setAcceptedDateLabel('');
       setPreviewResult(null);
       setRenderError(null);
+      setPageCount(0);
       issuedFolioForSessionRef.current = null;
       return;
     }
 
-    sheetOverlayTokenRef.current = pushHistoryOverlay('pdf-sheet', () => {
+    sheetOverlayTokenRef.current = pushHistoryOverlay('pdf-preview-modal', () => {
       sheetHistoryPushedRef.current = false;
       sheetOverlayTokenRef.current = null;
       onCloseRef.current();
@@ -79,7 +90,7 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
 
     if (!isRunningInIframe()) {
       try {
-        window.history.pushState({ apPdfLayer: 'sheet' }, '');
+        window.history.pushState({ apPdfLayer: 'preview' }, '');
         sheetHistoryPushedRef.current = true;
       } catch {
         sheetHistoryPushedRef.current = false;
@@ -94,39 +105,7 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
     };
   }, [open]);
 
-  // Empujar capa de visor completo al historial únicamente mientras viewerOpen está activo
-  useEffect(() => {
-    if (!open || !viewerOpen) {
-      removeHistoryOverlay(viewerOverlayTokenRef.current);
-      viewerOverlayTokenRef.current = null;
-      viewerHistoryPushedRef.current = false;
-      return;
-    }
-
-    viewerOverlayTokenRef.current = pushHistoryOverlay('pdf-viewer', () => {
-      viewerHistoryPushedRef.current = false;
-      viewerOverlayTokenRef.current = null;
-      setViewerOpen(false);
-    });
-
-    if (!isRunningInIframe()) {
-      try {
-        window.history.pushState({ apPdfLayer: 'viewer' }, '');
-        viewerHistoryPushedRef.current = true;
-      } catch {
-        viewerHistoryPushedRef.current = false;
-      }
-    } else {
-      viewerHistoryPushedRef.current = false;
-    }
-
-    return () => {
-      removeHistoryOverlay(viewerOverlayTokenRef.current);
-      viewerOverlayTokenRef.current = null;
-    };
-  }, [open, viewerOpen]);
-
-  const requestCloseSheet = useCallback(() => {
+  const requestClose = useCallback(() => {
     if (!isRunningInIframe() && sheetHistoryPushedRef.current) {
       try {
         window.history.back();
@@ -140,26 +119,7 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
     onCloseRef.current();
   }, []);
 
-  const openViewerLayer = () => {
-    if (viewerOpen) return;
-    setViewerOpen(true);
-  };
-
-  const closeViewerLayer = () => {
-    if (!isRunningInIframe() && viewerHistoryPushedRef.current) {
-      try {
-        window.history.back();
-        return;
-      } catch {
-        viewerHistoryPushedRef.current = false;
-      }
-    }
-    removeHistoryOverlay(viewerOverlayTokenRef.current);
-    viewerOverlayTokenRef.current = null;
-    setViewerOpen(false);
-  };
-
-  // Generar el Blob de vista previa (sin avanzar el folio) cada vez que abre o cambia la firma
+  // Preparar el Blob PDF en segundo plano (sin bloquear la vista previa estructurada inmediata)
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
@@ -171,9 +131,9 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
     generarPdfClienteBlob(hoja, taller, {
       folio: previewFolio,
       clienteFallback: {
-        nombre: contratoCliente.nombre,
-        telefono: contratoCliente.telefono,
-        direccion: contratoCliente.direccion,
+        nombre: contratoCliente?.nombre || '',
+        telefono: contratoCliente?.telefono || '',
+        direccion: contratoCliente?.direccion || '',
       },
       signatureDataUrl: signatureDataUrl || undefined,
       acceptedDateLabel: acceptedDateLabel || undefined,
@@ -186,7 +146,6 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
       })
       .catch(() => {
         if (!cancelled) {
-          setRenderError('No se pudo preparar la vista previa del PDF.');
           setGeneratingBlob(false);
         }
       });
@@ -196,9 +155,9 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
     };
   }, [open, hoja, taller, contratoCliente, signatureDataUrl, acceptedDateLabel]);
 
-  // Renderizar páginas en canvas con pdfjs-dist cuando el visor interno está abierto
+  // Renderizar páginas reales de PDF en canvas solo cuando el usuario elige "Vista PDF (Canvas)"
   useEffect(() => {
-    if (!open || !viewerOpen || !previewResult?.blob) return;
+    if (!open || viewMode !== 'pdf_canvas' || !previewResult?.blob) return;
     let cancelled = false;
     const container = pagesContainerRef.current;
     if (!container) return;
@@ -211,7 +170,10 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
     (async () => {
       try {
         const pdfjsLib = await import('pdfjs-dist');
-        pdfjsLib.GlobalWorkerOptions.workerSrc = './pdf.worker.min.mjs';
+        pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+          '/pdf.worker.min.mjs',
+          window.location.origin
+        ).toString();
         const arrayBuf = await previewResult.blob.arrayBuffer();
         const loadingTask = pdfjsLib.getDocument({ data: arrayBuf });
         const pdf = await loadingTask.promise;
@@ -252,7 +214,9 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
         if (!cancelled) setRenderingPages(false);
       } catch {
         if (!cancelled) {
-          setRenderError('No se pudieron renderizar las páginas del PDF en pantalla.');
+          setRenderError(
+            'El visor canvas no está disponible en este navegador. Usa la Vista Documento o descarga el PDF.'
+          );
           setRenderingPages(false);
         }
       }
@@ -261,7 +225,29 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [open, viewerOpen, previewResult]);
+  }, [open, viewMode, previewResult]);
+
+  const totals = useMemo(() => {
+    const partidasSafe = Array.isArray(hoja?.partidas) ? hoja.partidas : [];
+    const subtotal = partidasSafe.reduce((acc, p) => acc + (Number(p.totalLinea) || 0), 0);
+    const descuentoPct = Math.max(0, Number(hoja?.descuentoPct) || 0);
+    const descuentoVal = subtotal * (descuentoPct / 100);
+    const base = subtotal - descuentoVal;
+    const ivaVal = hoja?.incluirIva ? base * 0.16 : 0;
+    const granTotal = base + ivaVal;
+    const anticipoPct = Math.max(0, Math.min(100, Number(contratoCliente?.anticipoPct ?? 50)));
+    const anticipoSugerido = granTotal * (anticipoPct / 100);
+    return {
+      partidasSafe,
+      subtotal,
+      descuentoPct,
+      descuentoVal,
+      ivaVal,
+      granTotal,
+      anticipoPct,
+      anticipoSugerido,
+    };
+  }, [hoja, contratoCliente]);
 
   const buildAndCommitFinalPdf = async (): Promise<CotizacionPdfBlobResult> => {
     const finalFolio = issuedFolioForSessionRef.current || issueNextCotizacionFolio();
@@ -269,9 +255,9 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
     const finalRes = await generarPdfClienteBlob(hoja, taller, {
       folio: finalFolio,
       clienteFallback: {
-        nombre: contratoCliente.nombre,
-        telefono: contratoCliente.telefono,
-        direccion: contratoCliente.direccion,
+        nombre: contratoCliente?.nombre || '',
+        telefono: contratoCliente?.telefono || '',
+        direccion: contratoCliente?.direccion || '',
       },
       signatureDataUrl: signatureDataUrl || undefined,
       acceptedDateLabel: acceptedDateLabel || undefined,
@@ -344,7 +330,7 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
         try {
           await navWithShare.share({
             title: `Cotización ${res.folio} — ${res.clienteNombre}`,
-            text: `Te comparto la cotización ${res.folio} de ${taller.nombre || 'nuestro taller'}.`,
+            text: `Te comparto la cotización ${res.folio} de ${taller?.nombre || 'nuestro taller'}.`,
             files: [file],
           });
           onShowToast(`Cotización ${res.folio} compartida`, true);
@@ -355,8 +341,8 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
       }
 
       triggerDownloadFallback(res.blob, res.filename);
-      const cleanTel = (hoja.clienteTel || contratoCliente.telefono || '').replace(/\D+/g, '');
-      const waMsg = `Hola ${res.clienteNombre}, te comparto la cotización ${res.folio} (${res.filename}).`;
+      const cleanTel = (hoja?.clienteTel || contratoCliente?.telefono || '').replace(/\D+/g, '');
+      const waMsg = `Hola ${res.clienteNombre}, te comparto la cotización ${res.folio} por ${formatMXN(totals.granTotal)} (${res.filename}).`;
       const waHref = cleanTel
         ? `https://wa.me/${cleanTel.length === 10 ? `52${cleanTel}` : cleanTel}?text=${encodeURIComponent(waMsg)}`
         : `https://wa.me/?text=${encodeURIComponent(waMsg)}`;
@@ -375,179 +361,365 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
 
   if (!open) return null;
 
+  const folioDisplay = previewResult?.folio || issuedFolioForSessionRef.current || peekNextCotizacionFolio();
   const displayFilename =
     previewResult?.filename ||
-    `${peekNextCotizacionFolio()}-${(hoja.proyecto || 'cliente').toLowerCase().replace(/\s+/g, '-')}.pdf`;
+    `${folioDisplay}-${(hoja?.proyecto || contratoCliente?.nombre || 'cliente')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '') || 'cliente'}.pdf`;
+
+  const clienteNombre =
+    String(hoja?.proyecto || contratoCliente?.nombre || '').trim() || 'Cliente por confirmar';
+  const clienteTel = String(hoja?.clienteTel || contratoCliente?.telefono || '').trim();
+  const clienteDir = String(hoja?.clienteDir || contratoCliente?.direccion || '').trim();
+  const fechaHoy = new Date().toLocaleDateString('es-MX', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
 
   return (
     <>
-      {/* ==================== VENTANA INFERIOR: COTIZACIÓN LISTA ==================== */}
-      {!viewerOpen && (
-        <div
-          id="modal-pdf-ready-sheet"
-          className="fixed inset-0 z-[55] bg-slate-950/75 flex items-end sm:items-center justify-center p-0 sm:p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Cotización lista"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) requestCloseSheet();
-          }}
-        >
-          <div className="w-full sm:max-w-[460px] bg-[#0f172a] text-white border-t sm:border border-slate-700 rounded-t-[26px] sm:rounded-[24px] p-5 pb-7 sm:p-6 shadow-2xl flex flex-col gap-3.5">
-            <div className="w-10 h-1 rounded-full bg-slate-600 mx-auto sm:hidden" />
-
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <h2 className="m-0 text-[18px] font-extrabold text-white">
-                  📄 Cotización lista
-                </h2>
-                <p
-                  id="pdf-preview-filename"
-                  className="m-0 mt-1 text-[12.5px] font-bold text-sky-300 mono break-all"
-                >
-                  {generatingBlob ? 'Preparando documento...' : displayFilename}
-                </p>
-                {signatureDataUrl && (
-                  <span className="inline-block mt-1.5 text-[11px] font-bold text-emerald-300">
-                    ✓ Firma del cliente aplicada ({acceptedDateLabel})
-                  </span>
-                )}
+      <div
+        id="modal-pdf-viewer"
+        className="fixed inset-0 z-[65] bg-[#07111F]/92 backdrop-blur-sm text-white flex flex-col"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Vista previa de cotización ${folioDisplay}`}
+      >
+        {/* Barra superior */}
+        <div className="shrink-0 px-3 sm:px-5 py-2.5 bg-[#0f172a] border-b border-slate-700/80 flex flex-wrap items-center justify-between gap-2.5">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <button
+              type="button"
+              id="btn-pdf-preview-close"
+              onClick={requestClose}
+              aria-label="Cerrar vista previa de cotización"
+              className="min-w-[38px] min-h-[38px] rounded-xl border border-slate-600 bg-slate-800 hover:bg-slate-700 text-white font-bold cursor-pointer shrink-0"
+            >
+              ←
+            </button>
+            <div className="min-w-0">
+              <div className="text-[14px] font-extrabold text-white truncate">
+                Vista Previa de Cotización · <span className="mono text-sky-300">{folioDisplay}</span>
+              </div>
+              <div id="pdf-preview-filename" className="text-[11px] text-slate-300 mono truncate">
+                {generatingBlob ? 'Preparando archivo PDF...' : displayFilename}
               </div>
             </div>
+          </div>
 
-            {renderError && (
-              <p className="m-0 text-[12px] text-red-300 bg-red-950/40 border border-red-500/40 rounded-xl px-3 py-2">
-                {renderError}
-              </p>
-            )}
-
-            <div className="flex flex-col gap-2.5 mt-1">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <div className="inline-flex rounded-xl border border-slate-700 bg-slate-900 p-0.5">
               <button
                 type="button"
-                id="btn-pdf-preview-open-viewer"
+                id="btn-pdf-mode-doc"
+                onClick={() => setViewMode('documento')}
+                className={`px-2.5 py-1.5 rounded-lg text-[11.5px] font-extrabold cursor-pointer border-0 ${
+                  viewMode === 'documento'
+                    ? 'bg-sky-600 text-white'
+                    : 'bg-transparent text-slate-300 hover:text-white'
+                }`}
+              >
+                Vista Documento
+              </button>
+              <button
+                type="button"
+                id="btn-pdf-mode-canvas"
                 disabled={generatingBlob || !previewResult}
-                onClick={openViewerLayer}
-                className="w-full min-h-[48px] px-4 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-extrabold text-[14px] cursor-pointer shadow-lg"
+                onClick={() => setViewMode('pdf_canvas')}
+                className={`px-2.5 py-1.5 rounded-lg text-[11.5px] font-extrabold cursor-pointer border-0 disabled:opacity-45 ${
+                  viewMode === 'pdf_canvas'
+                    ? 'bg-sky-600 text-white'
+                    : 'bg-transparent text-slate-300 hover:text-white'
+                }`}
               >
-                👁 Ver PDF
-              </button>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  id="btn-pdf-preview-sign"
-                  onClick={() => setSignatureOpen(true)}
-                  className="flex-1 min-h-[46px] px-4 rounded-xl border border-amber-400/50 bg-amber-500/15 hover:bg-amber-500/25 text-amber-100 font-bold text-[13.5px] cursor-pointer"
-                >
-                  {signatureDataUrl ? '✍️ Cambiar firma del cliente' : '✍️ Aplicar firma del cliente'}
-                </button>
-                {signatureDataUrl && (
-                  <button
-                    type="button"
-                    id="btn-pdf-preview-clear-sign"
-                    onClick={() => {
-                      setSignatureDataUrl('');
-                      setAcceptedDateLabel('');
-                      onShowToast('Firma retirada del PDF');
-                    }}
-                    className="min-h-[46px] px-3 rounded-xl border border-slate-600 bg-slate-800 text-slate-200 text-[12px] font-bold cursor-pointer"
-                  >
-                    Quitar
-                  </button>
-                )}
-              </div>
-
-              <button
-                type="button"
-                id="btn-pdf-preview-close"
-                onClick={requestCloseSheet}
-                className="w-full min-h-[44px] px-4 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 text-slate-200 font-bold text-[13.5px] cursor-pointer"
-              >
-                Cerrar
+                Vista PDF {pageCount > 0 ? `(${pageCount})` : ''}
               </button>
             </div>
+
+            <button
+              type="button"
+              id="btn-pdf-preview-sign"
+              onClick={() => setSignatureOpen(true)}
+              className="min-h-[36px] px-3 rounded-xl border border-amber-400/55 bg-amber-500/20 hover:bg-amber-500/30 text-amber-100 text-[12px] font-extrabold cursor-pointer"
+            >
+              {signatureDataUrl ? '✓ Firma aplicada' : '✍️ Firma del Cliente'}
+            </button>
           </div>
         </div>
-      )}
 
-      {/* ==================== VISOR INTERNO DE PÁGINAS PDF ==================== */}
-      {viewerOpen && (
-        <div
-          id="modal-pdf-viewer"
-          className="fixed inset-0 z-[65] bg-[#090d16] text-white flex flex-col"
-          role="dialog"
-          aria-modal="true"
-          aria-label={`Visor PDF ${displayFilename}`}
-        >
-          {/* Barra superior */}
-          <div className="shrink-0 h-[58px] px-3 sm:px-5 bg-[#0f172a] border-b border-slate-800 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <button
-                type="button"
-                id="btn-pdf-viewer-back"
-                onClick={closeViewerLayer}
-                aria-label="Volver a opciones del PDF"
-                className="min-w-[38px] min-h-[38px] rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-700 text-white font-bold cursor-pointer shrink-0"
-              >
-                ←
-              </button>
-              <div className="min-w-0">
-                <div className="text-[13.5px] font-extrabold text-white truncate mono">
-                  {displayFilename}
-                </div>
-                <div className="text-[11px] text-slate-400">
-                  {renderingPages
-                    ? 'Renderizando páginas...'
-                    : pageCount > 0
-                      ? `${pageCount} página${pageCount === 1 ? '' : 's'}`
-                      : 'Vista previa'}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Área de páginas renderizadas en canvas */}
-          <div className="flex-1 overflow-y-auto px-3 sm:px-6 py-4 flex flex-col gap-4">
-            {renderingPages && (
-              <div className="text-center text-slate-300 text-[13px] py-4">
-                Cargando vista de páginas PDF...
-              </div>
-            )}
-            {renderError && (
-              <div className="max-w-[520px] mx-auto p-4 rounded-xl bg-red-950/50 border border-red-500/40 text-red-200 text-[13px]">
-                {renderError}
-              </div>
-            )}
+        {/* Cuerpo scrolleable con Vista Documento (nunca en blanco) o Canvas PDF */}
+        <div className="flex-1 overflow-y-auto px-3 sm:px-6 py-4">
+          {viewMode === 'documento' ? (
             <div
-              ref={pagesContainerRef}
-              id="pdf-viewer-pages"
-              className="flex flex-col items-center gap-4 pb-6"
-            />
-          </div>
+              id="cotizacion-preview-document"
+              data-preserve-light="true"
+              style={{ backgroundColor: '#ffffff', color: '#0f172a' }}
+              className="max-w-[820px] mx-auto bg-white text-slate-900 rounded-2xl border border-slate-300 shadow-2xl p-4 sm:p-7"
+            >
+              {/* Encabezado Taller y Folio */}
+              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 pb-4 border-b-2 border-[#0B2545]">
+                <div className="flex items-start gap-3 min-w-0 flex-1">
+                  {taller?.logoDataUrl ? (
+                    <img
+                      src={taller.logoDataUrl}
+                      alt="Logo del taller"
+                      className="w-16 h-16 rounded-xl object-contain border border-slate-200 bg-white shrink-0"
+                    />
+                  ) : (
+                    <div
+                      style={{ backgroundColor: '#0B2545', color: '#ffffff' }}
+                      className="w-14 h-14 rounded-xl bg-[#0B2545] text-white flex items-center justify-center font-black text-[18px] shrink-0"
+                    >
+                      AP
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-extrabold uppercase tracking-wider text-blue-700">
+                      Presupuesto / Cotización Formal
+                    </div>
+                    <h2 className="m-0 text-[19px] font-black text-[#0B2545] leading-tight">
+                      {taller?.nombre || 'Taller de Aluminio y Vidrio'}
+                    </h2>
+                    <div className="text-[12.5px] font-bold text-slate-700 mt-0.5">
+                      Tel / WhatsApp: <span className="mono">{taller?.tel || 'Sin especificar'}</span>
+                    </div>
+                    {taller?.ubicacion && (
+                      <div className="text-[11.5px] font-semibold text-slate-600">
+                        Ubicación: {taller.ubicacion}
+                      </div>
+                    )}
+                  </div>
+                </div>
 
-          {/* Barra inferior con SOLO 2 botones finales */}
-          <div className="shrink-0 px-3 sm:px-5 py-3 bg-[#0f172a] border-t border-slate-800 flex flex-wrap items-center justify-center gap-2.5">
-            <button
-              type="button"
-              id="btn-pdf-viewer-whatsapp"
-              onClick={() => void handleSendWhatsapp()}
-              className="flex-1 min-w-[160px] max-w-[260px] min-h-[46px] px-4 rounded-xl bg-green-600 hover:bg-green-700 text-white font-extrabold text-[13.5px] cursor-pointer shadow-lg"
-            >
-              💬 Enviar por WhatsApp
-            </button>
-            <button
-              type="button"
-              id="btn-pdf-viewer-save"
-              onClick={() => void handleSaveToDevice()}
-              className="flex-1 min-w-[160px] max-w-[260px] min-h-[46px] px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-[13.5px] cursor-pointer shadow-lg"
-            >
-              💾 Guardar en mi dispositivo
-            </button>
-          </div>
+                <div
+                  style={{ backgroundColor: '#0B2545', color: '#ffffff' }}
+                  className="rounded-xl px-4 py-3 text-left sm:text-right shrink-0 min-w-[205px]"
+                >
+                  <div className="text-[10.5px] uppercase tracking-wider font-extrabold text-sky-200">
+                    Folio de Cotización
+                  </div>
+                  <div className="mono text-[17px] font-black text-white mt-0.5">{folioDisplay}</div>
+                  <div className="text-[11.5px] text-slate-100 mt-1">Fecha: {fechaHoy}</div>
+                  <div className="text-[11px] text-sky-200">Vigencia: 15 días naturales</div>
+                </div>
+              </div>
+
+              {/* Datos del Cliente */}
+              <div
+                style={{ backgroundColor: '#f8fafc', color: '#0f172a' }}
+                className="mt-4 p-3.5 rounded-xl border border-slate-300 text-[12.5px]"
+              >
+                <div className="text-[11px] font-extrabold uppercase tracking-wide text-[#0B2545] mb-1.5">
+                  Datos del Cliente y Obra
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                  <div>
+                    <strong>Cliente / Proyecto:</strong> {clienteNombre}
+                  </div>
+                  <div>
+                    <strong>Teléfono:</strong> {clienteTel || 'No especificado'}
+                  </div>
+                  <div className="sm:col-span-2">
+                    <strong>Dirección de obra:</strong> {clienteDir || 'Por confirmar en sitio'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Tabla de Partidas */}
+              <div className="mt-4 overflow-x-auto border border-slate-300 rounded-xl">
+                <table className="w-full border-collapse text-[12px] min-w-[520px]">
+                  <thead>
+                    <tr style={{ backgroundColor: '#0B2545', color: '#ffffff' }}>
+                      <th className="p-2.5 text-left w-[36px]">#</th>
+                      <th className="p-2.5 text-left">Descripción Técnica</th>
+                      <th className="p-2.5 text-center w-[95px]">Medidas</th>
+                      <th className="p-2.5 text-center w-[62px]">Cant.</th>
+                      <th className="p-2.5 text-right w-[112px]">Importe</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {totals.partidasSafe.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="p-5 text-center text-slate-500 font-semibold">
+                          No hay partidas agregadas todavía en la Hoja de Cotización.
+                        </td>
+                      </tr>
+                    ) : (
+                      totals.partidasSafe.map((item, idx) => {
+                        const linea = LINEAS_CONFIG[item.linea] || LINEAS_CONFIG['3'];
+                        const color = COLORES_CONFIG[item.color] || COLORES_CONFIG.natural;
+                        const panelDesc = linea.esMosquitero
+                          ? 'Malla mosquitera'
+                          : getRellenoLabel(item.relleno, item.vidrio);
+                        const apLabel =
+                          linea.categoria === 'ventanas' && !linea.esMosquitero && !linea.esCancelBano
+                            ? ` · ${APERTURA_LABELS[item.apertura] || item.apertura || ''}`
+                            : '';
+                        const unitPrice =
+                          item.cantidad > 0 ? item.totalLinea / item.cantidad : item.totalLinea;
+                        return (
+                          <tr key={item.id || `cot-row-${idx}`} className="border-b border-slate-200 last:border-b-0">
+                            <td className="p-2.5 font-extrabold mono text-slate-600">{idx + 1}</td>
+                            <td className="p-2.5">
+                              <div className="font-extrabold text-slate-900">
+                                {item.etiqueta ? `${item.etiqueta} — ` : ''}
+                                {linea.nombre}
+                                {apLabel}
+                              </div>
+                              <div className="text-[11.5px] text-slate-600 mt-0.5">
+                                Color: <strong>{color.nombre}</strong> · {panelDesc}
+                                {item.area ? ` · Área: ${item.area}` : ''}
+                              </div>
+                            </td>
+                            <td className="p-2.5 text-center mono font-bold text-slate-800">
+                              {item.anchoCm} × {item.altoCm} cm
+                            </td>
+                            <td className="p-2.5 text-center mono font-bold text-slate-900">
+                              {item.cantidad}
+                            </td>
+                            <td className="p-2.5 text-right">
+                              <strong className="mono font-extrabold text-[#0B2545] block">
+                                {formatMXN(item.totalLinea)}
+                              </strong>
+                              {item.cantidad > 1 && (
+                                <span className="mono text-[10.5px] text-slate-500">
+                                  {formatMXN(unitPrice)} c/u
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Condiciones y Desglose de Totales */}
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
+                <div
+                  style={{ backgroundColor: '#f8fafc', color: '#334155' }}
+                  className="md:col-span-7 p-3.5 rounded-xl border border-slate-200 text-[11.5px] leading-relaxed"
+                >
+                  <strong className="block text-[#0B2545] uppercase tracking-wide text-[11px] mb-1.5">
+                    Condiciones Comerciales y Cláusulas
+                  </strong>
+                  <ul className="m-0 pl-4 flex flex-col gap-1">
+                    <li>Anticipo del {totals.anticipoPct}% para inicio de fabricación y compra de material.</li>
+                    <li>Saldo restante liquidable al concluir la instalación a entera satisfacción.</li>
+                    <li>Precios sujetos a verificación física de medidas y plomo/nivel de vanos en sitio.</li>
+                    <li>Garantía en instalación, sellado y funcionamiento de herrajes bajo uso normal.</li>
+                  </ul>
+                  {(hoja as { notas?: string } | undefined)?.notas && (
+                    <div className="mt-2 pt-2 border-t border-slate-200">
+                      <strong className="text-slate-800">Notas adicionales:</strong>{' '}
+                      {(hoja as { notas?: string }).notas}
+                    </div>
+                  )}
+                </div>
+
+                <div
+                  style={{ backgroundColor: '#f8fafc', color: '#0f172a' }}
+                  className="md:col-span-5 p-4 rounded-xl border-[1.5px] border-slate-300 text-[12.5px]"
+                >
+                  <div className="text-[11px] font-extrabold uppercase tracking-wide text-[#0B2545] mb-2">
+                    Resumen Financiero
+                  </div>
+                  <div className="flex justify-between py-0.5 text-slate-700">
+                    <span>Subtotal</span>
+                    <strong className="mono text-slate-900">{formatMXN(totals.subtotal)}</strong>
+                  </div>
+                  {totals.descuentoVal > 0 && (
+                    <div className="flex justify-between py-0.5 text-emerald-700">
+                      <span>Descuento ({totals.descuentoPct}%)</span>
+                      <strong className="mono">-{formatMXN(totals.descuentoVal)}</strong>
+                    </div>
+                  )}
+                  <div className="flex justify-between py-0.5 text-slate-700">
+                    <span>{hoja?.incluirIva ? 'IVA (16%)' : 'IVA'}</span>
+                    <strong className="mono text-slate-900">
+                      {hoja?.incluirIva ? formatMXN(totals.ivaVal) : 'Precios netos'}
+                    </strong>
+                  </div>
+                  <div className="flex justify-between items-baseline pt-2 mt-1.5 border-t border-slate-300 font-black text-[15px] text-[#0B2545]">
+                    <span>GRAN TOTAL</span>
+                    <span className="mono text-[18px]">{formatMXN(totals.granTotal)}</span>
+                  </div>
+                  <div className="mt-2 pt-2 border-t border-dashed border-slate-300 text-[11.5px] flex justify-between text-emerald-800">
+                    <span>Anticipo sugerido ({totals.anticipoPct}%)</span>
+                    <strong className="mono">{formatMXN(totals.anticipoSugerido)}</strong>
+                  </div>
+                </div>
+              </div>
+
+              {/* Firma de Aceptación del Cliente */}
+              {signatureDataUrl && (
+                <div className="mt-5 pt-4 border-t border-slate-200 flex flex-col items-center text-center">
+                  <img
+                    src={signatureDataUrl}
+                    alt="Firma de aceptación del cliente"
+                    className="max-h-16 max-w-[220px] object-contain"
+                  />
+                  <div className="w-[240px] border-t border-slate-600 mt-1 pt-1 text-[11.5px] font-bold text-slate-800">
+                    Aceptación del Cliente · {acceptedDateLabel}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {renderingPages && (
+                <div className="text-center text-slate-300 text-[13px] py-4">
+                  Renderizando páginas PDF...
+                </div>
+              )}
+              {renderError && (
+                <div className="max-w-[540px] mx-auto p-4 rounded-xl bg-amber-950/60 border border-amber-400/50 text-amber-100 text-[12.5px] text-center">
+                  {renderError}
+                  <div className="mt-2">
+                    <button
+                      type="button"
+                      onClick={() => setViewMode('documento')}
+                      className="px-3 py-1.5 rounded-lg bg-sky-600 text-white font-bold text-[12px] cursor-pointer"
+                    >
+                      Volver a Vista Documento
+                    </button>
+                  </div>
+                </div>
+              )}
+              <div
+                ref={pagesContainerRef}
+                id="pdf-viewer-pages"
+                className="flex flex-col items-center gap-4 pb-6"
+              />
+            </div>
+          )}
         </div>
-      )}
 
-      {/* ==================== MODAL DE FIRMA DEL CLIENTE ==================== */}
+        {/* Barra inferior de acciones funcionales */}
+        <div className="shrink-0 px-3 sm:px-5 py-3 bg-[#0f172a] border-t border-slate-800 flex flex-wrap items-center justify-center gap-2.5">
+          <button
+            type="button"
+            id="btn-pdf-viewer-whatsapp"
+            onClick={() => void handleSendWhatsapp()}
+            className="flex-1 min-w-[160px] max-w-[260px] min-h-[46px] px-4 rounded-xl bg-green-600 hover:bg-green-700 text-white font-extrabold text-[13.5px] cursor-pointer shadow-lg"
+          >
+            💬 Compartir PDF / WhatsApp
+          </button>
+          <button
+            type="button"
+            id="btn-pdf-viewer-save"
+            onClick={() => void handleSaveToDevice()}
+            className="flex-1 min-w-[160px] max-w-[260px] min-h-[46px] px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-[13.5px] cursor-pointer shadow-lg"
+          >
+            💾 Descargar PDF
+          </button>
+        </div>
+      </div>
+
       <SignaturePadModal
         open={signatureOpen}
         title="Firma de Aceptación del Cliente"

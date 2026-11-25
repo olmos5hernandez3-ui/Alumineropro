@@ -35,13 +35,23 @@ const FAMILIA_LABELS: Record<PerfilFamilia, string> = {
   batiente: 'Puerta Batiente (Alumer)',
   cancel: 'Cancel para Baño (Alumer)',
   mosquitero: 'Mosquiteros',
+  nacional2: 'Línea Nacional 2"',
+  serie1400: 'Serie 1400',
+  espanola: 'Española / Europea',
+  herralum: 'Herralum',
+  perfileto: 'Perfileto',
 };
 
 const FAMILIA_ORDER: PerfilFamilia[] = [
   'corrediza3',
   'fijo3',
+  'nacional2',
+  'serie1400',
+  'espanola',
   'batiente',
   'cancel',
+  'herralum',
+  'perfileto',
   'mosquitero',
 ];
 
@@ -165,6 +175,11 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
       batiente: [],
       cancel: [],
       mosquitero: [],
+      nacional2: [],
+      serie1400: [],
+      espanola: [],
+      herralum: [],
+      perfileto: [],
     };
     for (const item of CATALOGO_PERFILES) {
       grouped[item.familia].push(item);

@@ -21,8 +21,11 @@ import {
   mergeLevantamientosBackup,
   normalizeLevantamientoDraft,
   normalizeLevantamientoList,
+  NormalizedSketchScanResult,
+  normalizeScannedSketchResult,
   overwriteHojaProyectoInStorage,
   resumenLevantamiento,
+  SKETCH_SCANNER_OFFLINE_MESSAGE,
 } from '../utils/levantamientoLogic';
 import {
   formatClientPhoneInput,
@@ -169,7 +172,18 @@ export const LevantamientoRapido: React.FC<Props> = ({
     notas: string;
   } | null>(null);
   const [editModalError, setEditModalError] = useState<string | null>(null);
+  const [isOnline, setIsOnline] = useState<boolean>(() =>
+    typeof navigator !== 'undefined' ? navigator.onLine : true
+  );
+  const [sketchPanelOpen, setSketchPanelOpen] = useState<boolean>(false);
+  const [sketchScanning, setSketchScanning] = useState<boolean>(false);
+  const [sketchPreviewUrl, setSketchPreviewUrl] = useState<string>('');
+  const [sketchError, setSketchError] = useState<string | null>(null);
+  const [sketchOfflineAlert, setSketchOfflineAlert] = useState<boolean>(false);
+  const [sketchResult, setSketchResult] = useState<NormalizedSketchScanResult | null>(null);
   const importFileRef = useRef<HTMLInputElement | null>(null);
+  const sketchCameraInputRef = useRef<HTMLInputElement | null>(null);
+  const sketchGalleryInputRef = useRef<HTMLInputElement | null>(null);
   const lastTapRef = useRef<{ id: string; ts: number }>({ id: '', ts: 0 });
 
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -331,6 +345,22 @@ export const LevantamientoRapido: React.FC<Props> = ({
       }
     };
   }, [openModal]);
+
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      setSketchOfflineAlert(false);
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+    };
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   const applyClienteToHoja = useCallback(
     (clienteName: string, telefono?: string, direccion?: string) => {
@@ -550,6 +580,159 @@ export const LevantamientoRapido: React.FC<Props> = ({
       im.src = String(reader.result || '');
     };
     reader.readAsDataURL(file);
+  };
+
+  const compressImageForSketchScan = (
+    file: File
+  ): Promise<{ scanDataUrl: string; thumbDataUrl: string }> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('No se pudo leer el archivo de imagen.'));
+      reader.onload = () => {
+        const im = new Image();
+        im.onerror = () => reject(new Error('La imagen seleccionada no es válida.'));
+        im.onload = () => {
+          const maxSide = 1280;
+          const scale = Math.min(1, maxSide / Math.max(im.width || 1, im.height || 1));
+          const w = Math.max(1, Math.round(im.width * scale));
+          const h = Math.max(1, Math.round(im.height * scale));
+          const scanCanvas = document.createElement('canvas');
+          scanCanvas.width = w;
+          scanCanvas.height = h;
+          const scanCtx = scanCanvas.getContext('2d');
+          if (!scanCtx) {
+            reject(new Error('No se pudo preparar la imagen para el escáner.'));
+            return;
+          }
+          scanCtx.fillStyle = '#ffffff';
+          scanCtx.fillRect(0, 0, w, h);
+          scanCtx.drawImage(im, 0, 0, w, h);
+          const scanDataUrl = scanCanvas.toDataURL('image/jpeg', 0.82);
+
+          const thumbW = Math.min(600, im.width || 600);
+          const thumbH = Math.max(1, Math.round(((im.height || 400) * thumbW) / (im.width || 600)));
+          const thumbCanvas = document.createElement('canvas');
+          thumbCanvas.width = thumbW;
+          thumbCanvas.height = thumbH;
+          const thumbCtx = thumbCanvas.getContext('2d');
+          if (thumbCtx) {
+            thumbCtx.drawImage(im, 0, 0, thumbW, thumbH);
+          }
+          const thumbDataUrl = thumbCtx ? thumbCanvas.toDataURL('image/jpeg', 0.6) : scanDataUrl;
+
+          resolve({ scanDataUrl, thumbDataUrl });
+        };
+        im.src = String(reader.result || '');
+      };
+      reader.readAsDataURL(file);
+    });
+
+  const handleToggleSketchScanner = () => {
+    const currentlyOnline = typeof navigator !== 'undefined' ? navigator.onLine : isOnline;
+    setIsOnline(currentlyOnline);
+    if (!currentlyOnline) {
+      setSketchOfflineAlert(true);
+      setSketchError(null);
+      setSketchPanelOpen(false);
+      notify(SKETCH_SCANNER_OFFLINE_MESSAGE);
+      return;
+    }
+    setSketchOfflineAlert(false);
+    setSketchError(null);
+    setSketchPanelOpen((prev) => !prev);
+  };
+
+  const handleSketchFileSelected = async (file: File) => {
+    const currentlyOnline = typeof navigator !== 'undefined' ? navigator.onLine : isOnline;
+    setIsOnline(currentlyOnline);
+    if (!currentlyOnline) {
+      setSketchOfflineAlert(true);
+      setSketchError(null);
+      notify(SKETCH_SCANNER_OFFLINE_MESSAGE);
+      return;
+    }
+
+    setSketchOfflineAlert(false);
+    setSketchError(null);
+    setSketchResult(null);
+    setSketchScanning(true);
+
+    try {
+      const { scanDataUrl, thumbDataUrl } = await compressImageForSketchScan(file);
+      setSketchPreviewUrl(thumbDataUrl);
+
+      const response = await fetch('/api/scan-sketch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageBase64: scanDataUrl,
+          mimeType: 'image/jpeg',
+        }),
+      });
+
+      const payload = (await response.json().catch(() => ({}))) as {
+        ok?: boolean;
+        result?: NormalizedSketchScanResult;
+        error?: string;
+      };
+
+      if (!response.ok || !payload.ok || !payload.result) {
+        throw new Error(
+          payload.error ||
+            'No se pudo interpretar el croquis. Intenta con una foto más clara o captura las medidas manualmente.'
+        );
+      }
+
+      const normalized = normalizeScannedSketchResult(payload.result);
+      setSketchResult(normalized);
+      setSketchPanelOpen(false);
+      setLocalError(null);
+
+      setForm((prev) => {
+        const isMosqAbatible = normalized.tipo === 'Mosquitero abatible';
+        return {
+          ...prev,
+          tipo: normalized.tipo,
+          u: 'cm',
+          ancho: normalized.anchoCm ? String(normalized.anchoCm) : prev.ancho,
+          alto: normalized.altoCm ? String(normalized.altoCm) : prev.alto,
+          area: normalized.area || prev.area,
+          lineaPerfil: prev.editId
+            ? prev.lineaPerfil
+            : getDefaultLineaPerfilForTipo(normalized.tipo),
+          colorVidrio: isMosqAbatible ? 'Sin vidrio' : prev.colorVidrio,
+          mosquitero: isMosqAbatible ? 'Mosquitero abatible' : prev.mosquitero,
+          notas: normalized.notasFormateadas,
+          foto: thumbDataUrl,
+        };
+      });
+
+      notify(
+        normalized.anchoCm && normalized.altoCm
+          ? `Croquis detectado: ${normalized.resumenCorto}. Revisa y confirma antes de agregar.`
+          : 'Croquis detectado. Confirma o completa las medidas en los campos de abajo.',
+        true
+      );
+    } catch (err) {
+      const nowOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+      if (nowOffline) {
+        setIsOnline(false);
+        setSketchOfflineAlert(true);
+        setSketchError(null);
+        notify(SKETCH_SCANNER_OFFLINE_MESSAGE);
+      } else {
+        const msg =
+          err instanceof Error
+            ? err.message
+            : 'No se pudo analizar el croquis. Verifica tu conexión o captura las medidas manualmente.';
+        setSketchError(msg);
+        notify(msg);
+      }
+    } finally {
+      setSketchScanning(false);
+      if (sketchCameraInputRef.current) sketchCameraInputRef.current.value = '';
+      if (sketchGalleryInputRef.current) sketchGalleryInputRef.current.value = '';
+    }
   };
 
   const handleCopySummary = async () => {
@@ -905,7 +1088,350 @@ export const LevantamientoRapido: React.FC<Props> = ({
             </div>
 
             <div className="card">
-              <b>{form.editId ? '✏️ Editando pieza' : '➕ Nueva medida'}</b>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
+                <b>{form.editId ? '✏️ Editando pieza' : '➕ Nueva medida'}</b>
+                <span
+                  style={{
+                    fontSize: '10.5px',
+                    fontWeight: 800,
+                    padding: '2px 8px',
+                    borderRadius: '999px',
+                    background: isOnline ? 'rgba(14, 165, 233, 0.2)' : 'rgba(244, 63, 94, 0.22)',
+                    border: isOnline
+                      ? '1px solid rgba(56, 189, 248, 0.55)'
+                      : '1px solid rgba(251, 113, 133, 0.65)',
+                    color: isOnline ? '#7dd3fc' : '#fecdd3',
+                  }}
+                >
+                  {isOnline ? 'IA Lista · En línea' : 'Modo Sin Red · Captura manual'}
+                </span>
+              </div>
+
+              {/* Escáner de Croquis a Mano con Cámara / IA */}
+              <div style={{ marginTop: '10px', marginBottom: '12px' }}>
+                <input
+                  ref={sketchCameraInputRef}
+                  id="lv-sketch-camera-input"
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) void handleSketchFileSelected(f);
+                  }}
+                />
+                <input
+                  ref={sketchGalleryInputRef}
+                  id="lv-sketch-gallery-input"
+                  type="file"
+                  accept="image/*"
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) void handleSketchFileSelected(f);
+                  }}
+                />
+
+                <button
+                  type="button"
+                  id="btn-scan-sketch-ai"
+                  disabled={sketchScanning}
+                  onClick={handleToggleSketchScanner}
+                  style={{
+                    width: '100%',
+                    minHeight: '48px',
+                    padding: '10px 14px',
+                    borderRadius: '12px',
+                    border: '1.5px solid rgba(56, 189, 248, 0.75)',
+                    background: 'linear-gradient(135deg, #0284c7, #2563eb)',
+                    color: '#ffffff',
+                    fontSize: '13.5px',
+                    fontWeight: 800,
+                    cursor: sketchScanning ? 'wait' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '10px',
+                    boxShadow: '0 4px 14px rgba(37, 99, 235, 0.35)',
+                    opacity: sketchScanning ? 0.8 : 1,
+                  }}
+                >
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', textAlign: 'left' }}>
+                    <span aria-hidden="true" style={{ fontSize: '18px', lineHeight: 1 }}>📷</span>
+                    <span>
+                      <span style={{ display: 'block', lineHeight: 1.2 }}>
+                        {sketchScanning
+                          ? 'Analizando croquis con IA...'
+                          : 'Escanear Croquis con Cámara / Foto'}
+                      </span>
+                      <span
+                        style={{
+                          display: 'block',
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          opacity: 0.92,
+                          marginTop: '2px',
+                        }}
+                      >
+                        Lee medidas a mano y hojas X (corrediza) / O (fija)
+                      </span>
+                    </span>
+                  </span>
+                  <span
+                    style={{
+                      padding: '3px 8px',
+                      borderRadius: '8px',
+                      background: 'rgba(15, 23, 42, 0.35)',
+                      fontSize: '10.5px',
+                      fontWeight: 800,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    IA
+                  </span>
+                </button>
+
+                {sketchOfflineAlert && (
+                  <div
+                    id="sketch-offline-notice"
+                    role="alert"
+                    style={{
+                      marginTop: '8px',
+                      padding: '10px 12px',
+                      borderRadius: '11px',
+                      background: 'rgba(180, 83, 9, 0.25)',
+                      border: '1px solid rgba(251, 191, 36, 0.7)',
+                      color: '#fef3c7',
+                      fontSize: '12.5px',
+                      fontWeight: 700,
+                      lineHeight: 1.4,
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      justifyContent: 'space-between',
+                      gap: '8px',
+                    }}
+                  >
+                    <span>📡 {SKETCH_SCANNER_OFFLINE_MESSAGE}</span>
+                    <button
+                      type="button"
+                      aria-label="Cerrar aviso sin conexión"
+                      onClick={() => setSketchOfflineAlert(false)}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#fde68a',
+                        fontWeight: 800,
+                        padding: '0 4px',
+                        minHeight: 'auto',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
+
+                {sketchPanelOpen && !sketchScanning && (
+                  <div
+                    id="sketch-scanner-panel"
+                    style={{
+                      marginTop: '8px',
+                      padding: '12px',
+                      borderRadius: '12px',
+                      background: 'rgba(15, 23, 42, 0.85)',
+                      border: '1px solid rgba(56, 189, 248, 0.45)',
+                    }}
+                  >
+                    <div style={{ fontSize: '12px', color: '#e2e8f0', lineHeight: 1.45, marginBottom: '10px' }}>
+                      <strong style={{ color: '#7dd3fc', display: 'block', marginBottom: '3px' }}>
+                        ¿Cómo tomar la foto del croquis?
+                      </strong>
+                      Dibuja tu ventana o puerta en papel con sus medidas (cm, mm o m) y marca{' '}
+                      <strong style={{ color: '#fff' }}>X</strong> en cada hoja corrediza y{' '}
+                      <strong style={{ color: '#fff' }}>O</strong> en cada hoja fija (ej. O-X o O-X-O).
+                    </div>
+                    <div className="row">
+                      <button
+                        type="button"
+                        id="btn-sketch-take-photo"
+                        onClick={() => sketchCameraInputRef.current?.click()}
+                        style={{
+                          background: '#0ea5e9',
+                          color: '#ffffff',
+                          fontWeight: 800,
+                          fontSize: '12.5px',
+                        }}
+                      >
+                        📷 Tomar foto ahora
+                      </button>
+                      <button
+                        type="button"
+                        id="btn-sketch-upload-gallery"
+                        className="gh"
+                        onClick={() => sketchGalleryInputRef.current?.click()}
+                        style={{ fontSize: '12.5px', fontWeight: 800 }}
+                      >
+                        🖼️ Subir foto / galería
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {sketchScanning && (
+                  <div
+                    id="sketch-scanning-state"
+                    role="status"
+                    aria-live="polite"
+                    style={{
+                      marginTop: '8px',
+                      padding: '12px',
+                      borderRadius: '12px',
+                      background: 'rgba(2, 132, 199, 0.18)',
+                      border: '1px solid rgba(56, 189, 248, 0.55)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                    }}
+                  >
+                    {sketchPreviewUrl && (
+                      <img
+                        src={sketchPreviewUrl}
+                        alt="Croquis en análisis"
+                        style={{
+                          width: '54px',
+                          height: '54px',
+                          objectFit: 'cover',
+                          borderRadius: '8px',
+                          border: '1px solid rgba(148,163,184,0.45)',
+                          flexShrink: 0,
+                        }}
+                      />
+                    )}
+                    <div style={{ fontSize: '12.5px', color: '#e0f2fe', lineHeight: 1.4 }}>
+                      <strong style={{ display: 'block', color: '#ffffff' }}>
+                        Leyendo croquis y medidas a mano...
+                      </strong>
+                      Identificando tipo de pieza, ancho, alto y hojas X / O.
+                    </div>
+                  </div>
+                )}
+
+                {sketchError && (
+                  <div
+                    id="sketch-scan-error"
+                    role="alert"
+                    style={{
+                      marginTop: '8px',
+                      padding: '10px 12px',
+                      borderRadius: '11px',
+                      background: 'rgba(153, 27, 27, 0.28)',
+                      border: '1px solid rgba(248, 113, 113, 0.7)',
+                      color: '#fecaca',
+                      fontSize: '12.5px',
+                      fontWeight: 700,
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    ⚠️ {sketchError}
+                  </div>
+                )}
+
+                {sketchResult && !sketchScanning && (
+                  <div
+                    id="sketch-scan-result-card"
+                    style={{
+                      marginTop: '8px',
+                      padding: '12px',
+                      borderRadius: '12px',
+                      background: 'rgba(6, 78, 59, 0.28)',
+                      border: '1.5px solid rgba(52, 211, 153, 0.65)',
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        justifyContent: 'space-between',
+                        gap: '8px',
+                      }}
+                    >
+                      <div>
+                        <strong style={{ display: 'block', fontSize: '13px', color: '#6ee7b7' }}>
+                          ✓ Croquis leído y prellenado
+                        </strong>
+                        <div style={{ fontSize: '12.5px', color: '#f8fafc', fontWeight: 700, marginTop: '2px' }}>
+                          {sketchResult.resumenCorto}
+                        </div>
+                      </div>
+                      <span
+                        style={{
+                          padding: '2px 7px',
+                          borderRadius: '6px',
+                          fontSize: '10.5px',
+                          fontWeight: 800,
+                          background:
+                            sketchResult.confianza === 'alta'
+                              ? 'rgba(16, 185, 129, 0.35)'
+                              : sketchResult.confianza === 'media'
+                                ? 'rgba(245, 158, 11, 0.35)'
+                                : 'rgba(244, 63, 94, 0.35)',
+                          color: '#ffffff',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        Confianza {sketchResult.confianza}
+                      </span>
+                    </div>
+
+                    {sketchResult.disposicionHojas && (
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexWrap: 'wrap',
+                          gap: '6px',
+                          marginTop: '8px',
+                        }}
+                      >
+                        {sketchResult.disposicionHojas.split('').map((leaf, i) => (
+                          <span
+                            key={`${leaf}-${i}`}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              padding: '4px 8px',
+                              borderRadius: '8px',
+                              fontSize: '11.5px',
+                              fontWeight: 800,
+                              background:
+                                leaf === 'X'
+                                  ? 'rgba(14, 165, 233, 0.28)'
+                                  : 'rgba(148, 163, 184, 0.22)',
+                              border:
+                                leaf === 'X'
+                                  ? '1px solid rgba(56, 189, 248, 0.7)'
+                                  : '1px solid rgba(148, 163, 184, 0.5)',
+                              color: '#ffffff',
+                            }}
+                          >
+                            <span>{leaf}</span>
+                            <span style={{ fontWeight: 600, fontSize: '10.5px', opacity: 0.9 }}>
+                              {leaf === 'X' ? 'Corrediza' : 'Fija'}
+                            </span>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    <div style={{ marginTop: '8px', fontSize: '11.5px', color: '#d1fae5', lineHeight: 1.4 }}>
+                      Verifica o ajusta los datos prellenados abajo y pulsa{' '}
+                      <strong style={{ color: '#fff' }}>＋ Agregar más medidas</strong> para enviar a cortes o cotización.
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <label htmlFor="lv-tipo">Tipo</label>
               <select
                 id="lv-tipo"

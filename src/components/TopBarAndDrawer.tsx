@@ -6,6 +6,7 @@ import {
   ChevronUp,
   CloudUpload,
   Crown,
+  HelpCircle,
   LayoutGrid,
   Lock,
   Monitor,
@@ -375,6 +376,7 @@ interface SideDrawerProps {
   onOpenRecomendar: () => void;
   onOpenSugerencias: () => void;
   onOpenTutorial: () => void;
+  onOpenFaq?: () => void;
   onOpenLegal: (doc: 'terminos' | 'privacidad' | 'deslinde') => void;
   showInstallApp?: boolean;
   onInstallApp?: () => void;
@@ -476,6 +478,7 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
   onOpenRecomendar,
   onOpenSugerencias,
   onOpenTutorial,
+  onOpenFaq,
   onOpenLegal,
   showInstallApp = false,
   onInstallApp,
@@ -1079,12 +1082,19 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
                   <path fill="#FBBC05" d="M5.28 14.28A7.2 7.2 0 0 1 4.9 12c0-.79.14-1.56.38-2.28v-3.1H1.28A12 12 0 0 0 0 12c0 1.94.46 3.77 1.28 5.38l4-3.1z" />
                   <path fill="#EA4335" d="M12 4.77c1.76 0 3.34.61 4.58 1.8l3.44-3.44C17.94 1.19 15.24 0 12 0A12 12 0 0 0 1.28 6.62l4 3.1c.95-2.84 3.6-4.95 6.72-4.95z" />
                 </svg>
-                <span className="truncate">
-                  {googleAuthLoading
-                    ? 'Conectando con Google...'
-                    : googleUserEmail
-                      ? googleUserEmail
-                      : 'Conectar con Google'}
+                <span className="min-w-0 flex flex-col">
+                  <span className="truncate">
+                    {googleAuthLoading
+                      ? 'Conectando con Google...'
+                      : googleUserEmail
+                        ? googleUserEmail
+                        : 'Conectar con Google'}
+                  </span>
+                  {googleUserEmail && !googleAuthLoading && (
+                    <span className="text-[10.5px] font-extrabold text-emerald-500 dark:text-emerald-300 leading-tight">
+                      ● Conectado en Nube
+                    </span>
+                  )}
                 </span>
               </span>
               <span
@@ -1199,33 +1209,50 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
             </button>
           )}
 
-          {/* 6. Tutorial Interactivo (4 pasos — bloqueado hasta completar Mi Taller) */}
+          {/* 6. Tutorial Interactivo (Inicio Rápido + Optimizar Cortes y Vidrio 2D) */}
           <button
             type="button"
             id="btn-drawer-tutorial"
-            disabled={!tallerOnboardingComplete}
             onClick={onOpenTutorial}
-            title={
-              tallerOnboardingComplete
-                ? 'Abrir tutorial interactivo paso a paso'
-                : 'Completa primero los datos de Mi Taller para desbloquear el tutorial'
-            }
-            className={`flex items-center justify-between w-full min-h-[44px] px-3.5 py-2 rounded-xl border text-[13px] font-bold text-left ${
-              tallerOnboardingComplete
-                ? `${itemNeutralClass} cursor-pointer`
-                : 'border-slate-300/30 bg-slate-800/30 text-slate-400 opacity-65 cursor-not-allowed'
-            }`}
+            title="Abrir tutorial interactivo paso a paso y guía de optimización de cortes 2D"
+            className={`flex items-center justify-between w-full min-h-[44px] px-3.5 py-2 rounded-xl border text-[13px] font-bold text-left ${itemNeutralClass} cursor-pointer`}
           >
-            <span>📖 Tutorial Interactivo (4 pasos)</span>
+            <span>📖 Tutorial Interactivo y Cortes 2D</span>
             <span className="inline-flex items-center gap-1 shrink-0">
-              {!tallerOnboardingComplete && (
-                <span className="px-1.5 py-0.5 rounded bg-blue-600/25 text-[10px] font-extrabold">
-                  🔒 Mi Taller
-                </span>
-              )}
               <span>›</span>
             </span>
           </button>
+
+          {/* 6.5 Ayuda y Preguntas Frecuentes */}
+          {onOpenFaq && (
+            <button
+              type="button"
+              id="btn-drawer-faq"
+              onClick={onOpenFaq}
+              title="Abrir respuestas rápidas de taller y preguntas frecuentes"
+              className={`flex items-center justify-between gap-2 w-full min-h-[46px] px-3.5 py-2 rounded-xl border text-left cursor-pointer transition-colors ${
+                isDark
+                  ? 'border-sky-400/40 bg-sky-500/15 hover:bg-sky-500/25 text-white'
+                  : 'border-blue-200 bg-blue-50/75 hover:bg-blue-100/80 text-slate-900'
+              }`}
+            >
+              <span className="flex items-center gap-2 min-w-0">
+                <HelpCircle
+                  className={`w-4 h-4 shrink-0 ${isDark ? 'text-sky-300' : 'text-blue-600'}`}
+                  aria-hidden="true"
+                />
+                <span className="min-w-0">
+                  <span className="block text-[13px] font-extrabold leading-tight">
+                    Ayuda y Preguntas Frecuentes
+                  </span>
+                  <span className={`block text-[10.5px] leading-snug ${subTextClass}`}>
+                    Uso sin internet, marcas, precios y planes
+                  </span>
+                </span>
+              </span>
+              <span className="text-[15px] leading-none shrink-0">›</span>
+            </button>
+          )}
 
           {showInstallApp && onInstallApp && (
             <button

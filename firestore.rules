@@ -167,23 +167,26 @@ service cloud.firestore {
 
     function isValidDeviceDoc(data, deviceId) {
       return data.keys().hasOnly([
-          'deviceId', 'ownerUid', 'cliente', 'tallerNombre', 'tallerResponsable', 'tallerWhatsapp',
-          'deviceLabel', 'status', 'proActive', 'planCode', 'planLabel', 'expiresAt',
+          'deviceId', 'ownerUid', 'cliente', 'tallerNombre', 'nombreTaller', 'tallerResponsable', 'tallerWhatsapp',
+          'ubicacion', 'deviceLabel', 'status', 'plan', 'proActive', 'planCode', 'planLabel', 'expiresAt',
           'lastKey', 'trialActive', 'trialExpiresAt', 'adminAssigned', 'revoked', 'revokedAt',
           'blocked', 'blockedAt', 'promo_colega_usada', 'fecha_activacion_colega',
           'termsAcceptedAt', 'preferredTheme', 'preferredSkin', 'preferredSkinVariant',
-          'firstSeenAt', 'lastSeenAt', 'totalSessions', 'totalMinutes',
-          'activeDays', 'updatedAt', 'linkedEmail', 'activeSessionToken'
+          'firstSeenAt', 'lastSeenAt', 'ultimaConexion', 'totalSessions', 'totalMinutes',
+          'activeDays', 'updatedAt', 'linkedEmail', 'activeSessionToken', 'homeMenuLayout'
         ])
         && isValidReqString(data, 'deviceId', 3, 64)
         && data.deviceId == deviceId
         && isValidReqString(data, 'ownerUid', 3, 128)
         && isValidOptString(data, 'cliente', 120)
         && isValidOptString(data, 'tallerNombre', 120)
+        && isValidOptString(data, 'nombreTaller', 120)
         && isValidOptString(data, 'tallerResponsable', 120)
         && isValidOptString(data, 'tallerWhatsapp', 40)
+        && isValidOptString(data, 'ubicacion', 200)
         && isValidOptString(data, 'deviceLabel', 80)
         && (!('status' in data) || data.status in ['free', 'pro', 'blocked'])
+        && (!('plan' in data) || data.plan in ['gratis', 'pro'])
         && data.proActive is bool
         && isValidReqString(data, 'planCode', 1, 24)
         && isValidReqString(data, 'planLabel', 1, 80)
@@ -204,19 +207,39 @@ service cloud.firestore {
         && isValidOptString(data, 'preferredSkinVariant', 24)
         && isValidTimestampMs(data.firstSeenAt)
         && isValidTimestampMs(data.lastSeenAt)
+        && isValidOptionalTimestampMs(data, 'ultimaConexion')
         && data.totalSessions is int && data.totalSessions >= 0 && data.totalSessions <= 1000000
         && data.totalMinutes is int && data.totalMinutes >= 0 && data.totalMinutes <= 100000000
         && data.activeDays is list && data.activeDays.size() <= 60
         && (data.activeDays.size() == 0 || data.activeDays[0] is string)
         && isValidTimestampMs(data.updatedAt)
         && isValidOptString(data, 'linkedEmail', 160)
-        && isValidNullableString(data, 'activeSessionToken', 128);
+        && isValidNullableString(data, 'activeSessionToken', 128)
+        && (!('homeMenuLayout' in data) || data.homeMenuLayout == null || data.homeMenuLayout is map);
     }
 
     function isSafeOwnerDeviceCreate(data) {
       return data.ownerUid == request.auth.uid
         && data.proActive == false
         && data.planCode == 'FREE'
+        && (!('plan' in data) || data.plan == 'gratis')
+        && data.trialActive == false
+        && (!('status' in data) || data.status == 'free')
+        && (!('adminAssigned' in data) || data.adminAssigned == false)
+        && (!('revoked' in data) || data.revoked == false)
+        && (!('blocked' in data) || data.blocked == false)
+        && (!('expiresAt' in data) || data.expiresAt == null)
+        && (!('trialExpiresAt' in data) || data.trialExpiresAt == null)
+        && (!('lastKey' in data) || data.lastKey == '')
+        && (!('promo_colega_usada' in data) || data.promo_colega_usada == false);
+    }
+
+    function isSafeFreeDeviceHeartbeat(data, deviceId) {
+      return deviceId.matches('^ALM-[A-Z0-9_-]{3,40}$')
+        && data.ownerUid == 'free_' + deviceId
+        && data.proActive == false
+        && data.planCode == 'FREE'
+        && (!('plan' in data) || data.plan == 'gratis')
         && data.trialActive == false
         && (!('status' in data) || data.status == 'free')
         && (!('adminAssigned' in data) || data.adminAssigned == false)
@@ -396,22 +419,40 @@ service cloud.firestore {
         && (isAdmin() || (isSignedIn() && resource != null && resource.data.ownerUid == request.auth.uid));
       allow create: if isValidId(deviceId)
         && isValidDeviceDoc(incoming(), deviceId)
-        && (isAdmin() || (isSignedIn() && isSafeOwnerDeviceCreate(incoming())));
+        && (
+          isAdmin()
+          || (isSignedIn() && isSafeOwnerDeviceCreate(incoming()))
+          || isSafeFreeDeviceHeartbeat(incoming(), deviceId)
+        );
       allow update: if isValidId(deviceId)
         && isValidDeviceDoc(incoming(), deviceId)
         && incoming().deviceId == existing().deviceId
-        && incoming().ownerUid == existing().ownerUid
         && incoming().firstSeenAt == existing().firstSeenAt
         && (
           isAdmin()
           || (
             isSignedIn()
-            && existing().ownerUid == request.auth.uid
+            && (existing().ownerUid == request.auth.uid || existing().ownerUid == 'free_' + deviceId)
+            && incoming().ownerUid == request.auth.uid
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-              'cliente', 'tallerNombre', 'tallerResponsable', 'tallerWhatsapp',
-              'deviceLabel', 'termsAcceptedAt', 'preferredTheme', 'preferredSkin',
-              'preferredSkinVariant', 'lastSeenAt', 'totalSessions', 'totalMinutes',
-              'activeDays', 'updatedAt', 'linkedEmail', 'activeSessionToken'
+              'ownerUid', 'cliente', 'tallerNombre', 'nombreTaller', 'tallerResponsable', 'tallerWhatsapp',
+              'ubicacion', 'deviceLabel', 'termsAcceptedAt', 'preferredTheme', 'preferredSkin',
+              'preferredSkinVariant', 'lastSeenAt', 'ultimaConexion', 'totalSessions', 'totalMinutes',
+              'activeDays', 'updatedAt', 'linkedEmail', 'activeSessionToken', 'homeMenuLayout', 'plan'
+            ])
+            && incoming().proActive == existing().proActive
+            && incoming().planCode == existing().planCode
+          )
+          || (
+            isSafeFreeDeviceHeartbeat(incoming(), deviceId)
+            && existing().ownerUid == 'free_' + deviceId
+            && existing().proActive == false
+            && existing().planCode == 'FREE'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'cliente', 'tallerNombre', 'nombreTaller', 'tallerResponsable', 'tallerWhatsapp',
+              'ubicacion', 'deviceLabel', 'termsAcceptedAt', 'preferredTheme', 'preferredSkin',
+              'preferredSkinVariant', 'lastSeenAt', 'ultimaConexion', 'totalSessions', 'totalMinutes',
+              'activeDays', 'updatedAt', 'plan'
             ])
           )
         );

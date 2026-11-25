@@ -44,8 +44,8 @@ import {
 } from 'firebase/auth';
 import {
   auth,
+  connectGoogleAccountWithFallback,
   getLastGoogleRedirectOutcome,
-  googleProvider,
   isFirebaseAdminUser,
   signOutFirebase,
   subscribeFirebaseAuth,
@@ -75,6 +75,8 @@ import {
   AdminMessageType,
   APP_VERSION,
   buildAdminWelcomeMessage,
+  buildMonthlyQuotesSeries,
+  buildTopMaterialsSeries,
   buildWhatsAppDirectUrl,
   CloudDeviceRecord,
   DEFAULT_REFERENCE_PRICES,
@@ -108,6 +110,7 @@ import {
   formatDateTimeExact,
   FormulaPersonalizada,
   LicenciaState,
+  loadCotizacionesGuardadas,
   loadTutorialVideosCache,
   parseBackupPayload,
   ReferralHistoryRecord,
@@ -306,12 +309,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         const parsed = Number(saved);
         if (Number.isFinite(parsed) && parsed > 0) return parsed;
       }
-      // Inicio limpio en 0 para contadores estadísticos (se actualizan dinámicamente con nueva actividad real)
-      const baseline = Date.now();
-      window.localStorage.setItem(ADMIN_COUNTERS_RESET_KEY, String(baseline));
-      return baseline;
+      // Por defecto 0 para mostrar en tiempo real todos los dispositivos en Firestore (Gratuitos y PRO)
+      return 0;
     } catch {
-      return Date.now();
+      return 0;
     }
   });
   const [confirmResetCounters, setConfirmResetCounters] = useState(false);
@@ -415,12 +416,16 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         return;
       }
 
-      try {
-        const cred = await signInWithPopup(auth, googleProvider);
-        setFirebaseUser(cred.user);
+      const result = await connectGoogleAccountWithFallback();
+      if (result.status === 'redirecting') {
+        onShowToast('Redirigiendo a Google para iniciar sesión...');
+        return;
+      }
+      if (result.status === 'signed_in') {
+        setFirebaseUser(result.user);
         setFirebaseAuthDiagnostic(null);
-        if (isFirebaseAdminUser(cred.user)) {
-          lastSyncedAdminUidRef.current = cred.user.uid;
+        if (isFirebaseAdminUser(result.user)) {
+          lastSyncedAdminUidRef.current = result.user.uid;
           onShowToast('Conectado en Nube como Administrador', true);
           void onRefreshCloud();
         } else {
@@ -428,30 +433,19 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
             'Sesión iniciada, pero solo el correo de Administrador tiene acceso completo a Firestore.'
           );
         }
-      } catch (popupErr) {
-        if (shouldAdminFallbackToRedirect(popupErr)) {
-          onShowToast('Redirigiendo a Google para iniciar sesión...');
-          try {
-            await signInWithRedirect(auth, googleProvider);
-            return;
-          } catch (redirectErr) {
-            const diag = formatAdminAuthDiagnostic(redirectErr);
-            setFirebaseAuthDiagnostic(diag);
-            onShowToast(diag.fullMessage);
-            return;
-          }
-        }
-
-        const code = extractFirebaseAuthCode(popupErr);
-        if (code === 'auth/popup-closed-by-user') {
-          onShowToast('Ventana de Google cerrada antes de completar el inicio de sesión.');
-          return;
-        }
-
-        const diag = formatAdminAuthDiagnostic(popupErr);
-        setFirebaseAuthDiagnostic(diag);
-        onShowToast(diag.fullMessage);
+        return;
       }
+      if (result.code === 'auth/popup-closed-by-user' || result.code === 'auth/cancelled-popup-request') {
+        onShowToast('Ventana de Google cerrada antes de completar el inicio de sesión.');
+        return;
+      }
+
+      const diag = formatAdminAuthDiagnostic({
+        code: result.code,
+        message: result.message,
+      });
+      setFirebaseAuthDiagnostic(diag);
+      onShowToast(`${diag.fullMessage} (${result.code})`);
     } finally {
       setFirebaseAuthBusy(false);
     }
@@ -732,9 +726,11 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           'Este equipo (Admin)';
 
         const rawCliente =
-          dev?.cliente && dev.cliente !== 'Cliente sin nombre'
-            ? dev.cliente
-            : latestKey?.cliente || (isSelf ? selfDisplayName : 'Usuario sin nombre');
+          dev?.nombreTaller && dev.nombreTaller.trim()
+            ? dev.nombreTaller.trim()
+            : dev?.cliente && dev.cliente !== 'Cliente sin nombre'
+              ? dev.cliente
+              : latestKey?.cliente || (isSelf ? selfDisplayName : 'Usuario sin nombre');
 
         const clienteDisplay = formatClientHeaderDisplay(rawCliente) || 'Usuario sin nombre';
         const linkedEmail = dev?.linkedEmail || latestKey?.linkedEmail || '';
@@ -971,6 +967,49 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       .sort((a, b) => a.sortKey.localeCompare(b.sortKey))
       .slice(-10);
   }, [adminKeys, auditUsers, chartGranularity, countersResetAt]);
+
+  // Conteo directo en tiempo real desde Firestore `devices` (desglose Modo Gratuito vs PRO)
+  const cloudRealtimeCounts = useMemo(() => {
+    const now = nowTick;
+    let total = 0;
+    let gratis = 0;
+    let pro = 0;
+    for (const dev of cloudDevices) {
+      total += 1;
+      const isProDev = Boolean(
+        !dev.blocked &&
+          !dev.revoked &&
+          dev.planCode !== 'BLOCKED' &&
+          dev.planCode !== 'REVOKED' &&
+          !isUnassignedAutoTrialDevice(dev) &&
+          (dev.plan === 'pro' || (dev.proActive && (dev.expiresAt === null || dev.expiresAt > now)))
+      );
+      if (isProDev) pro += 1;
+      else gratis += 1;
+    }
+    return { total, gratis, pro };
+  }, [cloudDevices, nowTick]);
+
+  // Gráficas Recharts: Cotizaciones generadas por mes y Materiales más utilizados
+  const savedQuotesForCharts = useMemo(
+    () => loadCotizacionesGuardadas(),
+    [activeTab, (backupData.historial || []).length, nowTick]
+  );
+
+  const monthlyQuotesChartData = useMemo(
+    () => buildMonthlyQuotesSeries(backupData.historial || [], savedQuotesForCharts),
+    [savedQuotesForCharts, backupData.historial]
+  );
+
+  const topMaterialsChartData = useMemo(
+    () =>
+      buildTopMaterialsSeries(
+        backupData.historial || [],
+        savedQuotesForCharts,
+        backupData.inventario || {}
+      ),
+    [savedQuotesForCharts, backupData.historial, backupData.inventario]
+  );
 
   // Filtered audit users
   const filteredUsers = useMemo(() => {
@@ -1912,19 +1951,47 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         <div className="flex flex-col gap-6">
           {/* 1. Tarjetas KPI superiores */}
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3.5">
-            <div className="rounded-2xl border border-slate-700/80 bg-slate-900/95 p-4 shadow-md">
+            <div
+              id="kpi-card-usuarios-nube"
+              className="rounded-2xl border border-sky-500/45 bg-slate-900/95 p-4 shadow-md"
+            >
               <div className="flex items-center justify-between gap-2">
-                <span className="text-[11.5px] font-bold uppercase tracking-wider text-slate-400">
-                  Total Registrados
+                <span className="text-[11.5px] font-bold uppercase tracking-wider text-sky-300">
+                  Usuarios en la Nube
                 </span>
                 <Users className="w-4 h-4 text-sky-400 shrink-0" aria-hidden="true" />
               </div>
-              <div className="mt-2 mono text-[28px] font-extrabold text-white leading-none">
-                {kpis.totalUsers}
+              <div
+                id="kpi-val-usuarios-nube"
+                className="mt-2 mono text-[28px] font-extrabold text-white leading-none"
+              >
+                {cloudRealtimeCounts.total > 0 ? cloudRealtimeCounts.total : kpis.totalUsers}
               </div>
-              <p className="m-0 mt-1.5 text-[11.5px] text-slate-400">
-                Equipos únicos en directorio y nube
-              </p>
+              <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] font-bold">
+                <span className="px-2 py-0.5 rounded-md bg-slate-800 border border-slate-600 text-slate-200 mono">
+                  Gratis: {cloudRealtimeCounts.total > 0 ? cloudRealtimeCounts.gratis : kpis.gratis}
+                </span>
+                <span className="px-2 py-0.5 rounded-md bg-amber-500/20 border border-amber-400/40 text-amber-200 mono">
+                  PRO: {cloudRealtimeCounts.total > 0 ? cloudRealtimeCounts.pro : kpis.totalProPaid + kpis.colega3d}
+                </span>
+              </div>
+              {countersResetAt > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    try {
+                      window.localStorage.setItem(ADMIN_COUNTERS_RESET_KEY, '0');
+                    } catch {
+                      // ignore
+                    }
+                    setCountersResetAt(0);
+                    onShowToast('Mostrando todos los usuarios históricos en la nube', true);
+                  }}
+                  className="mt-1.5 text-[10.5px] font-bold text-sky-300 hover:underline bg-transparent border-0 p-0 cursor-pointer"
+                >
+                  Mostrar historial completo
+                </button>
+              )}
             </div>
 
             <div className="rounded-2xl border border-slate-700/80 bg-slate-900/95 p-4 shadow-md">
@@ -2792,6 +2859,184 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   );
                 })}
               </div>
+            </div>
+          </div>
+
+          {/* Fila 4: Cotizaciones generadas por mes y Materiales más utilizados (Recharts) */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            {/* Gráfica 6: Cotizaciones generadas por mes */}
+            <div
+              id="admin-chart-cotizaciones-mes"
+              className="rounded-2xl border border-sky-500/35 bg-slate-900/95 p-5 sm:p-6 shadow-md"
+            >
+              <div className="flex items-center justify-between gap-2 mb-4">
+                <div>
+                  <h3 className="m-0 text-[16px] font-extrabold text-white">
+                    Cotizaciones generadas por mes
+                  </h3>
+                  <p className="m-0 mt-0.5 text-[12px] text-slate-400">
+                    Volumen mensual de cotizaciones emitidas en los últimos 6 meses
+                  </p>
+                </div>
+                <BarChart3 className="w-5 h-5 text-sky-400 shrink-0" aria-hidden="true" />
+              </div>
+
+              <div className="w-full h-[260px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={monthlyQuotesChartData}
+                    margin={{ top: 10, right: 16, left: -10, bottom: 6 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.16)" />
+                    <XAxis
+                      dataKey="mes"
+                      tick={{ fill: '#cbd5e1', fontSize: 11.5, fontWeight: 700 }}
+                      axisLine={{ stroke: 'rgba(148,163,184,0.25)' }}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      allowDecimals={false}
+                      tick={{ fill: '#94a3b8', fontSize: 11.5 }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <Tooltip
+                      cursor={{ fill: 'rgba(56,189,248,0.10)' }}
+                      contentStyle={{
+                        backgroundColor: '#0f172a',
+                        border: '1px solid rgba(56,189,248,0.45)',
+                        borderRadius: '12px',
+                        color: '#f8fafc',
+                        fontSize: '12px',
+                      }}
+                      labelStyle={{ color: '#f8fafc', fontWeight: 700, marginBottom: '2px' }}
+                      itemStyle={{ color: '#7dd3fc', fontWeight: 600 }}
+                      formatter={(value, name) =>
+                        name === 'montoTotal'
+                          ? [`$${Number(value || 0).toLocaleString('es-MX')} MXN`, 'Monto acumulado']
+                          : [Number(value || 0), 'Cotizaciones']
+                      }
+                    />
+                    <Bar
+                      dataKey="cotizaciones"
+                      name="Cotizaciones"
+                      fill="#38bdf8"
+                      radius={[8, 8, 0, 0]}
+                      maxBarSize={40}
+                      isAnimationActive={false}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11.5px] text-slate-300">
+                <span>
+                  Total últimos 6 meses:{' '}
+                  <strong className="mono text-sky-300">
+                    {monthlyQuotesChartData.reduce((a, b) => a + b.cotizaciones, 0)} cotizaciones
+                  </strong>
+                </span>
+                <span className="mono text-emerald-300 font-bold">
+                  $
+                  {monthlyQuotesChartData
+                    .reduce((a, b) => a + b.montoTotal, 0)
+                    .toLocaleString('es-MX')}{' '}
+                  MXN
+                </span>
+              </div>
+            </div>
+
+            {/* Gráfica 7: Materiales más utilizados */}
+            <div
+              id="admin-chart-materiales-top"
+              className="rounded-2xl border border-emerald-500/35 bg-slate-900/95 p-5 sm:p-6 shadow-md"
+            >
+              <div className="flex items-center justify-between gap-2 mb-4">
+                <div>
+                  <h3 className="m-0 text-[16px] font-extrabold text-white">
+                    Materiales más utilizados
+                  </h3>
+                  <p className="m-0 mt-0.5 text-[12px] text-slate-400">
+                    Perfiles y líneas con mayor demanda en cotizaciones, despieces e inventario
+                  </p>
+                </div>
+                <TrendingUp className="w-5 h-5 text-emerald-400 shrink-0" aria-hidden="true" />
+              </div>
+
+              {topMaterialsChartData.length === 0 ? (
+                <div className="h-[260px] flex flex-col items-center justify-center text-center px-4 rounded-xl border border-dashed border-slate-700 bg-slate-950/60">
+                  <p className="m-0 text-[13px] font-bold text-slate-300">
+                    Sin materiales registrados todavía
+                  </p>
+                  <p className="m-0 mt-1 text-[11.5px] text-slate-400">
+                    Al generar cotizaciones o registrar existencias en Mi Inventario, verás aquí el ranking en tiempo real.
+                  </p>
+                </div>
+              ) : (
+                <div className="w-full h-[260px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={topMaterialsChartData}
+                      layout="vertical"
+                      margin={{ top: 6, right: 20, left: 10, bottom: 6 }}
+                    >
+                      <CartesianGrid
+                        strokeDasharray="3 3"
+                        stroke="rgba(148,163,184,0.16)"
+                        horizontal={false}
+                      />
+                      <XAxis
+                        type="number"
+                        allowDecimals={false}
+                        tick={{ fill: '#94a3b8', fontSize: 11 }}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <YAxis
+                        type="category"
+                        dataKey="nombre"
+                        width={136}
+                        tick={{ fill: '#e2e8f0', fontSize: 11, fontWeight: 700 }}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <Tooltip
+                        cursor={{ fill: 'rgba(16,185,129,0.12)' }}
+                        contentStyle={{
+                          backgroundColor: '#0f172a',
+                          border: '1px solid rgba(16,185,129,0.45)',
+                          borderRadius: '12px',
+                          color: '#f8fafc',
+                          fontSize: '12px',
+                        }}
+                        labelStyle={{ color: '#f8fafc', fontWeight: 700, marginBottom: '2px' }}
+                        itemStyle={{ color: '#6ee7b7', fontWeight: 600 }}
+                        formatter={(value) => [Number(value || 0), 'Usos / partidas']}
+                      />
+                      <Bar
+                        dataKey="usos"
+                        name="Usos"
+                        radius={[0, 8, 8, 0]}
+                        maxBarSize={26}
+                        isAnimationActive={false}
+                      >
+                        {topMaterialsChartData.map((entry, idx) => {
+                          const palette = [
+                            '#10b981',
+                            '#38bdf8',
+                            '#6366f1',
+                            '#f59e0b',
+                            '#14b8a6',
+                            '#ec4899',
+                            '#8b5cf6',
+                            '#06b6d4',
+                          ];
+                          return <Cell key={entry.nombre} fill={palette[idx % palette.length]} />;
+                        })}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
             </div>
           </div>
         </div>

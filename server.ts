@@ -3,6 +3,7 @@ import express, { type Request, type Response } from 'express';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
 import {
   computeUsageStats30d,
   isEligibleForCloudBackup,
@@ -13,6 +14,7 @@ import {
   verifyRecoveryPin,
   type CloudDeviceRecord,
 } from './src/utils/alumineroLogic.ts';
+import { normalizeScannedSketchResult } from './src/utils/levantamientoLogic.ts';
 
 interface AdminKeyCloudRecord {
   id: string;
@@ -308,7 +310,7 @@ function broadcastSync(): void {
 
 async function startServer(): Promise<void> {
   const app = express();
-  app.use(express.json({ limit: '5mb' }));
+  app.use(express.json({ limit: '15mb' }));
 
   app.options('/api/{*splat}', (_req: Request, res: Response) => {
     setNoCacheHeaders(res);
@@ -318,6 +320,155 @@ async function startServer(): Promise<void> {
   app.get('/api/health', (_req: Request, res: Response) => {
     setNoCacheHeaders(res);
     res.json({ ok: true, serverTime: Date.now(), connectedListeners: sseClients.size });
+  });
+
+  app.post('/api/scan-sketch', async (req: Request, res: Response) => {
+    setNoCacheHeaders(res);
+    try {
+      const body = (req.body || {}) as {
+        imageBase64?: unknown;
+        mimeType?: unknown;
+      };
+      const rawData = typeof body.imageBase64 === 'string' ? body.imageBase64.trim() : '';
+      if (!rawData) {
+        res.status(400).json({ ok: false, error: 'No se recibió ninguna imagen del croquis.' });
+        return;
+      }
+
+      // Extraer mimeType si viene como data URL o usar el campo enviado
+      let mimeType = typeof body.mimeType === 'string' ? body.mimeType.trim().toLowerCase() : 'image/jpeg';
+      let base64Clean = rawData;
+      const dataUrlMatch = /^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i.exec(rawData);
+      if (dataUrlMatch) {
+        mimeType = dataUrlMatch[1].toLowerCase();
+        base64Clean = dataUrlMatch[2];
+      }
+
+      const allowedMimes = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/heic', 'image/heif']);
+      if (!allowedMimes.has(mimeType)) {
+        res.status(400).json({ ok: false, error: 'Formato de imagen no compatible. Usa JPG, PNG o WEBP.' });
+        return;
+      }
+      if (mimeType === 'image/jpg') mimeType = 'image/jpeg';
+
+      // Validar tamaño aproximado (máximo ~10 MB en base64)
+      if (base64Clean.length > 14_000_000) {
+        res.status(413).json({ ok: false, error: 'La foto es demasiado pesada. Intenta tomarla más cerca o reducirla.' });
+        return;
+      }
+
+      const apiKey = process.env.GEMINI_API_KEY?.trim();
+      if (!apiKey) {
+        res.status(503).json({
+          ok: false,
+          error: 'El servicio de escáner IA no tiene configurada la clave de servidor en este entorno.',
+        });
+        return;
+      }
+
+      const ai = new GoogleGenAI({
+        apiKey,
+        httpOptions: {
+          headers: { 'User-Agent': 'aistudio-build' },
+        },
+      });
+
+      const systemInstruction =
+        'Eres un experto maestro aluminiero y cancelero en México. Analizas fotografías de croquis dibujados a mano de ventanas, puertas y canceles de aluminio/vidrio. ' +
+        'Reglas clave de taller: una "X" o flecha horizontal (↔, →, ←) dentro de un módulo indica hoja CORREDIZA ("X"); una "O", círculo o letra "F" indica hoja FIJA ("O"). ' +
+        'Lee las cotas de ANCHO total (horizontal) y ALTO total (vertical) escritas a mano. ' +
+        'Convierte siempre anchoCm y altoCm a CENTÍMETROS (ejemplo: 1.50 m -> 150, 1500 mm -> 150, 150 cm -> 150). ' +
+        'Si alguna medida no es legible en la imagen, devuelve 0 en ese campo y confianza "baja".';
+
+      const promptText =
+        'Analiza este croquis a mano de aluminio/vidrio y extrae exactamente: ' +
+        '1) tipo de pieza ("Ventana Corrediza", "Ventana Fija", "Ventana Abatible / Proyección", "Mosquitero abatible", "Puerta", o "Cancel / Otro"), ' +
+        '2) cantidad total de hojas, ' +
+        '3) disposicionHojas de izquierda a derecha usando únicamente X (corrediza) y O (fija), por ejemplo "OX", "XO", "OXO", "OXXO", "XX", "O", ' +
+        '4) anchoCm y altoCm convertidos a centímetros, ' +
+        '5) unidadDetectada original ("cm", "mm" o "m"), ' +
+        '6) area o habitación si está escrita en el dibujo (ej. "Sala", "Baño", o cadena vacía), ' +
+        '7) notas breves de taller sobre divisiones o detalles visibles, y ' +
+        '8) confianza ("alta", "media" o "baja").';
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-4-hydrogen',
+        contents: {
+          parts: [
+            {
+              inlineData: {
+                mimeType,
+                data: base64Clean,
+              },
+            },
+            {
+              text: promptText,
+            },
+          ],
+        },
+        config: {
+          systemInstruction,
+          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              tipo: { type: Type.STRING },
+              hojas: { type: Type.INTEGER },
+              disposicionHojas: { type: Type.STRING },
+              anchoCm: { type: Type.NUMBER },
+              altoCm: { type: Type.NUMBER },
+              unidadDetectada: { type: Type.STRING },
+              area: { type: Type.STRING },
+              notas: { type: Type.STRING },
+              confianza: { type: Type.STRING },
+            },
+            required: [
+              'tipo',
+              'hojas',
+              'disposicionHojas',
+              'anchoCm',
+              'altoCm',
+              'unidadDetectada',
+              'area',
+              'notas',
+              'confianza',
+            ],
+          },
+        },
+      });
+
+      const rawText = (response.text || '').trim();
+      const textOutput = rawText
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/\s*```$/i, '')
+        .trim();
+      if (!textOutput) {
+        res.status(502).json({
+          ok: false,
+          error: 'No se pudo interpretar el croquis. Intenta con una foto más clara y bien iluminada.',
+        });
+        return;
+      }
+
+      const parsed = JSON.parse(textOutput) as Record<string, unknown>;
+      const normalized = normalizeScannedSketchResult(parsed);
+
+      res.json({
+        ok: true,
+        result: normalized,
+      });
+    } catch (err) {
+      const errObj = err as { status?: number; code?: string; message?: string } | null;
+      const errMsg = err instanceof Error ? err.message : String(err || 'Error desconocido');
+      const errCode = errObj?.status || errObj?.code || 'UPSTREAM_ERROR';
+      console.error('[scan-sketch] Error al analizar croquis:', errCode, errMsg);
+      res.status(502).json({
+        ok: false,
+        errorCode: String(errCode),
+        error: 'No se pudo analizar el croquis en este momento. Verifica tu conexión o captura las medidas manualmente.',
+      });
+    }
   });
 
   function ensureVapidPublicKey(): string {

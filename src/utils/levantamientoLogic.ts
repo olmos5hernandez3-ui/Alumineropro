@@ -581,3 +581,217 @@ export function buildBridgePayloadFromPieza(
     },
   };
 }
+
+// ============================================================================
+// Escáner de Croquis a Mano con IA (lógica pura de normalización y conversión)
+// ============================================================================
+
+export const SKETCH_SCANNER_OFFLINE_MESSAGE =
+  'Sin conexión a internet: el escáner de croquis con foto requiere internet para analizar tu dibujo, pero puedes seguir capturando tus medidas manualmente sin conexión.';
+
+export interface RawSketchScanPayload {
+  tipo?: unknown;
+  hojas?: unknown;
+  disposicionHojas?: unknown;
+  anchoCm?: unknown;
+  altoCm?: unknown;
+  ancho?: unknown;
+  alto?: unknown;
+  unidadDetectada?: unknown;
+  area?: unknown;
+  notas?: unknown;
+  confianza?: unknown;
+}
+
+export interface NormalizedSketchScanResult {
+  tipo: LevantamientoTipo;
+  hojas: number;
+  disposicionHojas: string;
+  hojasCorredizas: number;
+  hojasFijas: number;
+  anchoCm: number | null;
+  altoCm: number | null;
+  unidadDetectada: 'cm' | 'mm' | 'm';
+  area: string;
+  notasFormateadas: string;
+  resumenCorto: string;
+  confianza: 'alta' | 'media' | 'baja';
+}
+
+export function normalizeLeafDisposition(raw: unknown): string {
+  const cleaned = String(raw || '')
+    .toUpperCase()
+    .replace(/0/g, 'O')
+    .replace(/[^XO]/g, '');
+  return cleaned.slice(0, 8);
+}
+
+export function normalizeSketchUnit(raw: unknown): 'cm' | 'mm' | 'm' {
+  const s = String(raw || '')
+    .trim()
+    .toLowerCase();
+  if (s === 'mm' || s.startsWith('mil')) return 'mm';
+  if (s === 'm' || s === 'mts' || s === 'mt' || s.startsWith('metr')) return 'm';
+  return 'cm';
+}
+
+export function convertSketchDimensionToCm(
+  value: unknown,
+  unit: 'cm' | 'mm' | 'm' = 'cm',
+  alreadyInCm = false
+): number | null {
+  const str = String(value ?? '')
+    .trim()
+    .replace(',', '.')
+    .replace(/[^\d.]/g, '');
+  const num = parseFloat(str);
+  if (!Number.isFinite(num) || num <= 0) return null;
+
+  let cm = num;
+  if (!alreadyInCm) {
+    if (unit === 'mm') {
+      cm = num / 10;
+    } else if (unit === 'm') {
+      cm = num * 100;
+    } else if (num > 600 && num <= 6000) {
+      // Probable lectura en milímetros sin etiqueta explícita
+      cm = num / 10;
+    } else if (num > 0 && num <= 6) {
+      // Probable lectura en metros sin etiqueta explícita (ej. 1.50 x 1.20)
+      cm = num * 100;
+    }
+  } else {
+    // Incluso si el modelo dijo "anchoCm", corregir errores obvios de escala (mm o m)
+    if (num > 600 && num <= 6000) {
+      cm = num / 10;
+    } else if (num > 0 && num <= 6) {
+      cm = num * 100;
+    }
+  }
+
+  const rounded = Math.round(cm * 10) / 10;
+  if (rounded < 5 || rounded > 1000) return null;
+  return rounded;
+}
+
+export function mapSketchTypeToLevantamientoTipo(
+  rawTipo: unknown,
+  disposicionHojas: string
+): LevantamientoTipo {
+  const t = String(rawTipo || '')
+    .trim()
+    .toLowerCase();
+
+  // Coincidencia exacta primero
+  for (const exact of LEV_TIPOS) {
+    if (exact.toLowerCase() === t) return exact;
+  }
+
+  if (t.includes('mosquit')) return 'Mosquitero abatible';
+  if (t.includes('cancel') || t.includes('baño') || t.includes('bano') || t.includes('regadera')) {
+    return 'Cancel / Otro';
+  }
+  if (t.includes('puerta') || t.includes('plegadiz') || t.includes('batiente')) {
+    return 'Puerta';
+  }
+  if (t.includes('proyec') || t.includes('abatible') || t.includes('oscilo')) {
+    return 'Ventana Abatible / Proyección';
+  }
+  if (t.includes('fija') || t.includes('fijo')) {
+    if (!disposicionHojas.includes('X')) return 'Ventana Fija';
+  }
+  if (t.includes('corrediz') || t.includes('desliz')) {
+    return 'Ventana Corrediza';
+  }
+
+  // Fallback guiado por el patrón X/O del croquis
+  if (disposicionHojas.includes('X')) return 'Ventana Corrediza';
+  if (disposicionHojas.length > 0 && !disposicionHojas.includes('X')) return 'Ventana Fija';
+  return 'Ventana Corrediza';
+}
+
+export function normalizeScannedSketchResult(
+  raw: RawSketchScanPayload
+): NormalizedSketchScanResult {
+  const disposicionHojas = normalizeLeafDisposition(raw.disposicionHojas);
+  const hojasCorredizas = (disposicionHojas.match(/X/g) || []).length;
+  const hojasFijas = (disposicionHojas.match(/O/g) || []).length;
+
+  const rawHojasNum = Math.round(Number(raw.hojas) || 0);
+  const hojas = Math.max(
+    1,
+    Math.min(8, disposicionHojas.length > 0 ? disposicionHojas.length : rawHojasNum || 2)
+  );
+
+  const unidadDetectada = normalizeSketchUnit(raw.unidadDetectada);
+  const hasExplicitCm = raw.anchoCm !== undefined || raw.altoCm !== undefined;
+  const anchoCm = convertSketchDimensionToCm(
+    hasExplicitCm ? raw.anchoCm : raw.ancho,
+    unidadDetectada,
+    hasExplicitCm
+  );
+  const altoCm = convertSketchDimensionToCm(
+    hasExplicitCm ? raw.altoCm : raw.alto,
+    unidadDetectada,
+    hasExplicitCm
+  );
+
+  const tipo = mapSketchTypeToLevantamientoTipo(raw.tipo, disposicionHojas);
+  const area = String(raw.area || '').trim().slice(0, 60);
+  const rawNotas = String(raw.notas || '').trim().slice(0, 240);
+
+  const rawConf = String(raw.confianza || '')
+    .trim()
+    .toLowerCase();
+  const confianza: 'alta' | 'media' | 'baja' =
+    rawConf === 'alta' || rawConf === 'media' || rawConf === 'baja'
+      ? rawConf
+      : anchoCm && altoCm
+        ? 'media'
+        : 'baja';
+
+  const layoutParts: string[] = [];
+  if (disposicionHojas) {
+    const dashed = disposicionHojas.split('').join('-');
+    const detail: string[] = [];
+    if (hojasCorredizas > 0) {
+      detail.push(`${hojasCorredizas} corrediza${hojasCorredizas === 1 ? '' : 's'} (X)`);
+    }
+    if (hojasFijas > 0) {
+      detail.push(`${hojasFijas} fija${hojasFijas === 1 ? '' : 's'} (O)`);
+    }
+    layoutParts.push(
+      `Disposición ${dashed} (${hojas} hoja${hojas === 1 ? '' : 's'}${detail.length ? `: ${detail.join(', ')}` : ''})`
+    );
+  } else {
+    layoutParts.push(`${hojas} hoja${hojas === 1 ? '' : 's'}`);
+  }
+
+  const notasSegments = [`Croquis IA: ${layoutParts.join(' · ')}`];
+  if (rawNotas && !rawNotas.toLowerCase().includes(disposicionHojas.toLowerCase() || '___')) {
+    notasSegments.push(rawNotas);
+  } else if (rawNotas && !disposicionHojas) {
+    notasSegments.push(rawNotas);
+  }
+
+  const notasFormateadas = notasSegments.join(' · ');
+  const dimsSummary =
+    anchoCm && altoCm ? `${formatMedida(anchoCm)} × ${formatMedida(altoCm)} cm` : 'Medidas por confirmar';
+  const resumenCorto = `${tipo} · ${dimsSummary}${disposicionHojas ? ` · ${disposicionHojas.split('').join('-')}` : ''}`;
+
+  return {
+    tipo,
+    hojas,
+    disposicionHojas,
+    hojasCorredizas,
+    hojasFijas,
+    anchoCm,
+    altoCm,
+    unidadDetectada,
+    area,
+    notasFormateadas,
+    resumenCorto,
+    confianza,
+  };
+}
+

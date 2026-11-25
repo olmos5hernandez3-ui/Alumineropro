@@ -749,24 +749,42 @@ export const HojaCotizacionView: React.FC<Props> = ({
           </div>
 
           {showDespieceObra && (
-            <div className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] p-4 sm:p-5 shadow-xl">
-              <h2 className="m-0 text-[17px] font-extrabold">Despiece Total de Material (Uso Interno)</h2>
-              <p className="m-0 text-[12px] text-slate-500 mb-3">
-                Suma de perfiles, tramos completos de 6.10 m y cruce automático contra inventario
-              </p>
+            <div
+              id="hoja-despiece-total-card"
+              className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] p-4 sm:p-5 shadow-xl"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
+                <div>
+                  <h2 className="m-0 text-[17px] font-extrabold">Despiece Total de Material (Uso Interno)</h2>
+                  <p className="m-0 text-[12px] text-slate-500">
+                    Cruce en tiempo real contra tus existencias en Mi Inventario (tramos de 6.10 m)
+                  </p>
+                </div>
+                {consolidado.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 text-[11px] font-extrabold mono">
+                    <span className="px-2 py-1 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-800">
+                      En existencia: {consolidado.reduce((a, r) => a + r.tramosDisponibles, 0)} tr.
+                    </span>
+                    <span className="px-2 py-1 rounded-lg bg-orange-50 border border-orange-300 text-orange-800">
+                      Falta surtir: {consolidado.reduce((a, r) => a + r.tramosFaltantes, 0)} tr.
+                    </span>
+                  </div>
+                )}
+              </div>
 
               {consolidado.length === 0 ? (
                 <p className="text-[12.5px] text-slate-500">Sin partidas en la hoja.</p>
               ) : (
                 <>
                   <div className="overflow-x-auto border border-slate-200 rounded-xl">
-                    <table className="w-full border-collapse text-[12px] min-w-[440px]">
+                    <table className="w-full border-collapse text-[12px] min-w-[500px]">
                       <thead>
                         <tr className="bg-slate-50 border-b border-slate-200 text-slate-600">
                           <th className="p-2 text-left">Perfil / Acabado</th>
                           <th className="p-2 text-center">Requerido</th>
-                          <th className="p-2 text-center">Disp.</th>
-                          <th className="p-2 text-right">Falta pedir</th>
+                          <th className="p-2 text-center">En Inventario</th>
+                          <th className="p-2 text-right">Falta surtir</th>
+                          <th className="p-2 text-right">Acción</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -787,32 +805,52 @@ export const HojaCotizacionView: React.FC<Props> = ({
                                 <div className="min-w-0">
                                   <strong className="block text-slate-900 break-words">{row.perfilNombre}</strong>
                                   <span className="text-[11px] text-slate-500 break-words">
-                                    {LINEAS_CONFIG[row.linea].nombre} · {COLORES_CONFIG[row.color].corto}
+                                    {(LINEAS_CONFIG[row.linea] || LINEAS_CONFIG['3']).nombre} ·{' '}
+                                    {(COLORES_CONFIG[row.color] || COLORES_CONFIG.natural).corto}
                                   </span>
+                                  {row.marcasEnBodega && row.marcasEnBodega.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 mt-0.5">
+                                      {row.marcasEnBodega.map((m) => (
+                                        <span
+                                          key={m}
+                                          className="px-1.5 py-0.2 rounded bg-blue-50 border border-blue-200 text-blue-800 text-[9.5px] font-extrabold"
+                                        >
+                                          {m}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             </td>
                             <td className="p-2 text-center mono font-bold">
-                              {row.tramosRequeridos} t ({row.metrosRequeridos.toFixed(1)} m)
+                              {row.tramosRequeridos} tr. ({row.metrosRequeridos.toFixed(1)} m)
                             </td>
                             <td className="p-2 text-center mono">
-                              <div>{row.tramosDisponibles} t</div>
-                              {row.metrosSobrantesDisponibles > 0 && (
-                                <span className="block text-[10px] font-bold text-amber-700">
-                                  +{row.metrosSobrantesDisponibles.toFixed(2)}m sob.
-                                </span>
-                              )}
+                              <div className={row.tramosDisponibles > 0 ? 'font-extrabold text-emerald-700' : 'text-slate-500'}>
+                                {row.tramosDisponibles} tr.
+                              </div>
                             </td>
                             <td className="p-2 text-right">
                               {row.tramosFaltantes > 0 ? (
                                 <span className="px-2 py-0.5 rounded-full bg-red-50 text-orange-700 border border-orange-300 font-extrabold text-[11px] mono">
-                                  Pedir {row.tramosFaltantes}
+                                  Pedir {row.tramosFaltantes} tr.
                                 </span>
                               ) : (
                                 <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-300 font-extrabold text-[11px]">
-                                  OK Bodega
+                                  OK Inventario
                                 </span>
                               )}
+                            </td>
+                            <td className="p-2 text-right">
+                              <button
+                                type="button"
+                                disabled={row.tramosDisponibles <= 0}
+                                onClick={() => onDescontarInventarioObra([row])}
+                                className="px-2 py-1 rounded-lg border border-blue-300 bg-blue-50 hover:bg-blue-100 disabled:opacity-40 disabled:cursor-not-allowed text-blue-800 text-[11px] font-extrabold cursor-pointer"
+                              >
+                                Descontar
+                              </button>
                             </td>
                           </tr>
                         ))}
@@ -852,78 +890,57 @@ export const HojaCotizacionView: React.FC<Props> = ({
                               {g.tramos610Requeridos} barra(s) · {g.aprovechamientoPct}%
                             </span>
                           </div>
-                          {g.barras.map((barra) => (
-                            <div key={barra.id} className="flex flex-col gap-1">
-                              <div className="flex items-center justify-between gap-2 text-[11px] text-slate-600">
-                                <span className="font-bold">{barra.etiquetaOrigen}</span>
-                                <span className="mono">
-                                  {barra.esMerma ? (
-                                    <strong className="text-rose-700">Merma ({barra.sobranteCm.toFixed(1)} cm)</strong>
-                                  ) : (
-                                    <strong className="text-emerald-700">Sobrante usable ({barra.sobranteCm.toFixed(1)} cm)</strong>
-                                  )}
-                                </span>
-                              </div>
-                              <div className="w-full h-6 rounded-md border border-slate-300 bg-slate-100 overflow-hidden flex">
-                                {barra.cortes.map((c, cIdx) => {
-                                  const wPct = Math.max(4, (c.medidaCm / Math.max(1, barra.largoTotalCm)) * 100);
-                                  const segColors = ['#2563EB', '#0D9488', '#4F46E5', '#0284C7', '#D97706'];
-                                  return (
+                          {g.barras.map((barra, bIdx) => {
+                            const numCortes = barra.totalCortes ?? barra.cortes.length;
+                            return (
+                              <div key={barra.id} className="flex flex-col gap-1">
+                                <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-700">
+                                  <span className="font-extrabold text-slate-900">
+                                    Tramo #{bIdx + 1} — {numCortes}{' '}
+                                    {numCortes === 1 ? 'corte' : 'cortes'}
+                                  </span>
+                                  <span className="mono">
+                                    Usado: <strong>{barra.usadoCm.toFixed(1)} cm</strong> ·{' '}
+                                    {barra.esMerma ? (
+                                      <strong className="text-rose-700">Sobrante: {barra.sobranteCm.toFixed(1)} cm</strong>
+                                    ) : (
+                                      <strong className="text-emerald-700">Sobrante: {barra.sobranteCm.toFixed(1)} cm</strong>
+                                    )}
+                                  </span>
+                                </div>
+                                <div className="w-full h-6 rounded-md border border-slate-300 bg-slate-100 overflow-hidden flex">
+                                  {barra.cortes.map((c, cIdx) => {
+                                    const wPct = Math.max(4, (c.medidaCm / Math.max(1, barra.largoTotalCm)) * 100);
+                                    const segColors = ['#2563EB', '#0D9488', '#4F46E5', '#0284C7', '#D97706'];
+                                    return (
+                                      <div
+                                        key={`${barra.id}-${cIdx}`}
+                                        style={{ width: `${wPct}%`, backgroundColor: segColors[cIdx % segColors.length] }}
+                                        title={`${c.nombre}: ${c.medidaCm.toFixed(1)} cm`}
+                                        className="h-full border-r border-white/80 flex items-center justify-center text-white text-[9.5px] font-extrabold mono px-0.5 truncate"
+                                      >
+                                        {c.medidaCm.toFixed(0)}
+                                      </div>
+                                    );
+                                  })}
+                                  {barra.sobranteCm > 0 && (
                                     <div
-                                      key={`${barra.id}-${cIdx}`}
-                                      style={{ width: `${wPct}%`, backgroundColor: segColors[cIdx % segColors.length] }}
-                                      title={`${c.nombre}: ${c.medidaCm.toFixed(1)} cm`}
-                                      className="h-full border-r border-white/80 flex items-center justify-center text-white text-[9.5px] font-extrabold mono px-0.5 truncate"
+                                      style={{ width: `${Math.max(3, (barra.sobranteCm / Math.max(1, barra.largoTotalCm)) * 100)}%` }}
+                                      className={`h-full flex items-center justify-center text-[9.5px] font-extrabold mono px-0.5 truncate border-l border-dashed ${
+                                        barra.esMerma
+                                          ? 'bg-rose-100 text-rose-900 border-rose-400'
+                                          : 'bg-emerald-100 text-emerald-900 border-emerald-400'
+                                      }`}
                                     >
-                                      {c.medidaCm.toFixed(0)}
+                                      {barra.sobranteCm >= 15 ? `${barra.sobranteCm.toFixed(0)}` : ''}
                                     </div>
-                                  );
-                                })}
-                                {barra.sobranteCm > 0 && (
-                                  <div
-                                    style={{ width: `${Math.max(3, (barra.sobranteCm / Math.max(1, barra.largoTotalCm)) * 100)}%` }}
-                                    className={`h-full flex items-center justify-center text-[9.5px] font-extrabold mono px-0.5 truncate border-l border-dashed ${
-                                      barra.esMerma
-                                        ? 'bg-rose-100 text-rose-900 border-rose-400'
-                                        : 'bg-emerald-100 text-emerald-900 border-emerald-400'
-                                    }`}
-                                  >
-                                    {barra.sobranteCm >= 15 ? `${barra.sobranteCm.toFixed(0)}` : ''}
-                                  </div>
-                                )}
+                                  )}
+                                </div>
                               </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       ))}
-
-                      {onAddSobrante && opt1D.sobrantesGeneradosGuardables.length > 0 && (
-                        <button
-                          type="button"
-                          id="btn-hoja-save-sobrantes"
-                          onClick={() => {
-                            const mainPartida = hoja.partidas[0];
-                            opt1D.sobrantesGeneradosGuardables.forEach((s) => {
-                              onAddSobrante({
-                                marca: 'Alumer',
-                                linea: mainPartida?.linea || '3',
-                                perfilId: s.perfilId,
-                                color: mainPartida?.color || 'natural',
-                                largoM: s.largoM,
-                                cantidad: s.cantidad,
-                                nota: `Sobrante usable de obra (${hoja.proyecto || 'Cotización'})`,
-                              });
-                            });
-                            onShowToast(
-                              `${opt1D.sobrantesGeneradosGuardables.length} sobrante(s) usable(s) guardado(s) en Mi Inventario`,
-                              true
-                            );
-                          }}
-                          className="w-full min-h-[42px] px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[12.5px] cursor-pointer"
-                        >
-                          + Guardar en Mi Inventario ({opt1D.sobrantesGeneradosGuardables.length} sobrante(s) ≥ {taller.optimizador?.umbralSobranteUsableCm ?? 60} cm)
-                        </button>
-                      )}
                     </div>
                   )}
 
@@ -947,7 +964,7 @@ export const HojaCotizacionView: React.FC<Props> = ({
                       onClick={() => onDescontarInventarioObra(consolidado)}
                       className="w-full min-h-[44px] px-4 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 font-bold text-[13px] cursor-pointer"
                     >
-                      Descontar material usado del inventario
+                      Descontar todo el material usado de Mi Inventario
                     </button>
                   </div>
                 </>

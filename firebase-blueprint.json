@@ -116,6 +116,11 @@
           "description": "Nombre del taller guardado por el usuario en Mi Taller.",
           "maxLength": 120
         },
+        "nombreTaller": {
+          "type": "string",
+          "description": "Alias normalizado del nombre del taller del usuario.",
+          "maxLength": 120
+        },
         "tallerResponsable": {
           "type": "string",
           "description": "Nombre del responsable del taller.",
@@ -125,6 +130,24 @@
           "type": "string",
           "description": "Teléfono o WhatsApp del taller.",
           "maxLength": 40
+        },
+        "ubicacion": {
+          "type": "string",
+          "description": "Ciudad y estado del taller.",
+          "maxLength": 200
+        },
+        "plan": {
+          "type": "string",
+          "description": "Plan simplificado del dispositivo ('gratis' o 'pro').",
+          "maxLength": 16
+        },
+        "ultimaConexion": {
+          "type": "number",
+          "description": "Marca de tiempo en milisegundos de la última conexión del dispositivo."
+        },
+        "homeMenuLayout": {
+          "type": "object",
+          "description": "Orden personalizado de tarjetas en la pantalla principal (Plan 1 Año PRO)."
         },
         "termsAcceptedAt": {
           "type": "number",

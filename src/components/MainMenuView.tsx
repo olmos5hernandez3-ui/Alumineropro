@@ -46,6 +46,7 @@ interface Props {
   onChangeMenuLayout?: (next: HomeMenuLayout) => void;
   onSaveAndLockLayout?: (layout: HomeMenuLayout) => void;
   onResetMenuLayout?: () => void;
+  onForceExitReorderMode?: () => void;
   onMarkAdminMessageRead?: (id: string) => void;
   onClaimColleaguePromo?: () => void;
   onOpenColleagueInvite?: () => void;
@@ -159,6 +160,7 @@ export const MainMenuView: React.FC<Props> = ({
   onChangeMenuLayout,
   onSaveAndLockLayout,
   onResetMenuLayout,
+  onForceExitReorderMode,
   onMarkAdminMessageRead,
   onClaimColleaguePromo,
   onOpenColleagueInvite,
@@ -218,6 +220,18 @@ export const MainMenuView: React.FC<Props> = ({
     }
     pendingPressRef.current = null;
   }, []);
+
+  // Verificación de seguridad: si el usuario pierde Plan 1 Año PRO (expiración/cambio), apagar homeReorderMode y bloquear arrastre automáticamente
+  useEffect(() => {
+    if (reorderMode && effectiveTier !== 'pro_annual') {
+      clearPendingPress();
+      dragStateRef.current = null;
+      dropTargetRef.current = null;
+      setDragState(null);
+      setDropTarget(null);
+      onForceExitReorderMode?.();
+    }
+  }, [reorderMode, effectiveTier, clearPendingPress, onForceExitReorderMode]);
 
   // Si se desactiva el modo edición o cambia el plan, limpiar cualquier arrastre en curso
   useEffect(() => {
@@ -760,7 +774,7 @@ export const MainMenuView: React.FC<Props> = ({
                 Mi Inventario
               </span>
               <span className="menu-card-sub block text-[11px] sm:text-[12.5px] mt-0.5 leading-snug">
-                Tramos, sobrantes y herrajes
+                Existencias, tramos y herrajes
               </span>
             </div>
           </button>
@@ -1021,6 +1035,7 @@ export const MainMenuView: React.FC<Props> = ({
                 data-menu-card-id={cardId}
                 data-menu-section={sectionId}
                 data-menu-index={idx}
+                style={!isEditModeActive ? { animationDelay: `${idx * 45}ms` } : undefined}
                 onPointerDown={
                   isEditModeActive
                     ? (e) => startPendingDrag(cardId, e, true)
@@ -1029,6 +1044,8 @@ export const MainMenuView: React.FC<Props> = ({
                 className={`relative rounded-[18px] transition-all duration-150 ${
                   isFullWidth ? 'col-span-2' : 'col-span-1'
                 } ${cardId === 'catalogo' ? 'mb-1.5' : ''} ${
+                  !isEditModeActive ? 'ap-menu-card-stagger' : ''
+                } ${
                   isEditModeActive
                     ? 'touch-none select-none cursor-grab active:cursor-grabbing ring-1 ring-emerald-400/60'
                     : ''

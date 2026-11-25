@@ -28,12 +28,17 @@ export type CancelEstiloId = 'economico' | 'semilujo' | 'lujo';
 export type PerfilFamilia =
   | 'fijo3'
   | 'corrediza3'
+  | 'nacional2'
+  | 'serie1400'
+  | 'espanola'
   | 'batiente'
   | 'cancel'
+  | 'herralum'
+  | 'perfileto'
   | 'mosquitero';
 
 export type PerfilCatalogoId =
-  // Corrediza 3" (Alumer) + compartidos
+  // Corrediza 3" (Alumer / Nacional 3") + compartidos
   | 'cabezal'
   | 'riel'
   | 'jamba'
@@ -76,6 +81,30 @@ export type PerfilCatalogoId =
   | 'alumer_11035'
   | 'alumer_11046'
   | 'alumer_11173'
+  // Línea Nacional 2"
+  | 'nac2_cabezal_2401'
+  | 'nac2_riel_2402'
+  | 'nac2_jamba_2403'
+  | 'nac2_cerco_2404'
+  // Serie 1400 (Panorama / Comercial)
+  | 's1400_marco_1401'
+  | 's1400_hoja_1402'
+  | 's1400_junquillo_1405'
+  // Línea Española / Europea
+  | 'esp_marco_s35'
+  | 'esp_hoja_s70'
+  | 'esp_riel_s80'
+  // Herralum (Cristal Templado / Cancel / Herrajes)
+  | 'herralum_riel_1500'
+  | 'herralum_u_templado'
+  | 'herralum_marco_templado'
+  // Perfileto (Catálogo oficial México)
+  | 'perfileto_cabezal_3'
+  | 'perfileto_riel_3'
+  | 'perfileto_cerco_3'
+  | 'perfileto_marco_1400'
+  | 'perfileto_euro_70'
+  | 'perfileto_cancel_bano'
   // Mosquiteros
   | 'mosq_marco'
   | 'riel_mosq';
@@ -813,6 +842,17 @@ export function getRellenoLabel(
   return `${item.nombre} ${esp} mm`;
 }
 
+export const CATALOGO_MARCAS_MEXICO = [
+  'Alumer',
+  'Perfileto',
+  'Cuprum',
+  'Indalum',
+  'Herralum',
+  'Eurovent',
+  'Almexa',
+  'Extrusiones Metálicas',
+] as const;
+
 export interface PerfilCatalogoItem {
   id: PerfilCatalogoId;
   familia: PerfilFamilia;
@@ -822,6 +862,8 @@ export interface PerfilCatalogoItem {
   dimensiones: string;
   pesoAprox: string;
   notasTaller: string;
+  marcaCatalogo?: string;
+  sistemaCatalogo?: string;
 }
 
 export const CATALOGO_PERFILES: PerfilCatalogoItem[] = [
@@ -1221,6 +1263,244 @@ export const CATALOGO_PERFILES: PerfilCatalogoItem[] = [
     dimensiones: '15.87 × 50.80 mm · Tramo 6.10 m',
     pesoAprox: '0.68 kg/m',
     notasTaller: 'Estética premium con mayor agarre en escuadras.',
+  },
+
+  // ================= LÍNEA NACIONAL 2" =================
+  {
+    id: 'nac2_cabezal_2401',
+    familia: 'nacional2',
+    nombre: 'Cabezal Nacional 2" (2401 / 7236)',
+    codigoRef: 'Nacional 2" · 2401 / Perfileto PF-201',
+    uso: 'Marco superior doble carril para ventana corrediza económica 2"',
+    dimensiones: '50.80 × 38.10 mm · Tramo 6.10 m',
+    pesoAprox: '0.78 kg/m',
+    notasTaller: 'Descuento estándar entre jambas de 5.1 cm en línea Nacional 2".',
+    marcaCatalogo: 'Alumer / Cuprum / Perfileto',
+    sistemaCatalogo: 'Línea Nacional 2"',
+  },
+  {
+    id: 'nac2_riel_2402',
+    familia: 'nacional2',
+    nombre: 'Riel Inferior Nacional 2" (2402 / 7257)',
+    codigoRef: 'Nacional 2" · 2402 / Perfileto PF-202',
+    uso: 'Riel inferior doble vía para carretillas simples de 2"',
+    dimensiones: '50.80 × 28.50 mm · Tramo 6.10 m',
+    pesoAprox: '0.81 kg/m',
+    notasTaller: 'Hacer drenes en el canal externo y calzar a nivel sobre pretil.',
+    marcaCatalogo: 'Alumer / Cuprum / Perfileto',
+    sistemaCatalogo: 'Línea Nacional 2"',
+  },
+  {
+    id: 'nac2_jamba_2403',
+    familia: 'nacional2',
+    nombre: 'Jamba Lateral Nacional 2" (2403 / 7225)',
+    codigoRef: 'Nacional 2" · 2403 / Perfileto PF-203',
+    uso: 'Marco vertical lateral de 2 pulgadas para ventana y fijo económico',
+    dimensiones: '50.80 × 22.20 mm · Tramo 6.10 m',
+    pesoAprox: '0.68 kg/m',
+    notasTaller: 'Corte a 90° a altura total del vano con tolerancia de holgura.',
+    marcaCatalogo: 'Alumer / Cuprum / Perfileto',
+    sistemaCatalogo: 'Línea Nacional 2"',
+  },
+  {
+    id: 'nac2_cerco_2404',
+    familia: 'nacional2',
+    nombre: 'Cerco y Traslape Nacional 2" (2404 / 2405)',
+    codigoRef: 'Nacional 2" · 2404-2405 / Perfileto PF-204',
+    uso: 'Verticales de hoja corrediza de 2" para cristal 4–6 mm',
+    dimensiones: '34.90 × 22.20 mm · Tramo 6.10 m',
+    pesoAprox: '0.62 kg/m',
+    notasTaller: 'Compatible con vinil pata #10/#11 y jaladera automática estándar.',
+    marcaCatalogo: 'Alumer / Cuprum / Perfileto',
+    sistemaCatalogo: 'Línea Nacional 2"',
+  },
+
+  // ================= SERIE 1400 (PANORAMA / COMERCIAL) =================
+  {
+    id: 's1400_marco_1401',
+    familia: 'serie1400',
+    nombre: 'Marco Bolsa Serie 1400 (1401 / 1450)',
+    codigoRef: 'Serie 1400 · 1401 / Perfileto PF-1401',
+    uso: 'Marco estructural perimetral para canceles comerciales y puertas ligeras',
+    dimensiones: '44.45 × 38.10 mm · Tramo 6.10 m',
+    pesoAprox: '0.94 kg/m',
+    notasTaller: 'Ideal para fijos, puertas de servicio y divisiones de oficina Serie 1400.',
+    marcaCatalogo: 'Cuprum / Indalum / Perfileto',
+    sistemaCatalogo: 'Serie 1400',
+  },
+  {
+    id: 's1400_hoja_1402',
+    familia: 'serie1400',
+    nombre: 'Hoja / Larguero Serie 1400 (1402)',
+    codigoRef: 'Serie 1400 · 1402 / Perfileto PF-1402',
+    uso: 'Bastidor tubular perimetral de hoja proyectable o abatible Serie 1400',
+    dimensiones: '44.45 × 31.75 mm · Tramo 6.10 m',
+    pesoAprox: '0.89 kg/m',
+    notasTaller: 'Armado con escuadras de inyección a 45° o tornillería oculta.',
+    marcaCatalogo: 'Cuprum / Indalum / Perfileto',
+    sistemaCatalogo: 'Serie 1400',
+  },
+  {
+    id: 's1400_junquillo_1405',
+    familia: 'serie1400',
+    nombre: 'Junquillo Serie 1400 (1405)',
+    codigoRef: 'Serie 1400 · 1405 / Perfileto PF-1405',
+    uso: 'Junquillo clip recto para cristal de 6 mm o duoble acristalamiento ligero',
+    dimensiones: '19.05 × 15.80 mm · Tramo 6.10 m',
+    pesoAprox: '0.31 kg/m',
+    notasTaller: 'Ajuste a presión con empaque EPDM o vinil de cuña.',
+    marcaCatalogo: 'Cuprum / Indalum / Perfileto',
+    sistemaCatalogo: 'Serie 1400',
+  },
+
+  // ================= LÍNEA ESPAÑOLA / EUROPEA =================
+  {
+    id: 'esp_marco_s35',
+    familia: 'espanola',
+    nombre: 'Marco Canal Europeo Serie 35/45 (EU-3501)',
+    codigoRef: 'Española / Eurovent · S35 / S45',
+    uso: 'Marco perimetral con canal europeo para abatible y oscilobatiente',
+    dimensiones: '45.00 × 52.00 mm · Tramo 6.10 m',
+    pesoAprox: '1.28 kg/m',
+    notasTaller: 'Ensamble a 45° con escuadras de tetón y doble empaque EPDM.',
+    marcaCatalogo: 'Eurovent / Cuprum / Perfileto',
+    sistemaCatalogo: 'Línea Española / Europea',
+  },
+  {
+    id: 'esp_hoja_s70',
+    familia: 'espanola',
+    nombre: 'Hoja Corrediza Serie 70 (EU-7012)',
+    codigoRef: 'Española / Eurovent · Serie 70',
+    uso: 'Hoja perimetral corte 45° para ventanales corredizos herméticos',
+    dimensiones: '70.00 × 32.00 mm · Tramo 6.10 m',
+    pesoAprox: '1.36 kg/m',
+    notasTaller: 'Acepta cristal monolítico 6–10 mm o insulado (duovent) hasta 20 mm.',
+    marcaCatalogo: 'Eurovent / Cuprum / Perfileto',
+    sistemaCatalogo: 'Línea Española / Europea',
+  },
+  {
+    id: 'esp_riel_s80',
+    familia: 'espanola',
+    nombre: 'Marco Riel Monumental Serie 80/100 (EU-8001)',
+    codigoRef: 'Española / Eurovent · S80 / S100',
+    uso: 'Marco riel reforzado con guía inoxidable para hojas de gran peso',
+    dimensiones: '80.00 × 48.00 mm · Tramo 6.10 m',
+    pesoAprox: '1.72 kg/m',
+    notasTaller: 'Recomendado para canceles monumentales de hasta 2.80 m de altura.',
+    marcaCatalogo: 'Eurovent / Perfileto',
+    sistemaCatalogo: 'Línea Española / Europea',
+  },
+
+  // ================= HERRALUM (TEMPLADO Y CANCELERÍA) =================
+  {
+    id: 'herralum_riel_1500',
+    familia: 'herralum',
+    nombre: 'Riel Colgante Serie 1500 Templado (HER-1500)',
+    codigoRef: 'Herralum · Serie 1500 / 1504',
+    uso: 'Riel superior tubular para puerta corrediza de cristal templado 10 mm',
+    dimensiones: '52.00 × 48.00 mm · Tramo 6.10 m',
+    pesoAprox: '1.65 kg/m',
+    notasTaller: 'Compatible con carretillas colgantes Herralum 1502/1503 hasta 120 kg.',
+    marcaCatalogo: 'Herralum',
+    sistemaCatalogo: 'Herralum',
+  },
+  {
+    id: 'herralum_u_templado',
+    familia: 'herralum',
+    nombre: 'Perfil U para Cristal Templado 10 mm (HER-U10)',
+    codigoRef: 'Herralum · Canal U 10 mm',
+    uso: 'Canal perimetral en piso, muro y techo para fijar fijos templados',
+    dimensiones: '19.05 × 19.05 mm · Tramo 6.10 m',
+    pesoAprox: '0.46 kg/m',
+    notasTaller: 'Usar calzas de neopreno de 3 mm y sellado con silicón estructural.',
+    marcaCatalogo: 'Herralum',
+    sistemaCatalogo: 'Herralum',
+  },
+  {
+    id: 'herralum_marco_templado',
+    familia: 'herralum',
+    nombre: 'Cabezal y Tapa Clip Templado (HER-1510)',
+    codigoRef: 'Herralum · 1510 / Tapa Clip',
+    uso: 'Cubierta frontal y cabezal reforzado para canceles de baño y oficina',
+    dimensiones: '54.00 × 45.00 mm · Tramo 6.10 m',
+    pesoAprox: '1.18 kg/m',
+    notasTaller: 'Acabados disponibles en Natural Anodizado, Negro Mate y Satín.',
+    marcaCatalogo: 'Herralum',
+    sistemaCatalogo: 'Herralum',
+  },
+
+  // ================= PERFILETO (CATÁLOGO MÉXICO) =================
+  {
+    id: 'perfileto_cabezal_3',
+    familia: 'perfileto',
+    nombre: 'Perfileto Cabezal 3" Reforzado (PF-301)',
+    codigoRef: 'Perfileto PF-301 · Nacional 3"',
+    uso: 'Cabezal doble vía 3" de extrusión nacional marca Perfileto',
+    dimensiones: '76.20 × 44.45 mm · Tramo 6.10 m',
+    pesoAprox: '1.16 kg/m',
+    notasTaller: 'Compatible 100% con herrajes y felpas de Línea Nacional 3" en México.',
+    marcaCatalogo: 'Perfileto',
+    sistemaCatalogo: 'Perfileto · Nacional 3"',
+  },
+  {
+    id: 'perfileto_riel_3',
+    familia: 'perfileto',
+    nombre: 'Perfileto Riel Doble 3" (PF-302)',
+    codigoRef: 'Perfileto PF-302 · Nacional 3"',
+    uso: 'Riel inferior 3" con vena guía reforzada para carretillas tándem',
+    dimensiones: '76.20 × 36.00 mm · Tramo 6.10 m',
+    pesoAprox: '1.19 kg/m',
+    notasTaller: 'Desagüe en cámara externa; disponible en Natural, Blanco, Negro y Madera.',
+    marcaCatalogo: 'Perfileto',
+    sistemaCatalogo: 'Perfileto · Nacional 3"',
+  },
+  {
+    id: 'perfileto_cerco_3',
+    familia: 'perfileto',
+    nombre: 'Perfileto Cerco / Traslape 3" (PF-304 / PF-305)',
+    codigoRef: 'Perfileto PF-304 / PF-305 · Corrediza 3"',
+    uso: 'Perfiles verticales de hoja corrediza 3" catálogo Perfileto',
+    dimensiones: '44.00 × 28.50 mm · Tramo 6.10 m',
+    pesoAprox: '0.87 kg/m',
+    notasTaller: 'Alojamiento limpio para jaladera embutida o seguro automático.',
+    marcaCatalogo: 'Perfileto',
+    sistemaCatalogo: 'Perfileto · Nacional 3"',
+  },
+  {
+    id: 'perfileto_marco_1400',
+    familia: 'perfileto',
+    nombre: 'Perfileto Marco Serie 1400 (PF-1401)',
+    codigoRef: 'Perfileto PF-1401 · Serie 1400',
+    uso: 'Perfil tubular de bolsa Serie 1400 para cancelería residencial y comercial',
+    dimensiones: '44.45 × 38.10 mm · Tramo 6.10 m',
+    pesoAprox: '0.95 kg/m',
+    notasTaller: 'Alta precisión dimensional para ensamble rápido con junquillo clip.',
+    marcaCatalogo: 'Perfileto',
+    sistemaCatalogo: 'Perfileto · Serie 1400',
+  },
+  {
+    id: 'perfileto_euro_70',
+    familia: 'perfileto',
+    nombre: 'Perfileto Serie Europea 70 (PF-EU70)',
+    codigoRef: 'Perfileto PF-EU70 · Línea Española/Europea',
+    uso: 'Sistema corredizo hermético perimetral a 45° línea Europea Perfileto',
+    dimensiones: '70.00 × 32.00 mm · Tramo 6.10 m',
+    pesoAprox: '1.35 kg/m',
+    notasTaller: 'Admite cierre multipunto y doble vidrio insulado de alto aislamiento.',
+    marcaCatalogo: 'Perfileto',
+    sistemaCatalogo: 'Perfileto · Europea',
+  },
+  {
+    id: 'perfileto_cancel_bano',
+    familia: 'perfileto',
+    nombre: 'Perfileto Kit Cancel de Baño Semilujo (PF-CB01)',
+    codigoRef: 'Perfileto PF-CB01 · Cancel de Baño',
+    uso: 'Riel superior, guía inferior y bastidor semilujo para regadera',
+    dimensiones: '44.45 × 14.30 mm · Tramo 6.10 m',
+    pesoAprox: '0.64 kg/m',
+    notasTaller: 'Acabado brillante/anodizado resistente a humedad y jabón.',
+    marcaCatalogo: 'Perfileto',
+    sistemaCatalogo: 'Perfileto · Cancel Baño',
   },
 
   // ================= MOSQUITEROS =================
@@ -3332,6 +3612,7 @@ export interface MaterialConsolidadoRow {
   tramosDisponibles: number;
   metrosSobrantesDisponibles: number;
   tramosFaltantes: number;
+  marcasEnBodega?: string[];
 }
 
 export function consolidarMaterialesObra(
@@ -3347,18 +3628,20 @@ export function consolidarMaterialesObra(
 
   for (const item of partidas) {
     if (!item?.despiece || !Array.isArray(item.despiece.perfiles)) continue;
+    const normLinea = normalizeLineaId(item.linea);
+    const normColor = normalizeColorId(item.color);
     for (const p of item.despiece.perfiles) {
-      const key = `${item.linea}__${p.perfilId}__${item.color}`;
+      const key = `${normLinea}__${p.perfilId}__${normColor}`;
       const prev = map.get(key);
       const addCm = p.pzas * p.medidaCm;
       if (prev) {
         prev.cm += addCm;
       } else {
         map.set(key, {
-          linea: item.linea,
+          linea: normLinea,
           perfilId: p.perfilId,
           perfilNombre: CATALOGO_PERFILES.find((c) => c.id === p.perfilId)?.nombre || p.nombre,
-          color: item.color,
+          color: normColor,
           cm: addCm,
         });
       }
@@ -3368,7 +3651,7 @@ export function consolidarMaterialesObra(
   const sobrantesMap: Record<string, number> = {};
   if (Array.isArray(sobrantes)) {
     for (const s of sobrantes) {
-      const k = `${s.linea}__${s.perfilId}__${s.color}`;
+      const k = `${normalizeLineaId(s.linea)}__${s.perfilId}__${normalizeColorId(s.color)}`;
       sobrantesMap[k] = round2((sobrantesMap[k] || 0) + Math.max(0, s.largoM) * Math.max(1, s.cantidad || 1));
     }
   }
@@ -3383,6 +3666,19 @@ export function consolidarMaterialesObra(
       val.perfilId,
       val.color
     );
+    const marcasSet = new Set<string>();
+    for (const [invKey, rawVal] of Object.entries(inventario || {})) {
+      if ((Number(rawVal) || 0) <= 0) continue;
+      const parsed = parseInventarioKey(invKey);
+      if (
+        normalizeLineaId(parsed.linea) === val.linea &&
+        parsed.perfilId === val.perfilId &&
+        parsed.color === val.color &&
+        parsed.marca
+      ) {
+        marcasSet.add(parsed.marca);
+      }
+    }
     const tramosComprometidos = round2(comprometidos[key] || 0);
     const tramosDisponibles = Math.max(0, round2(tramosEnBodega - tramosComprometidos));
     const metrosSobrantesDisponibles = round2(sobrantesMap[key] || 0);
@@ -3400,6 +3696,7 @@ export function consolidarMaterialesObra(
       tramosDisponibles,
       metrosSobrantesDisponibles,
       tramosFaltantes,
+      marcasEnBodega: Array.from(marcasSet),
     });
   }
 
@@ -3768,8 +4065,13 @@ export interface CloudDeviceRecord {
   promo_colega_usada?: boolean;
   fecha_activacion_colega?: number | null;
   tallerNombre?: string;
+  nombreTaller?: string;
   tallerResponsable?: string;
   tallerWhatsapp?: string;
+  ubicacion?: string;
+  plan?: 'gratis' | 'pro';
+  ultimaConexion?: number;
+  homeMenuLayout?: unknown;
   termsAcceptedAt?: number | null;
   preferredTheme?: 'dark' | 'light';
   preferredSkin?: 'basica' | 'navidena' | 'ejecutiva' | 'industrial';
@@ -4086,13 +4388,18 @@ export function getInventarioTramosPorPerfilColor(
   perfilId: PerfilCatalogoId,
   color: ColorId
 ): number {
+  const normLinea = normalizeLineaId(linea);
   const targetColor = normalizeColorId(color);
   let total = 0;
   for (const [k, rawVal] of Object.entries(inventario || {})) {
     const val = Number(rawVal) || 0;
     if (val <= 0) continue;
     const parsed = parseInventarioKey(k);
-    if (parsed.linea === linea && parsed.perfilId === perfilId && parsed.color === targetColor) {
+    if (
+      normalizeLineaId(parsed.linea) === normLinea &&
+      parsed.perfilId === perfilId &&
+      parsed.color === targetColor
+    ) {
       total = round2(total + val);
     }
   }
@@ -4107,6 +4414,7 @@ export function descontarInventarioPorPerfilColor(
   tramosRequeridos: number
 ): Record<string, number> {
   const next: Record<string, number> = { ...inventario };
+  const normLinea = normalizeLineaId(linea);
   const targetColor = normalizeColorId(color);
   let restante = Math.max(0, round2(Number(tramosRequeridos) || 0));
   if (restante <= 0) return next;
@@ -4116,7 +4424,11 @@ export function descontarInventarioPorPerfilColor(
       const val = Number(next[k]) || 0;
       if (val <= 0) return false;
       const parsed = parseInventarioKey(k);
-      return parsed.linea === linea && parsed.perfilId === perfilId && parsed.color === targetColor;
+      return (
+        normalizeLineaId(parsed.linea) === normLinea &&
+        parsed.perfilId === perfilId &&
+        parsed.color === targetColor
+      );
     })
     .sort((a, b) => a.split('__').length - b.split('__').length);
 
@@ -5534,6 +5846,246 @@ export interface AdminMessageItem {
   targetDeviceId?: string;
   targetLabel?: string;
   createdAt: number;
+}
+
+// ==================== INVENTARIO COMPACTO (EXISTENCIAS > 0) ====================
+export interface CompactExistenciaItem {
+  id: string;
+  tipo: 'perfil' | 'herraje' | 'vidrio';
+  titulo: string;
+  subtitulo: string;
+  cantidad: number;
+  unidad: string;
+  detalle: string;
+  inventarioKey?: string;
+  herrajeId?: string;
+  vidrioId?: string;
+  perfilId?: PerfilCatalogoId;
+  color?: ColorId;
+  marca?: string;
+}
+
+export function buildCompactExistenciasList(
+  inventario: Record<string, number>,
+  inventarioHerrajes: Record<string, number>,
+  hojasVidrio: Array<{
+    id: string;
+    tipoNombre: string;
+    anchoCm: number;
+    altoCm: number;
+    cantidad: number;
+    ubicacion?: string;
+  }> = []
+): CompactExistenciaItem[] {
+  const items: CompactExistenciaItem[] = [];
+
+  for (const [key, rawQty] of Object.entries(inventario || {})) {
+    const qty = round2(Number(rawQty) || 0);
+    if (qty <= 0) continue;
+    const parsed = parseInventarioKey(key);
+    const perfilMeta = CATALOGO_PERFILES.find((p) => p.id === parsed.perfilId);
+    const lineaMeta = LINEAS_CONFIG[normalizeLineaId(parsed.linea)];
+    const colorMeta = COLORES_CONFIG[parsed.color];
+    const marca = parsed.marca || INVENTARIO_DEFAULT_MARCA;
+    items.push({
+      id: `perf:${key}`,
+      tipo: 'perfil',
+      titulo: perfilMeta?.nombre || parsed.perfilId,
+      subtitulo: `${lineaMeta?.nombre || parsed.linea} · ${colorMeta?.nombre || parsed.color} · ${marca}`,
+      cantidad: qty,
+      unidad: qty === 1 ? 'tramo' : 'tramos',
+      detalle: `${round2(qty * TRAMO_STD_M)} m totales (tramos de 6.10 m) · ${perfilMeta?.codigoRef || parsed.perfilId}`,
+      inventarioKey: key,
+      perfilId: parsed.perfilId,
+      color: parsed.color,
+      marca,
+    });
+  }
+
+  for (const h of HERRAJES_INVENTARIO_CATALOGO) {
+    const qty = round2(Number(inventarioHerrajes?.[h.id]) || 0);
+    if (qty <= 0) continue;
+    items.push({
+      id: `her:${h.id}`,
+      tipo: 'herraje',
+      titulo: h.nombre,
+      subtitulo: `${h.categoria}${h.color ? ` · ${h.color}` : ''}`,
+      cantidad: qty,
+      unidad: h.unidad,
+      detalle: `${h.modelo || h.categoria}${h.tamano ? ` · Medida: ${h.tamano}` : ''}`,
+      herrajeId: h.id,
+    });
+  }
+
+  for (const hv of hojasVidrio || []) {
+    const qty = Math.max(0, Math.round(Number(hv.cantidad) || 0));
+    if (qty <= 0) continue;
+    const m2Hoja = round2(((hv.anchoCm || 0) * (hv.altoCm || 0)) / 10000);
+    items.push({
+      id: `vid:${hv.id}`,
+      tipo: 'vidrio',
+      titulo: `${hv.tipoNombre} (${hv.anchoCm} × ${hv.altoCm} cm)`,
+      subtitulo: hv.ubicacion ? `Vidrio · ${hv.ubicacion}` : 'Hoja de vidrio en bodega',
+      cantidad: qty,
+      unidad: qty === 1 ? 'hoja' : 'hojas',
+      detalle: `${round2(m2Hoja * qty)} m² totales (${m2Hoja} m² por hoja)`,
+      vidrioId: hv.id,
+    });
+  }
+
+  return items;
+}
+
+// ==================== ANALÍTICA ADMIN: COTIZACIONES POR MES Y MATERIALES ====================
+export interface MonthlyQuotePoint {
+  monthKey: string;
+  mes: string;
+  cotizaciones: number;
+  montoTotal: number;
+}
+
+export interface TopMaterialPoint {
+  nombre: string;
+  usos: number;
+  tramosEstimados: number;
+}
+
+const MESES_ES_CORTO = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+
+function parseDateMsFlexible(raw: unknown): number | null {
+  if (typeof raw === 'number' && Number.isFinite(raw) && raw > 1_000_000_000_000) {
+    return raw;
+  }
+  if (typeof raw === 'string' && raw.trim()) {
+    const s = raw.trim();
+    const dmy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if (dmy) {
+      const dt = new Date(Number(dmy[3]), Number(dmy[2]) - 1, Number(dmy[1]));
+      if (!Number.isNaN(dt.getTime())) return dt.getTime();
+    }
+    const parsed = Date.parse(s);
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+  return null;
+}
+
+export function buildMonthlyQuotesSeries(
+  historial: Array<{ fecha?: string; total?: number; id?: string }> = [],
+  cotizacionesGuardadas: Array<{ fecha?: string; createdAt?: number; total?: number; id?: string }> = [],
+  nowMs = Date.now()
+): MonthlyQuotePoint[] {
+  const now = new Date(nowMs);
+  const buckets = new Map<string, MonthlyQuotePoint>();
+  for (let i = 5; i >= 0; i--) {
+    const dt = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
+    buckets.set(key, {
+      monthKey: key,
+      mes: `${MESES_ES_CORTO[dt.getMonth()]} ${String(dt.getFullYear()).slice(-2)}`,
+      cotizaciones: 0,
+      montoTotal: 0,
+    });
+  }
+
+  const seenIds = new Set<string>();
+  const allEntries: Array<{ id?: string; ts: number | null; total: number }> = [];
+
+  for (const c of cotizacionesGuardadas || []) {
+    const ts = parseDateMsFlexible(c.createdAt) ?? parseDateMsFlexible(c.fecha);
+    allEntries.push({ id: c.id, ts, total: Number(c.total) || 0 });
+  }
+  for (const h of historial || []) {
+    const ts = parseDateMsFlexible(h.fecha);
+    allEntries.push({ id: h.id, ts, total: Number(h.total) || 0 });
+  }
+
+  for (const entry of allEntries) {
+    if (entry.id && seenIds.has(entry.id)) continue;
+    if (entry.id) seenIds.add(entry.id);
+    const dt = new Date(entry.ts ?? nowMs);
+    const key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
+    const existing = buckets.get(key);
+    if (existing) {
+      existing.cotizaciones += 1;
+      existing.montoTotal = round2(existing.montoTotal + Math.max(0, entry.total));
+    }
+  }
+
+  return Array.from(buckets.values());
+}
+
+export function buildTopMaterialsSeries(
+  historial: Array<{ linea?: LineaId; color?: ColorId; cantidad?: number }> = [],
+  cotizacionesGuardadas: Array<{
+    partidas?: PartidaObra[];
+    hoja?: { partidas?: PartidaObra[] };
+    materiales?: Array<{ perfilNombre?: string; perfilId?: string; tramosRequeridos?: number; linea?: string; nombre?: string; cantidad?: number }>;
+  }> = [],
+  inventario: Record<string, number> = {}
+): TopMaterialPoint[] {
+  const counts = new Map<string, { usos: number; tramosEstimados: number }>();
+
+  const bump = (label: string, usosDelta: number, tramosDelta: number) => {
+    const cur = counts.get(label) || { usos: 0, tramosEstimados: 0 };
+    cur.usos += usosDelta;
+    cur.tramosEstimados = round2(cur.tramosEstimados + tramosDelta);
+    counts.set(label, cur);
+  };
+
+  for (const cot of cotizacionesGuardadas || []) {
+    for (const m of cot.materiales || []) {
+      const cat = m.perfilId ? CATALOGO_PERFILES.find((c) => c.id === m.perfilId) : undefined;
+      const label =
+        m.perfilNombre ||
+        m.nombre ||
+        cat?.nombre ||
+        (m.linea ? LINEAS_CONFIG[normalizeLineaId(m.linea)]?.nombre : '') ||
+        'Material';
+      const tramos = Math.max(0.5, Number(m.tramosRequeridos ?? m.cantidad) || 1);
+      bump(label, Math.max(1, Math.round(tramos)), tramos);
+    }
+    const parts = cot.partidas || cot.hoja?.partidas || [];
+    for (const part of parts) {
+      const lineaCfg = LINEAS_CONFIG[normalizeLineaId(part.linea)];
+      const qty = Math.max(1, Number(part.cantidad) || 1);
+      if (part.despiece?.perfiles?.length) {
+        for (const p of part.despiece.perfiles) {
+          const cat = CATALOGO_PERFILES.find((c) => c.id === p.perfilId);
+          const name = cat?.nombre || p.nombre || p.perfilId;
+          const tramos = Math.max(0.2, round2(((p.pzas || 1) * (p.medidaCm || 100)) / TRAMO_STD_CM));
+          bump(name, 1, tramos);
+        }
+      } else if (lineaCfg) {
+        bump(lineaCfg.nombre, qty, qty * 2);
+      }
+    }
+  }
+
+  for (const h of historial || []) {
+    if (!h.linea) continue;
+    const lineaCfg = LINEAS_CONFIG[normalizeLineaId(h.linea)];
+    const qty = Math.max(1, Number(h.cantidad) || 1);
+    bump(lineaCfg?.nombre || String(h.linea), qty, qty * 2);
+  }
+
+  if (counts.size === 0) {
+    for (const [k, rawVal] of Object.entries(inventario || {})) {
+      const qty = Number(rawVal) || 0;
+      if (qty <= 0) continue;
+      const parsed = parseInventarioKey(k);
+      const cat = CATALOGO_PERFILES.find((c) => c.id === parsed.perfilId);
+      bump(cat?.nombre || parsed.perfilId, Math.max(1, Math.round(qty)), qty);
+    }
+  }
+
+  return Array.from(counts.entries())
+    .map(([nombre, v]) => ({
+      nombre: nombre.length > 26 ? `${nombre.slice(0, 24)}…` : nombre,
+      usos: v.usos,
+      tramosEstimados: v.tramosEstimados,
+    }))
+    .sort((a, b) => b.usos - a.usos || b.tramosEstimados - a.tramosEstimados)
+    .slice(0, 7);
 }
 
 

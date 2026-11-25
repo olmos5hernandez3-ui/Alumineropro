@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  buildCompactExistenciasList,
   calcularMetrosObraAprobada,
   CATALOGO_PERFILES,
   COLORES_CONFIG,
@@ -51,8 +52,8 @@ interface Props {
   onGoHoja: () => void;
   onGoVidrioOptimizer: () => void;
   onOpenPerfilModal: (perfilId: PerfilCatalogoId) => void;
-  invTab?: 'perfiles' | 'vidrios' | 'herrajes';
-  onChangeInvTab?: (tab: 'perfiles' | 'vidrios' | 'herrajes') => void;
+  invTab?: 'existencias' | 'perfiles' | 'vidrios' | 'herrajes';
+  onChangeInvTab?: (tab: 'existencias' | 'perfiles' | 'vidrios' | 'herrajes') => void;
   onPushSubModal?: (sub: 'zoomPerfil') => void;
   onRequestBack?: () => void;
   onRegisterCloseSubModal?: (fn: (() => void) | null) => void;
@@ -74,15 +75,15 @@ const INV_LINEAS: LineaId[] = [
 
 const MARCAS_ALUMINIO = [
   'Alumer',
+  'Perfileto',
   'Cuprum',
   'Extrusiones Metálicas',
   'Indalum',
+  'Herralum',
   'Perfiles LM',
   'Eurovent',
   'Otra',
 ];
-
-const SOBRANTE_PRESETS_CM = [60, 120, 150, 250, 300];
 
 const HOJA_CATEGORIAS_META: Array<{
   id: HojaCategoriaId;
@@ -183,12 +184,53 @@ export const InventarioView: React.FC<Props> = ({
   onReplaceSubModalWithPerfil,
   onShowToast,
 }) => {
-  const [localInvTab, setLocalInvTab] = useState<'perfiles' | 'vidrios' | 'herrajes'>('perfiles');
+  const [localInvTab, setLocalInvTab] = useState<'existencias' | 'perfiles' | 'vidrios' | 'herrajes'>('existencias');
   const invTab = controlledInvTab ?? localInvTab;
-  const setInvTab = (next: 'perfiles' | 'vidrios' | 'herrajes') => {
+  const setInvTab = (next: 'existencias' | 'perfiles' | 'vidrios' | 'herrajes') => {
     if (next === invTab) return;
     if (onChangeInvTab) onChangeInvTab(next);
     else setLocalInvTab(next);
+  };
+  const [expandedExistenciaId, setExpandedExistenciaId] = useState<string | null>(null);
+  const [existenciasFiltroTipo, setExistenciasFiltroTipo] = useState<'todos' | 'perfil' | 'herraje' | 'vidrio'>('todos');
+  const [existenciasQuery, setExistenciasQuery] = useState('');
+
+  const compactExistencias = useMemo(
+    () => buildCompactExistenciasList(inventario, inventarioHerrajes, hojasVidrio),
+    [inventario, inventarioHerrajes, hojasVidrio]
+  );
+
+  const compactExistenciasFiltradas = useMemo(() => {
+    const q = existenciasQuery.trim().toLowerCase();
+    return compactExistencias.filter((item) => {
+      if (existenciasFiltroTipo !== 'todos' && item.tipo !== existenciasFiltroTipo) return false;
+      if (!q) return true;
+      return (
+        item.titulo.toLowerCase().includes(q) ||
+        item.subtitulo.toLowerCase().includes(q) ||
+        (item.marca || '').toLowerCase().includes(q)
+      );
+    });
+  }, [compactExistencias, existenciasFiltroTipo, existenciasQuery]);
+
+  const handleQuickDeductExistencia = (item: (typeof compactExistencias)[number], amount = 1) => {
+    if (item.tipo === 'perfil' && item.inventarioKey) {
+      const next = Math.max(0, round2(item.cantidad - amount));
+      onSetInventario(item.inventarioKey, next);
+      onShowToast(`Descontado ${amount} tr. de ${item.titulo}`);
+    } else if (item.tipo === 'herraje' && item.herrajeId) {
+      const next = Math.max(0, Math.round(item.cantidad - amount));
+      onSetInventarioHerraje(item.herrajeId, next);
+      onShowToast(`Descontado ${amount} de ${item.titulo}`);
+    } else if (item.vidrioId) {
+      const next = Math.max(0, Math.round(item.cantidad - amount));
+      if (next <= 0) {
+        onDeleteHojaVidrio(item.vidrioId);
+      } else {
+        onUpdateHojaVidrioQty(item.vidrioId, next);
+      }
+      onShowToast(`Descontada ${amount} hoja de ${item.titulo}`);
+    }
   };
   const [invMarca, setInvMarca] = useState(INVENTARIO_DEFAULT_MARCA);
   const [invMarcaOtra, setInvMarcaOtra] = useState('');
@@ -452,7 +494,7 @@ export const InventarioView: React.FC<Props> = ({
         <div>
           <h1 className="m-0 text-[21px] font-extrabold text-white">Mi Inventario de Taller</h1>
           <p className="m-0 text-[12.5px] text-slate-300">
-            Tramos 6.10 m, sobrantes exactos (cm/m), hojas de vidrio y herrajes
+            Existencias reales en bodega, tramos 6.10 m, hojas de vidrio y herrajes
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
@@ -480,41 +522,235 @@ export const InventarioView: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* Selector de 3 pestañas de Inventario */}
-      <div className="inv-segmented-tabs grid grid-cols-1 sm:grid-cols-3 gap-1.5 p-1.5 rounded-[14px] bg-[#13315C] border border-slate-400/30 mb-4">
+      {/* Selector de pestañas de Inventario */}
+      <div className="inv-segmented-tabs grid grid-cols-2 sm:grid-cols-4 gap-1.5 p-1.5 rounded-[14px] bg-[#13315C] border border-slate-400/30 mb-4">
+        <button
+          type="button"
+          id="inv-tab-existencias"
+          onClick={() => setInvTab('existencias')}
+          className={`min-h-[44px] rounded-[10px] text-[12.5px] font-extrabold cursor-pointer transition-colors px-2 ${
+            invTab === 'existencias'
+              ? 'bg-emerald-500 text-white shadow'
+              : 'bg-transparent text-emerald-200 hover:bg-white/5'
+          }`}
+        >
+          En Inventario (Existencias) ({compactExistencias.length})
+        </button>
         <button
           type="button"
           id="inv-tab-perfiles"
           onClick={() => setInvTab('perfiles')}
-          className={`min-h-[44px] rounded-[10px] text-[13px] font-extrabold cursor-pointer transition-colors ${
+          className={`min-h-[44px] rounded-[10px] text-[12.5px] font-extrabold cursor-pointer transition-colors px-2 ${
             invTab === 'perfiles' ? 'bg-white text-[#1E293B] shadow' : 'bg-transparent text-slate-300'
           }`}
         >
-          Perfiles y Sobrantes
+          Perfiles (6.10 m)
         </button>
         <button
           type="button"
           id="inv-tab-vidrios"
           onClick={() => setInvTab('vidrios')}
-          className={`min-h-[44px] rounded-[10px] text-[13px] font-extrabold cursor-pointer transition-colors px-2 ${
+          className={`min-h-[44px] rounded-[10px] text-[12.5px] font-extrabold cursor-pointer transition-colors px-2 ${
             invTab === 'vidrios' ? 'bg-white text-[#1E293B] shadow' : 'bg-transparent text-slate-300'
           }`}
         >
-          Hojas (Vidrio, Espejo y Plástico) ({totalHojasVidrio})
+          Hojas Vidrio ({totalHojasVidrio})
         </button>
         <button
           type="button"
           id="inv-tab-herrajes"
           onClick={() => setInvTab('herrajes')}
-          className={`min-h-[44px] rounded-[10px] text-[13px] font-extrabold cursor-pointer transition-colors ${
+          className={`min-h-[44px] rounded-[10px] text-[12.5px] font-extrabold cursor-pointer transition-colors px-2 ${
             invTab === 'herrajes' ? 'bg-white text-[#1E293B] shadow' : 'bg-transparent text-slate-300'
           }`}
         >
-          Herrajes, Viniles y Escuadras
+          Herrajes y Viniles
         </button>
       </div>
 
-      {invTab === 'vidrios' ? (
+      {invTab === 'existencias' ? (
+        <div
+          id="inv-existencias-compact-panel"
+          className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] p-4 sm:p-5 shadow-xl"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2.5 mb-3">
+            <div>
+              <h2 className="m-0 text-[17px] font-extrabold text-[#1E293B]">
+                En Inventario (Existencias &gt; 0)
+              </h2>
+              <p className="m-0 text-[12px] text-slate-600">
+                Vista compacta solo con perfiles, herrajes y hojas que sí tienen existencia disponible. Toca para ver detalles o descontar al instante.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="mono px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-800 text-[11.5px] font-extrabold">
+                {compactExistencias.length} con existencia
+              </span>
+              <button
+                type="button"
+                onClick={() => setInvTab('perfiles')}
+                className="min-h-[34px] px-3 rounded-lg bg-[#0B2545] text-white text-[11.5px] font-extrabold cursor-pointer"
+              >
+                + Capturar stock
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <div className="flex flex-wrap gap-1.5">
+              {(
+                [
+                  { id: 'todos', label: `Todos (${compactExistencias.length})` },
+                  {
+                    id: 'perfil',
+                    label: `Perfiles (${compactExistencias.filter((i) => i.tipo === 'perfil').length})`,
+                  },
+                  {
+                    id: 'herraje',
+                    label: `Herrajes (${compactExistencias.filter((i) => i.tipo === 'herraje').length})`,
+                  },
+                  {
+                    id: 'vidrio',
+                    label: `Vidrios (${compactExistencias.filter((i) => i.tipo === 'vidrio').length})`,
+                  },
+                ] as const
+              ).map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => setExistenciasFiltroTipo(f.id)}
+                  className={`px-2.5 py-1 rounded-lg text-[11.5px] font-extrabold border cursor-pointer ${
+                    existenciasFiltroTipo === f.id
+                      ? 'bg-[#0B2545] text-white border-[#0B2545]'
+                      : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+            <input
+              type="search"
+              value={existenciasQuery}
+              onChange={(e) => setExistenciasQuery(e.target.value)}
+              placeholder="Filtrar existencia por perfil, marca o herraje..."
+              className="w-full sm:w-[260px] min-h-[36px] rounded-lg border border-slate-300 px-3 text-[12.5px] font-semibold bg-slate-50"
+            />
+          </div>
+
+          {compactExistenciasFiltradas.length === 0 ? (
+            <div className="p-6 text-center rounded-xl border border-dashed border-slate-300 bg-slate-50">
+              <p className="m-0 text-[13.5px] font-extrabold text-slate-700">
+                {compactExistencias.length === 0
+                  ? 'Aún no tienes materiales con existencia mayor a 0.'
+                  : 'Ningún material coincide con ese filtro.'}
+              </p>
+              <p className="m-0 mt-1 text-[12px] text-slate-500">
+                Agrega existencias en las pestañas Perfiles (6.10 m), Hojas Vidrio o Herrajes y aparecerán resumidas aquí.
+              </p>
+            </div>
+          ) : (
+            <div className="flex flex-col divide-y divide-slate-200 border border-slate-200 rounded-xl overflow-hidden">
+              {compactExistenciasFiltradas.map((item) => {
+                const isExpanded = expandedExistenciaId === item.id;
+                const badgeStyle =
+                  item.tipo === 'perfil'
+                    ? 'bg-blue-100 text-blue-800 border-blue-200'
+                    : item.tipo === 'herraje'
+                      ? 'bg-amber-100 text-amber-900 border-amber-200'
+                      : 'bg-cyan-100 text-cyan-900 border-cyan-200';
+                const badgeText =
+                  item.tipo === 'perfil' ? 'Perfil' : item.tipo === 'herraje' ? 'Herraje' : 'Hoja';
+
+                return (
+                  <div key={item.id} className="bg-white hover:bg-slate-50/70 transition-colors">
+                    <div className="px-3 py-2 flex items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExpandedExistenciaId((prev) => (prev === item.id ? null : item.id))
+                        }
+                        aria-expanded={isExpanded}
+                        className="flex items-center gap-2 min-w-0 flex-1 text-left bg-transparent border-0 p-0 cursor-pointer"
+                      >
+                        <span
+                          className={`px-1.5 py-0.5 rounded border text-[10px] font-extrabold uppercase shrink-0 ${badgeStyle}`}
+                        >
+                          {badgeText}
+                        </span>
+                        {item.marca && (
+                          <span className="px-1.5 py-0.5 rounded bg-slate-800 text-white text-[10px] font-extrabold shrink-0">
+                            {item.marca}
+                          </span>
+                        )}
+                        <span className="text-[13px] font-extrabold text-[#1E293B] truncate">
+                          {item.titulo}
+                        </span>
+                        <span className="text-[11px] text-slate-400 shrink-0">
+                          {isExpanded ? '▲' : '▼'}
+                        </span>
+                      </button>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="mono px-2 py-0.5 rounded-md bg-emerald-50 border border-emerald-300 text-emerald-800 text-[12px] font-extrabold">
+                          {item.cantidad} {item.unidad}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleQuickDeductExistencia(item, 1)}
+                          title={`Descontar 1 ${item.unidad} de ${item.titulo}`}
+                          className="min-h-[30px] px-2 rounded-lg border border-rose-300 bg-rose-50 hover:bg-rose-100 text-rose-700 text-[11.5px] font-extrabold cursor-pointer"
+                        >
+                          −1
+                        </button>
+                      </div>
+                    </div>
+
+                    {isExpanded && (
+                      <div className="px-3 pb-2.5 pt-1 bg-slate-50 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-[12px]">
+                        <div className="text-slate-600 font-semibold">{item.subtitulo}</div>
+                        <div className="flex items-center gap-1.5">
+                          {item.tipo === 'perfil' && (
+                            <button
+                              type="button"
+                              onClick={() => handleQuickDeductExistencia(item, 0.5)}
+                              className="px-2 py-1 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 text-[11px] font-extrabold cursor-pointer"
+                            >
+                              −0.5 tr.
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleQuickDeductExistencia(item, 1)}
+                            className="px-2.5 py-1 rounded-lg border border-rose-300 bg-white hover:bg-rose-50 text-rose-700 text-[11px] font-extrabold cursor-pointer"
+                          >
+                            Descontar 1 {item.unidad}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (item.tipo === 'perfil' && item.inventarioKey) {
+                                onSetInventario(item.inventarioKey, round2(item.cantidad + 1));
+                              } else if (item.tipo === 'herraje' && item.herrajeId) {
+                                onSetInventarioHerraje(item.herrajeId, item.cantidad + 1);
+                              } else if (item.vidrioId) {
+                                onUpdateHojaVidrioQty(item.vidrioId, item.cantidad + 1);
+                              }
+                            }}
+                            className="px-2.5 py-1 rounded-lg border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-[11px] font-extrabold cursor-pointer"
+                          >
+                            +1 {item.unidad}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : invTab === 'vidrios' ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
           <div className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] p-4 sm:p-5 shadow-xl">
             <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
@@ -990,12 +1226,11 @@ export const InventarioView: React.FC<Props> = ({
                 <div>
                   <h2 className="m-0 text-[17px] font-extrabold">1. Selecciona Marca, Línea y Acabado</h2>
                   <p className="m-0 text-[12px] text-slate-600">
-                    Actualiza tus tramos de 6.10 m y registra sobrantes menores a 6 m
+                    Actualiza tus existencias en tramos completos de 6.10 m por marca y color
                   </p>
                 </div>
                 <span className="mono text-[12px] font-extrabold text-blue-600 text-right">
                   {totalTramosGlobal} tramos ({round2(totalTramosGlobal * TRAMO_STD_M)} m)
-                  {totalSobrantesM > 0 ? ` + ${totalSobrantesM} m sob.` : ''}
                 </span>
               </div>
 
@@ -1093,327 +1328,6 @@ export const InventarioView: React.FC<Props> = ({
                     </button>
                   );
                 })}
-              </div>
-            </div>
-
-            {/* Inventario de Sobrantes (< 6.00 m) vinculados a Marca + Línea + Perfil + Color */}
-            <div id="inv-sobrantes-card" className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] p-4 sm:p-5 shadow-xl">
-              <div className="flex items-center justify-between gap-2 mb-2">
-                <div>
-                  <h2 className="m-0 text-[17px] font-extrabold">Inventario de Sobrantes (&lt; 6.00 m)</h2>
-                  <p className="m-0 text-[12px] text-slate-600">
-                    Registra retazos en cm o metros vinculados a su Marca, Línea, Perfil y Color
-                  </p>
-                </div>
-                <span className="mono text-[12px] font-extrabold text-amber-800 bg-amber-50 border border-amber-300 px-2.5 py-1 rounded-lg">
-                  {totalSobrantesM.toFixed(2)} m
-                </span>
-              </div>
-
-              <form onSubmit={handleAgregarSobrante} className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex flex-col gap-2.5">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <div>
-                    <label htmlFor="sel-sobrante-marca" className="block text-[11px] font-bold text-slate-600 mb-1">
-                      Marca de aluminio *
-                    </label>
-                    <select
-                      id="sel-sobrante-marca"
-                      value={sobMarca}
-                      onChange={(e) => handleSelectMarca(e.target.value)}
-                      className="w-full min-h-[40px] rounded-xl border border-slate-200 px-2.5 text-[12.5px] font-semibold bg-white"
-                    >
-                      {MARCAS_ALUMINIO.map((m) => (
-                        <option key={m} value={m}>
-                          {m}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label htmlFor="sel-sobrante-linea" className="block text-[11px] font-bold text-slate-600 mb-1">
-                      Línea *
-                    </label>
-                    <select
-                      id="sel-sobrante-linea"
-                      value={sobLinea}
-                      onChange={(e) => handleSelectLinea(e.target.value as LineaId)}
-                      className="w-full min-h-[40px] rounded-xl border border-slate-200 px-2.5 text-[12.5px] font-semibold bg-white"
-                    >
-                      {INV_LINEAS.map((lid) => (
-                        <option key={lid} value={lid}>
-                          {LINEAS_CONFIG[lid].nombre}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                {sobMarca === 'Otra' && (
-                  <input
-                    id="inp-sobrante-marca-otra"
-                    type="text"
-                    value={sobMarcaOtra}
-                    onChange={(e) => handleSelectMarcaOtra(e.target.value)}
-                    placeholder="Escribe el nombre de la marca..."
-                    className="w-full min-h-[40px] rounded-xl border border-slate-200 px-3 text-[12.5px] font-semibold bg-white"
-                  />
-                )}
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <div>
-                    <label htmlFor="sel-sobrante-perfil" className="block text-[11px] font-bold text-slate-600 mb-1">
-                      Perfil específico *
-                    </label>
-                    <select
-                      id="sel-sobrante-perfil"
-                      value={sobPerfil}
-                      onChange={(e) => setSobPerfil(e.target.value as PerfilCatalogoId)}
-                      className="w-full min-h-[40px] rounded-xl border border-slate-200 px-2.5 text-[12.5px] font-semibold bg-white"
-                    >
-                      {CATALOGO_PERFILES.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.nombre}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label htmlFor="sel-sobrante-color" className="block text-[11px] font-bold text-slate-600 mb-1">
-                      Color / Acabado *
-                    </label>
-                    <select
-                      id="sel-sobrante-color"
-                      value={sobColor}
-                      onChange={(e) => handleSelectColor(e.target.value as ColorId)}
-                      className="w-full min-h-[40px] rounded-xl border border-slate-200 px-2.5 text-[12.5px] font-semibold bg-white"
-                    >
-                      {Object.values(COLORES_CONFIG).map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.nombre}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex flex-wrap gap-1.5">
-                    {SOBRANTE_PRESETS_CM.map((cm) => {
-                      const display = sobUnit === 'cm' ? `${cm} cm` : `${(cm / 100).toFixed(2)} m`;
-                      const valMatch =
-                        sobUnit === 'cm'
-                          ? Math.round(Number(sobLargoStr)) === cm
-                          : Math.round(Number(sobLargoStr) * 100) === cm;
-                      return (
-                        <button
-                          key={cm}
-                          type="button"
-                          onClick={() =>
-                            setSobLargoStr(sobUnit === 'cm' ? String(cm) : (cm / 100).toFixed(2))
-                          }
-                          className={`px-2.5 py-1 rounded-lg text-[11.5px] font-bold mono border cursor-pointer ${
-                            valMatch
-                              ? 'bg-amber-500 text-white border-amber-600'
-                              : 'bg-white text-slate-700 border-slate-200 hover:bg-amber-50'
-                          }`}
-                        >
-                          {display}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <div className="inline-flex rounded-lg border border-slate-300 bg-white p-0.5">
-                    <button
-                      type="button"
-                      id="btn-sobrante-unit-cm"
-                      onClick={() => handleToggleSobUnit('cm')}
-                      className={`px-2 py-0.5 rounded text-[11px] font-extrabold cursor-pointer ${
-                        sobUnit === 'cm' ? 'bg-[#0B2545] text-white' : 'text-slate-600'
-                      }`}
-                    >
-                      cm
-                    </button>
-                    <button
-                      type="button"
-                      id="btn-sobrante-unit-m"
-                      onClick={() => handleToggleSobUnit('m')}
-                      className={`px-2 py-0.5 rounded text-[11px] font-extrabold cursor-pointer ${
-                        sobUnit === 'm' ? 'bg-[#0B2545] text-white' : 'text-slate-600'
-                      }`}
-                    >
-                      m
-                    </button>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label htmlFor="inp-sobrante-largo" className="block text-[11px] font-bold text-slate-600 mb-1">
-                      Largo exacto en {sobUnit === 'cm' ? 'cm (< 600)' : 'metros (< 6.00)'}
-                    </label>
-                    <input
-                      id="inp-sobrante-largo"
-                      type="number"
-                      min={sobUnit === 'cm' ? 5 : 0.05}
-                      max={sobUnit === 'cm' ? 599 : 5.99}
-                      step={sobUnit === 'cm' ? 0.5 : 0.01}
-                      value={sobLargoStr}
-                      onChange={(e) => setSobLargoStr(e.target.value)}
-                      placeholder={sobUnit === 'cm' ? 'Ej. 60 o 240' : 'Ej. 0.60 o 2.40'}
-                      className="w-full min-h-[40px] rounded-xl border border-slate-200 px-3 mono text-[13px] font-bold bg-white"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="inp-sobrante-qty" className="block text-[11px] font-bold text-slate-600 mb-1">
-                      Piezas / Retazos
-                    </label>
-                    <input
-                      id="inp-sobrante-qty"
-                      type="number"
-                      min={1}
-                      step={1}
-                      value={sobCantidad}
-                      onChange={(e) => setSobCantidad(Math.max(1, Math.round(Number(e.target.value) || 1)))}
-                      className="w-full min-h-[40px] rounded-xl border border-slate-200 px-3 mono text-[13px] font-bold bg-white text-center"
-                    />
-                  </div>
-                </div>
-
-                {(() => {
-                  const rawSob = Number(sobLargoStr);
-                  if (!Number.isFinite(rawSob) || rawSob <= 0) return null;
-                  const eqCm = sobUnit === 'cm' ? Math.round(rawSob * 10) / 10 : Math.round(rawSob * 100);
-                  const eqM = sobUnit === 'cm' ? round2(rawSob / 100) : round2(rawSob);
-                  return (
-                    <div
-                      id="sobrante-unit-preview"
-                      className="px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-[11.5px] font-bold text-amber-900 mono flex flex-wrap items-center justify-between gap-2"
-                    >
-                      <span>
-                        Equivalencia: {sobUnit === 'cm' ? `= ${eqM.toFixed(2)} m` : `= ${eqCm} cm`}
-                      </span>
-                      <span className="text-amber-700">
-                        {eqCm} cm · {eqM.toFixed(2)} m
-                      </span>
-                    </div>
-                  );
-                })()}
-
-                <div className="flex flex-col min-[480px]:flex-row flex-wrap gap-2 w-full box-border">
-                  <input
-                    id="inp-sobrante-nota"
-                    type="text"
-                    value={sobNota}
-                    onChange={(e) => setSobNota(e.target.value)}
-                    placeholder="Ubicación / rack opcional (ej. Rack B)"
-                    className="w-full min-w-0 min-[480px]:flex-1 box-border min-h-[40px] rounded-xl border border-slate-200 px-3 text-[12.5px] bg-white"
-                  />
-                  <button
-                    type="submit"
-                    id="btn-add-sobrante"
-                    className="w-full min-[480px]:w-auto box-border min-h-[40px] px-3.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-[12.5px] font-extrabold cursor-pointer whitespace-nowrap"
-                  >
-                    + Agregar Sobrante
-                  </button>
-                </div>
-              </form>
-
-              <div className="mt-3 flex flex-col gap-2 max-h-[280px] overflow-y-auto pr-1">
-                {sobrantes.length === 0 ? (
-                  <p className="text-[12px] text-slate-500 p-3 text-center border border-dashed border-slate-200 rounded-xl">
-                    No hay tramos sobrantes registrados todavía.
-                  </p>
-                ) : (
-                  sobrantes.map((s) => {
-                    const pNombre = CATALOGO_PERFILES.find((p) => p.id === s.perfilId)?.nombre || s.perfilId;
-                    const cmVal = Math.round(s.largoM * 100);
-                    const totalItemM = round2(s.largoM * s.cantidad);
-                    const isNewlyAdded = s.id === highlightedSobranteId;
-                    return (
-                      <div
-                        key={s.id}
-                        data-sobrante-new={isNewlyAdded ? 'true' : undefined}
-                        className={`flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl bg-amber-50 border-[1.5px] border-amber-300 text-[#1E293B] text-[12px] transition-[transform,opacity] duration-500 ${
-                          isNewlyAdded ? 'sobrante-new-highlight' : ''
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 min-w-0 flex-1 basis-[170px]">
-                          <button
-                            type="button"
-                            data-preserve-light="true"
-                            onClick={() =>
-                              openZoomPerfil({
-                                perfilId: s.perfilId,
-                                nombre: pNombre,
-                                codigo: s.marca || 'Alumer',
-                                subtitulo: `${LINEAS_CONFIG[s.linea]?.nombre || ''} · ${COLORES_CONFIG[s.color]?.corto || ''} · ${cmVal} cm (${s.largoM.toFixed(2)} m)`,
-                                fotoRealUrl: getPerfilFotoUrl(perfilFotos, s.perfilId, s.linea),
-                              })
-                            }
-                            title={`Ampliar dibujo técnico de ${pNombre}`}
-                            aria-label={`Ampliar dibujo técnico de ${pNombre}`}
-                            className="w-8 h-8 rounded-lg bg-white border border-amber-200 hover:border-blue-500 hover:ring-2 hover:ring-blue-400/40 flex items-center justify-center shrink-0 p-0.5 cursor-zoom-in transition-all active:scale-95"
-                          >
-                            <PerfilSectionSvg
-                              perfilId={s.perfilId}
-                              fotoRealUrl={getPerfilFotoUrl(perfilFotos, s.perfilId, s.linea)}
-                              size={26}
-                            />
-                          </button>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="px-1.5 py-0.5 rounded bg-amber-600 text-white text-[10px] font-extrabold uppercase tracking-wide">
-                                {s.marca || 'Alumer'}
-                              </span>
-                              <strong className="text-[#1E293B] mono">
-                                {cmVal} cm ({s.largoM.toFixed(2)} m)
-                              </strong>
-                              <span className="text-slate-700 font-bold">× {s.cantidad}</span>
-                              <span className="mono text-amber-800 font-extrabold">
-                                ({totalItemM.toFixed(2)} m · {Math.round(totalItemM * 100)} cm)
-                              </span>
-                            </div>
-                            <div className="text-slate-700 font-semibold break-words">
-                              {pNombre} · {LINEAS_CONFIG[s.linea]?.nombre} · {COLORES_CONFIG[s.color]?.corto}
-                            </div>
-                            {s.nota && <div className="text-[11px] text-slate-600 break-words">{s.nota}</div>}
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-1 shrink-0">
-                          <button
-                            type="button"
-                            aria-label="Restar sobrante"
-                            onClick={() =>
-                              s.cantidad <= 1
-                                ? onDeleteSobrante(s.id)
-                                : onUpdateSobranteQty(s.id, s.cantidad - 1)
-                            }
-                            className="w-8 h-8 rounded-lg border border-amber-400 bg-white text-[#1E293B] font-extrabold cursor-pointer"
-                          >
-                            −
-                          </button>
-                          <button
-                            type="button"
-                            aria-label="Sumar sobrante"
-                            onClick={() => onUpdateSobranteQty(s.id, s.cantidad + 1)}
-                            className="w-8 h-8 rounded-lg border border-amber-400 bg-white text-[#1E293B] font-extrabold cursor-pointer"
-                          >
-                            +
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => onDeleteSobrante(s.id)}
-                            aria-label="Eliminar sobrante"
-                            className="px-2 h-8 rounded-lg border border-red-300 bg-white text-red-600 font-bold cursor-pointer"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
               </div>
             </div>
 

@@ -51,6 +51,7 @@ import {
   loginCloudAccount,
   logoutCloudAccount,
   registerCloudAccount,
+  saveHomeMenuLayoutToCloud,
   subscribeAdminMessages,
   subscribeCloudDevices,
   subscribeReferencePrices,
@@ -147,6 +148,7 @@ import {
   saveInventario,
   saveInventarioHerrajes,
   saveLicencia,
+  saveLegalDisclaimerAccepted,
   saveNotas,
   saveObrasAprobadas,
   savePerfilFotos,
@@ -220,10 +222,9 @@ import {
 import { ScreenId, SideDrawer, TopBar } from './components/TopBarAndDrawer';
 import { MainMenuView } from './components/MainMenuView';
 import { TrabajoView } from './components/TrabajoView';
-import { TallerOnboardingGate } from './components/TallerOnboardingGate';
-import { LegalDisclaimerGate } from './components/LegalDisclaimerGate';
 import { AdminGateModal } from './components/AdminGateModal';
 import { InteractiveTutorialModal } from './components/InteractiveTutorialModal';
+import { UnifiedWorkshopGateModal } from './components/UnifiedWorkshopGateModal';
 import {
   AdminModal,
   CloudBackupModal,
@@ -306,6 +307,7 @@ import { AntesDespuesModal } from './components/AntesDespuesModal';
 import { CatalogoView, NotasView } from './components/NotasAndCatalogoViews';
 import { AvisoPrivacidadView, TerminosCondicionesView } from './components/LegalViews';
 import { LegalDocType, LegalModal } from './components/LegalModal';
+import { HelpFaqModal } from './components/HelpFaqModal';
 
 function createInitialParams(linea: LineaId = '3'): TrabajoParams {
   const cfg = LINEAS_CONFIG[linea];
@@ -382,6 +384,7 @@ export default function App() {
     | 'recomendar'
     | 'sugerencias'
     | 'tutorial'
+    | 'faq'
     | 'calculadora'
     | 'antesDespues'
     | 'adminAuth'
@@ -399,7 +402,7 @@ export default function App() {
     depth: number;
     view: ScreenId;
     workTab: 'descuentos' | 'cotizacion';
-    invTab: 'perfiles' | 'vidrios' | 'herrajes';
+    invTab: 'existencias' | 'perfiles' | 'vidrios' | 'herrajes';
     catalogoTab: 'perfiles' | 'herrajes';
     modStep: 1 | 2 | 3 | 4 | 5;
     modPaso5Tab: 'cortes' | 'tramos';
@@ -413,7 +416,7 @@ export default function App() {
     depth: 0,
     view: 'menu',
     workTab: 'descuentos',
-    invTab: 'perfiles',
+    invTab: 'existencias',
     catalogoTab: 'perfiles',
     modStep: 1,
     modPaso5Tab: 'cortes',
@@ -476,8 +479,12 @@ export default function App() {
 
   const [currentView, setCurrentView] = useState<ScreenId>('menu');
   const [workTab, setWorkTab] = useState<'descuentos' | 'cotizacion'>('descuentos');
-  const [invTab, setInvTab] = useState<'perfiles' | 'vidrios' | 'herrajes'>('perfiles');
+  const [invTab, setInvTab] = useState<'existencias' | 'perfiles' | 'vidrios' | 'herrajes'>('existencias');
   const [catalogoTab, setCatalogoTab] = useState<'perfiles' | 'herrajes'>('perfiles');
+  const [unifiedGateTarget, setUnifiedGateTarget] = useState<null | {
+    tool: 'levantamiento' | 'hoja' | 'modulacion' | 'vidrio';
+    label: string;
+  }>(null);
   const [modStep, setModStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [modPaso5Tab, setModPaso5Tab] = useState<'cortes' | 'tramos'>('cortes');
   const [modMosqOpen, setModMosqOpen] = useState<boolean>(false);
@@ -693,6 +700,7 @@ export default function App() {
   const recomendarOpen = globalModals.includes('recomendar');
   const sugerenciasOpen = globalModals.includes('sugerencias');
   const tutorialOpen = globalModals.includes('tutorial');
+  const faqOpen = globalModals.includes('faq');
   const calculadoraOpen = globalModals.includes('calculadora');
   const antesDespuesOpen = globalModals.includes('antesDespues');
   const adminAuthOpen = globalModals.includes('adminAuth');
@@ -1128,6 +1136,7 @@ export default function App() {
         tallerNombre: taller.nombre || '',
         tallerResponsable: taller.responsable || '',
         tallerWhatsapp: taller.tel || '',
+        ubicacion: taller.ubicacion || '',
         deviceLabel: label,
         eventType: 'open',
         minutesDelta: 1,
@@ -1156,6 +1165,9 @@ export default function App() {
       void syncDeviceToCloud({
         deviceId,
         cliente: hoja.proyecto.trim() || taller.nombre || '',
+        tallerNombre: taller.nombre || '',
+        tallerWhatsapp: taller.tel || '',
+        ubicacion: taller.ubicacion || '',
         deviceLabel: label,
         eventType: 'heartbeat',
         minutesDelta: 1,
@@ -1724,7 +1736,7 @@ export default function App() {
       pushNavFrame({
         view,
         workTab: extraPatch?.workTab ?? (view === 'trabajo' ? 'descuentos' : cur.workTab),
-        invTab: extraPatch?.invTab ?? (view === 'inventario' ? 'perfiles' : cur.invTab),
+        invTab: extraPatch?.invTab ?? (view === 'inventario' ? 'existencias' : cur.invTab),
         catalogoTab: extraPatch?.catalogoTab ?? (view === 'catalogo' ? 'perfiles' : cur.catalogoTab),
         modStep: extraPatch?.modStep ?? (view === 'modulacion' ? 1 : cur.modStep),
         modPaso5Tab: extraPatch?.modPaso5Tab ?? (view === 'modulacion' ? 'cortes' : cur.modPaso5Tab),
@@ -1779,6 +1791,9 @@ export default function App() {
       setHomeMenuLayout(saved);
       setHomeReorderMode(false);
       showToastRef.current('Orden guardado y apartados bloqueados', true);
+
+      // Persistir también el orden personalizado en Firestore
+      void saveHomeMenuLayoutToCloud(deviceId, saved);
 
       const curSession = cloudAccountSessionRef.current;
       if (
@@ -2127,19 +2142,40 @@ export default function App() {
     navigateTo('trabajo');
   };
 
+  const needsFirstTimeWorkshopGate =
+    !proActive && !firebaseUser && !(legalAccepted && tallerOnboardingComplete);
+
+  const executeActiveTool = useCallback(
+    (tool: 'levantamiento' | 'hoja' | 'modulacion' | 'vidrio') => {
+      if (tool === 'levantamiento') {
+        window.__alumLev?.open();
+      } else if (tool === 'hoja') {
+        navigateTo('hoja');
+      } else if (tool === 'modulacion') {
+        navigateTo('modulacion');
+      } else if (tool === 'vidrio') {
+        navigateTo('vidrio');
+      }
+    },
+    [navigateTo]
+  );
+
+  const requestActiveToolAccess = useCallback(
+    (tool: 'levantamiento' | 'hoja' | 'modulacion' | 'vidrio', label: string) => {
+      if (needsFirstTimeWorkshopGate) {
+        setUnifiedGateTarget({ tool, label });
+        return;
+      }
+      executeActiveTool(tool);
+    },
+    [needsFirstTimeWorkshopGate, executeActiveTool]
+  );
+
   const handleEntrarHoja = () => {
-    if (!proActive) {
-      openGlobalModal('pro');
-      return;
-    }
-    navigateTo('hoja');
+    requestActiveToolAccess('hoja', 'Hoja de Cotización');
   };
 
-  const handleEntrarInventario = (tab?: 'perfiles' | 'vidrios' | 'herrajes') => {
-    if (!proActive) {
-      openGlobalModal('pro');
-      return;
-    }
+  const handleEntrarInventario = (tab?: 'existencias' | 'perfiles' | 'vidrios' | 'herrajes') => {
     navigateTo('inventario', tab ? { invTab: tab } : undefined);
   };
 
@@ -2427,6 +2463,60 @@ export default function App() {
     };
   }, []);
 
+  const completeGoogleUserRegistration = useCallback(
+    (user: FirebaseUser) => {
+      const now = Date.now();
+      saveLegalDisclaimerAccepted(true);
+      setLegalAccepted(true);
+      saveTermsAcceptedAt(now);
+
+      const emailPrefix = (user.email || '').split('@')[0] || 'Mi Taller';
+      const resolvedNombre = taller.nombre?.trim() || user.displayName?.trim() || emailPrefix;
+      const resolvedResponsable =
+        taller.responsable?.trim() || user.displayName?.trim() || resolvedNombre;
+      const nextTaller: TallerConfig = {
+        ...taller,
+        nombre: resolvedNombre,
+        responsable: resolvedResponsable,
+        termsAcceptedAt: taller.termsAcceptedAt || now,
+      };
+      saveTaller(nextTaller);
+      setTaller(nextTaller);
+
+      void syncTallerProfileToCloud({
+        deviceId,
+        nombre: nextTaller.nombre,
+        responsable: nextTaller.responsable || nextTaller.nombre,
+        tel: nextTaller.tel || '',
+        ubicacion: nextTaller.ubicacion || '',
+        termsAcceptedAt: nextTaller.termsAcceptedAt || now,
+        preferredTheme: resolvedTheme,
+        preferredSkin: skin,
+        preferredSkinVariant: normalizeSkinVariantForSkin(skin, skinVariant),
+      });
+
+      void syncDeviceToCloud({
+        deviceId,
+        cliente: nextTaller.nombre,
+        tallerNombre: nextTaller.nombre,
+        tallerResponsable: nextTaller.responsable || nextTaller.nombre,
+        tallerWhatsapp: nextTaller.tel || '',
+        ubicacion: nextTaller.ubicacion || '',
+        termsAcceptedAt: nextTaller.termsAcceptedAt || now,
+        deviceLabel: detectDeviceLabel(),
+        eventType: 'open',
+        minutesDelta: 0,
+        licencia: licenciaRef.current,
+      });
+    },
+    [deviceId, taller, resolvedTheme, skin, skinVariant]
+  );
+
+  const completeGoogleUserRef = useRef(completeGoogleUserRegistration);
+  completeGoogleUserRef.current = completeGoogleUserRegistration;
+  const executeActiveToolRef = useRef(executeActiveTool);
+  executeActiveToolRef.current = executeActiveTool;
+
   // Sincronización reactiva del estado de autenticación con Google (incluyendo retorno de signInWithRedirect)
   useEffect(() => {
     const unsub = subscribeFirebaseAuth((user) => {
@@ -2440,13 +2530,30 @@ export default function App() {
       if (result.status === 'signed_in') {
         setFirebaseUser(result.user);
         setGoogleAuthError(null);
+        completeGoogleUserRef.current(result.user);
         showToast(
-          `Cuenta de Google conectada${result.user.email ? `: ${result.user.email}` : ''}`,
+          `Conectado en Nube${result.user.email ? `: ${result.user.email}` : ''}`,
           true
         );
+        try {
+          const pendingTool = window.sessionStorage.getItem('ap_pending_google_tool') as
+            | 'levantamiento'
+            | 'hoja'
+            | 'modulacion'
+            | 'vidrio'
+            | null;
+          if (pendingTool) {
+            window.sessionStorage.removeItem('ap_pending_google_tool');
+            setUnifiedGateTarget(null);
+            executeActiveToolRef.current(pendingTool);
+          }
+        } catch {
+          // ignore
+        }
       } else if (result.status === 'error') {
-        setGoogleAuthError(result.message);
-        showToast(result.message);
+        const detailed = result.code ? `[${result.code}] ${result.message}` : result.message;
+        setGoogleAuthError(detailed);
+        showToast(detailed);
       }
     });
     return () => unsub();
@@ -2570,28 +2677,52 @@ export default function App() {
     setGoogleAuthLoading(true);
     setGoogleAuthError(null);
     try {
+      if (unifiedGateTarget?.tool) {
+        try {
+          window.sessionStorage.setItem('ap_pending_google_tool', unifiedGateTarget.tool);
+        } catch {
+          // ignore
+        }
+      }
       const result = await connectGoogleAccountWithFallback();
       if (result.status === 'signed_in') {
         setFirebaseUser(result.user);
         setGoogleAuthError(null);
+        completeGoogleUserRegistration(result.user);
         showToast(
-          `Google conectado${result.user.email ? `: ${result.user.email}` : ''}`,
+          `Conectado en Nube${result.user.email ? `: ${result.user.email}` : ''}`,
           true
         );
+        if (unifiedGateTarget?.tool) {
+          const targetTool = unifiedGateTarget.tool;
+          setUnifiedGateTarget(null);
+          try {
+            window.sessionStorage.removeItem('ap_pending_google_tool');
+          } catch {
+            // ignore
+          }
+          executeActiveTool(targetTool);
+        }
         if (loadOfflineCotizacionesQueue().length > 0 && cloudAccountSessionRef.current) {
           void handleFlushOfflineCotizacionesQueue({ silentIfUnlinked: true });
         }
       } else if (result.status === 'redirecting') {
         showToast(result.message);
       } else {
-        setGoogleAuthError(result.message);
-        showToast(result.message);
+        const detailed = result.code ? `[${result.code}] ${result.message}` : result.message;
+        setGoogleAuthError(detailed);
+        showToast(detailed);
       }
     } catch (err) {
-      const msg =
+      const errCode =
+        typeof err === 'object' && err !== null && 'code' in err
+          ? String((err as { code?: unknown }).code || '')
+          : '';
+      const baseMsg =
         err instanceof Error && err.message
           ? err.message
           : 'No se pudo iniciar sesión con Google. Intenta nuevamente.';
+      const msg = errCode ? `[${errCode}] ${baseMsg}` : baseMsg;
       setGoogleAuthError(msg);
       showToast(msg);
     } finally {
@@ -3083,11 +3214,7 @@ export default function App() {
     admin: 'Panel de Administrador',
   };
 
-  const showMandatoryOnboarding =
-    !tallerOnboardingComplete && !autostartSkip && !accessBlocked;
-
-  const isInteractiveTutorialVisible =
-    tallerOnboardingComplete && (guidedTutorialAutoOpen || tutorialOpen);
+  const isInteractiveTutorialVisible = guidedTutorialAutoOpen || tutorialOpen;
 
   const handleCloseInteractiveTutorial = () => {
     saveGuidedTutorialSeen(true);
@@ -3152,68 +3279,9 @@ export default function App() {
     );
   }
 
-  const showMandatoryLegalGate =
-    !legalAccepted && !accessBlocked && currentView !== 'admin';
-
-  if (showMandatoryLegalGate) {
-    return (
-      <>
-        <LegalDisclaimerGate onAccepted={() => setLegalAccepted(true)} />
-        <AdminGateModal
-          open={adminAuthOpen}
-          onClose={requestBack}
-          onSuccess={() => {
-            replaceNavFrame({ view: 'admin', globalModals: [] });
-          }}
-        />
-      </>
-    );
-  }
-
-  if (showMandatoryOnboarding && currentView !== 'admin') {
-    return (
-      <>
-        <TallerOnboardingGate
-          taller={taller}
-          referredByName={referredByName || savedColleagueReferral?.refName || referredById}
-          onSaveOnboarding={({ nombre, responsable, tel, termsAcceptedAt }) => {
-            const acceptedTs = termsAcceptedAt || Date.now();
-            saveTermsAcceptedAt(acceptedTs);
-            const nextTaller: TallerConfig = {
-              ...taller,
-              nombre,
-              responsable,
-              tel,
-              termsAcceptedAt: acceptedTs,
-            };
-            saveTaller(nextTaller);
-            setTaller(nextTaller);
-            void syncTallerProfileToCloud({
-              deviceId,
-              nombre,
-              responsable,
-              tel,
-              termsAcceptedAt: acceptedTs,
-              preferredTheme: resolvedTheme,
-              preferredSkin: skin,
-              preferredSkinVariant: normalizeSkinVariantForSkin(skin, skinVariant),
-            });
-            showToast(`¡Bienvenido, ${nombre}! Datos de Mi Taller guardados.`, true);
-            if (!loadGuidedTutorialSeen()) {
-              setGuidedTutorialAutoOpen(true);
-            }
-          }}
-        />
-        <AdminGateModal
-          open={adminAuthOpen}
-          onClose={requestBack}
-          onSuccess={() => {
-            replaceNavFrame({ view: 'admin', globalModals: [] });
-          }}
-        />
-      </>
-    );
-  }
+  // Entrada libre en Modo Gratuito: sin pantallas previas bloqueantes al abrir la app.
+  // El modal unificado 'Aviso Legal, Deslinde y Registro de Taller' se muestra únicamente
+  // la primera vez que el usuario gratuito entra a Levantamiento Rápido, Hoja de Cotización u Optimizar Cortes.
 
   return (
     <div
@@ -3379,9 +3447,21 @@ export default function App() {
             onEntrarTrabajo={handleEntrarTrabajo}
             onEntrarHoja={handleEntrarHoja}
             onEntrarInventario={() => handleEntrarInventario()}
-            onGoToView={(view) => navigateTo(view)}
+            onGoToView={(view) => {
+              if (view === 'modulacion') {
+                requestActiveToolAccess('modulacion', 'Optimizar Cortes');
+                return;
+              }
+              if (view === 'vidrio') {
+                requestActiveToolAccess('vidrio', 'Optimizar Cortes (Vidrio 2D)');
+                return;
+              }
+              navigateTo(view);
+            }}
             onOpenAntesDespues={() => openGlobalModal('antesDespues')}
-            onOpenLevantamiento={() => window.__alumLev?.open()}
+            onOpenLevantamiento={() =>
+              requestActiveToolAccess('levantamiento', 'Levantamiento Rápido')
+            }
             onOpenReminders={() => openGlobalModal('reminders')}
             menuTier={homeMenuTier}
             menuLayout={homeMenuLayout}
@@ -3389,6 +3469,7 @@ export default function App() {
             onChangeMenuLayout={handleChangeHomeMenuLayout}
             onSaveAndLockLayout={handleSaveAndLockHomeMenuLayout}
             onResetMenuLayout={handleResetHomeMenuLayout}
+            onForceExitReorderMode={() => setHomeReorderMode(false)}
           />
         )}
 
@@ -4218,6 +4299,7 @@ export default function App() {
         onOpenRecomendar={() => openModalFromDrawer('recomendar')}
         onOpenSugerencias={() => openModalFromDrawer('sugerencias')}
         onOpenTutorial={() => openModalFromDrawer('tutorial')}
+        onOpenFaq={() => openModalFromDrawer('faq')}
         onOpenLegal={(doc) => {
           if (doc === 'deslinde') {
             requestBack();
@@ -4896,6 +4978,75 @@ export default function App() {
         open={isInteractiveTutorialVisible}
         onClose={handleCloseInteractiveTutorial}
         onFinish={handleCloseInteractiveTutorial}
+        onOpenVidrioOptimizer={() => {
+          handleCloseInteractiveTutorial();
+          requestActiveToolAccess('vidrio', 'Optimizar Cortes (Vidrio 2D)');
+        }}
+      />
+
+      <HelpFaqModal
+        open={faqOpen}
+        theme={resolvedTheme}
+        onClose={requestBack}
+      />
+
+      <UnifiedWorkshopGateModal
+        open={unifiedGateTarget !== null}
+        targetToolLabel={unifiedGateTarget?.label || 'Herramienta de trabajo'}
+        taller={taller}
+        googleAuthLoading={googleAuthLoading}
+        googleAuthError={googleAuthError}
+        onContinueWithGoogle={handleConnectGoogle}
+        onClose={() => setUnifiedGateTarget(null)}
+        onSaveManual={({ nombre, tel, ubicacion, termsAcceptedAt }) => {
+          const acceptedTs = termsAcceptedAt || Date.now();
+          saveLegalDisclaimerAccepted(true);
+          setLegalAccepted(true);
+          saveTermsAcceptedAt(acceptedTs);
+          const resolvedResponsable = taller.responsable?.trim() || nombre;
+          const nextTaller: TallerConfig = {
+            ...taller,
+            nombre,
+            responsable: resolvedResponsable,
+            tel,
+            ubicacion,
+            termsAcceptedAt: acceptedTs,
+          };
+          saveTaller(nextTaller);
+          setTaller(nextTaller);
+
+          void syncTallerProfileToCloud({
+            deviceId,
+            nombre,
+            responsable: resolvedResponsable,
+            tel,
+            ubicacion,
+            termsAcceptedAt: acceptedTs,
+            preferredTheme: resolvedTheme,
+            preferredSkin: skin,
+            preferredSkinVariant: normalizeSkinVariantForSkin(skin, skinVariant),
+          });
+          void syncDeviceToCloud({
+            deviceId,
+            cliente: nombre,
+            tallerNombre: nombre,
+            tallerResponsable: resolvedResponsable,
+            tallerWhatsapp: tel,
+            ubicacion,
+            termsAcceptedAt: acceptedTs,
+            deviceLabel: detectDeviceLabel(),
+            eventType: 'open',
+            minutesDelta: 0,
+            licencia: licenciaRef.current,
+          });
+
+          const targetTool = unifiedGateTarget?.tool;
+          setUnifiedGateTarget(null);
+          showToast(`¡Registro guardado, ${nombre}! Ya puedes trabajar sin interrupciones.`, true);
+          if (targetTool) {
+            executeActiveTool(targetTool);
+          }
+        }}
       />
 
       <CloudBackupModal
