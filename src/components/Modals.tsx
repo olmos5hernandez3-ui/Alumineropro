@@ -4996,9 +4996,21 @@ export const CloudBackupModal: React.FC<CloudBackupModalProps> = ({
                   <path fill="#FBBC05" d="M5.28 14.28A7.2 7.2 0 0 1 4.9 12c0-.79.14-1.56.38-2.28v-3.1H1.28A12 12 0 0 0 0 12c0 1.94.46 3.77 1.28 5.38l4-3.1z" />
                   <path fill="#EA4335" d="M12 4.77c1.76 0 3.34.61 4.58 1.8l3.44-3.44C17.94 1.19 15.24 0 12 0A12 12 0 0 0 1.28 6.62l4 3.1c.95-2.84 3.6-4.95 6.72-4.95z" />
                 </svg>
-                <span>{googleAuthLoading ? 'Conectando con Google...' : 'Conectar con Google'}</span>
+                <span>
+                  {googleAuthLoading
+                    ? 'Conectando con Google...'
+                    : 'Conectar con Google (Recomendado)'}
+                </span>
               </button>
             )}
+
+            <p
+              id="cloud-backup-google-benefit"
+              className="m-0 text-[11px] text-slate-600 leading-snug font-semibold"
+            >
+              Respalda tus cotizaciones y protege tu licencia PRO en la nube para no perder tus
+              datos si cambias de celular o borras el navegador.
+            </p>
 
             {googleAuthError && (
               <div

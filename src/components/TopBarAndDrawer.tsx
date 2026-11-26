@@ -23,6 +23,8 @@ import {
 import {
   APP_VERSION,
   formatLicenseCountdownBadge,
+  GOOGLE_CONNECT_BENEFIT_SUBTITLE,
+  GOOGLE_CONNECT_CTA_LABEL,
   isProActive,
 } from '../utils/alumineroLogic';
 import {
@@ -37,6 +39,7 @@ import {
   SKIN_VARIANTS_BY_SKIN,
 } from '../utils/storageHelpers';
 import { AlumineroProMetallicLogo } from './MetallicIcons';
+import { ReferralPromoBanner } from './ReferralPromoBanner';
 
 export type ScreenId =
   | 'menu'
@@ -395,6 +398,11 @@ interface SideDrawerProps {
   canOrganizeHomeMenu?: boolean;
   homeReorderMode?: boolean;
   onToggleHomeReorderMode?: (enabled: boolean) => void;
+  tallerNombre?: string;
+  showFreeReferral3DaysPromo?: boolean;
+  registeredReferralsCount?: number;
+  onOpenReferralGift?: () => void;
+  onReferralShareFeedback?: () => void;
 }
 
 interface SkinOptionMeta {
@@ -499,6 +507,11 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
   canOrganizeHomeMenu = false,
   homeReorderMode = false,
   onToggleHomeReorderMode,
+  tallerNombre,
+  showFreeReferral3DaysPromo = false,
+  registeredReferralsCount = 0,
+  onOpenReferralGift,
+  onReferralShareFeedback,
 }) => {
   const [skinsExpanded, setSkinsExpanded] = useState(false);
   const [promoFlyerExpanded, setPromoFlyerExpanded] = useState(true);
@@ -1352,12 +1365,12 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
                   <path fill="#EA4335" d="M12 4.77c1.76 0 3.34.61 4.58 1.8l3.44-3.44C17.94 1.19 15.24 0 12 0A12 12 0 0 0 1.28 6.62l4 3.1c.95-2.84 3.6-4.95 6.72-4.95z" />
                 </svg>
                 <span className="min-w-0 flex flex-col">
-                  <span className="truncate">
+                  <span className={googleUserEmail ? 'truncate' : 'leading-snug'}>
                     {googleAuthLoading
                       ? 'Conectando con Google...'
                       : googleUserEmail
                         ? googleUserEmail
-                        : 'Conectar con Google'}
+                        : GOOGLE_CONNECT_CTA_LABEL}
                   </span>
                   {googleUserEmail && !googleAuthLoading && (
                     <span className="text-[10.5px] font-extrabold text-emerald-500 dark:text-emerald-300 leading-tight">
@@ -1366,16 +1379,25 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
                   )}
                 </span>
               </span>
-              <span
-                className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold shrink-0 ${
-                  googleUserEmail
-                    ? 'bg-emerald-600 text-white'
-                    : 'bg-slate-900 text-white'
-                }`}
-              >
-                {googleAuthLoading ? '...' : googleUserEmail ? 'Salir' : 'Google'}
-              </span>
+              {(googleAuthLoading || googleUserEmail) && (
+                <span
+                  className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold shrink-0 ${
+                    googleUserEmail
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-slate-900 text-white'
+                  }`}
+                >
+                  {googleAuthLoading ? '...' : 'Salir'}
+                </span>
+              )}
             </button>
+
+            <p
+              id="drawer-google-benefit"
+              className={`m-0 px-1 text-[11px] leading-snug font-semibold ${subTextClass}`}
+            >
+              {GOOGLE_CONNECT_BENEFIT_SUBTITLE}
+            </p>
 
             {googleAuthError && (
               <div
@@ -1397,6 +1419,19 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
               </div>
             )}
           </div>
+        )}
+
+        {/* 3.6 Promoción 3 días PRO gratis por 3 referidos (solo usuarios Gratuitos sin canje previo) */}
+        {showFreeReferral3DaysPromo && onOpenReferralGift && (
+          <ReferralPromoBanner
+            variant="drawer"
+            deviceId={deviceId}
+            tallerNombre={tallerNombre}
+            registeredCount={registeredReferralsCount}
+            isDark={isDark}
+            onOpenGift={onOpenReferralGift}
+            onShareFeedback={onReferralShareFeedback}
+          />
         )}
 
         <div className={`pt-2 mt-1 border-t flex flex-col gap-2 ${dividerClass}`}>

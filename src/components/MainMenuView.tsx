@@ -1,10 +1,22 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { GripVertical, RotateCcw, Lock, ChevronLeft, ChevronRight, ArrowRightLeft } from 'lucide-react';
+import {
+  GripVertical,
+  RotateCcw,
+  Lock,
+  ChevronLeft,
+  ChevronRight,
+  ArrowRightLeft,
+  Plus,
+  Layers,
+  Square,
+  Sparkles,
+} from 'lucide-react';
 import {
   AdminMessageItem,
   CATALOGO_PERFILES,
   DEFAULT_HOME_MENU_LAYOUT,
+  FrequentMaterialSuggestion,
   HomeMenuCardId,
   HomeMenuLayout,
   HomeMenuSectionId,
@@ -15,6 +27,7 @@ import {
 } from '../utils/alumineroLogic';
 import { formatMXN, SavedColleagueReferral } from '../utils/storageHelpers';
 import { ScreenId } from './TopBarAndDrawer';
+import { ReferralPromoBanner } from './ReferralPromoBanner';
 import {
   MetallicSetSquareIcon,
   MetallicQuoteDocIcon,
@@ -58,6 +71,14 @@ interface Props {
   onOpenAntesDespues: () => void;
   onOpenLevantamiento?: () => void;
   onOpenReminders?: () => void;
+  frequentMaterials?: FrequentMaterialSuggestion[];
+  onQuickCreateFromFrequentMaterial?: (item: FrequentMaterialSuggestion) => void;
+  deviceId?: string;
+  tallerNombre?: string;
+  showFreeReferral3DaysPromo?: boolean;
+  registeredReferralsCount?: number;
+  onOpenReferralGift?: () => void;
+  onReferralShareFeedback?: () => void;
 }
 
 const FULL_WIDTH_CARD_IDS = new Set<HomeMenuCardId>(['levantamiento', 'hoja', 'videos']);
@@ -172,6 +193,14 @@ export const MainMenuView: React.FC<Props> = ({
   onOpenAntesDespues,
   onOpenLevantamiento,
   onOpenReminders,
+  frequentMaterials = [],
+  onQuickCreateFromFrequentMaterial,
+  deviceId = '',
+  tallerNombre,
+  showFreeReferral3DaysPromo = false,
+  registeredReferralsCount = 0,
+  onOpenReferralGift,
+  onReferralShareFeedback,
 }) => {
   const effectiveTier: HomeMenuTier = menuTier ?? (proActive ? 'pro_paged' : 'free');
   const isPaged = effectiveTier === 'pro_paged' || effectiveTier === 'pro_annual';
@@ -1338,6 +1367,79 @@ export const MainMenuView: React.FC<Props> = ({
             </div>
           )}
         </div>
+      )}
+
+      {/* Banner promocional: Obtén 3 días PRO gratis por 3 referidos (solo usuarios en Versión Gratuita sin canje previo) */}
+      {showFreeReferral3DaysPromo && deviceId && onOpenReferralGift && (
+        <ReferralPromoBanner
+          variant="home"
+          deviceId={deviceId}
+          tallerNombre={tallerNombre}
+          registeredCount={registeredReferralsCount}
+          isDark
+          onOpenGift={onOpenReferralGift}
+          onShareFeedback={onReferralShareFeedback}
+        />
+      )}
+
+      {/* Acceso rápido: los 3 perfiles de aluminio o vidrios más utilizados según historial */}
+      {frequentMaterials.length > 0 && onQuickCreateFromFrequentMaterial && (
+        <section
+          id="section-home-frequent-materials"
+          aria-label="Materiales más utilizados"
+          className="mb-4 w-full rounded-2xl border border-slate-700/80 bg-slate-900/75 p-3 sm:p-3.5 text-left shadow-md"
+        >
+          <div className="flex items-center justify-between gap-2 mb-2.5">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <Sparkles className="w-3.5 h-3.5 text-sky-400 shrink-0" aria-hidden="true" />
+              <span className="text-[11px] font-extrabold uppercase tracking-wider text-sky-300 truncate">
+                Tus {frequentMaterials.length} materiales más usados · Acceso rápido
+              </span>
+            </div>
+            <span className="text-[10px] font-bold text-slate-400 shrink-0">
+              Según tu historial
+            </span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            {frequentMaterials.slice(0, 3).map((item, idx) => (
+              <button
+                key={item.key}
+                type="button"
+                id={`btn-home-frequent-mat-${idx + 1}`}
+                onClick={() => onQuickCreateFromFrequentMaterial(item)}
+                className="group w-full rounded-xl border border-slate-700/85 bg-slate-800/85 hover:bg-slate-800 hover:border-sky-400/60 px-3 py-2.5 text-left cursor-pointer transition-all active:scale-[0.98] flex items-center justify-between gap-2"
+              >
+                <div className="min-w-0 flex items-start gap-2">
+                  <span
+                    className={`mt-0.5 w-7 h-7 rounded-lg flex items-center justify-center shrink-0 border ${
+                      item.kind === 'vidrio'
+                        ? 'bg-cyan-500/15 border-cyan-400/40 text-cyan-300'
+                        : 'bg-blue-500/15 border-blue-400/40 text-sky-300'
+                    }`}
+                  >
+                    {item.kind === 'vidrio' ? (
+                      <Square className="w-3.5 h-3.5" aria-hidden="true" />
+                    ) : (
+                      <Layers className="w-3.5 h-3.5" aria-hidden="true" />
+                    )}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-[12px] font-extrabold text-white leading-tight truncate">
+                      {item.title}
+                    </div>
+                    <div className="text-[10.5px] font-semibold text-slate-400 leading-tight mt-0.5 truncate">
+                      {item.subtitle} · {item.count} {item.count === 1 ? 'uso' : 'usos'}
+                    </div>
+                  </div>
+                </div>
+                <span className="shrink-0 inline-flex items-center gap-0.5 px-2 py-1 rounded-lg bg-sky-500/20 group-hover:bg-sky-500/35 border border-sky-400/40 text-sky-200 text-[10.5px] font-extrabold whitespace-nowrap">
+                  <Plus className="w-3 h-3" aria-hidden="true" />
+                  <span>Pieza</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
       )}
 
       {/* DISTRIBUCIÓN SEGÚN PLAN ACTIVO */}

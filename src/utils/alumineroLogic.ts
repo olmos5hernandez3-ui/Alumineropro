@@ -6538,7 +6538,264 @@ export function buildTopMaterialsSeries(
     .slice(0, 7);
 }
 
+// ==================== TEXTOS CANÓNICOS CONECTAR CON GOOGLE ====================
+export const GOOGLE_CONNECT_CTA_LABEL = 'Conectar con Google (Recomendado)';
+export const GOOGLE_CONNECT_BENEFIT_SUBTITLE =
+  'Respalda tus cotizaciones y protege tu licencia PRO en la nube para no perder tus datos si cambias de celular o borras el navegador.';
 
+// ==================== MATERIALES FRECUENTES EN HISTORIAL (INICIO) ====================
+export interface FrequentMaterialSuggestion {
+  key: string;
+  kind: 'aluminio' | 'vidrio';
+  title: string;
+  subtitle: string;
+  count: number;
+  categoria: CategoriaTrabajo;
+  linea: LineaId;
+  color?: ColorId;
+  anchoCm?: number;
+  altoCm?: number;
+  vidrioLabel?: string;
+}
 
+const GLASS_KEYWORD_RE =
+  /\b(vidrio|cristal|templado|espejo|filtrasol|tintex|sat[eé]n|reflecta|laminado|acrilico|acr[ií]lico|policarbonato|claro\s*\d+\s*mm)\b/i;
 
+export function analyzeFrequentHistorialMaterials(
+  historial: Array<{
+    linea?: LineaId | string;
+    color?: ColorId | string;
+    cantidad?: number;
+    anchoCm?: number;
+    altoCm?: number;
+    referencia?: string;
+  }> = [],
+  cotizacionesGuardadas: Array<{
+    materiales?: Array<{
+      nombre?: string;
+      linea?: string;
+      cantidad?: number;
+      unidad?: string;
+    }>;
+  }> = [],
+  limit = 3
+): FrequentMaterialSuggestion[] {
+  const maxItems = Math.max(1, Math.min(6, Math.round(limit)));
+  const buckets = new Map<string, FrequentMaterialSuggestion>();
 
+  const bumpBucket = (item: FrequentMaterialSuggestion, delta: number) => {
+    const existing = buckets.get(item.key);
+    if (existing) {
+      existing.count += delta;
+      if (item.anchoCm && item.altoCm && !existing.anchoCm) {
+        existing.anchoCm = item.anchoCm;
+        existing.altoCm = item.altoCm;
+      }
+      return;
+    }
+    buckets.set(item.key, { ...item, count: delta });
+  };
+
+  for (const h of historial || []) {
+    if (!h || !h.linea) continue;
+    const normLinea = normalizeLineaId(String(h.linea));
+    const lineaCfg = LINEAS_CONFIG[normLinea];
+    if (!lineaCfg) continue;
+    const qty = Math.max(1, Math.round(Number(h.cantidad) || 1));
+    const colorId =
+      h.color && Object.prototype.hasOwnProperty.call(COLORES_CONFIG, h.color)
+        ? (h.color as ColorId)
+        : undefined;
+    const colorNombre = colorId ? COLORES_CONFIG[colorId].nombre : '';
+    const title = colorNombre ? `${lineaCfg.nombre} · ${colorNombre}` : lineaCfg.nombre;
+    const anchoCm = Number.isFinite(Number(h.anchoCm)) && Number(h.anchoCm) > 0 ? Number(h.anchoCm) : undefined;
+    const altoCm = Number.isFinite(Number(h.altoCm)) && Number(h.altoCm) > 0 ? Number(h.altoCm) : undefined;
+
+    bumpBucket(
+      {
+        key: `alu:${normLinea}:${colorId || 'std'}`,
+        kind: 'aluminio',
+        title,
+        subtitle: anchoCm && altoCm ? `${Math.round(anchoCm)}×${Math.round(altoCm)} cm` : lineaCfg.categoria === 'puertas' ? 'Puerta' : 'Ventana',
+        count: 0,
+        categoria: lineaCfg.categoria,
+        linea: normLinea,
+        color: colorId,
+        anchoCm,
+        altoCm,
+      },
+      qty
+    );
+
+    const refText = (h.referencia || '').trim();
+    if (refText && GLASS_KEYWORD_RE.test(refText)) {
+      const glassMatch = refText.match(
+        /((?:vidrio|cristal|templado|espejo|filtrasol|tintex|sat[eé]n|reflecta|laminado|acr[ií]lico|policarbonato)[^,;·|-]{0,26})/i
+      );
+      const glassLabel = (glassMatch?.[1] || refText).trim().replace(/\s+/g, ' ');
+      if (glassLabel.length >= 4) {
+        const normGlassKey = `vid:${glassLabel.toLowerCase()}`;
+        bumpBucket(
+          {
+            key: normGlassKey,
+            kind: 'vidrio',
+            title: glassLabel.charAt(0).toUpperCase() + glassLabel.slice(1),
+            subtitle: lineaCfg.nombre,
+            count: 0,
+            categoria: lineaCfg.categoria,
+            linea: normLinea,
+            color: colorId,
+            anchoCm,
+            altoCm,
+            vidrioLabel: glassLabel,
+          },
+          qty
+        );
+      }
+    }
+  }
+
+  for (const cot of cotizacionesGuardadas || []) {
+    for (const mat of cot.materiales || []) {
+      const name = (mat.nombre || '').trim();
+      if (!name) continue;
+      const qty = Math.max(1, Math.round(Number(mat.cantidad) || 1));
+      const isGlass = GLASS_KEYWORD_RE.test(name);
+      const normLinea = mat.linea ? normalizeLineaId(mat.linea) : '3';
+      const lineaCfg = LINEAS_CONFIG[normLinea] || LINEAS_CONFIG['3'];
+      const cleanTitle = name.length > 34 ? `${name.slice(0, 32)}…` : name;
+      if (isGlass) {
+        bumpBucket(
+          {
+            key: `vid:${name.toLowerCase()}`,
+            kind: 'vidrio',
+            title: cleanTitle,
+            subtitle: 'Vidrio frecuente en cotizaciones',
+            count: 0,
+            categoria: lineaCfg.categoria,
+            linea: normLinea,
+            vidrioLabel: name,
+          },
+          qty
+        );
+      } else {
+        bumpBucket(
+          {
+            key: `alu-mat:${name.toLowerCase()}`,
+            kind: 'aluminio',
+            title: cleanTitle,
+            subtitle: lineaCfg.nombre,
+            count: 0,
+            categoria: lineaCfg.categoria,
+            linea: normLinea,
+          },
+          qty
+        );
+      }
+    }
+  }
+
+  return Array.from(buckets.values())
+    .sort((a, b) => b.count - a.count || a.title.localeCompare(b.title))
+    .slice(0, maxItems);
+}
+
+// ==================== PROMO 3 DÍAS PRO GRATIS POR 3 REFERIDOS ====================
+export const REFERRAL_3D_GIFT_TARGET = 3;
+export const REFERRAL_3D_GIFT_DAYS = 3;
+
+export function countRegisteredReferralsForDevice(
+  deviceId: string,
+  referralHistory: Array<{ referrerId?: string; referredDeviceId?: string }> = [],
+  cloudDevices: Array<{ deviceId?: string; referredById?: string | null; referredBy?: string | null }> = []
+): number {
+  const myId = String(deviceId || '').trim().toUpperCase();
+  if (!myId) return 0;
+  const uniqueReferred = new Set<string>();
+
+  for (const rec of referralHistory || []) {
+    const refId = String(rec?.referrerId || '').trim().toUpperCase();
+    const targetId = String(rec?.referredDeviceId || '').trim().toUpperCase();
+    if (refId === myId && targetId && targetId !== myId) {
+      uniqueReferred.add(targetId);
+    }
+  }
+
+  for (const dev of cloudDevices || []) {
+    const refId = String(dev?.referredById || dev?.referredBy || '').trim().toUpperCase();
+    const targetId = String(dev?.deviceId || '').trim().toUpperCase();
+    if (refId === myId && targetId && targetId !== myId) {
+      uniqueReferred.add(targetId);
+    }
+  }
+
+  return uniqueReferred.size;
+}
+
+export function canShowFreeReferral3DaysPromo(
+  proActive: boolean,
+  promoColegaUsed: boolean
+): boolean {
+  return !proActive && !promoColegaUsed;
+}
+
+export function isReferralGiftReadyToOpen(
+  registeredCount: number,
+  proActive: boolean,
+  promoColegaUsed: boolean
+): boolean {
+  return canShowFreeReferral3DaysPromo(proActive, promoColegaUsed) && registeredCount >= REFERRAL_3D_GIFT_TARGET;
+}
+
+export function buildReferral3DaysInviteLink(
+  deviceId: string,
+  appOrigin?: string
+): string {
+  const normId = String(deviceId || '').trim().toUpperCase();
+  const base =
+    (appOrigin && appOrigin.trim().replace(/\/+$/, '')) ||
+    (typeof window !== 'undefined' && window.location?.origin
+      ? window.location.origin.replace(/\/+$/, '')
+      : 'https://nineropro.pages.dev');
+  return `${base}/?ref=${encodeURIComponent(normId)}`;
+}
+
+export function buildReferral3DaysWhatsappUrl(
+  deviceId: string,
+  tallerNombre?: string,
+  appOrigin?: string
+): string {
+  const normId = String(deviceId || '').trim().toUpperCase();
+  const inviteLink = buildReferral3DaysInviteLink(normId, appOrigin);
+  const sender = tallerNombre && tallerNombre.trim() && tallerNombre.trim() !== 'Mi Taller de Aluminio'
+    ? tallerNombre.trim()
+    : 'Tu colega aluminero';
+  const text =
+    `¡Hola colega! ${sender} te recomienda Aluminero Pro para calcular descuentos, optimización de tramos 6.10 m, vidrio 2D y cotizaciones en PDF.\n\n` +
+    `Regístrate gratis con mi enlace personal (ID de Equipo: ${normId}):\n${inviteLink}`;
+  return `https://wa.me/?text=${encodeURIComponent(text)}`;
+}
+
+export function buildReferral3DaysGiftLicense(
+  deviceId: string,
+  nowTs: number = Date.now()
+): {
+  active: boolean;
+  planCode: 'G';
+  planLabel: string;
+  days: number;
+  activatedAt: number;
+  expiresAt: number;
+  activatedKey: string;
+} {
+  const normId = String(deviceId || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(-6) || 'PRO3D';
+  return {
+    active: true,
+    planCode: 'G',
+    planLabel: 'Regalo 3 Referidos (3 Días PRO Gratis)',
+    days: REFERRAL_3D_GIFT_DAYS,
+    activatedAt: nowTs,
+    expiresAt: nowTs + REFERRAL_3D_GIFT_DAYS * 86_400_000,
+    activatedKey: `AP-G-REF3-${normId}`,
+  };
+}

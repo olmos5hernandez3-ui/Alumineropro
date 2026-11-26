@@ -2,14 +2,19 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { flushSync } from 'react-dom';
 import {
   AdminMessageItem,
+  analyzeFrequentHistorialMaterials,
   APP_VERSION,
   buildColleaguePromoWhatsappUrl,
+  buildReferral3DaysGiftLicense,
   calcularCotizacion,
   calcularDespiece,
+  canShowFreeReferral3DaysPromo,
   CategoriaTrabajo,
   CloudDeviceRecord,
   computeUsageStats30d,
+  countRegisteredReferralsForDevice,
   descontarInventarioPorPerfilColor,
+  type FrequentMaterialSuggestion,
   getDefaultRellenoFromVidrio,
   getRellenoLabel,
   getRellenoPrecioM2,
@@ -19,6 +24,7 @@ import {
   isFeatureProRequired,
   isOneYearProPlan,
   isProActive,
+  isReferralGiftReadyToOpen,
   isTallerOnboardingComplete,
   isUnassignedAutoTrialDevice,
   LINEAS_CONFIG,
@@ -257,6 +263,7 @@ import {
   SugerenciasModal,
 } from './components/Modals';
 import { FloatingAssistant } from './components/FloatingAssistant';
+import { ReferralGiftRewardModal } from './components/ReferralGiftRewardModal';
 
 const NAVIDENA_SNOW_FLAKES = [
   { left: '6%', size: 4, duration: '11s', delay: '0s', drift: '14px' },
@@ -671,6 +678,7 @@ export default function App() {
     loadSkinVariant(loadSkin())
   );
   const [annualCelebrationOpen, setAnnualCelebrationOpen] = useState(false);
+  const [referralGiftModalOpen, setReferralGiftModalOpen] = useState(false);
   const [promoColegaUsage, setPromoColegaUsage] = useState<PromoColegaUsageRecord>(() =>
     loadPromoColegaUsage(deviceId)
   );
@@ -2297,6 +2305,121 @@ export default function App() {
     requestActiveToolAccess('hoja', 'Hoja de Cotización');
   };
 
+  const frequentHistorialMaterials = useMemo(
+    () => analyzeFrequentHistorialMaterials(historial, loadCotizacionesGuardadas(), 3),
+    [historial, cotizacionesCount]
+  );
+
+  const registeredReferralsCount = useMemo(
+    () => countRegisteredReferralsForDevice(deviceId, referralHistory, cloudDevices),
+    [deviceId, referralHistory, cloudDevices]
+  );
+
+  const showFreeReferral3DaysPromo = useMemo(
+    () => canShowFreeReferral3DaysPromo(proActive, promoColegaUsage.promo_colega_usada),
+    [proActive, promoColegaUsage.promo_colega_usada]
+  );
+
+  const handleQuickCreateFromFrequentMaterial = useCallback(
+    (item: FrequentMaterialSuggestion) => {
+      if (item.categoria === 'puertas' && !proActive) {
+        openGlobalModal('pro');
+        return;
+      }
+      const nextParams = createInitialParams(item.linea);
+      if (item.color) {
+        nextParams.color = item.color;
+      }
+      if (item.anchoCm && item.anchoCm > 0) {
+        nextParams.anchoCm = item.anchoCm;
+      }
+      if (item.altoCm && item.altoCm > 0) {
+        nextParams.altoCm = item.altoCm;
+      }
+      if (item.vidrioLabel) {
+        const lowerVid = item.vidrioLabel.toLowerCase();
+        if (lowerVid.includes('filtrasol')) nextParams.vidrio = 'filtrasol6';
+        else if (lowerVid.includes('tintex')) nextParams.vidrio = 'tintex6';
+        else if (lowerVid.includes('4') && lowerVid.includes('mm')) nextParams.vidrio = 'claro4';
+        else if (lowerVid.includes('6') && lowerVid.includes('mm')) nextParams.vidrio = 'claro6';
+      }
+      const cfg = LINEAS_CONFIG[item.linea];
+      setEditingPartidaId(null);
+      setCategoria(item.categoria);
+      setParams(nextParams);
+      setPrecioInput(taller.tarifasBase[item.linea] ?? cfg.tarifaBaseDefault);
+      setReferencia(item.vidrioLabel || '');
+      if (needsFirstTimeWorkshopGate) {
+        requestActiveToolAccess(
+          item.categoria === 'puertas' ? 'trabajo-puertas' : 'trabajo-ventanas',
+          `Cotización rápida · ${item.title}`
+        );
+        return;
+      }
+      navigateTo('trabajo');
+      showToast(`Listo para crear nueva pieza con ${item.title}`, true);
+    },
+    [
+      proActive,
+      openGlobalModal,
+      taller.tarifasBase,
+      needsFirstTimeWorkshopGate,
+      requestActiveToolAccess,
+      navigateTo,
+    ]
+  );
+
+  const handleOpenReferralGift = useCallback(() => {
+    if (promoColegaUsage.promo_colega_usada) {
+      showToast(PROMO_COLEGA_ALREADY_USED_ERROR);
+      return;
+    }
+    if (!isReferralGiftReadyToOpen(registeredReferralsCount, proActive, promoColegaUsage.promo_colega_usada)) {
+      showToast('Invita a 3 colegas a registrarse para abrir tu regalo de 3 días PRO gratis.');
+      return;
+    }
+
+    const now = Date.now();
+    const giftLic = buildReferral3DaysGiftLicense(deviceId, now);
+    const savedUsage = savePromoColegaUsage(deviceId, true, now);
+    setPromoColegaUsage(savedUsage);
+
+    saveTrialRevoked(false);
+    setTrialRevoked(false);
+    licenciaRef.current = giftLic;
+    saveLicencia(giftLic);
+    setLicencia(giftLic);
+
+    if (drawerOpen) {
+      requestBack();
+    }
+    setReferralGiftModalOpen(true);
+
+    void syncDeviceToCloud({
+      deviceId,
+      cliente: taller.nombre || 'Mi Taller',
+      tallerNombre: taller.nombre || 'Mi Taller',
+      tallerResponsable: taller.responsable || taller.nombre || '',
+      tallerWhatsapp: taller.tel || '',
+      ubicacion: taller.ubicacion || '',
+      deviceLabel: detectDeviceLabel(),
+      eventType: 'license_sync',
+      minutesDelta: 0,
+      licencia: giftLic,
+    });
+  }, [
+    promoColegaUsage.promo_colega_usada,
+    registeredReferralsCount,
+    proActive,
+    deviceId,
+    drawerOpen,
+    requestBack,
+    taller.nombre,
+    taller.responsable,
+    taller.tel,
+    taller.ubicacion,
+  ]);
+
   const handleEntrarInventario = (tab?: 'existencias' | 'perfiles' | 'vidrios' | 'herrajes') => {
     navigateTo('inventario', tab ? { invTab: tab } : undefined);
   };
@@ -2660,8 +2783,32 @@ export default function App() {
         minutesDelta: 0,
         licencia: licenciaRef.current,
       });
+
+      if (
+        referredById &&
+        referredById.trim().toUpperCase() !== deviceId.trim().toUpperCase()
+      ) {
+        const normRef = referredById.trim().toUpperCase();
+        const normDev = deviceId.trim().toUpperCase();
+        const alreadyLogged = loadReferralHistory().some(
+          (r) =>
+            r.referrerId.trim().toUpperCase() === normRef &&
+            r.referredDeviceId.trim().toUpperCase() === normDev
+        );
+        if (!alreadyLogged) {
+          const updatedRefs = addReferralHistoryRecord({
+            referrerId: referredById,
+            referredDeviceId: deviceId,
+            referredName: nextTaller.nombre || emailPrefix,
+            planCode: 'REG',
+            planLabel: 'Registro gratis',
+            amountLabel: '$0 MXN',
+          });
+          setReferralHistory(updatedRefs);
+        }
+      }
     },
-    [deviceId, taller, resolvedTheme, skin, skinVariant, proActive, registeredUserProfile?.registeredAt]
+    [deviceId, taller, resolvedTheme, skin, skinVariant, proActive, registeredUserProfile?.registeredAt, referredById]
   );
 
   // Al abrir la app con un usuario ya registrado, registra automáticamente la sesión en Firestore (`usuarios`)
@@ -3848,6 +3995,16 @@ export default function App() {
             onSaveAndLockLayout={handleSaveAndLockHomeMenuLayout}
             onResetMenuLayout={handleResetHomeMenuLayout}
             onForceExitReorderMode={() => setHomeReorderMode(false)}
+            frequentMaterials={frequentHistorialMaterials}
+            onQuickCreateFromFrequentMaterial={handleQuickCreateFromFrequentMaterial}
+            deviceId={deviceId}
+            tallerNombre={taller.nombre}
+            showFreeReferral3DaysPromo={showFreeReferral3DaysPromo}
+            registeredReferralsCount={registeredReferralsCount}
+            onOpenReferralGift={handleOpenReferralGift}
+            onReferralShareFeedback={() =>
+              showToast('Abriendo WhatsApp para invitar a un colega...', true)
+            }
           />
         )}
 
@@ -4724,6 +4881,13 @@ export default function App() {
         canOrganizeHomeMenu={homeMenuTier === 'pro_annual'}
         homeReorderMode={homeReorderMode}
         onToggleHomeReorderMode={handleToggleHomeReorderFromDrawer}
+        tallerNombre={taller.nombre}
+        showFreeReferral3DaysPromo={showFreeReferral3DaysPromo}
+        registeredReferralsCount={registeredReferralsCount}
+        onOpenReferralGift={handleOpenReferralGift}
+        onReferralShareFeedback={() =>
+          showToast('Abriendo WhatsApp para invitar a un colega...', true)
+        }
       />
 
       <LegalModal
@@ -5474,6 +5638,30 @@ export default function App() {
             licencia: licenciaRef.current,
           });
 
+          if (
+            referredById &&
+            referredById.trim().toUpperCase() !== deviceId.trim().toUpperCase()
+          ) {
+            const normRef = referredById.trim().toUpperCase();
+            const normDev = deviceId.trim().toUpperCase();
+            const alreadyLogged = loadReferralHistory().some(
+              (r) =>
+                r.referrerId.trim().toUpperCase() === normRef &&
+                r.referredDeviceId.trim().toUpperCase() === normDev
+            );
+            if (!alreadyLogged) {
+              const updatedRefs = addReferralHistoryRecord({
+                referrerId: referredById,
+                referredDeviceId: deviceId,
+                referredName: nombre,
+                planCode: 'REG',
+                planLabel: 'Registro gratis',
+                amountLabel: '$0 MXN',
+              });
+              setReferralHistory(updatedRefs);
+            }
+          }
+
           const targetTool = unifiedGateTarget?.tool;
           setUnifiedGateTarget(null);
           showToast(`¡Bienvenido, ${nombre}! Registro guardado en la nube.`, true);
@@ -5751,6 +5939,18 @@ export default function App() {
           setSkin('industrial');
           saveSkin('industrial');
           showToast('¡Carátula Industrial Pro (1 Año) activada en toda la app!', true);
+        }}
+      />
+
+      <ReferralGiftRewardModal
+        open={referralGiftModalOpen}
+        onViewPlans={() => {
+          setReferralGiftModalOpen(false);
+          openGlobalModal('pro');
+        }}
+        onUseFreeDaysNow={() => {
+          setReferralGiftModalOpen(false);
+          showToast('¡Disfruta tus 3 días PRO gratis activados en este equipo!', true);
         }}
       />
 

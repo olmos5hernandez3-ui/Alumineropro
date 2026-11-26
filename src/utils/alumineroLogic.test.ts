@@ -3972,6 +3972,137 @@ test('107. Google Auth sincrónico con signInWithPopup en onClick, respaldo excl
   assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
 });
 
+test('108. Top 3 materiales frecuentes en inicio, texto/subtítulo de Google y promo 3 días PRO por 3 referidos con caja de regalo', async () => {
+  const { readFileSync } = await import('node:fs');
+  const {
+    GOOGLE_CONNECT_CTA_LABEL,
+    GOOGLE_CONNECT_BENEFIT_SUBTITLE,
+    REFERRAL_3D_GIFT_TARGET,
+    REFERRAL_3D_GIFT_DAYS,
+    analyzeFrequentHistorialMaterials,
+    countRegisteredReferralsForDevice,
+    canShowFreeReferral3DaysPromo,
+    isReferralGiftReadyToOpen,
+    buildReferral3DaysInviteLink,
+    buildReferral3DaysWhatsappUrl,
+    buildReferral3DaysGiftLicense,
+    isProActive,
+  } = await import('./alumineroLogic.ts');
+
+  // 1. Copy exacto del botón Google y subtítulo de respaldo en la nube
+  assert.equal(GOOGLE_CONNECT_CTA_LABEL, 'Conectar con Google (Recomendado)');
+  assert.equal(
+    GOOGLE_CONNECT_BENEFIT_SUBTITLE,
+    'Respalda tus cotizaciones y protege tu licencia PRO en la nube para no perder tus datos si cambias de celular o borras el navegador.'
+  );
+
+  // 2. Top 3 materiales más usados del historial + cotizaciones guardadas
+  const frequent = analyzeFrequentHistorialMaterials(
+    [
+      { linea: '3', color: 'blanco', cantidad: 4, anchoCm: 150, altoCm: 120, referencia: 'Vidrio Filtrasol 6mm' },
+      { linea: '3', color: 'blanco', cantidad: 2, anchoCm: 140, altoCm: 110, referencia: 'Vidrio Filtrasol 6mm' },
+      { linea: '2', color: 'negro', cantidad: 3, anchoCm: 100, altoCm: 100, referencia: 'Vidrio claro 6mm' },
+      { linea: 'esp', color: 'natural', cantidad: 1, anchoCm: 180, altoCm: 140, referencia: '' },
+    ],
+    [
+      {
+        materiales: [
+          { nombre: 'Vidrio Templado 9mm', cantidad: 2, unidad: 'm2' },
+        ],
+      },
+    ],
+    3
+  );
+  assert.equal(frequent.length, 3);
+  assert.equal(frequent[0].linea, '3');
+  assert.equal(frequent[0].color, 'blanco');
+  assert.equal(frequent[0].count, 6);
+  assert.ok(frequent.some((f) => f.kind === 'vidrio' && /filtrasol/i.test(f.title)));
+  assert.equal(analyzeFrequentHistorialMaterials([], [], 3).length, 0);
+
+  // 3. Dinámica de 3 referidos -> 3 días PRO gratis (1 sola vez por ID de Equipo)
+  assert.equal(REFERRAL_3D_GIFT_TARGET, 3);
+  assert.equal(REFERRAL_3D_GIFT_DAYS, 3);
+
+  assert.equal(canShowFreeReferral3DaysPromo(false, false), true);
+  assert.equal(canShowFreeReferral3DaysPromo(true, false), false, 'Oculto si ya es PRO');
+  assert.equal(canShowFreeReferral3DaysPromo(false, true), false, 'Oculto si ya canjeó su prueba de 3 días');
+
+  const count = countRegisteredReferralsForDevice(
+    'ALM-HOST1',
+    [
+      { referrerId: 'ALM-HOST1', referredDeviceId: 'ALM-COL1' },
+      { referrerId: 'alm-host1', referredDeviceId: 'ALM-COL2' },
+      { referrerId: 'ALM-HOST1', referredDeviceId: 'ALM-COL1' }, // duplicado
+      { referrerId: 'ALM-HOST1', referredDeviceId: 'ALM-HOST1' }, // auto-referido
+    ],
+    [
+      { deviceId: 'ALM-COL3', referredBy: 'ALM-HOST1' },
+      { deviceId: 'ALM-COL2', referredBy: 'ALM-HOST1' }, // duplicado con local
+    ]
+  );
+  assert.equal(count, 3);
+
+  assert.equal(isReferralGiftReadyToOpen(2, false, false), false);
+  assert.equal(isReferralGiftReadyToOpen(3, false, false), true);
+  assert.equal(isReferralGiftReadyToOpen(3, true, false), false);
+  assert.equal(isReferralGiftReadyToOpen(3, false, true), false);
+
+  const inviteLink = buildReferral3DaysInviteLink('ALM-HOST1', 'https://alumineropro.pages.dev');
+  assert.equal(inviteLink, 'https://alumineropro.pages.dev/?ref=ALM-HOST1');
+  const waUrl = buildReferral3DaysWhatsappUrl('ALM-HOST1', 'Taller Norte', 'https://alumineropro.pages.dev');
+  assert.match(waUrl, /^https:\/\/wa\.me\/\?text=/);
+  assert.match(decodeURIComponent(waUrl), /ALM-HOST1/);
+
+  const now = 1_780_000_000_000;
+  const giftLic = buildReferral3DaysGiftLicense('ALM-HOST1', now);
+  assert.equal(giftLic.active, true);
+  assert.equal(giftLic.planCode, 'G');
+  assert.equal(giftLic.expiresAt, now + 3 * 24 * 60 * 60 * 1000);
+  assert.equal(isProActive(giftLic, now + 1000), true);
+  assert.equal(isProActive(giftLic, now + 4 * 24 * 60 * 60 * 1000), false);
+
+  // 4. Verificación en componentes de UI: Google button + subtítulo, Banner en Inicio y Menú, Modal de regalo y Admin intacto
+  const gateSrc = readFileSync('src/components/UnifiedWorkshopGateModal.tsx', 'utf8');
+  assert.match(gateSrc, /GOOGLE_CONNECT_CTA_LABEL/);
+  assert.match(gateSrc, /GOOGLE_CONNECT_BENEFIT_SUBTITLE/);
+
+  const drawerSrc = readFileSync('src/components/TopBarAndDrawer.tsx', 'utf8');
+  assert.match(drawerSrc, /GOOGLE_CONNECT_CTA_LABEL/);
+  assert.match(drawerSrc, /GOOGLE_CONNECT_BENEFIT_SUBTITLE/);
+  assert.match(drawerSrc, /ReferralPromoBanner/);
+  assert.match(drawerSrc, /variant="drawer"/);
+
+  const modalsSrc = readFileSync('src/components/Modals.tsx', 'utf8');
+  assert.match(modalsSrc, /Conectar con Google \(Recomendado\)/);
+  assert.match(modalsSrc, /Respalda tus cotizaciones y protege tu licencia PRO en la nube/);
+
+  const mainMenuSrc = readFileSync('src/components/MainMenuView.tsx', 'utf8');
+  assert.match(mainMenuSrc, /ReferralPromoBanner/);
+  assert.match(mainMenuSrc, /variant="home"/);
+  assert.match(mainMenuSrc, /section-home-frequent-materials/);
+
+  const promoBannerSrc = readFileSync('src/components/ReferralPromoBanner.tsx', 'utf8');
+  assert.match(promoBannerSrc, /Obtén 3 días PRO gratis/);
+  assert.match(promoBannerSrc, /Invita a 3 colegas a registrarse en la app y desbloquea 3 días PRO gratis/);
+  assert.match(promoBannerSrc, /Compartir invitación por WhatsApp/);
+  assert.match(promoBannerSrc, /de \{REFERRAL_3D_GIFT_TARGET\} invitados registrados/);
+
+  const giftModalSrc = readFileSync('src/components/ReferralGiftRewardModal.tsx', 'utf8');
+  assert.match(giftModalSrc, /¡Felicidades! Acabas de obtener 3 días gratis para usar la Versión PRO\./);
+  assert.match(giftModalSrc, /Adquiere por lo menos el Plan de 30 Días PRO/);
+  assert.match(giftModalSrc, /Ver planes y desbloquear recompensas/);
+  assert.match(giftModalSrc, /Usar mis 3 días gratis ahora/);
+
+  // 5. Verificar que Admin Login y SW v1.0.3 permanecen completamente intactos
+  const swSrc = readFileSync('public/sw.js', 'utf8');
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.3'/);
+  assert.match(swSrc, /aluminero-pro-v\$\{APP_VERSION\}/);
+  const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
+  assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
+});
+
+
 
 
 
