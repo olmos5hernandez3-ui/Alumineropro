@@ -24,20 +24,31 @@ import {
   NormalizedSketchScanResult,
   normalizeScannedSketchResult,
   overwriteHojaProyectoInStorage,
+  resolveColorAluminioFromLevantamiento,
+  resolveLineaFromLevantamiento,
+  resolveVidrioFromLevantamiento,
   resumenLevantamiento,
   SKETCH_SCANNER_OFFLINE_MESSAGE,
+  stripBase64DataUrlPrefix,
 } from '../utils/levantamientoLogic';
 import {
+  calcularDespiece,
+  COLORES_CONFIG,
+  CortePerfil,
   formatClientPhoneInput,
   LEV_MAX_CM,
   LEV_MIN_CM,
+  LINEAS_CONFIG,
   MEXICO_ALUMINUM_CATEGORIES,
   MEXICO_ALUMINUM_SYSTEMS,
   MexicoAluminumCategoryId,
+  PerfilCatalogoId,
   validateLevantamientoRequiredFields,
   validateLevantamientoStrictRange,
   validateRealisticOpeningDimensions,
 } from '../utils/alumineroLogic';
+import { buildDespieceTramos1D } from '../utils/modulacionLogic';
+import { Tramos610AcomodadosSection } from './Tramos610AcomodadosSection';
 import {
   ClienteGuardado,
   loadClientes,
@@ -66,6 +77,7 @@ interface LevantamientoFormState {
   alto: string;
   u: LevantamientoUnidad;
   cant: number;
+  hojas: string;
   lineaPerfil: string;
   colorAluminio: string;
   colorVidrio: string;
@@ -87,6 +99,7 @@ function createEmptyForm(
     alto: '',
     u,
     cant: 1,
+    hojas: '',
     lineaPerfil: specs?.lineaPerfil || getDefaultLineaPerfilForTipo(tipo),
     colorAluminio: specs?.colorAluminio || 'Natural',
     colorVidrio: specs?.colorVidrio || 'Vidrio claro',
@@ -531,6 +544,7 @@ export const LevantamientoRapido: React.FC<Props> = ({
       colorAluminio: form.colorAluminio,
       colorVidrio: form.colorVidrio || 'Vidrio claro',
       mosquitero: form.mosquitero,
+      hojas: form.hojas.trim() || undefined,
       notas: form.notas.trim(),
       foto: form.foto,
     };
@@ -584,47 +598,77 @@ export const LevantamientoRapido: React.FC<Props> = ({
 
   const compressImageForSketchScan = (
     file: File
-  ): Promise<{ scanDataUrl: string; thumbDataUrl: string }> =>
+  ): Promise<{ cleanBase64: string; thumbDataUrl: string }> =>
     new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onerror = () => reject(new Error('No se pudo leer el archivo de imagen.'));
-      reader.onload = () => {
-        const im = new Image();
-        im.onerror = () => reject(new Error('La imagen seleccionada no es válida.'));
-        im.onload = () => {
-          const maxSide = 1280;
-          const scale = Math.min(1, maxSide / Math.max(im.width || 1, im.height || 1));
-          const w = Math.max(1, Math.round(im.width * scale));
-          const h = Math.max(1, Math.round(im.height * scale));
+      const renderImageToCanvas = (im: HTMLImageElement, cleanup?: () => void) => {
+        try {
+          const maxSide = 1024;
+          const naturalW = im.naturalWidth || im.width || 1;
+          const naturalH = im.naturalHeight || im.height || 1;
+          const scale = Math.min(1, maxSide / Math.max(naturalW, naturalH));
+          const w = Math.max(1, Math.round(naturalW * scale));
+          const h = Math.max(1, Math.round(naturalH * scale));
           const scanCanvas = document.createElement('canvas');
           scanCanvas.width = w;
           scanCanvas.height = h;
           const scanCtx = scanCanvas.getContext('2d');
           if (!scanCtx) {
-            reject(new Error('No se pudo preparar la imagen para el escáner.'));
+            cleanup?.();
+            reject(new Error('No se pudo preparar el lienzo de compresión para el escáner.'));
             return;
           }
           scanCtx.fillStyle = '#ffffff';
           scanCtx.fillRect(0, 0, w, h);
           scanCtx.drawImage(im, 0, 0, w, h);
-          const scanDataUrl = scanCanvas.toDataURL('image/jpeg', 0.82);
+          const scanDataUrl = scanCanvas.toDataURL('image/jpeg', 0.8);
+          const cleanBase64 = stripBase64DataUrlPrefix(scanDataUrl);
 
-          const thumbW = Math.min(600, im.width || 600);
-          const thumbH = Math.max(1, Math.round(((im.height || 400) * thumbW) / (im.width || 600)));
+          const thumbW = Math.min(600, w);
+          const thumbH = Math.max(1, Math.round((h * thumbW) / w));
           const thumbCanvas = document.createElement('canvas');
           thumbCanvas.width = thumbW;
           thumbCanvas.height = thumbH;
           const thumbCtx = thumbCanvas.getContext('2d');
           if (thumbCtx) {
-            thumbCtx.drawImage(im, 0, 0, thumbW, thumbH);
+            thumbCtx.drawImage(scanCanvas, 0, 0, thumbW, thumbH);
           }
-          const thumbDataUrl = thumbCtx ? thumbCanvas.toDataURL('image/jpeg', 0.6) : scanDataUrl;
-
-          resolve({ scanDataUrl, thumbDataUrl });
-        };
-        im.src = String(reader.result || '');
+          const thumbDataUrl = thumbCtx ? thumbCanvas.toDataURL('image/jpeg', 0.65) : scanDataUrl;
+          cleanup?.();
+          resolve({ cleanBase64, thumbDataUrl });
+        } catch (canvasErr) {
+          cleanup?.();
+          reject(
+            canvasErr instanceof Error
+              ? canvasErr
+              : new Error('Error al comprimir la imagen del croquis.')
+          );
+        }
       };
-      reader.readAsDataURL(file);
+
+      const loadViaFileReader = () => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error('No se pudo leer el archivo de imagen seleccionado.'));
+        reader.onload = () => {
+          const im = new Image();
+          im.onerror = () => reject(new Error('La imagen seleccionada no es compatible o está dañada.'));
+          im.onload = () => renderImageToCanvas(im);
+          im.src = String(reader.result || '');
+        };
+        reader.readAsDataURL(file);
+      };
+
+      if (typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
+        const objectUrl = URL.createObjectURL(file);
+        const im = new Image();
+        im.onload = () => renderImageToCanvas(im, () => URL.revokeObjectURL(objectUrl));
+        im.onerror = () => {
+          URL.revokeObjectURL(objectUrl);
+          loadViaFileReader();
+        };
+        im.src = objectUrl;
+      } else {
+        loadViaFileReader();
+      }
     });
 
   const handleToggleSketchScanner = () => {
@@ -658,29 +702,55 @@ export const LevantamientoRapido: React.FC<Props> = ({
     setSketchScanning(true);
 
     try {
-      const { scanDataUrl, thumbDataUrl } = await compressImageForSketchScan(file);
+      const { cleanBase64, thumbDataUrl } = await compressImageForSketchScan(file);
       setSketchPreviewUrl(thumbDataUrl);
 
       const response = await fetch('/api/scan-sketch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          imageBase64: scanDataUrl,
+          imageBase64: cleanBase64,
           mimeType: 'image/jpeg',
         }),
       });
 
-      const payload = (await response.json().catch(() => ({}))) as {
+      const rawBodyText = await response.text().catch(() => '');
+      let payload: {
         ok?: boolean;
         result?: NormalizedSketchScanResult;
         error?: string;
-      };
+        errorCode?: string;
+        detail?: string;
+      } = {};
+      if (rawBodyText) {
+        try {
+          payload = JSON.parse(rawBodyText) as typeof payload;
+        } catch {
+          console.error(
+            '[Escanear Croquis IA] Respuesta no JSON del servidor:',
+            response.status,
+            rawBodyText.slice(0, 260)
+          );
+        }
+      }
 
       if (!response.ok || !payload.ok || !payload.result) {
-        throw new Error(
+        const detailLog = {
+          status: response.status,
+          errorCode: payload.errorCode || `HTTP_${response.status}`,
+          error: payload.error,
+          detail: payload.detail,
+        };
+        console.error('[Escanear Croquis IA] Error de escaneo:', detailLog);
+
+        const friendlyError =
           payload.error ||
-            'No se pudo interpretar el croquis. Intenta con una foto más clara o captura las medidas manualmente.'
-        );
+          (response.status === 404
+            ? 'El servidor de escáner IA (/api/scan-sketch) no está disponible en este alojamiento (404). Puedes capturar las medidas manualmente abajo.'
+            : response.status === 503
+              ? 'El escáner IA no tiene configurada la API Key de Gemini en el servidor (503). Puedes capturar las medidas manualmente.'
+              : `No se pudo interpretar el croquis (HTTP ${response.status}). Intenta con una foto más clara o captura las medidas manualmente.`);
+        throw new Error(friendlyError);
       }
 
       const normalized = normalizeScannedSketchResult(payload.result);
@@ -696,6 +766,7 @@ export const LevantamientoRapido: React.FC<Props> = ({
           u: 'cm',
           ancho: normalized.anchoCm ? String(normalized.anchoCm) : prev.ancho,
           alto: normalized.altoCm ? String(normalized.altoCm) : prev.alto,
+          hojas: normalized.hojasDistribucion || prev.hojas,
           area: normalized.area || prev.area,
           lineaPerfil: prev.editId
             ? prev.lineaPerfil
@@ -709,8 +780,8 @@ export const LevantamientoRapido: React.FC<Props> = ({
 
       notify(
         normalized.anchoCm && normalized.altoCm
-          ? `Croquis detectado: ${normalized.resumenCorto}. Revisa y confirma antes de agregar.`
-          : 'Croquis detectado. Confirma o completa las medidas en los campos de abajo.',
+          ? `✓ Croquis detectado: ${normalized.resumenCorto}. Campos rellenados automáticamente.`
+          : '✓ Croquis detectado. Confirma o completa las medidas en los campos de abajo.',
         true
       );
     } catch (err) {
@@ -721,10 +792,11 @@ export const LevantamientoRapido: React.FC<Props> = ({
         setSketchError(null);
         notify(SKETCH_SCANNER_OFFLINE_MESSAGE);
       } else {
+        console.error('[Escanear Croquis IA] Excepción al procesar foto:', err);
         const msg =
           err instanceof Error
             ? err.message
-            : 'No se pudo analizar el croquis. Verifica tu conexión o captura las medidas manualmente.';
+            : 'Error de red al analizar el croquis. Verifica tu conexión o captura las medidas manualmente.';
         setSketchError(msg);
         notify(msg);
       }
@@ -1513,6 +1585,43 @@ export const LevantamientoRapido: React.FC<Props> = ({
                   </button>
                 </div>
               </div>
+
+              <label htmlFor="lv-hojas">Hojas / Distribución (X corrediza · O fija)</label>
+              <input
+                id="lv-hojas"
+                type="text"
+                value={form.hojas}
+                onChange={(e) => setForm((prev) => ({ ...prev, hojas: e.target.value.toUpperCase() }))}
+                placeholder="Ej. O-X, X-O, O-X-O, X-X"
+              />
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px', marginBottom: '4px' }}>
+                {['O-X', 'X-O', 'O-X-O', 'X-X', 'O'].map((opt) => {
+                  const active = form.hojas === opt;
+                  return (
+                    <button
+                      key={opt}
+                      type="button"
+                      style={{
+                        width: 'auto',
+                        minWidth: '46px',
+                        padding: '5px 11px',
+                        fontSize: '12px',
+                        fontWeight: 800,
+                        minHeight: '30px',
+                        borderRadius: '8px',
+                        border: active ? '1.5px solid #38bdf8' : '1px solid rgba(148,163,184,0.38)',
+                        background: active ? '#1b7a9c' : 'rgba(15,23,42,0.55)',
+                        color: active ? '#ffffff' : '#cbd5e1',
+                        cursor: 'pointer',
+                        flex: '0 0 auto',
+                      }}
+                      onClick={() => setForm((prev) => ({ ...prev, hojas: opt }))}
+                    >
+                      {opt}
+                    </button>
+                  );
+                })}
+              </div>
               {(() => {
                 const aCm = cmFromUnit(form.ancho, form.u);
                 const hCm = cmFromUnit(form.alto, form.u);
@@ -1993,6 +2102,65 @@ export const LevantamientoRapido: React.FC<Props> = ({
               )}
               <div className="tot">{resumenLevantamiento(draft.piezas)}</div>
             </div>
+
+            {draft.piezas.length > 0 && (() => {
+              const acabadoByPerfil: Partial<Record<PerfilCatalogoId, string>> = {};
+              const allPerfiles: CortePerfil[] = [];
+              for (const pz of draft.piezas) {
+                const resolved = resolveLineaFromLevantamiento(pz);
+                const colorId = resolveColorAluminioFromLevantamiento(pz.colorAluminio);
+                const vidrioInfo = resolveVidrioFromLevantamiento(pz.colorVidrio);
+                const finish = COLORES_CONFIG[colorId]?.corto || pz.colorAluminio || 'Natural';
+                const hojasCount = pz.hojas
+                  ? Math.max(1, Math.min(4, pz.hojas.replace(/[^XO]/gi, '').length || 2))
+                  : resolved.apertura === 'fija'
+                    ? 1
+                    : 2;
+                const desp = calcularDespiece({
+                  linea: resolved.linea,
+                  anchoCm: pz.anchoCm,
+                  altoCm: pz.altoCm,
+                  color: colorId,
+                  vidrio: vidrioInfo.vidrio,
+                  hojas: hojasCount,
+                  apertura: resolved.apertura || 'corrediza',
+                  sentidoPuerta: 'izq',
+                  puertaIntermedio: false,
+                  puertaEconomica: false,
+                  invertido: false,
+                  cantidad: pz.cant,
+                  tolerancias: LINEAS_CONFIG[resolved.linea].toleranciasDefault,
+                });
+                for (const perf of desp.perfiles) {
+                  if (!acabadoByPerfil[perf.perfilId]) {
+                    acabadoByPerfil[perf.perfilId] = finish;
+                  }
+                  allPerfiles.push(perf);
+                }
+              }
+              const levOpt = buildDespieceTramos1D(allPerfiles, 'Levantamiento');
+              if (levOpt.grupos.length === 0) return null;
+              return (
+                <div
+                  style={{
+                    marginTop: '12px',
+                    marginBottom: '12px',
+                    padding: '12px',
+                    borderRadius: '14px',
+                    background: '#f8fafc',
+                    color: '#0f172a',
+                  }}
+                >
+                  <Tramos610AcomodadosSection
+                    id="lev-tramos-610-acomodados"
+                    optimizacion={levOpt}
+                    acabadoByPerfil={acabadoByPerfil}
+                    defaultAcabado={draft.piezas[0]?.colorAluminio || 'Natural'}
+                    compact
+                  />
+                </div>
+              );
+            })()}
 
             <div className="grid">
               <button type="button" className="or" id="lv-btn-send" onClick={handleOpenSendDest}>

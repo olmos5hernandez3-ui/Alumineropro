@@ -41,6 +41,7 @@ import {
 } from '../utils/levantamientoLogic';
 import { PerfilSectionSvg } from './PerfilSectionSvg';
 import { PerfilZoomData, PerfilZoomModal } from './PerfilZoomModal';
+import { Tramos610AcomodadosSection } from './Tramos610AcomodadosSection';
 
 interface ModulacionCortesViewProps {
   tarifasBase: Partial<Record<LineaId, number>>;
@@ -1956,6 +1957,27 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
                   </span>
                 </div>
               </div>
+
+              {/* Resumen visual solicitado: ✓ Tramos de 6.10 ya acomodados */}
+              <Tramos610AcomodadosSection
+                id="mod-tramos-610-acomodados"
+                optimizacion={optimizacion1D}
+                defaultAcabado={
+                  COLORES_CONFIG[
+                    resolveColorAluminioFromLevantamiento(
+                      activoLev?.piezas.find((p) => p.id === activeLevPiezaId)?.colorAluminio
+                    )
+                  ]?.nombre ?? 'Natural'
+                }
+                onSelectPerfil={(card) =>
+                  openZoomPerfil({
+                    perfilId: card.perfilId,
+                    codigo: card.codigo,
+                    nombre: card.perfilNombre,
+                    subtitulo: `${card.headerRight} · ${card.subtitulo}`,
+                  })
+                }
+              />
 
               {/* Despiece visual barra por barra agrupado por perfil */}
               <div className="flex flex-col gap-3">

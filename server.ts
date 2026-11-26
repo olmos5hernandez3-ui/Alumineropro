@@ -335,37 +335,55 @@ async function startServer(): Promise<void> {
       };
       const rawData = typeof body.imageBase64 === 'string' ? body.imageBase64.trim() : '';
       if (!rawData) {
-        res.status(400).json({ ok: false, error: 'No se recibió ninguna imagen del croquis.' });
+        res.status(400).json({
+          ok: false,
+          errorCode: 'MISSING_IMAGE',
+          error: 'No se recibió ninguna imagen del croquis.',
+        });
         return;
       }
 
-      // Extraer mimeType si viene como data URL o usar el campo enviado
-      let mimeType = typeof body.mimeType === 'string' ? body.mimeType.trim().toLowerCase() : 'image/jpeg';
+      // Aceptar tanto cadena base64 limpia como data URL (removiendo el prefijo data:image/...;base64,)
+      let mimeType =
+        typeof body.mimeType === 'string' && body.mimeType.trim()
+          ? body.mimeType.trim().toLowerCase()
+          : 'image/jpeg';
       let base64Clean = rawData;
       const dataUrlMatch = /^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i.exec(rawData);
       if (dataUrlMatch) {
         mimeType = dataUrlMatch[1].toLowerCase();
-        base64Clean = dataUrlMatch[2];
+        base64Clean = dataUrlMatch[2].trim();
       }
+      base64Clean = base64Clean.replace(/\s+/g, '');
 
       const allowedMimes = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/heic', 'image/heif']);
       if (!allowedMimes.has(mimeType)) {
-        res.status(400).json({ ok: false, error: 'Formato de imagen no compatible. Usa JPG, PNG o WEBP.' });
+        res.status(400).json({
+          ok: false,
+          errorCode: 'UNSUPPORTED_MIME',
+          error: 'Formato de imagen no compatible. Usa JPG, PNG o WEBP.',
+        });
         return;
       }
       if (mimeType === 'image/jpg') mimeType = 'image/jpeg';
 
       // Validar tamaño aproximado (máximo ~10 MB en base64)
       if (base64Clean.length > 14_000_000) {
-        res.status(413).json({ ok: false, error: 'La foto es demasiado pesada. Intenta tomarla más cerca o reducirla.' });
+        res.status(413).json({
+          ok: false,
+          errorCode: 'PAYLOAD_TOO_LARGE',
+          error: 'La foto es demasiado pesada. Intenta tomarla más cerca o reducirla.',
+        });
         return;
       }
 
       const apiKey = process.env.GEMINI_API_KEY?.trim();
       if (!apiKey) {
+        console.error('[scan-sketch] GEMINI_API_KEY no configurada en el servidor.');
         res.status(503).json({
           ok: false,
-          error: 'El servicio de escáner IA no tiene configurada la clave de servidor en este entorno.',
+          errorCode: 'MISSING_API_KEY',
+          error: 'El servicio de escáner IA no tiene configurada la API Key de Gemini en el servidor.',
         });
         return;
       }
@@ -378,69 +396,79 @@ async function startServer(): Promise<void> {
       });
 
       const systemInstruction =
-        'Eres un experto maestro aluminiero y cancelero en México. Analizas fotografías de croquis dibujados a mano de ventanas, puertas y canceles de aluminio/vidrio. ' +
-        'Reglas clave de taller: una "X" o flecha horizontal (↔, →, ←) dentro de un módulo indica hoja CORREDIZA ("X"); una "O", círculo o letra "F" indica hoja FIJA ("O"). ' +
-        'Lee las cotas de ANCHO total (horizontal) y ALTO total (vertical) escritas a mano. ' +
-        'Convierte siempre anchoCm y altoCm a CENTÍMETROS (ejemplo: 1.50 m -> 150, 1500 mm -> 150, 150 cm -> 150). ' +
+        'Eres un experto maestro aluminiero y cancelero en México. Analizas fotografías de croquis dibujados a mano o fotos de ventanas, puertas y canceles de aluminio/vidrio. ' +
+        'Reglas estrictas de taller: una "X" o flecha horizontal (↔, →, ←) dentro de un módulo indica hoja CORREDIZA ("X"); una "O", círculo o letra "F" indica hoja FIJA ("O"). ' +
+        'Lee las cotas de ANCHO total (horizontal) y ALTO total (vertical) escritas en el croquis. ' +
+        'Devuelve SIEMPRE ancho y alto en MILÍMETROS enteros (convierte automáticamente si el dibujo está en cm o metros: ej. 1.50 m -> 1500, 150 cm -> 1500, 1500 mm -> 1500). ' +
+        'Devuelve hojas como distribución separada por guiones usando X y O (ej. "O-X", "X-O", "O-X-O", "X-X", "O"). ' +
         'Si alguna medida no es legible en la imagen, devuelve 0 en ese campo y confianza "baja".';
 
       const promptText =
-        'Analiza este croquis a mano de aluminio/vidrio y extrae exactamente: ' +
-        '1) tipo de pieza ("Ventana Corrediza", "Ventana Fija", "Ventana Abatible / Proyección", "Mosquitero abatible", "Puerta", o "Cancel / Otro"), ' +
-        '2) cantidad total de hojas, ' +
-        '3) disposicionHojas de izquierda a derecha usando únicamente X (corrediza) y O (fija), por ejemplo "OX", "XO", "OXO", "OXXO", "XX", "O", ' +
-        '4) anchoCm y altoCm convertidos a centímetros, ' +
-        '5) unidadDetectada original ("cm", "mm" o "m"), ' +
-        '6) area o habitación si está escrita en el dibujo (ej. "Sala", "Baño", o cadena vacía), ' +
-        '7) notas breves de taller sobre divisiones o detalles visibles, y ' +
-        '8) confianza ("alta", "media" o "baja").';
+        'Analiza este croquis/foto de cancelería de aluminio y devuelve estrictamente un objeto JSON válido con: ' +
+        '1) tipo: tipo detectado ("Ventana Corrediza", "Puerta", "Fijo", "Ventana Abatible / Proyección", "Mosquitero abatible", o "Cancel / Otro"), ' +
+        '2) ancho: medida horizontal total en MILÍMETROS (número entero, convierte automáticamente desde cm o m si aplica), ' +
+        '3) alto: medida vertical total en MILÍMETROS (número entero, convierte automáticamente desde cm o m si aplica), ' +
+        '4) hojas: distribución de hojas de izquierda a derecha usando X (corrediza) y O (fija) separadas por guion, por ejemplo "O-X", "X-O", "O-X-O", "X-X", "O", ' +
+        '5) area: habitación/área si aparece escrita (ej. "Sala", "Baño", o ""), ' +
+        '6) notas: observaciones breves de taller, y ' +
+        '7) confianza: "alta", "media" o "baja".';
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-4-hydrogen',
-        contents: {
-          parts: [
-            {
-              inlineData: {
-                mimeType,
-                data: base64Clean,
-              },
-            },
-            {
-              text: promptText,
-            },
-          ],
+      const responseSchema = {
+        type: Type.OBJECT,
+        properties: {
+          tipo: { type: Type.STRING },
+          ancho: { type: Type.NUMBER },
+          alto: { type: Type.NUMBER },
+          hojas: { type: Type.STRING },
+          area: { type: Type.STRING },
+          notas: { type: Type.STRING },
+          confianza: { type: Type.STRING },
         },
-        config: {
-          systemInstruction,
-          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              tipo: { type: Type.STRING },
-              hojas: { type: Type.INTEGER },
-              disposicionHojas: { type: Type.STRING },
-              anchoCm: { type: Type.NUMBER },
-              altoCm: { type: Type.NUMBER },
-              unidadDetectada: { type: Type.STRING },
-              area: { type: Type.STRING },
-              notas: { type: Type.STRING },
-              confianza: { type: Type.STRING },
+        required: ['tipo', 'ancho', 'alto', 'hojas'],
+      };
+
+      const contentsPayload = {
+        parts: [
+          {
+            inlineData: {
+              mimeType,
+              data: base64Clean,
             },
-            required: [
-              'tipo',
-              'hojas',
-              'disposicionHojas',
-              'anchoCm',
-              'altoCm',
-              'unidadDetectada',
-              'area',
-              'notas',
-              'confianza',
-            ],
           },
-        },
-      });
+          {
+            text: promptText,
+          },
+        ],
+      };
+
+      let response;
+      try {
+        response = await ai.models.generateContent({
+          model: 'gemini-2.5-flash',
+          contents: contentsPayload,
+          config: {
+            systemInstruction,
+            responseMimeType: 'application/json',
+            responseSchema,
+          },
+        });
+      } catch (primaryErr) {
+        const primaryMsg = primaryErr instanceof Error ? primaryErr.message : String(primaryErr || '');
+        const primaryStatus = (primaryErr as { status?: number } | null)?.status;
+        const isNotFound = primaryStatus === 404 || /NOT_FOUND|404|model.*not.*found/i.test(primaryMsg);
+        if (!isNotFound) throw primaryErr;
+        console.warn('[scan-sketch] gemini-2.5-flash no disponible en este proyecto (404), reintentando con gemini-4-hydrogen...');
+        response = await ai.models.generateContent({
+          model: 'gemini-4-hydrogen',
+          contents: contentsPayload,
+          config: {
+            systemInstruction,
+            thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+            responseMimeType: 'application/json',
+            responseSchema,
+          },
+        });
+      }
 
       const rawText = (response.text || '').trim();
       const textOutput = rawText
@@ -450,27 +478,66 @@ async function startServer(): Promise<void> {
       if (!textOutput) {
         res.status(502).json({
           ok: false,
-          error: 'No se pudo interpretar el croquis. Intenta con una foto más clara y bien iluminada.',
+          errorCode: 'EMPTY_MODEL_RESPONSE',
+          error: 'La IA no devolvió datos legibles del croquis. Intenta con una foto más clara o captura las medidas manualmente.',
         });
         return;
       }
 
-      const parsed = JSON.parse(textOutput) as Record<string, unknown>;
-      const normalized = normalizeScannedSketchResult(parsed);
+      let parsed: Record<string, unknown>;
+      try {
+        parsed = JSON.parse(textOutput) as Record<string, unknown>;
+      } catch (parseErr) {
+        console.error('[scan-sketch] Respuesta JSON inválida de Gemini:', textOutput.slice(0, 300), parseErr);
+        res.status(502).json({
+          ok: false,
+          errorCode: 'INVALID_JSON_RESPONSE',
+          error: 'La IA devolvió un formato inesperado al leer el croquis. Intenta con otra foto o captura manualmente.',
+        });
+        return;
+      }
+
+      const normalized = normalizeScannedSketchResult({
+        ...parsed,
+        anchoMm: parsed.ancho,
+        altoMm: parsed.alto,
+        unidadDetectada: 'mm',
+      });
 
       res.json({
         ok: true,
+        raw: {
+          tipo: parsed.tipo,
+          ancho: parsed.ancho,
+          alto: parsed.alto,
+          hojas: parsed.hojas,
+        },
         result: normalized,
       });
     } catch (err) {
       const errObj = err as { status?: number; code?: string; message?: string } | null;
       const errMsg = err instanceof Error ? err.message : String(err || 'Error desconocido');
-      const errCode = errObj?.status || errObj?.code || 'UPSTREAM_ERROR';
+      const errCode = String(errObj?.status || errObj?.code || 'UPSTREAM_ERROR');
       console.error('[scan-sketch] Error al analizar croquis:', errCode, errMsg);
-      res.status(502).json({
+
+      let userMessage = `Error al analizar el croquis (${errCode}). Verifica tu conexión o captura las medidas manualmente.`;
+      let httpStatus = 502;
+      if (/API_KEY_INVALID|PERMISSION_DENIED|403|401|API key not valid/i.test(errMsg) || errObj?.status === 403 || errObj?.status === 401) {
+        httpStatus = 502;
+        userMessage = 'Error de API Key de Gemini en el servidor (clave inválida o sin permisos). Puedes seguir capturando tus medidas manualmente.';
+      } else if (/RESOURCE_EXHAUSTED|429|quota/i.test(errMsg) || errObj?.status === 429) {
+        httpStatus = 429;
+        userMessage = 'Se alcanzó el límite temporal de solicitudes de la IA (cuota 429). Intenta en unos momentos o captura las medidas manualmente.';
+      } else if (/fetch failed|ENOTFOUND|ETIMEDOUT|ECONNRESET|network/i.test(errMsg)) {
+        httpStatus = 504;
+        userMessage = 'Error de red al conectar con Gemini Vision. Verifica tu conexión o captura las medidas manualmente.';
+      }
+
+      res.status(httpStatus).json({
         ok: false,
-        errorCode: String(errCode),
-        error: 'No se pudo analizar el croquis en este momento. Verifica tu conexión o captura las medidas manualmente.',
+        errorCode: errCode,
+        detail: errMsg.slice(0, 260),
+        error: userMessage,
       });
     }
   });

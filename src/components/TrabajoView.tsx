@@ -27,8 +27,10 @@ import {
 } from '../utils/levantamientoLogic';
 import {
   aggregateModulacionJobs,
+  buildDespieceTramos1D,
   ModulacionMultiJobInput,
 } from '../utils/modulacionLogic';
+import { Tramos610AcomodadosSection } from './Tramos610AcomodadosSection';
 import { generarPdfTecnico } from '../utils/pdfExport';
 import { computeSimProgressFromElapsed } from '../utils/blueprintMotion';
 import {
@@ -1277,6 +1279,18 @@ export const TrabajoView: React.FC<Props> = ({
                 <p className="text-[12px] text-slate-500 mono mt-3 mb-0">
                   Total aluminio: {despiece.totalAluminioM.toFixed(2)} m · {despiece.tramos610} tramo(s) de 6.10 m
                 </p>
+
+                <Tramos610AcomodadosSection
+                  id="trabajo-tramos-610-acomodados"
+                  optimizacion={buildDespieceTramos1D(
+                    despiece.perfiles,
+                    etiquetaPieza || lineaCfg.nombre,
+                    taller.optimizador
+                  )}
+                  defaultAcabado={COLORES_CONFIG[params.color]?.corto || 'Natural'}
+                  compact
+                  onSelectPerfil={(card) => onOpenPerfilModal(card.perfilId)}
+                />
               </div>
             )}
 

@@ -1791,3 +1791,165 @@ export function analyzeHojaProfileWasteVsInventory(
   };
 }
 
+// ============================================================================
+// APARTADO VISUAL: "✓ Tramos de 6.10 ya acomodados" (tarjetas proporcionales en mm)
+// ============================================================================
+
+export interface Tramo610VisualPieza {
+  nombre: string;
+  mm: number;
+  widthPct: number;
+}
+
+export interface Tramo610VisualBarra {
+  id: string;
+  numero: number;
+  origen: 'sobrante-inventario' | 'tramo-610';
+  largoTotalMm: number;
+  piezas: Tramo610VisualPieza[];
+  netoMm: number;
+  sobranteMm: number;
+  sobrantePct: number;
+  resumenTexto: string;
+}
+
+export interface Tramo610VisualCard {
+  perfilId: PerfilCatalogoId;
+  codigo: string;
+  perfilNombre: string;
+  acabado: string;
+  headerLeft: string;
+  barrasCount: number;
+  headerRight: string;
+  totalPiezas: number;
+  netoMm: number;
+  sobranteTotalMm: number;
+  subtitulo: string;
+  aprovechamientoPct: number;
+  barras: Tramo610VisualBarra[];
+}
+
+export function formatMmWithCommas(mm: number): string {
+  const safe = Math.max(0, Math.round(Number(mm) || 0));
+  return safe.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+export function buildTramos610AcomodadosCards(
+  opt: OptimizacionTramos1DResult,
+  options?: {
+    acabadoByPerfil?: Partial<Record<PerfilCatalogoId, string>>;
+    defaultAcabado?: string;
+  }
+): Tramo610VisualCard[] {
+  const defaultAcabado = (options?.defaultAcabado || 'Natural').trim() || 'Natural';
+  const acabadoByPerfil = options?.acabadoByPerfil || {};
+
+  return (opt?.grupos || []).map((g) => {
+    const acabado = (acabadoByPerfil[g.perfilId] || defaultAcabado).trim() || 'Natural';
+    const codigo = (g.codigo || String(g.perfilId)).trim();
+    const headerLeft = `${codigo} · ${acabado}`;
+
+    let totalPiezas = 0;
+    let netoMmTotal = 0;
+    let sobranteTotalMm = 0;
+
+    const barras: Tramo610VisualBarra[] = g.barras.map((b, idx) => {
+      const largoTotalCm = Math.max(100, Number(b.largoTotalCm) || TRAMO_STD_CM);
+      const largoTotalMm = Math.round(largoTotalCm * 10);
+      const piezas: Tramo610VisualPieza[] = b.cortes.map((c) => {
+        const mm = Math.max(1, Math.round((Number(c.medidaCm) || 0) * 10));
+        return {
+          nombre: c.nombre,
+          mm,
+          widthPct: Math.max(2, (mm / largoTotalMm) * 100),
+        };
+      });
+      const netoMm = piezas.reduce((acc, p) => acc + p.mm, 0);
+      const sobranteMm = Math.max(0, Math.round((Number(b.sobranteCm) || 0) * 10));
+      const usedPctSum = piezas.reduce((acc, p) => acc + p.widthPct, 0);
+      const sobrantePct = Math.max(0, Math.min(100 - Math.min(98, usedPctSum), (sobranteMm / largoTotalMm) * 100));
+
+      totalPiezas += piezas.length;
+      netoMmTotal += netoMm;
+      sobranteTotalMm += sobranteMm;
+
+      const cutsText = piezas.map((p) => String(p.mm)).join(' + ');
+      const resumenTexto = `Barra ${idx + 1}: ${cutsText} · sobra ${formatMmWithCommas(sobranteMm)} mm`;
+
+      return {
+        id: b.id,
+        numero: idx + 1,
+        origen: b.origen,
+        largoTotalMm,
+        piezas,
+        netoMm,
+        sobranteMm,
+        sobrantePct,
+        resumenTexto,
+      };
+    });
+
+    const barrasCount = Math.max(1, g.tramos610Requeridos || barras.length);
+    const headerRight = `${barrasCount} ${barrasCount === 1 ? 'barra' : 'barras'} de 6.10 m`;
+    const subtitulo = `${totalPiezas} ${totalPiezas === 1 ? 'pieza' : 'piezas'} · ${formatMmWithCommas(netoMmTotal)} mm netos · sobrante ${formatMmWithCommas(sobranteTotalMm)} mm`;
+
+    return {
+      perfilId: g.perfilId,
+      codigo,
+      perfilNombre: g.perfilNombre,
+      acabado,
+      headerLeft,
+      barrasCount,
+      headerRight,
+      totalPiezas,
+      netoMm: netoMmTotal,
+      sobranteTotalMm,
+      subtitulo,
+      aprovechamientoPct: g.aprovechamientoPct,
+      barras,
+    };
+  });
+}
+
+export function buildDespieceTramos1D(
+  perfiles: CortePerfil[],
+  etiqueta = 'Pieza',
+  optConfig?: Partial<OptimizadorConfig>
+): OptimizacionTramos1DResult {
+  const cfg = resolveOptimizadorConfig(optConfig);
+  const filas: ModulacionPerfilCorteRow[] = (perfiles || []).map((c, idx) => {
+    const pzasTotal = Math.max(1, Math.round(Number(c.pzas) || 1));
+    const medidaCm = round1(Math.max(5, Number(c.medidaCm) || 0));
+    return {
+      id: `desp__${c.perfilId}__${idx}`,
+      seccion:
+        c.perfilId === 'cabezal' || c.perfilId === 'jamba' || c.perfilId === 'riel'
+          ? 'contramarco'
+          : c.perfilId === 'mosq_marco' || c.perfilId === 'riel_mosq'
+            ? 'mosquitero'
+            : 'hoja-movil',
+      codigo: PROFILE_CODES[c.perfilId] || c.perfilId.toUpperCase(),
+      perfilId: c.perfilId,
+      nombre: `${c.nombre} · ${etiqueta}`,
+      rol: c.funcion || '',
+      orientacion: 'horizontal',
+      cantidad: pzasTotal,
+      cantidadLabel: `x${pzasTotal}`,
+      formulaTexto: c.funcion || '',
+      medidaCm,
+      medidaM: round2(medidaCm / 100),
+      totalMetros: round2((medidaCm * pzasTotal) / 100),
+      angulo: c.angulo || '90°',
+    };
+  });
+
+  return optimizarTramos1D({
+    perfiles: filas,
+    largoBarraCm: cfg.largoBarraCm,
+    despuntePorExtremoCm: cfg.despuntePorExtremoCm,
+    kerfCm: cfg.kerfCm,
+    minSobranteGuardableCm: cfg.umbralSobranteUsableCm,
+  });
+}
+
+

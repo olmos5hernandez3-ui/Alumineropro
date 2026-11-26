@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { BookOpen, PencilLine, Calendar, Ruler, Layers } from 'lucide-react';
 import {
   AperturaVentanaId,
   CATALOGO_MARCAS_MEXICO,
@@ -57,6 +58,7 @@ export const NotasView: React.FC<NotasProps> = ({
   const [anchoCm, setAnchoCm] = useState<string>('');
   const [altoCm, setAltoCm] = useState<string>('');
   const [fotoDataUrl, setFotoDataUrl] = useState<string | undefined>(undefined);
+  const [modoLectura, setModoLectura] = useState<boolean>(false);
 
   const handlePhotoFile = async (file: File) => {
     try {
@@ -95,13 +97,159 @@ export const NotasView: React.FC<NotasProps> = ({
 
   return (
     <section id="view-notas" className="screen-animate">
-      <div className="mb-4">
-        <h1 className="m-0 text-[21px] font-extrabold text-white">Notas de Obra</h1>
-        <p className="m-0 text-[12.5px] text-slate-300">
-          Bloc rápido gratuito en campo con conversión a cotización en 1 clic
-        </p>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="m-0 text-[21px] font-extrabold text-white">Notas de Obra</h1>
+          <p className="m-0 text-[12.5px] text-slate-300">
+            {modoLectura
+              ? 'Modo Lectura activo · Vista limpia sin campos de edición para revisar tus apuntes en campo'
+              : 'Bloc rápido gratuito en campo con conversión a cotización en 1 clic'}
+          </p>
+        </div>
+
+        <button
+          type="button"
+          id="btn-notas-modo-lectura"
+          aria-pressed={modoLectura}
+          onClick={() => setModoLectura((prev) => !prev)}
+          className={`inline-flex items-center gap-2 min-h-[40px] px-3.5 py-2 rounded-xl border text-[12.5px] font-extrabold cursor-pointer transition-all shadow-sm ${
+            modoLectura
+              ? 'bg-amber-400 hover:bg-amber-300 border-amber-300 text-slate-950'
+              : 'bg-slate-800/90 hover:bg-slate-700 border-slate-600 text-white'
+          }`}
+        >
+          {modoLectura ? (
+            <>
+              <PencilLine className="w-4 h-4 shrink-0" aria-hidden="true" />
+              <span>Modo Edición</span>
+            </>
+          ) : (
+            <>
+              <BookOpen className="w-4 h-4 shrink-0" aria-hidden="true" />
+              <span>Modo Lectura</span>
+            </>
+          )}
+        </button>
       </div>
 
+      {modoLectura ? (
+        <div
+          id="notas-modo-lectura-view"
+          className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[20px] p-4 sm:p-6 shadow-xl"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2 pb-3 mb-4 border-b border-slate-200">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-blue-50 border border-blue-200 text-blue-700">
+                <BookOpen className="w-4 h-4" aria-hidden="true" />
+              </span>
+              <div>
+                <h2 className="m-0 text-[17px] font-extrabold text-slate-900">
+                  Apuntes de Obra ({notas.length})
+                </h2>
+                <span className="text-[11.5px] font-semibold text-slate-500">
+                  Lectura limpia en tarjetas · Toca cualquier nota para cotizar
+                </span>
+              </div>
+            </div>
+            <button
+              type="button"
+              id="btn-notas-salir-lectura"
+              onClick={() => setModoLectura(false)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-800 text-[12px] font-extrabold cursor-pointer"
+            >
+              <PencilLine className="w-3.5 h-3.5" aria-hidden="true" />
+              <span>Agregar / Editar notas</span>
+            </button>
+          </div>
+
+          {notas.length === 0 ? (
+            <div className="p-8 text-center border border-dashed border-slate-300 rounded-2xl bg-slate-50">
+              <p className="m-0 text-[14px] font-bold text-slate-700">
+                Todavía no tienes notas de obra guardadas.
+              </p>
+              <p className="m-0 mt-1 text-[12.5px] text-slate-500">
+                Cambia a Modo Edición para registrar tu primera nota o foto de campo.
+              </p>
+              <button
+                type="button"
+                onClick={() => setModoLectura(false)}
+                className="mt-4 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[13px] font-extrabold cursor-pointer"
+              >
+                + Crear primera nota
+              </button>
+            </div>
+          ) : (
+            <div
+              id="notas-modo-lectura-grid"
+              className="grid grid-cols-1 md:grid-cols-2 gap-4"
+            >
+              {notas.map((n) => (
+                <article
+                  key={n.id}
+                  data-nota-reading-card="true"
+                  className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 sm:p-5 shadow-xs flex flex-col justify-between gap-3.5 hover:border-blue-300 transition-colors"
+                >
+                  <div className="flex flex-col gap-3">
+                    <div className="flex items-start justify-between gap-2.5">
+                      <h3 className="m-0 text-[16px] font-extrabold text-slate-900 leading-snug">
+                        {n.titulo}
+                      </h3>
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-white border border-slate-200 text-slate-600 text-[11px] font-bold shrink-0">
+                        <Calendar className="w-3 h-3 text-slate-400" aria-hidden="true" />
+                        {n.fecha}
+                      </span>
+                    </div>
+
+                    {(n.lineaHint || n.aperturaHint || n.anchoCm || n.altoCm) && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {n.lineaHint && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-50 border border-blue-200 text-blue-800 text-[11.5px] font-extrabold">
+                            <Layers className="w-3 h-3" aria-hidden="true" />
+                            {LINEAS_CONFIG[n.lineaHint]?.nombre || n.lineaHint}
+                          </span>
+                        )}
+                        {n.aperturaHint && (
+                          <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-slate-200/80 text-slate-800 text-[11.5px] font-extrabold capitalize">
+                            {n.aperturaHint}
+                          </span>
+                        )}
+                        {(n.anchoCm || n.altoCm) && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 text-[11.5px] font-extrabold mono">
+                            <Ruler className="w-3 h-3" aria-hidden="true" />
+                            {n.anchoCm || '?'} × {n.altoCm || '?'} cm
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {n.texto && (
+                      <p className="m-0 text-[14px] text-slate-700 leading-relaxed whitespace-pre-wrap bg-white rounded-xl border border-slate-200/90 p-3">
+                        {n.texto}
+                      </p>
+                    )}
+
+                    {n.fotoDataUrl && (
+                      <img
+                        src={n.fotoDataUrl}
+                        alt={n.titulo}
+                        className="w-full max-h-60 rounded-xl border border-slate-200 object-cover bg-white"
+                      />
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => onConvertirNota(n)}
+                    className="w-full min-h-[42px] px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[13px] font-extrabold cursor-pointer transition-colors"
+                  >
+                    ⚡ Convertir a Cotización en 1 Clic
+                  </button>
+                </article>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-5 items-start">
         <form
           onSubmit={handleSave}
@@ -275,6 +423,7 @@ export const NotasView: React.FC<NotasProps> = ({
           )}
         </div>
       </div>
+      )}
     </section>
   );
 };

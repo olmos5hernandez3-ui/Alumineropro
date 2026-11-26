@@ -7,6 +7,7 @@ import {
   getRellenoLabel,
   LINEAS_CONFIG,
   PartidaObra,
+  PerfilCatalogoId,
   PRE_CUT_WARNING_TEXT,
   round2,
 } from '../utils/alumineroLogic';
@@ -14,6 +15,7 @@ import {
   analyzeHojaProfileWasteVsInventory,
   optimizarPartidasTramos1D,
 } from '../utils/modulacionLogic';
+import { Tramos610AcomodadosSection } from './Tramos610AcomodadosSection';
 import {
   CotizacionPdfBlobResult,
   generarPdfOrdenProduccionTaller,
@@ -1005,90 +1007,35 @@ export const HojaCotizacionView: React.FC<Props> = ({
                   </div>
 
                   {/* Diagrama visual de optimización 6.10 m barra por barra */}
-                  {opt1D.grupos.length > 0 && (
-                    <div id="hoja-optimizador-610" className="mt-4 pt-4 border-t border-slate-200 flex flex-col gap-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div>
-                          <h3 className="m-0 text-[14.5px] font-extrabold text-slate-900">
-                            Optimización Barra por Barra (6.10 m)
-                          </h3>
-                          <p className="m-0 text-[11.5px] text-slate-500">
-                            Aprovechamiento: <strong className="mono text-emerald-700">{opt1D.aprovechamientoGlobalPct}%</strong> · Merma real (&lt;{opt1D.grupos[0]?.barras[0] ? (taller.optimizador?.umbralSobranteUsableCm ?? 60) : 60} cm):{' '}
-                            <strong className="mono text-rose-700">{opt1D.mermaRealPct}%</strong> ({(opt1D.mermaTotalCm / 100).toFixed(2)} m)
-                          </p>
+                  {opt1D.grupos.length > 0 && (() => {
+                    const acabadoByPerfil: Partial<Record<PerfilCatalogoId, string>> = {};
+                    for (const p of hoja.partidas || []) {
+                      const finish = COLORES_CONFIG[p.color]?.corto || 'Natural';
+                      for (const perf of p.despiece?.perfiles || []) {
+                        if (!acabadoByPerfil[perf.perfilId]) {
+                          acabadoByPerfil[perf.perfilId] = finish;
+                        }
+                      }
+                    }
+                    const defaultAcabado = hoja.partidas[0]?.color
+                      ? COLORES_CONFIG[hoja.partidas[0].color]?.corto || 'Natural'
+                      : 'Natural';
+                    return (
+                      <div id="hoja-optimizador-610" className="mt-4 pt-4 border-t border-slate-200 flex flex-col gap-3">
+                        <div className="px-3 py-2 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-[11px] font-semibold">
+                          {PRE_CUT_WARNING_TEXT}
                         </div>
-                        <span className="px-2.5 py-1 rounded-lg bg-blue-50 border border-blue-200 text-blue-800 mono text-[11.5px] font-extrabold">
-                          {opt1D.tramos610Totales} tramo(s) 6.10 m
-                        </span>
-                      </div>
 
-                      <div className="px-3 py-2 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-[11px] font-semibold">
-                        {PRE_CUT_WARNING_TEXT}
+                        <Tramos610AcomodadosSection
+                          id="hoja-tramos-610-acomodados"
+                          optimizacion={opt1D}
+                          acabadoByPerfil={acabadoByPerfil}
+                          defaultAcabado={defaultAcabado}
+                          compact
+                        />
                       </div>
-
-                      {opt1D.grupos.map((g) => (
-                        <div key={g.perfilId} className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex flex-col gap-2">
-                          <div className="flex items-center justify-between gap-2 text-[12px]">
-                            <strong className="text-slate-900 truncate">
-                              {g.codigo} · {g.perfilNombre}
-                            </strong>
-                            <span className="mono font-bold text-blue-700 shrink-0">
-                              {g.tramos610Requeridos} barra(s) · {g.aprovechamientoPct}%
-                            </span>
-                          </div>
-                          {g.barras.map((barra, bIdx) => {
-                            const numCortes = barra.totalCortes ?? barra.cortes.length;
-                            return (
-                              <div key={barra.id} className="flex flex-col gap-1">
-                                <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-700">
-                                  <span className="font-extrabold text-slate-900">
-                                    Tramo #{bIdx + 1} — {numCortes}{' '}
-                                    {numCortes === 1 ? 'corte' : 'cortes'}
-                                  </span>
-                                  <span className="mono">
-                                    Usado: <strong>{barra.usadoCm.toFixed(1)} cm</strong> ·{' '}
-                                    {barra.esMerma ? (
-                                      <strong className="text-rose-700">Sobrante: {barra.sobranteCm.toFixed(1)} cm</strong>
-                                    ) : (
-                                      <strong className="text-emerald-700">Sobrante: {barra.sobranteCm.toFixed(1)} cm</strong>
-                                    )}
-                                  </span>
-                                </div>
-                                <div className="w-full h-6 rounded-md border border-slate-300 bg-slate-100 overflow-hidden flex">
-                                  {barra.cortes.map((c, cIdx) => {
-                                    const wPct = Math.max(4, (c.medidaCm / Math.max(1, barra.largoTotalCm)) * 100);
-                                    const segColors = ['#2563EB', '#0D9488', '#4F46E5', '#0284C7', '#D97706'];
-                                    return (
-                                      <div
-                                        key={`${barra.id}-${cIdx}`}
-                                        style={{ width: `${wPct}%`, backgroundColor: segColors[cIdx % segColors.length] }}
-                                        title={`${c.nombre}: ${c.medidaCm.toFixed(1)} cm`}
-                                        className="h-full border-r border-white/80 flex items-center justify-center text-white text-[9.5px] font-extrabold mono px-0.5 truncate"
-                                      >
-                                        {c.medidaCm.toFixed(0)}
-                                      </div>
-                                    );
-                                  })}
-                                  {barra.sobranteCm > 0 && (
-                                    <div
-                                      style={{ width: `${Math.max(3, (barra.sobranteCm / Math.max(1, barra.largoTotalCm)) * 100)}%` }}
-                                      className={`h-full flex items-center justify-center text-[9.5px] font-extrabold mono px-0.5 truncate border-l border-dashed ${
-                                        barra.esMerma
-                                          ? 'bg-rose-100 text-rose-900 border-rose-400'
-                                          : 'bg-emerald-100 text-emerald-900 border-emerald-400'
-                                      }`}
-                                    >
-                                      {barra.sobranteCm >= 15 ? `${barra.sobranteCm.toFixed(0)}` : ''}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                    );
+                  })()}
 
                   <div className="flex flex-col gap-2 mt-3">
                     <button

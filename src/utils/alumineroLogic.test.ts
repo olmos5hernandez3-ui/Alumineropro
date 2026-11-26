@@ -4102,6 +4102,127 @@ test('108. Top 3 materiales frecuentes en inicio, texto/subtítulo de Google y p
   assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
 });
 
+test('109. Prompt 1: Escáner IA de croquis (1024px JPEG 0.8 + mm JSON), Tramos de 6.10 ya acomodados y Notas Modo Lectura', async () => {
+  const { readFileSync } = await import('node:fs');
+  const {
+    stripBase64DataUrlPrefix,
+    formatHojasDashed,
+    normalizeScannedSketchResult,
+  } = await import('./levantamientoLogic.ts');
+  const {
+    formatMmWithCommas,
+    buildTramos610AcomodadosCards,
+    buildDespieceTramos1D,
+  } = await import('./modulacionLogic.ts');
+
+  // 1. Limpieza de base64 (elimina prefijo data:image/jpeg;base64,)
+  assert.equal(
+    stripBase64DataUrlPrefix('data:image/jpeg;base64,/9j/4AAQSkZJRg=='),
+    '/9j/4AAQSkZJRg=='
+  );
+  assert.equal(
+    stripBase64DataUrlPrefix('  data:image/png;base64,iVBORw0KGgo=  '),
+    'iVBORw0KGgo='
+  );
+  assert.equal(stripBase64DataUrlPrefix('ABC123=='), 'ABC123==');
+
+  // 2. Normalización de distribución de hojas con guiones (O-X, X-O, O-X-O, X-X)
+  assert.equal(formatHojasDashed('OX'), 'O-X');
+  assert.equal(formatHojasDashed('x-o'), 'X-O');
+  assert.equal(formatHojasDashed('OXO'), 'O-X-O');
+  assert.equal(formatHojasDashed('X X'), 'X-X');
+  assert.equal(formatHojasDashed('O'), 'O');
+
+  // 3. Normalización de respuesta JSON estricta en milímetros desde Gemini Vision
+  const normMm = normalizeScannedSketchResult({
+    tipo: 'Ventana Corrediza',
+    ancho: 1500,
+    alto: 1200,
+    hojas: 'O-X',
+    unidadDetectada: 'mm',
+    area: 'Sala',
+    confianza: 'alta',
+  });
+  assert.equal(normMm.tipo, 'Ventana Corrediza');
+  assert.equal(normMm.anchoMm, 1500);
+  assert.equal(normMm.altoMm, 1200);
+  assert.equal(normMm.anchoCm, 150);
+  assert.equal(normMm.altoCm, 120);
+  assert.equal(normMm.hojasDistribucion, 'O-X');
+  assert.equal(normMm.disposicionHojas, 'OX');
+  assert.equal(normMm.hojas, 2);
+
+  // 4. Formato de milímetros con comas y construcción de tarjetas "✓ Tramos de 6.10 ya acomodados"
+  assert.equal(formatMmWithCommas(1652), '1,652');
+  assert.equal(formatMmWithCommas(4384), '4,384');
+
+  const despiece = calcularDespiece({
+    linea: '3',
+    anchoCm: 120,
+    altoCm: 100,
+    color: 'natural',
+    vidrio: 'claro6',
+    hojas: 2,
+    apertura: 'corrediza',
+    sentidoPuerta: 'izq',
+    puertaIntermedio: false,
+    puertaEconomica: false,
+    invertido: false,
+    cantidad: 2,
+    tolerancias: LINEAS_CONFIG['3'].toleranciasDefault,
+  });
+  const opt1D = buildDespieceTramos1D(despiece.perfiles, 'Ventana 120x100');
+  assert.ok(opt1D.grupos.length > 0);
+
+  const cards = buildTramos610AcomodadosCards(opt1D, { defaultAcabado: 'Natural' });
+  assert.ok(cards.length > 0);
+  const firstCard = cards[0];
+  assert.match(firstCard.headerLeft, /· Natural$/);
+  assert.match(firstCard.headerRight, /^\d+ barras? de 6\.10 m$/);
+  assert.match(firstCard.subtitulo, /^\d+ piezas? · [\d,]+ mm netos · sobrante [\d,]+ mm$/);
+  assert.ok(firstCard.barras.length >= 1);
+  assert.match(firstCard.barras[0].resumenTexto, /^Barra 1: [\d +]+ · sobra [\d,]+ mm$/);
+  assert.ok(
+    firstCard.barras[0].piezas.every((p) => p.mm > 0 && p.widthPct > 0 && p.widthPct <= 100)
+  );
+
+  // 5. Verificación estática de requisitos clave en los archivos modificados
+  const tramosCompSrc = readFileSync('src/components/Tramos610AcomodadosSection.tsx', 'utf8');
+  assert.match(tramosCompSrc, /✓ Tramos de 6\.10 ya acomodados/);
+  assert.match(tramosCompSrc, /#1b7a9c/);
+
+  const serverSrc = readFileSync('server.ts', 'utf8');
+  assert.match(serverSrc, /gemini-2\.5-flash/);
+  assert.match(serverSrc, /responseMimeType:\s*'application\/json'/);
+  assert.match(serverSrc, /base64Clean/);
+
+  const levSrc = readFileSync('src/components/LevantamientoRapido.tsx', 'utf8');
+  assert.match(levSrc, /maxSide\s*=\s*1024/);
+  assert.match(levSrc, /'image\/jpeg',\s*0\.8/);
+  assert.match(levSrc, /stripBase64DataUrlPrefix/);
+  assert.match(levSrc, /Tramos610AcomodadosSection/);
+  assert.match(levSrc, /id="lv-hojas"/);
+
+  const notasSrc = readFileSync('src/components/NotasAndCatalogoViews.tsx', 'utf8');
+  assert.match(notasSrc, /Modo Lectura/);
+  assert.match(notasSrc, /btn-notas-modo-lectura/);
+  assert.match(notasSrc, /notas-modo-lectura-view/);
+
+  const trabajoSrc = readFileSync('src/components/TrabajoView.tsx', 'utf8');
+  assert.match(trabajoSrc, /Tramos610AcomodadosSection/);
+  const hojaSrc = readFileSync('src/components/HojaCotizacionView.tsx', 'utf8');
+  assert.match(hojaSrc, /Tramos610AcomodadosSection/);
+  const modSrc = readFileSync('src/components/ModulacionCortesView.tsx', 'utf8');
+  assert.match(modSrc, /Tramos610AcomodadosSection/);
+
+  // 6. Reglas de oro intactas: SW v1.0.3 y Admin Login sin tocar
+  const swSrc = readFileSync('public/sw.js', 'utf8');
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.3'/);
+  const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
+  assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
+});
+
+
 
 
 

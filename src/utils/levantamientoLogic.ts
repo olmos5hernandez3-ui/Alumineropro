@@ -119,6 +119,7 @@ export interface LevantamientoPieza {
   colorAluminio?: string;
   colorVidrio?: string;
   mosquitero?: string;
+  hojas?: string;
   notas: string;
   foto: string;
 }
@@ -593,6 +594,8 @@ export interface RawSketchScanPayload {
   tipo?: unknown;
   hojas?: unknown;
   disposicionHojas?: unknown;
+  anchoMm?: unknown;
+  altoMm?: unknown;
   anchoCm?: unknown;
   altoCm?: unknown;
   ancho?: unknown;
@@ -606,9 +609,12 @@ export interface RawSketchScanPayload {
 export interface NormalizedSketchScanResult {
   tipo: LevantamientoTipo;
   hojas: number;
+  hojasDistribucion: string;
   disposicionHojas: string;
   hojasCorredizas: number;
   hojasFijas: number;
+  anchoMm: number | null;
+  altoMm: number | null;
   anchoCm: number | null;
   altoCm: number | null;
   unidadDetectada: 'cm' | 'mm' | 'm';
@@ -618,12 +624,24 @@ export interface NormalizedSketchScanResult {
   confianza: 'alta' | 'media' | 'baja';
 }
 
+export function stripBase64DataUrlPrefix(input: string): string {
+  const trimmed = String(input || '').trim();
+  const match = /^data:image\/[a-z0-9.+-]+;base64,(.+)$/i.exec(trimmed);
+  return match ? match[1].trim() : trimmed;
+}
+
 export function normalizeLeafDisposition(raw: unknown): string {
   const cleaned = String(raw || '')
     .toUpperCase()
     .replace(/0/g, 'O')
     .replace(/[^XO]/g, '');
   return cleaned.slice(0, 8);
+}
+
+export function formatHojasDashed(disposition: string): string {
+  const norm = normalizeLeafDisposition(disposition);
+  if (!norm) return '';
+  return norm.split('').join('-');
 }
 
 export function normalizeSketchUnit(raw: unknown): 'cm' | 'mm' | 'm' {
@@ -713,28 +731,49 @@ export function mapSketchTypeToLevantamientoTipo(
 export function normalizeScannedSketchResult(
   raw: RawSketchScanPayload
 ): NormalizedSketchScanResult {
-  const disposicionHojas = normalizeLeafDisposition(raw.disposicionHojas);
+  // Soportar tanto `hojas: "O-X"` (string de distribución) como `disposicionHojas: "OX"` + `hojas: 2`
+  const hojasFromString =
+    typeof raw.hojas === 'string' && /[xXoO0]/.test(raw.hojas)
+      ? normalizeLeafDisposition(raw.hojas)
+      : '';
+  const disposicionHojas = normalizeLeafDisposition(raw.disposicionHojas) || hojasFromString;
+  const hojasDistribucion = formatHojasDashed(disposicionHojas);
   const hojasCorredizas = (disposicionHojas.match(/X/g) || []).length;
   const hojasFijas = (disposicionHojas.match(/O/g) || []).length;
 
-  const rawHojasNum = Math.round(Number(raw.hojas) || 0);
+  const rawHojasNum =
+    typeof raw.hojas === 'number'
+      ? Math.round(raw.hojas)
+      : typeof raw.hojas === 'string' && /^\s*\d+\s*$/.test(raw.hojas)
+        ? Math.round(Number(raw.hojas))
+        : 0;
   const hojas = Math.max(
     1,
     Math.min(8, disposicionHojas.length > 0 ? disposicionHojas.length : rawHojasNum || 2)
   );
 
-  const unidadDetectada = normalizeSketchUnit(raw.unidadDetectada);
+  const hasExplicitMm = raw.anchoMm !== undefined || raw.altoMm !== undefined;
   const hasExplicitCm = raw.anchoCm !== undefined || raw.altoCm !== undefined;
+  const unidadDetectada = normalizeSketchUnit(
+    raw.unidadDetectada ?? (hasExplicitMm ? 'mm' : undefined)
+  );
+
+  const anchoSource = hasExplicitMm ? raw.anchoMm : hasExplicitCm ? raw.anchoCm : raw.ancho;
+  const altoSource = hasExplicitMm ? raw.altoMm : hasExplicitCm ? raw.altoCm : raw.alto;
+
   const anchoCm = convertSketchDimensionToCm(
-    hasExplicitCm ? raw.anchoCm : raw.ancho,
-    unidadDetectada,
-    hasExplicitCm
+    anchoSource,
+    hasExplicitMm ? 'mm' : unidadDetectada,
+    hasExplicitCm && !hasExplicitMm
   );
   const altoCm = convertSketchDimensionToCm(
-    hasExplicitCm ? raw.altoCm : raw.alto,
-    unidadDetectada,
-    hasExplicitCm
+    altoSource,
+    hasExplicitMm ? 'mm' : unidadDetectada,
+    hasExplicitCm && !hasExplicitMm
   );
+
+  const anchoMm = anchoCm !== null ? Math.round(anchoCm * 10) : null;
+  const altoMm = altoCm !== null ? Math.round(altoCm * 10) : null;
 
   const tipo = mapSketchTypeToLevantamientoTipo(raw.tipo, disposicionHojas);
   const area = String(raw.area || '').trim().slice(0, 60);
@@ -752,7 +791,7 @@ export function normalizeScannedSketchResult(
 
   const layoutParts: string[] = [];
   if (disposicionHojas) {
-    const dashed = disposicionHojas.split('').join('-');
+    const dashed = hojasDistribucion;
     const detail: string[] = [];
     if (hojasCorredizas > 0) {
       detail.push(`${hojasCorredizas} corrediza${hojasCorredizas === 1 ? '' : 's'} (X)`);
@@ -776,15 +815,20 @@ export function normalizeScannedSketchResult(
 
   const notasFormateadas = notasSegments.join(' · ');
   const dimsSummary =
-    anchoCm && altoCm ? `${formatMedida(anchoCm)} × ${formatMedida(altoCm)} cm` : 'Medidas por confirmar';
-  const resumenCorto = `${tipo} · ${dimsSummary}${disposicionHojas ? ` · ${disposicionHojas.split('').join('-')}` : ''}`;
+    anchoCm && altoCm
+      ? `${formatMedida(anchoCm)} × ${formatMedida(altoCm)} cm (${anchoMm} × ${altoMm} mm)`
+      : 'Medidas por confirmar';
+  const resumenCorto = `${tipo} · ${dimsSummary}${hojasDistribucion ? ` · ${hojasDistribucion}` : ''}`;
 
   return {
     tipo,
     hojas,
+    hojasDistribucion,
     disposicionHojas,
     hojasCorredizas,
     hojasFijas,
+    anchoMm,
+    altoMm,
     anchoCm,
     altoCm,
     unidadDetectada,
