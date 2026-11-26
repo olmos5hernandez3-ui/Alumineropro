@@ -1,6 +1,5 @@
 const APP_VERSION = '1.0.3';
 const CACHE_NAME = `aluminero-pro-v${APP_VERSION}`;
-const CACHE_VERSION = CACHE_NAME;
 const APP_SHELL_ASSETS = [
   '/',
   '/index.html',
@@ -176,10 +175,16 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
 
-  // No cachear rutas de API en tiempo real, SSE ni descarga standalone
+  // No cachear rutas de API en tiempo real, SSE, descarga standalone ni rutas internas de dev Vite
   if (
     url.origin === self.location.origin &&
-    (url.pathname.startsWith('/api/') || url.pathname === '/__aluminero_single.html')
+    (url.pathname.startsWith('/api/') ||
+      url.pathname === '/__aluminero_single.html' ||
+      url.pathname.startsWith('/@vite') ||
+      url.pathname.startsWith('/@react-refresh') ||
+      url.pathname.startsWith('/@fs/') ||
+      url.pathname.startsWith('/src/') ||
+      url.pathname.startsWith('/node_modules/'))
   ) {
     return;
   }
@@ -210,18 +215,19 @@ self.addEventListener('fetch', (event) => {
   }
 
   // Navegación SPA y index.html: Network-First con respaldo offline
+  // Usar request.url (no Request con mode:'navigate' + init) para evitar TypeError en Chromium
   if (request.mode === 'navigate' || url.pathname === '/' || url.pathname.endsWith('.html')) {
     event.respondWith(
-      fetch(request, { cache: 'no-store' })
+      fetch(request.url, { cache: 'no-store', credentials: 'same-origin' })
         .then((response) => {
           if (response && response.ok && url.origin === self.location.origin) {
             const copy = response.clone();
-            caches.open(CACHE_VERSION).then((cache) => cache.put('/index.html', copy)).catch(() => {});
+            caches.open(CACHE_NAME).then((cache) => cache.put('/index.html', copy)).catch(() => {});
           }
           return response;
         })
         .catch(async () => {
-          const cache = await caches.open(CACHE_VERSION);
+          const cache = await caches.open(CACHE_NAME);
           return (
             (await cache.match(request)) ||
             (await cache.match('/index.html')) ||
@@ -239,12 +245,12 @@ self.addEventListener('fetch', (event) => {
         .then((response) => {
           if (response && response.ok) {
             const copy = response.clone();
-            caches.open(CACHE_VERSION).then((cache) => cache.put(request, copy)).catch(() => {});
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy)).catch(() => {});
           }
           return response;
         })
         .catch(async () => {
-          const cache = await caches.open(CACHE_VERSION);
+          const cache = await caches.open(CACHE_NAME);
           const cached = await cache.match(request);
           return cached || Response.error();
         })

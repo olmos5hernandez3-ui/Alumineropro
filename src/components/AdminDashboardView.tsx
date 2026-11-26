@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ClipboardPaste,
+  Clock,
   Copy,
   Crown,
   DollarSign,
@@ -20,6 +21,7 @@ import {
   KeyRound,
   LogIn,
   LogOut,
+  Mail,
   MessageSquare,
   PieChart as PieChartIcon,
   Plus,
@@ -29,6 +31,7 @@ import {
   Send,
   Settings,
   ShieldCheck,
+  Smartphone,
   Trash2,
   TrendingUp,
   Upload,
@@ -125,8 +128,11 @@ import {
   validateWhatsappNumber,
 } from '../utils/storageHelpers';
 import {
+  CloudSessionFeedItem,
+  CloudUsuarioRecord,
   deleteAdminMessageCloud,
   deleteTutorialVideoCloud,
+  fetchLiveCloudUsuariosFromServer,
   saveReferencePricesCloud,
   saveTutorialVideoCloud,
   sendAdminMessageCloud,
@@ -350,6 +356,11 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   );
   const [serverDevicesCount, setServerDevicesCount] = useState<number | null>(null);
   const [serverDevicesList, setServerDevicesList] = useState<CloudDeviceRecord[] | null>(null);
+  const [serverUsuariosCount, setServerUsuariosCount] = useState<number | null>(null);
+  const [serverUsuariosList, setServerUsuariosList] = useState<CloudUsuarioRecord[] | null>(null);
+  const [serverRecentSessions, setServerRecentSessions] = useState<CloudSessionFeedItem[]>([]);
+  const [cloudUsuariosSubTab, setCloudUsuariosSubTab] = useState<'usuarios' | 'sesiones'>('usuarios');
+  const [cloudUsuariosSearch, setCloudUsuariosSearch] = useState('');
   const [serverSyncBusy, setServerSyncBusy] = useState(false);
   const [serverLastSyncAt, setServerLastSyncAt] = useState<number | null>(null);
   const [serverSyncFeedback, setServerSyncFeedback] = useState<{
@@ -370,23 +381,50 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       setServerSyncFeedback(null);
     }
     try {
-      const snapshot = await getDocsFromServer(collection(db, 'devices'));
-      const totalServerUsers = snapshot.size;
-      const freshDevices: CloudDeviceRecord[] = snapshot.docs.map((docSnap) => {
-        const data = docSnap.data() as CloudDeviceRecord;
-        const devId = normalizeDeviceIdInput(data?.deviceId || docSnap.id) || docSnap.id;
-        return {
-          ...data,
-          deviceId: devId,
-        };
-      });
+      const [usuariosRes, devicesRes] = await Promise.all([
+        fetchLiveCloudUsuariosFromServer(),
+        getDocsFromServer(collection(db, 'devices'))
+          .then((snapshot) => ({
+            ok: true as const,
+            size: snapshot.size,
+            devices: snapshot.docs.map((docSnap) => {
+              const data = docSnap.data() as CloudDeviceRecord;
+              const devId = normalizeDeviceIdInput(data?.deviceId || docSnap.id) || docSnap.id;
+              return {
+                ...data,
+                deviceId: devId,
+              };
+            }),
+          }))
+          .catch((err) => ({ ok: false as const, err })),
+      ]);
+
+      if (!usuariosRes.ok && !devicesRes.ok) {
+        throw devicesRes.err || new Error(usuariosRes.errorMessage || 'Error al consultar Firebase');
+      }
+
       const syncedNow = Date.now();
-      setServerDevicesCount(totalServerUsers);
-      setServerDevicesList(freshDevices);
+      let resolvedCount = 0;
+
+      if (usuariosRes.ok) {
+        setServerUsuariosCount(usuariosRes.count);
+        setServerUsuariosList(usuariosRes.usuarios);
+        setServerRecentSessions(usuariosRes.recentSessions);
+        resolvedCount = usuariosRes.count;
+      }
+
+      if (devicesRes.ok) {
+        setServerDevicesCount(devicesRes.size);
+        setServerDevicesList(devicesRes.devices);
+        if (!usuariosRes.ok) {
+          resolvedCount = devicesRes.size;
+        }
+      }
+
       setServerLastSyncAt(syncedNow);
 
-      const okMsg = `Nube actualizada: ${totalServerUsers} ${
-        totalServerUsers === 1 ? 'usuario encontrado' : 'usuarios encontrados'
+      const okMsg = `Nube actualizada: ${resolvedCount} ${
+        resolvedCount === 1 ? 'usuario registrado' : 'usuarios registrados'
       }`;
       if (!options?.silent) {
         setServerSyncFeedback({
@@ -401,7 +439,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       try {
         await onRefreshCloudRef.current();
       } catch {
-        // Ignorar error secundario si la lectura principal de devices ya tuvo éxito
+        // Ignorar error secundario si la lectura principal de servidor ya tuvo éxito
       }
     } catch (err) {
       const errCode =
@@ -412,8 +450,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       let friendlyMsg = `Error al sincronizar nube${errCode ? ` (${errCode})` : ''}: ${rawMsg}`;
       if (isFirestorePermissionDeniedError(err)) {
         friendlyMsg = isFirebaseAdminUser(auth.currentUser)
-          ? 'Permisos insuficientes en Firebase (permission-denied) al consultar devices. Verifica las reglas o vuelve a conectar tu cuenta Google.'
-          : 'Permisos insuficientes en Firebase: conecta tu cuenta Google de Administrador (botón "Conectar Google") para leer el conteo real de usuarios en la nube.';
+          ? 'Permisos insuficientes en Firebase (permission-denied) al consultar usuarios/devices. Verifica las reglas o vuelve a conectar tu cuenta Google.'
+          : 'Permisos insuficientes en Firebase: conecta tu cuenta Google de Administrador (botón "Conectar Google") para leer los usuarios registrados y el historial de sesiones en la nube.';
       } else if (isFirestoreOfflineError(err) || (typeof navigator !== 'undefined' && !navigator.onLine)) {
         friendlyMsg = 'Sin conexión con Firebase. Verifica tu internet e intenta presionar "Actualizar Nube" nuevamente.';
       }
@@ -1937,7 +1975,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 className={`w-4 h-4 ${serverSyncBusy || cloudRefreshing ? 'animate-spin' : ''}`}
                 aria-hidden="true"
               />
-              <span>{serverSyncBusy || cloudRefreshing ? 'Sincronizando...' : 'Actualizar Nube'}</span>
+              <span>{serverSyncBusy || cloudRefreshing ? 'Sincronizando nube...' : 'Actualizar Nube'}</span>
             </button>
             <button
               type="button"
@@ -2100,11 +2138,13 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 id="kpi-val-usuarios-nube"
                 className="mt-2 mono text-[28px] font-extrabold text-white leading-none"
               >
-                {serverDevicesCount !== null
-                  ? serverDevicesCount
-                  : cloudRealtimeCounts.total > 0
-                    ? cloudRealtimeCounts.total
-                    : kpis.totalUsers}
+                {serverUsuariosCount !== null
+                  ? serverUsuariosCount
+                  : serverDevicesCount !== null
+                    ? serverDevicesCount
+                    : cloudRealtimeCounts.total > 0
+                      ? cloudRealtimeCounts.total
+                      : kpis.totalUsers}
               </div>
               <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] font-bold">
                 <span className="px-2 py-0.5 rounded-md bg-slate-800 border border-slate-600 text-slate-200 mono">
@@ -2113,6 +2153,11 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 <span className="px-2 py-0.5 rounded-md bg-amber-500/20 border border-amber-400/40 text-amber-200 mono">
                   PRO: {serverDevicesCount !== null || cloudRealtimeCounts.total > 0 ? cloudRealtimeCounts.pro : kpis.totalProPaid + kpis.colega3d}
                 </span>
+                {serverDevicesCount !== null && serverUsuariosCount !== null && (
+                  <span className="px-2 py-0.5 rounded-md bg-sky-500/15 border border-sky-400/35 text-sky-200 mono">
+                    Equipos: {serverDevicesCount}
+                  </span>
+                )}
               </div>
               {countersResetAt > 0 && (
                 <button
@@ -2211,6 +2256,194 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               <span>Abrir Gráficas</span>
               <ArrowRight className="w-4 h-4" aria-hidden="true" />
             </button>
+          </div>
+
+          {/* 2.5 Registro de Usuarios en la Nube (`usuarios`) e Historial de Sesiones */}
+          <div
+            id="admin-cloud-usuarios-section"
+            className="rounded-2xl border border-sky-500/40 bg-slate-900/95 p-4 sm:p-5 shadow-md space-y-3.5"
+          >
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              <div>
+                <h2 className="m-0 text-[16px] font-extrabold text-white flex items-center gap-2">
+                  <Users className="w-4.5 h-4.5 text-sky-400 shrink-0" aria-hidden="true" />
+                  <span>Usuarios Registrados en la Nube e Historial de Sesiones</span>
+                </h2>
+                <p className="m-0 mt-0.5 text-[12px] text-slate-300">
+                  Consulta directa al servidor Firebase (colección <code className="mono text-sky-300">usuarios</code>) · Sin caché local
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  id="btn-cloud-subtab-usuarios"
+                  onClick={() => setCloudUsuariosSubTab('usuarios')}
+                  className={`min-h-[36px] px-3 py-1.5 rounded-xl border text-[12px] font-extrabold cursor-pointer transition-colors ${
+                    cloudUsuariosSubTab === 'usuarios'
+                      ? 'bg-sky-600 border-sky-400 text-white'
+                      : 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700'
+                  }`}
+                >
+                  Usuarios ({serverUsuariosList ? serverUsuariosList.length : 0})
+                </button>
+                <button
+                  type="button"
+                  id="btn-cloud-subtab-sesiones"
+                  onClick={() => setCloudUsuariosSubTab('sesiones')}
+                  className={`min-h-[36px] px-3 py-1.5 rounded-xl border text-[12px] font-extrabold cursor-pointer transition-colors inline-flex items-center gap-1.5 ${
+                    cloudUsuariosSubTab === 'sesiones'
+                      ? 'bg-emerald-600 border-emerald-400 text-white'
+                      : 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700'
+                  }`}
+                >
+                  <Clock className="w-3.5 h-3.5" aria-hidden="true" />
+                  <span>Historial de Sesiones ({serverRecentSessions.length})</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="relative">
+              <Search
+                className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                aria-hidden="true"
+              />
+              <input
+                type="text"
+                id="inp-admin-cloud-usuarios-search"
+                value={cloudUsuariosSearch}
+                onChange={(e) => setCloudUsuariosSearch(e.target.value)}
+                placeholder="Buscar por nombre, correo, UID o dispositivo..."
+                className="w-full min-h-[40px] pl-9 pr-3 rounded-xl border border-slate-700 bg-slate-950/80 text-white text-[12.5px] font-medium placeholder:text-slate-400 focus:border-sky-400 focus:outline-none"
+              />
+            </div>
+
+            {cloudUsuariosSubTab === 'usuarios' ? (
+              serverUsuariosList === null ? (
+                <div className="p-4 rounded-xl border border-slate-700/80 bg-slate-950/60 text-[12.5px] text-slate-300 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <span>
+                    Conecta tu cuenta Google de Administrador y presiona <strong>Actualizar Nube</strong> para cargar los usuarios reales registrados en Firebase.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void fetchDevicesFromServerDirect({ silent: false })}
+                    disabled={serverSyncBusy}
+                    className="min-h-[36px] px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-extrabold text-[12px] cursor-pointer shrink-0 disabled:opacity-60"
+                  >
+                    {serverSyncBusy ? 'Sincronizando nube...' : 'Cargar ahora'}
+                  </button>
+                </div>
+              ) : (() => {
+                const q = cloudUsuariosSearch.trim().toLowerCase();
+                const filtered = serverUsuariosList.filter((u) => {
+                  if (!q) return true;
+                  return (
+                    u.nombreCompleto.toLowerCase().includes(q) ||
+                    u.correo.toLowerCase().includes(q) ||
+                    u.uid.toLowerCase().includes(q) ||
+                    u.dispositivo.toLowerCase().includes(q)
+                  );
+                });
+                if (filtered.length === 0) {
+                  return (
+                    <div className="p-4 rounded-xl border border-slate-700/80 bg-slate-950/60 text-[12.5px] text-slate-300 text-center">
+                      No se encontraron usuarios registrados con ese criterio.
+                    </div>
+                  );
+                }
+                return (
+                  <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
+                    {filtered.map((u) => (
+                      <div
+                        key={u.uid}
+                        className="p-3 rounded-xl border border-slate-700/80 bg-slate-950/75 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5"
+                      >
+                        <div className="min-w-0 space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <strong className="text-[13.5px] font-extrabold text-white truncate">
+                              {u.nombreCompleto}
+                            </strong>
+                            <span
+                              className={`px-2 py-0.5 rounded-md text-[10.5px] font-extrabold uppercase ${
+                                u.authProvider === 'google'
+                                  ? 'bg-sky-500/20 border border-sky-400/40 text-sky-200'
+                                  : 'bg-slate-800 border border-slate-600 text-slate-200'
+                              }`}
+                            >
+                              {u.authProvider === 'google' ? 'Google' : 'Manual'}
+                            </span>
+                            <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-400/35 text-emerald-200 text-[10.5px] font-bold mono">
+                              {u.totalSesiones} {u.totalSesiones === 1 ? 'sesión' : 'sesiones'}
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-slate-300">
+                            {u.correo && (
+                              <span className="inline-flex items-center gap-1 break-all">
+                                <Mail className="w-3.5 h-3.5 text-sky-400 shrink-0" aria-hidden="true" />
+                                {u.correo}
+                              </span>
+                            )}
+                            <span className="inline-flex items-center gap-1">
+                              <Smartphone className="w-3.5 h-3.5 text-amber-300 shrink-0" aria-hidden="true" />
+                              {u.navegador ? `${u.dispositivo} · ${u.navegador}` : u.dispositivo}
+                            </span>
+                            <span className="mono text-[11px] text-slate-400">UID: {u.uid}</span>
+                          </div>
+                        </div>
+                        <div className="text-[11px] text-slate-300 sm:text-right shrink-0 space-y-0.5 mono">
+                          <div>Registro: {formatDateTimeExact(u.fechaRegistroMs)}</div>
+                          <div className="text-emerald-300 font-bold">
+                            Última: {formatDateTimeExact(u.ultimaConexionMs)}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()
+            ) : (
+              (() => {
+                const q = cloudUsuariosSearch.trim().toLowerCase();
+                const filteredSessions = serverRecentSessions.filter((s) => {
+                  if (!q) return true;
+                  return (
+                    s.nombreCompleto.toLowerCase().includes(q) ||
+                    s.correo.toLowerCase().includes(q) ||
+                    s.dispositivo.toLowerCase().includes(q) ||
+                    s.fecha.toLowerCase().includes(q)
+                  );
+                });
+                if (filteredSessions.length === 0) {
+                  return (
+                    <div className="p-4 rounded-xl border border-slate-700/80 bg-slate-950/60 text-[12.5px] text-slate-300 text-center">
+                      Aún no hay sesiones cargadas. Presiona <strong>Actualizar Nube</strong> para ver el historial reciente.
+                    </div>
+                  );
+                }
+                return (
+                  <div className="space-y-1.5 max-h-[360px] overflow-y-auto pr-1">
+                    {filteredSessions.map((s, idx) => (
+                      <div
+                        key={`${s.uid}-${s.timestamp}-${idx}`}
+                        className="px-3 py-2 rounded-xl border border-slate-700/70 bg-slate-950/75 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 text-[12px]"
+                      >
+                        <div className="min-w-0 flex flex-wrap items-center gap-2">
+                          <strong className="text-white font-bold truncate">{s.nombreCompleto}</strong>
+                          {s.correo && (
+                            <span className="text-slate-400 text-[11px] truncate">{s.correo}</span>
+                          )}
+                          <span className="px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700 text-slate-200 text-[10.5px] font-semibold">
+                            {s.dispositivo}
+                          </span>
+                        </div>
+                        <div className="mono text-[11px] font-bold text-emerald-300 shrink-0">
+                          {s.fecha} · {s.hora}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()
+            )}
           </div>
 
           {/* 3. Sección Inferior: Relación y Auditoría Detallada de Usuarios */}

@@ -10,6 +10,7 @@ import {
   onSnapshot,
   query,
   runTransaction,
+  serverTimestamp,
   setDoc,
   updateDoc,
 } from 'firebase/firestore';
@@ -133,6 +134,11 @@ function cleanForFirestore<T>(value: T): T {
     return value
       .filter((item) => item !== undefined)
       .map((item) => cleanForFirestore(item)) as unknown as T;
+  }
+  // Preservar instancias especiales de Firestore (serverTimestamp(), FieldValue, Timestamp, Date, etc.)
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) {
+    return value;
   }
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
@@ -3459,5 +3465,473 @@ export function subscribeAdminMessages(
     unsubAuth();
   };
 }
+
+// =========================================================================
+// DIRECTORIO CLOUD DE USUARIOS (`usuarios`) + HISTORIAL DE SESIONES + OFFLINE
+// =========================================================================
+
+export interface CloudSessionHistoryItem {
+  fecha: string;
+  hora: string;
+  dispositivo: string;
+  timestamp: number;
+}
+
+export interface CloudUsuarioRecord {
+  uid: string;
+  nombreCompleto: string;
+  correo: string;
+  tallerNombre?: string;
+  telefono?: string;
+  ubicacion?: string;
+  dispositivo: string;
+  navegador?: string;
+  deviceId?: string;
+  authProvider: 'google' | 'manual';
+  plan: 'gratis' | 'pro';
+  termsAccepted: boolean;
+  termsAcceptedAt?: number | null;
+  fechaRegistroMs: number;
+  ultimaConexionMs: number;
+  totalSesiones: number;
+  historialSesiones: CloudSessionHistoryItem[];
+}
+
+export interface CloudSessionFeedItem extends CloudSessionHistoryItem {
+  uid: string;
+  nombreCompleto: string;
+  correo: string;
+  authProvider: 'google' | 'manual';
+}
+
+export interface LiveCloudUsuariosServerResult {
+  ok: boolean;
+  count: number;
+  usuarios: CloudUsuarioRecord[];
+  recentSessions: CloudSessionFeedItem[];
+  serverTime: number;
+  errorCode?: string;
+  errorMessage?: string;
+  isPermissionDenied?: boolean;
+  isOffline?: boolean;
+}
+
+export function detectBrowserAndDeviceInfo(userAgentOverride?: string): {
+  dispositivo: string;
+  navegador: string;
+  label: string;
+} {
+  const ua =
+    typeof userAgentOverride === 'string'
+      ? userAgentOverride
+      : typeof navigator !== 'undefined'
+        ? navigator.userAgent || ''
+        : '';
+
+  let dispositivo = 'Navegador Web';
+  if (/android/i.test(ua)) dispositivo = 'Teléfono Android';
+  else if (/iphone/i.test(ua)) dispositivo = 'iPhone (iOS)';
+  else if (/ipad/i.test(ua)) dispositivo = 'iPad';
+  else if (/windows/i.test(ua)) dispositivo = 'PC Windows';
+  else if (/macintosh|mac os/i.test(ua)) dispositivo = 'Mac';
+  else if (/linux/i.test(ua)) dispositivo = 'Linux';
+
+  let navegador = 'Web';
+  if (/edg\//i.test(ua)) navegador = 'Edge';
+  else if (/opr\/|opera/i.test(ua)) navegador = 'Opera';
+  else if (/firefox|fxios/i.test(ua)) navegador = 'Firefox';
+  else if (/chrome|crios/i.test(ua)) navegador = 'Chrome';
+  else if (/safari/i.test(ua)) navegador = 'Safari';
+
+  return {
+    dispositivo,
+    navegador,
+    label: `${dispositivo} · ${navegador}`,
+  };
+}
+
+export function createSessionHistoryEntry(
+  now = Date.now(),
+  deviceLabel?: string
+): CloudSessionHistoryItem {
+  const d = new Date(now);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const fecha = `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+  const hora = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  const info = detectBrowserAndDeviceInfo();
+  return {
+    fecha,
+    hora,
+    dispositivo: String(deviceLabel || info.label).trim().slice(0, 120) || 'Navegador Web',
+    timestamp: now,
+  };
+}
+
+export function mergeSessionHistoryList(
+  existing: CloudSessionHistoryItem[],
+  nextEntry: CloudSessionHistoryItem,
+  maxItems = 30
+): CloudSessionHistoryItem[] {
+  const validExisting = Array.isArray(existing)
+    ? existing.filter(
+        (item): item is CloudSessionHistoryItem =>
+          Boolean(item) &&
+          typeof item.fecha === 'string' &&
+          typeof item.hora === 'string' &&
+          typeof item.dispositivo === 'string' &&
+          typeof item.timestamp === 'number' &&
+          Number.isFinite(item.timestamp)
+      )
+    : [];
+
+  // Evitar duplicados en una misma ventana de 20 segundos
+  const filtered = validExisting.filter(
+    (item) => Math.abs(item.timestamp - nextEntry.timestamp) >= 20_000
+  );
+  filtered.push(nextEntry);
+  filtered.sort((a, b) => a.timestamp - b.timestamp);
+  return filtered.slice(-Math.max(1, Math.min(30, maxItems)));
+}
+
+function toSafeUsuarioUid(rawUid: string, fallbackDeviceId?: string): string {
+  const trimmed = String(rawUid || '').trim();
+  if (/^[a-zA-Z0-9_-]{3,128}$/.test(trimmed)) {
+    return trimmed;
+  }
+  return toSafeDocId(fallbackDeviceId || trimmed || 'ALM-USER');
+}
+
+function extractFirestoreTimestampMs(val: unknown, fallbackMs: number): number {
+  if (typeof val === 'number' && Number.isFinite(val) && val > 0) {
+    return val;
+  }
+  if (val && typeof val === 'object') {
+    const maybeTs = val as { toMillis?: () => number; seconds?: number };
+    if (typeof maybeTs.toMillis === 'function') {
+      const ms = maybeTs.toMillis();
+      if (Number.isFinite(ms) && ms > 0) return ms;
+    }
+    if (typeof maybeTs.seconds === 'number' && Number.isFinite(maybeTs.seconds)) {
+      return Math.round(maybeTs.seconds * 1000);
+    }
+  }
+  return fallbackMs;
+}
+
+const PENDING_CLOUD_USUARIO_SYNC_KEY = 'aluminero_pending_usuario_sync_v1';
+
+export interface SyncUsuarioToCloudParams {
+  uid: string;
+  nombreCompleto: string;
+  correo?: string;
+  tallerNombre?: string;
+  telefono?: string;
+  ubicacion?: string;
+  deviceId?: string;
+  authProvider: 'google' | 'manual';
+  plan?: 'gratis' | 'pro';
+  termsAccepted: boolean;
+  termsAcceptedAt?: number | null;
+  recordSession?: boolean;
+}
+
+export interface PendingCloudUsuarioSyncPayload extends SyncUsuarioToCloudParams {
+  queuedAt: number;
+}
+
+export function savePendingCloudUsuarioSync(payload: SyncUsuarioToCloudParams): void {
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  try {
+    const item: PendingCloudUsuarioSyncPayload = {
+      ...payload,
+      queuedAt: Date.now(),
+    };
+    window.localStorage.setItem(PENDING_CLOUD_USUARIO_SYNC_KEY, JSON.stringify(item));
+  } catch {
+    // ignorar cuota
+  }
+}
+
+export function loadPendingCloudUsuarioSync(): PendingCloudUsuarioSyncPayload | null {
+  if (typeof window === 'undefined' || !window.localStorage) return null;
+  try {
+    const raw = window.localStorage.getItem(PENDING_CLOUD_USUARIO_SYNC_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as PendingCloudUsuarioSyncPayload;
+    if (!parsed || typeof parsed.uid !== 'string' || !parsed.uid.trim()) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export function clearPendingCloudUsuarioSync(): void {
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  try {
+    window.localStorage.removeItem(PENDING_CLOUD_USUARIO_SYNC_KEY);
+  } catch {
+    // ignorar
+  }
+}
+
+function loadLocalUsuarioSessions(uid: string): CloudSessionHistoryItem[] {
+  if (typeof window === 'undefined' || !window.localStorage) return [];
+  try {
+    const raw = window.localStorage.getItem(`aluminero_usuario_sessions_v1_${uid}`);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as CloudSessionHistoryItem[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalUsuarioSessions(uid: string, list: CloudSessionHistoryItem[]): void {
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  try {
+    window.localStorage.setItem(
+      `aluminero_usuario_sessions_v1_${uid}`,
+      JSON.stringify(list.slice(-30))
+    );
+  } catch {
+    // ignorar cuota
+  }
+}
+
+export async function syncUsuarioToCloud(
+  params: SyncUsuarioToCloudParams
+): Promise<{ ok: boolean; offline?: boolean; error?: string }> {
+  const safeUid = toSafeUsuarioUid(params.uid, params.deviceId);
+  if (!safeUid) return { ok: false, error: 'UID inválido' };
+
+  const now = Date.now();
+  const deviceInfo = detectBrowserAndDeviceInfo();
+  const nombreClean = String(params.nombreCompleto || 'Usuario Aluminero Pro')
+    .trim()
+    .slice(0, 140);
+  const correoClean = normalizeEmail(params.correo || '').slice(0, 160);
+  const firstRegKey = `aluminero_usuario_reg_ms_v1_${safeUid}`;
+  const sessionsCountKey = `aluminero_usuario_total_sessions_v1_${safeUid}`;
+  const createdFlagKey = `aluminero_usuario_cloud_created_v1_${safeUid}`;
+
+  let fechaRegistroMs = now;
+  let totalSesiones = 1;
+  let alreadyCreated = false;
+  try {
+    const storedReg = Number(localStorage.getItem(firstRegKey) || '0');
+    if (storedReg >= 1577836800000 && storedReg <= now) {
+      fechaRegistroMs = storedReg;
+    } else {
+      localStorage.setItem(firstRegKey, String(now));
+    }
+    const prevCount = Math.max(0, Number(localStorage.getItem(sessionsCountKey) || '0') || 0);
+    totalSesiones = params.recordSession !== false ? prevCount + 1 : Math.max(1, prevCount);
+    localStorage.setItem(sessionsCountKey, String(totalSesiones));
+    alreadyCreated = localStorage.getItem(createdFlagKey) === '1';
+  } catch {
+    // ignorar si localStorage no está disponible
+  }
+
+  let sessionHistory = loadLocalUsuarioSessions(safeUid);
+  if (params.recordSession !== false || sessionHistory.length === 0) {
+    const entry = createSessionHistoryEntry(now, deviceInfo.label);
+    sessionHistory = mergeSessionHistoryList(sessionHistory, entry, 30);
+    saveLocalUsuarioSessions(safeUid, sessionHistory);
+  }
+
+  // Si estamos offline, encolar para sincronizar automáticamente al reconectar
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    savePendingCloudUsuarioSync(params);
+    return { ok: false, offline: true };
+  }
+
+  const effectiveAuthProvider: 'google' | 'manual' =
+    params.authProvider === 'google' && auth.currentUser?.uid === safeUid ? 'google' : 'manual';
+  const effectiveUid =
+    effectiveAuthProvider === 'google'
+      ? safeUid
+      : toSafeDocId(params.deviceId || safeUid);
+
+  const payload: Record<string, unknown> = cleanForFirestore({
+    uid: effectiveUid,
+    nombreCompleto: nombreClean,
+    correo: correoClean,
+    ...(params.tallerNombre?.trim()
+      ? { tallerNombre: params.tallerNombre.trim().slice(0, 140) }
+      : {}),
+    ...(params.telefono?.trim() ? { telefono: params.telefono.trim().slice(0, 40) } : {}),
+    ...(params.ubicacion?.trim() ? { ubicacion: params.ubicacion.trim().slice(0, 200) } : {}),
+    dispositivo: deviceInfo.dispositivo,
+    navegador: deviceInfo.navegador,
+    ...(params.deviceId?.trim() ? { deviceId: toSafeDocId(params.deviceId) } : {}),
+    authProvider: effectiveAuthProvider,
+    plan: params.plan === 'pro' && isFirebaseAdminUser() ? 'pro' : 'gratis',
+    termsAccepted: Boolean(params.termsAccepted),
+    termsAcceptedAt:
+      typeof params.termsAcceptedAt === 'number' && Number.isFinite(params.termsAcceptedAt)
+        ? params.termsAcceptedAt
+        : fechaRegistroMs,
+    fechaRegistroMs,
+    ultimaConexionMs: now,
+    totalSesiones: Math.max(1, Math.min(1_000_000, totalSesiones)),
+    historialSesiones: sessionHistory.slice(-30),
+  });
+
+  payload.ultimaConexion = serverTimestamp();
+  if (!alreadyCreated) {
+    payload.fechaRegistro = serverTimestamp();
+  }
+
+  try {
+    await setDoc(doc(db, 'usuarios', effectiveUid), payload, { merge: true });
+    try {
+      localStorage.setItem(createdFlagKey, '1');
+    } catch {
+      // ignore
+    }
+    clearPendingCloudUsuarioSync();
+    return { ok: true };
+  } catch (err) {
+    if (isFirestoreOfflineError(err)) {
+      savePendingCloudUsuarioSync(params);
+      return { ok: false, offline: true, error: 'Sin conexión a internet' };
+    }
+    const msg = err instanceof Error ? err.message : String(err || 'Error al guardar usuario');
+    console.warn('[Aluminero Pro] Error al sincronizar en colección usuarios:', err);
+    return { ok: false, error: msg };
+  }
+}
+
+export async function flushPendingCloudUsuarioSync(): Promise<boolean> {
+  const pending = loadPendingCloudUsuarioSync();
+  if (!pending) return false;
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;
+  const res = await syncUsuarioToCloud({
+    uid: pending.uid,
+    nombreCompleto: pending.nombreCompleto,
+    correo: pending.correo,
+    tallerNombre: pending.tallerNombre,
+    telefono: pending.telefono,
+    ubicacion: pending.ubicacion,
+    deviceId: pending.deviceId,
+    authProvider: pending.authProvider,
+    plan: pending.plan,
+    termsAccepted: pending.termsAccepted,
+    termsAcceptedAt: pending.termsAcceptedAt,
+    recordSession: false,
+  });
+  return res.ok;
+}
+
+export async function fetchLiveCloudUsuariosFromServer(): Promise<LiveCloudUsuariosServerResult> {
+  const now = Date.now();
+  try {
+    const snapshot = await getDocsFromServer(collection(db, 'usuarios'));
+    const usuarios: CloudUsuarioRecord[] = snapshot.docs.map((docSnap) => {
+      const data = docSnap.data() as Record<string, unknown>;
+      const uid = String(data.uid || docSnap.id);
+      const fechaRegistroMs = extractFirestoreTimestampMs(
+        data.fechaRegistro,
+        extractFirestoreTimestampMs(data.fechaRegistroMs, now)
+      );
+      const ultimaConexionMs = extractFirestoreTimestampMs(
+        data.ultimaConexion,
+        extractFirestoreTimestampMs(data.ultimaConexionMs, fechaRegistroMs)
+      );
+      const rawHistory = Array.isArray(data.historialSesiones) ? data.historialSesiones : [];
+      const historialSesiones: CloudSessionHistoryItem[] = rawHistory
+        .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'))
+        .map((item) => ({
+          fecha: String(item.fecha || ''),
+          hora: String(item.hora || ''),
+          dispositivo: String(item.dispositivo || data.dispositivo || 'Navegador Web'),
+          timestamp: Number(item.timestamp) || ultimaConexionMs,
+        }))
+        .sort((a, b) => b.timestamp - a.timestamp);
+
+      return {
+        uid,
+        nombreCompleto: String(data.nombreCompleto || data.tallerNombre || 'Usuario sin nombre'),
+        correo: String(data.correo || ''),
+        tallerNombre: typeof data.tallerNombre === 'string' ? data.tallerNombre : undefined,
+        telefono: typeof data.telefono === 'string' ? data.telefono : undefined,
+        ubicacion: typeof data.ubicacion === 'string' ? data.ubicacion : undefined,
+        dispositivo: String(data.dispositivo || 'Navegador Web'),
+        navegador: typeof data.navegador === 'string' ? data.navegador : undefined,
+        deviceId: typeof data.deviceId === 'string' ? data.deviceId : undefined,
+        authProvider: data.authProvider === 'google' ? 'google' : 'manual',
+        plan: data.plan === 'pro' ? 'pro' : 'gratis',
+        termsAccepted: data.termsAccepted !== false,
+        termsAcceptedAt:
+          typeof data.termsAcceptedAt === 'number'
+            ? data.termsAcceptedAt
+            : extractFirestoreTimestampMs(data.termsAcceptedAt, fechaRegistroMs),
+        fechaRegistroMs,
+        ultimaConexionMs,
+        totalSesiones: Math.max(
+          historialSesiones.length,
+          Number(data.totalSesiones) || 1
+        ),
+        historialSesiones,
+      };
+    });
+
+    usuarios.sort((a, b) => b.ultimaConexionMs - a.ultimaConexionMs);
+
+    const recentSessions: CloudSessionFeedItem[] = [];
+    for (const u of usuarios) {
+      if (u.historialSesiones.length > 0) {
+        for (const s of u.historialSesiones) {
+          recentSessions.push({
+            ...s,
+            uid: u.uid,
+            nombreCompleto: u.nombreCompleto,
+            correo: u.correo,
+            authProvider: u.authProvider,
+          });
+        }
+      } else {
+        const fallbackEntry = createSessionHistoryEntry(
+          u.ultimaConexionMs,
+          u.navegador ? `${u.dispositivo} · ${u.navegador}` : u.dispositivo
+        );
+        recentSessions.push({
+          ...fallbackEntry,
+          uid: u.uid,
+          nombreCompleto: u.nombreCompleto,
+          correo: u.correo,
+          authProvider: u.authProvider,
+        });
+      }
+    }
+    recentSessions.sort((a, b) => b.timestamp - a.timestamp);
+
+    return {
+      ok: true,
+      count: snapshot.size,
+      usuarios,
+      recentSessions: recentSessions.slice(0, 100),
+      serverTime: now,
+    };
+  } catch (err) {
+    const code =
+      typeof err === 'object' && err !== null && 'code' in err
+        ? String((err as { code?: unknown }).code || '')
+        : '';
+    const message = err instanceof Error ? err.message : String(err || 'Error de conexión');
+    return {
+      ok: false,
+      count: 0,
+      usuarios: [],
+      recentSessions: [],
+      serverTime: now,
+      errorCode: code || undefined,
+      errorMessage: message,
+      isPermissionDenied: isFirestorePermissionDeniedError(err),
+      isOffline: isFirestoreOfflineError(err),
+    };
+  }
+}
+
 
 

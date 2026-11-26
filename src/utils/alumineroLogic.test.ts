@@ -3774,5 +3774,100 @@ test('102. AdminDashboardView consulta devices con getDocsFromServer + snapshot.
   assert.match(appSrc, /Más tarde/);
 });
 
+test('103. Historial de sesiones y detección de dispositivo/navegador para colección usuarios', async () => {
+  const {
+    createSessionHistoryEntry,
+    detectBrowserAndDeviceInfo,
+    mergeSessionHistoryList,
+  } = await import('./cloudSync.ts');
+
+  const androidChrome = detectBrowserAndDeviceInfo(
+    'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/128.0.0.0 Mobile Safari/537.36'
+  );
+  assert.equal(androidChrome.dispositivo, 'Teléfono Android');
+  assert.equal(androidChrome.navegador, 'Chrome');
+
+  const winEdge = detectBrowserAndDeviceInfo(
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/128.0.0.0 Safari/537.36 Edg/128.0.0.0'
+  );
+  assert.equal(winEdge.dispositivo, 'PC Windows');
+  assert.equal(winEdge.navegador, 'Edge');
+
+  const baseTs = 1_765_000_000_000;
+  const e1 = createSessionHistoryEntry(baseTs, androidChrome.label);
+  const eDup = createSessionHistoryEntry(baseTs + 5_000, androidChrome.label);
+  const e2 = createSessionHistoryEntry(baseTs + 60_000, winEdge.label);
+
+  assert.match(e1.fecha, /^\d{2}\/\d{2}\/\d{4}$/);
+  assert.match(e1.hora, /^\d{2}:\d{2}:\d{2}$/);
+
+  let list = mergeSessionHistoryList([], e1, 30);
+  list = mergeSessionHistoryList(list, eDup, 30);
+  assert.equal(list.length, 1, 'Debe evitar duplicados dentro de la misma ventana de 20s');
+
+  list = mergeSessionHistoryList(list, e2, 30);
+  assert.equal(list.length, 2);
+
+  // Tope máximo de 30 entradas para cumplir reglas de Firestore
+  for (let i = 0; i < 40; i++) {
+    list = mergeSessionHistoryList(
+      list,
+      createSessionHistoryEntry(baseTs + (i + 5) * 60_000, 'PC Windows · Chrome'),
+      30
+    );
+  }
+  assert.equal(list.length, 30);
+});
+
+test('104. public/sw.js usa CACHE_NAME unificado aluminero-pro-v1.0.3, limpia cachés en activate y solo ejecuta skipWaiting en SKIP_WAITING', async () => {
+  const { readFileSync } = await import('node:fs');
+  const swSrc = readFileSync('public/sw.js', 'utf8');
+
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.3';/);
+  assert.match(swSrc, /const CACHE_NAME = `aluminero-pro-v\$\{APP_VERSION\}`;/);
+  assert.doesNotMatch(swSrc, /CACHE_VERSION/, 'No deben quedar referencias sueltas a CACHE_VERSION');
+  assert.match(swSrc, /keys\.filter\(\(key\) => key !== CACHE_NAME\)\.map\(\(key\) => caches\.delete\(key\)\)/);
+  assert.match(swSrc, /msg\.type === 'SKIP_WAITING'[\s\S]*self\.skipWaiting\(\)/);
+
+  // Verificar que install NO llama self.skipWaiting() automáticamente
+  const installBlockMatch = swSrc.match(/self\.addEventListener\('install'[\s\S]*?\n\}\);/);
+  assert.ok(installBlockMatch, 'Debe existir listener install en sw.js');
+  assert.doesNotMatch(
+    installBlockMatch[0],
+    /^\s*self\.skipWaiting\(\)/m,
+    'install NO debe llamar self.skipWaiting() automáticamente'
+  );
+});
+
+test('105. Bloque 1 y 2: modal legal bloqueante, colección usuarios en Firestore/Admin y acceso Admin intacto', async () => {
+  const { readFileSync } = await import('node:fs');
+
+  const gateSrc = readFileSync('src/components/UnifiedWorkshopGateModal.tsx', 'utf8');
+  assert.match(gateSrc, /He leído y acepto los Términos, Condiciones y Aviso de Privacidad/);
+  assert.match(gateSrc, /blocking\s*=\s*false/);
+  assert.match(gateSrc, /btn-gate-open-aviso-legal/);
+  assert.match(gateSrc, /btn-gate-open-privacidad/);
+
+  const cloudSrc = readFileSync('src/utils/cloudSync.ts', 'utf8');
+  assert.match(cloudSrc, /setDoc\(doc\(db,\s*'usuarios',\s*effectiveUid\)/);
+  assert.match(cloudSrc, /ultimaConexion\s*[:=]\s*serverTimestamp\(\)/);
+  assert.match(cloudSrc, /getDocsFromServer\(collection\(db,\s*'usuarios'\)\)/);
+
+  const adminSrc = readFileSync('src/components/AdminDashboardView.tsx', 'utf8');
+  assert.match(adminSrc, /fetchLiveCloudUsuariosFromServer/);
+  assert.match(adminSrc, /Sincronizando nube\.\.\./);
+  assert.match(adminSrc, /usuarios registrados/);
+  assert.match(adminSrc, /admin-cloud-usuarios-section/);
+
+  const rulesSrc = readFileSync('firestore.rules', 'utf8');
+  assert.match(rulesSrc, /match \/usuarios\/\{uid\}/);
+  assert.match(rulesSrc, /val is timestamp/);
+
+  // Verificar que AdminGateModal sigue intacto con su acceso de administrador
+  const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
+  assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
+});
+
+
 
 

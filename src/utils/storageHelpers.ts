@@ -146,6 +146,7 @@ export interface PdfHeaderConfig {
 export interface TallerConfig {
   nombre: string;
   responsable?: string;
+  correo?: string;
   tel: string;
   ubicacion?: string;
   clienteDefault: string;
@@ -161,6 +162,15 @@ export interface TallerConfig {
   ivaPorDefecto?: boolean;
   termsAcceptedAt?: number | null;
   pdfHeader?: PdfHeaderConfig;
+}
+
+export interface RegisteredUserLocalProfile {
+  uid: string;
+  nombreCompleto: string;
+  correo: string;
+  authProvider: 'google' | 'manual';
+  registeredAt: number;
+  termsAcceptedAt: number;
 }
 
 export interface PartidaObraExtended extends PartidaObra {
@@ -2085,6 +2095,49 @@ export function saveCatalogVigenciaLabel(label: string): string {
     }
   }
   return normalized;
+}
+
+const REGISTERED_USER_PROFILE_KEY = 'aluminero_registered_user_profile_v1';
+
+export function loadRegisteredUserProfile(): RegisteredUserLocalProfile | null {
+  if (typeof localStorage === 'undefined') return null;
+  const parsed = safeJsonParse<Partial<RegisteredUserLocalProfile> | null>(
+    localStorage.getItem(REGISTERED_USER_PROFILE_KEY),
+    null
+  );
+  if (!parsed || typeof parsed.uid !== 'string' || !parsed.uid.trim()) return null;
+  if (typeof parsed.nombreCompleto !== 'string' || parsed.nombreCompleto.trim().length < 2) {
+    return null;
+  }
+  return {
+    uid: parsed.uid.trim(),
+    nombreCompleto: parsed.nombreCompleto.trim().slice(0, 140),
+    correo: typeof parsed.correo === 'string' ? parsed.correo.trim().toLowerCase().slice(0, 160) : '',
+    authProvider: parsed.authProvider === 'google' ? 'google' : 'manual',
+    registeredAt: Number(parsed.registeredAt) || Date.now(),
+    termsAcceptedAt: Number(parsed.termsAcceptedAt) || Date.now(),
+  };
+}
+
+export function saveRegisteredUserProfile(
+  profile: RegisteredUserLocalProfile
+): RegisteredUserLocalProfile {
+  const clean: RegisteredUserLocalProfile = {
+    uid: String(profile.uid || '').trim(),
+    nombreCompleto: String(profile.nombreCompleto || '').trim().slice(0, 140),
+    correo: String(profile.correo || '').trim().toLowerCase().slice(0, 160),
+    authProvider: profile.authProvider === 'google' ? 'google' : 'manual',
+    registeredAt: Number(profile.registeredAt) || Date.now(),
+    termsAcceptedAt: Number(profile.termsAcceptedAt) || Date.now(),
+  };
+  if (typeof localStorage !== 'undefined') {
+    try {
+      localStorage.setItem(REGISTERED_USER_PROFILE_KEY, JSON.stringify(clean));
+    } catch {
+      // ignorar cuota
+    }
+  }
+  return clean;
 }
 
 

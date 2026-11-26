@@ -25,7 +25,7 @@ export const LegalModal: React.FC<LegalModalProps> = ({ docType, onClose, onSwit
   return (
     <div
       id="modal-legal"
-      className="fixed inset-0 z-50 bg-slate-950/75 flex items-center justify-center p-4 overflow-y-auto"
+      className="fixed inset-0 z-[9999] bg-slate-950/75 flex items-center justify-center p-4 overflow-y-auto"
       role="dialog"
       aria-modal="true"
       aria-label={modalTitle}

@@ -573,9 +573,43 @@
         "createdAt": { "type": "number" }
       },
       "required": ["uid", "email", "role", "createdAt"]
+    },
+    "UsuarioCloud": {
+      "title": "UsuarioCloud",
+      "description": "Usuario registrado en Aluminero Pro con datos de perfil, aceptación legal, fecha de registro, última conexión e historial acotado de sesiones.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 3, "maxLength": 128 },
+        "nombreCompleto": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "correo": { "type": "string", "maxLength": 160 },
+        "tallerNombre": { "type": "string", "maxLength": 140 },
+        "telefono": { "type": "string", "maxLength": 40 },
+        "ubicacion": { "type": "string", "maxLength": 200 },
+        "dispositivo": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "navegador": { "type": "string", "maxLength": 120 },
+        "deviceId": { "type": "string", "maxLength": 64 },
+        "authProvider": { "type": "string", "enum": ["google", "manual"] },
+        "plan": { "type": "string", "enum": ["gratis", "pro"] },
+        "termsAccepted": { "type": "boolean" },
+        "termsAcceptedAt": { "type": "number" },
+        "fechaRegistro": { "type": "string", "description": "Timestamp de servidor de registro inicial." },
+        "fechaRegistroMs": { "type": "number" },
+        "ultimaConexion": { "type": "string", "description": "Timestamp de servidor de última conexión." },
+        "ultimaConexionMs": { "type": "number" },
+        "totalSesiones": { "type": "number" },
+        "historialSesiones": {
+          "type": "array",
+          "description": "Lista acotada (máximo 30 entradas) de sesiones recientes con fecha, hora, dispositivo y timestamp."
+        }
+      },
+      "required": ["uid", "nombreCompleto", "dispositivo", "authProvider", "termsAccepted", "ultimaConexion"]
     }
   },
   "firestore": {
+    "/usuarios/{uid}": {
+      "schema": { "$ref": "#/entities/UsuarioCloud" },
+      "description": "Directorio principal de usuarios registrados en la nube e historial de sesiones."
+    },
     "/users/{userId}": {
       "schema": { "$ref": "#/entities/UserProfile" },
       "description": "Perfil privado por usuario autenticado (acceso exclusivo del propietario o administrador)."

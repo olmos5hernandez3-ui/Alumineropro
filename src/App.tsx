@@ -50,6 +50,7 @@ import {
   detectDeviceLabel,
   fetchCloudDevicesState,
   flushPendingCloudDeviceSync,
+  flushPendingCloudUsuarioSync,
   loginCloudAccount,
   logoutCloudAccount,
   registerCloudAccount,
@@ -59,6 +60,7 @@ import {
   subscribeReferencePrices,
   syncDeviceToCloud,
   syncTallerProfileToCloud,
+  syncUsuarioToCloud,
   updateDeviceLicenseInCloud,
   uploadCloudAccountBackup,
   verifyDeviceStatusInCloud,
@@ -101,6 +103,7 @@ import {
   loadObrasAprobadas,
   loadPerfilFotos,
   loadReferralHistory,
+  loadRegisteredUserProfile,
   loadRevokedDevicesMap,
   loadSavedColleagueReferral,
   loadSobrantes,
@@ -114,12 +117,14 @@ import {
   PartidaObraExtended,
   PerfilFotosMap,
   ReferralHistoryRecord,
+  RegisteredUserLocalProfile,
   sanitizeWhatsappNumber,
   saveAdminKeys,
   saveAccessBlocked,
   saveCloudAccountSession,
   saveColleagueReferral,
   saveContratoCliente,
+  saveRegisteredUserProfile,
   saveCotizacionesGuardadas,
   saveCotizacionReminders,
   saveDeletedAdminKeySigs,
@@ -631,6 +636,11 @@ export default function App() {
   // Modals & UI (controlados desde la pila unificada NavFrame + popstate)
   const [legalAccepted, setLegalAccepted] = useState<boolean>(() =>
     loadLegalDisclaimerAccepted()
+  );
+  const [registeredUserProfile, setRegisteredUserProfile] =
+    useState<RegisteredUserLocalProfile | null>(() => loadRegisteredUserProfile());
+  const [adminShortcutOnBoot] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? parseAdminUrlShortcut(window.location.search) : false
   );
   const [themePreference, setThemePreference] = useState<AppTheme>(() => loadTheme());
   const [systemPrefersDark, setSystemPrefersDark] = useState<boolean>(() =>
@@ -2196,8 +2206,23 @@ export default function App() {
     navigateTo('trabajo');
   };
 
-  const needsFirstTimeWorkshopGate =
-    !proActive && !firebaseUser && !(legalAccepted && tallerOnboardingComplete);
+  const isUserRegisteredAndAccepted = Boolean(
+    legalAccepted &&
+      (registeredUserProfile !== null ||
+        firebaseUser !== null ||
+        tallerOnboardingComplete ||
+        (taller.nombre.trim().length >= 2 && Boolean(taller.correo?.trim())))
+  );
+
+  const needsFirstTimeWorkshopGate = !isUserRegisteredAndAccepted;
+
+  const isStartupGateBlocking =
+    needsFirstTimeWorkshopGate &&
+    !adminAuthOpen &&
+    !adminModalOpen &&
+    currentView !== 'admin' &&
+    !accessBlocked &&
+    !adminShortcutOnBoot;
 
   const executeActiveTool = useCallback(
     (tool: 'levantamiento' | 'hoja' | 'modulacion' | 'vidrio') => {
@@ -2524,18 +2549,48 @@ export default function App() {
       setLegalAccepted(true);
       saveTermsAcceptedAt(now);
 
-      const emailPrefix = (user.email || '').split('@')[0] || 'Mi Taller';
-      const resolvedNombre = taller.nombre?.trim() || user.displayName?.trim() || emailPrefix;
+      const emailClean = (user.email || '').trim().toLowerCase();
+      const emailPrefix = emailClean.split('@')[0] || 'Mi Taller';
+      const resolvedNombre =
+        taller.nombre?.trim() && taller.nombre !== 'Mi Taller de Aluminio'
+          ? taller.nombre.trim()
+          : user.displayName?.trim() || emailPrefix;
       const resolvedResponsable =
         taller.responsable?.trim() || user.displayName?.trim() || resolvedNombre;
       const nextTaller: TallerConfig = {
         ...taller,
         nombre: resolvedNombre,
         responsable: resolvedResponsable,
+        correo: emailClean || taller.correo || '',
         termsAcceptedAt: taller.termsAcceptedAt || now,
       };
       saveTaller(nextTaller);
       setTaller(nextTaller);
+
+      const savedProfile = saveRegisteredUserProfile({
+        uid: user.uid,
+        nombreCompleto: user.displayName?.trim() || resolvedNombre,
+        correo: emailClean || nextTaller.correo || '',
+        authProvider: 'google',
+        registeredAt: registeredUserProfile?.registeredAt || now,
+        termsAcceptedAt: nextTaller.termsAcceptedAt || now,
+      });
+      setRegisteredUserProfile(savedProfile);
+
+      void syncUsuarioToCloud({
+        uid: user.uid,
+        nombreCompleto: savedProfile.nombreCompleto,
+        correo: savedProfile.correo,
+        tallerNombre: nextTaller.nombre,
+        telefono: nextTaller.tel || '',
+        ubicacion: nextTaller.ubicacion || '',
+        deviceId,
+        authProvider: 'google',
+        plan: proActive ? 'pro' : 'gratis',
+        termsAccepted: true,
+        termsAcceptedAt: savedProfile.termsAcceptedAt,
+        recordSession: true,
+      });
 
       void syncTallerProfileToCloud({
         deviceId,
@@ -2563,8 +2618,61 @@ export default function App() {
         licencia: licenciaRef.current,
       });
     },
-    [deviceId, taller, resolvedTheme, skin, skinVariant]
+    [deviceId, taller, resolvedTheme, skin, skinVariant, proActive, registeredUserProfile?.registeredAt]
   );
+
+  // Al abrir la app con un usuario ya registrado, registra automáticamente la sesión en Firestore (`usuarios`)
+  const startupUsuarioSessionSyncedRef = useRef(false);
+  useEffect(() => {
+    if (startupUsuarioSessionSyncedRef.current) return;
+    if (!isUserRegisteredAndAccepted) return;
+    startupUsuarioSessionSyncedRef.current = true;
+    const uid =
+      firebaseUser?.uid ||
+      registeredUserProfile?.uid ||
+      deviceId;
+    const nombreCompleto =
+      firebaseUser?.displayName?.trim() ||
+      registeredUserProfile?.nombreCompleto ||
+      taller.responsable?.trim() ||
+      taller.nombre?.trim() ||
+      'Usuario Aluminero Pro';
+    const correo =
+      firebaseUser?.email?.trim().toLowerCase() ||
+      registeredUserProfile?.correo ||
+      taller.correo ||
+      '';
+    const authProvider: 'google' | 'manual' =
+      firebaseUser ? 'google' : registeredUserProfile?.authProvider || 'manual';
+
+    void syncUsuarioToCloud({
+      uid,
+      nombreCompleto,
+      correo,
+      tallerNombre: taller.nombre || nombreCompleto,
+      telefono: taller.tel || '',
+      ubicacion: taller.ubicacion || '',
+      deviceId,
+      authProvider,
+      plan: proActive ? 'pro' : 'gratis',
+      termsAccepted: true,
+      termsAcceptedAt:
+        registeredUserProfile?.termsAcceptedAt || taller.termsAcceptedAt || Date.now(),
+      recordSession: true,
+    });
+  }, [
+    isUserRegisteredAndAccepted,
+    firebaseUser,
+    registeredUserProfile,
+    deviceId,
+    taller.nombre,
+    taller.responsable,
+    taller.correo,
+    taller.tel,
+    taller.ubicacion,
+    taller.termsAcceptedAt,
+    proActive,
+  ]);
 
   const completeGoogleUserRef = useRef(completeGoogleUserRegistration);
   completeGoogleUserRef.current = completeGoogleUserRegistration;
@@ -3356,6 +3464,7 @@ export default function App() {
     const flushPending = () => {
       if (typeof navigator !== 'undefined' && !navigator.onLine) return;
       void flushPendingCloudDeviceSync(licenciaRef.current);
+      void flushPendingCloudUsuarioSync();
     };
     flushPending();
     window.addEventListener('online', flushPending);
@@ -5208,14 +5317,20 @@ export default function App() {
       />
 
       <UnifiedWorkshopGateModal
-        open={unifiedGateTarget !== null}
-        targetToolLabel={unifiedGateTarget?.label || 'Herramienta de trabajo'}
+        open={isStartupGateBlocking || unifiedGateTarget !== null}
+        blocking={isStartupGateBlocking}
+        targetToolLabel={unifiedGateTarget?.label || 'Aluminero Pro'}
         taller={taller}
         googleAuthLoading={googleAuthLoading}
         googleAuthError={googleAuthError}
+        onOpenLegalDoc={(docType) => setLegalModalDoc(docType)}
         onContinueWithGoogle={handleConnectGoogle}
-        onClose={() => setUnifiedGateTarget(null)}
-        onSaveManual={({ nombre, tel, ubicacion, termsAcceptedAt }) => {
+        onClose={() => {
+          if (!isStartupGateBlocking) {
+            setUnifiedGateTarget(null);
+          }
+        }}
+        onSaveManual={({ nombre, correo, tel, ubicacion, termsAcceptedAt }) => {
           const acceptedTs = termsAcceptedAt || Date.now();
           saveLegalDisclaimerAccepted(true);
           setLegalAccepted(true);
@@ -5225,19 +5340,45 @@ export default function App() {
             ...taller,
             nombre,
             responsable: resolvedResponsable,
-            tel,
-            ubicacion,
+            correo,
+            tel: tel || taller.tel || '',
+            ubicacion: ubicacion || taller.ubicacion || '',
             termsAcceptedAt: acceptedTs,
           };
           saveTaller(nextTaller);
           setTaller(nextTaller);
 
+          const savedProfile = saveRegisteredUserProfile({
+            uid: deviceId,
+            nombreCompleto: nombre,
+            correo,
+            authProvider: 'manual',
+            registeredAt: acceptedTs,
+            termsAcceptedAt: acceptedTs,
+          });
+          setRegisteredUserProfile(savedProfile);
+
+          void syncUsuarioToCloud({
+            uid: deviceId,
+            nombreCompleto: nombre,
+            correo,
+            tallerNombre: nombre,
+            telefono: tel || taller.tel || '',
+            ubicacion: ubicacion || taller.ubicacion || '',
+            deviceId,
+            authProvider: 'manual',
+            plan: proActive ? 'pro' : 'gratis',
+            termsAccepted: true,
+            termsAcceptedAt: acceptedTs,
+            recordSession: true,
+          });
+
           void syncTallerProfileToCloud({
             deviceId,
             nombre,
             responsable: resolvedResponsable,
-            tel,
-            ubicacion,
+            tel: tel || taller.tel || '',
+            ubicacion: ubicacion || taller.ubicacion || '',
             termsAcceptedAt: acceptedTs,
             preferredTheme: resolvedTheme,
             preferredSkin: skin,
@@ -5248,8 +5389,8 @@ export default function App() {
             cliente: nombre,
             tallerNombre: nombre,
             tallerResponsable: resolvedResponsable,
-            tallerWhatsapp: tel,
-            ubicacion,
+            tallerWhatsapp: tel || taller.tel || '',
+            ubicacion: ubicacion || taller.ubicacion || '',
             termsAcceptedAt: acceptedTs,
             deviceLabel: detectDeviceLabel(),
             eventType: 'open',
@@ -5259,7 +5400,7 @@ export default function App() {
 
           const targetTool = unifiedGateTarget?.tool;
           setUnifiedGateTarget(null);
-          showToast(`¡Registro guardado, ${nombre}! Ya puedes trabajar sin interrupciones.`, true);
+          showToast(`¡Bienvenido, ${nombre}! Registro guardado en la nube.`, true);
           if (targetTool) {
             executeActiveTool(targetTool);
           }

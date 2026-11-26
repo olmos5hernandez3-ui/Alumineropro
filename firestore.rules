@@ -74,6 +74,16 @@ service cloud.firestore {
         || isValidTimestampMs(data[field]);
     }
 
+    function isValidServerOrMsTimestamp(val) {
+      return val is timestamp || isValidTimestampMs(val);
+    }
+
+    function isValidOptionalServerOrMsTimestamp(data, field) {
+      return !(field in data)
+        || data[field] == null
+        || isValidServerOrMsTimestamp(data[field]);
+    }
+
     function isValidUrlString(val, maxLen) {
       return val is string
         && val.size() >= 8
@@ -369,9 +379,89 @@ service cloud.firestore {
         && isValidTimestampMs(data.createdAt);
     }
 
+    function isValidUsuarioDoc(data, uid) {
+      return data.keys().hasOnly([
+          'uid', 'nombreCompleto', 'correo', 'tallerNombre', 'telefono', 'ubicacion',
+          'dispositivo', 'navegador', 'deviceId', 'authProvider', 'plan',
+          'termsAccepted', 'termsAcceptedAt', 'fechaRegistro', 'fechaRegistroMs',
+          'ultimaConexion', 'ultimaConexionMs', 'totalSesiones', 'historialSesiones'
+        ])
+        && isValidReqString(data, 'uid', 3, 128)
+        && data.uid == uid
+        && isValidReqString(data, 'nombreCompleto', 1, 140)
+        && isValidOptString(data, 'correo', 160)
+        && isValidOptString(data, 'tallerNombre', 140)
+        && isValidOptString(data, 'telefono', 40)
+        && isValidOptString(data, 'ubicacion', 200)
+        && isValidReqString(data, 'dispositivo', 1, 120)
+        && isValidOptString(data, 'navegador', 120)
+        && isValidOptString(data, 'deviceId', 64)
+        && data.authProvider in ['google', 'manual']
+        && (!('plan' in data) || data.plan in ['gratis', 'pro'])
+        && data.termsAccepted is bool
+        && isValidOptionalServerOrMsTimestamp(data, 'termsAcceptedAt')
+        && isValidOptionalServerOrMsTimestamp(data, 'fechaRegistro')
+        && isValidOptionalTimestampMs(data, 'fechaRegistroMs')
+        && 'ultimaConexion' in data
+        && isValidServerOrMsTimestamp(data.ultimaConexion)
+        && isValidOptionalTimestampMs(data, 'ultimaConexionMs')
+        && (!('totalSesiones' in data)
+          || (data.totalSesiones is int && data.totalSesiones >= 0 && data.totalSesiones <= 1000000))
+        && (!('historialSesiones' in data)
+          || (data.historialSesiones is list
+            && data.historialSesiones.size() <= 30
+            && (data.historialSesiones.size() == 0 || data.historialSesiones[0] is map)));
+    }
+
+    function isSafeManualUsuarioWrite(data, uid) {
+      return uid.matches('^ALM-[A-Z0-9_-]{3,40}$')
+        && data.uid == uid
+        && data.authProvider == 'manual'
+        && (!('plan' in data) || data.plan == 'gratis');
+    }
+
     // =========================================================================
     // 3. USER-OWNED COLLECTIONS (STRICT OWNER OR ADMIN ACCESS)
     // =========================================================================
+
+    match /usuarios/{uid} {
+      allow read: if isValidId(uid) && (isAdmin() || isOwner(uid));
+      allow create: if isValidId(uid)
+        && isValidUsuarioDoc(incoming(), uid)
+        && (
+          isAdmin()
+          || (isOwner(uid) && (!('plan' in incoming()) || incoming().plan == 'gratis'))
+          || isSafeManualUsuarioWrite(incoming(), uid)
+        );
+      allow update: if isValidId(uid)
+        && isValidUsuarioDoc(incoming(), uid)
+        && incoming().uid == existing().uid
+        && (
+          isAdmin()
+          || (
+            isOwner(uid)
+            && incoming().get('plan', 'gratis') == existing().get('plan', 'gratis')
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'nombreCompleto', 'correo', 'tallerNombre', 'telefono', 'ubicacion',
+              'dispositivo', 'navegador', 'deviceId', 'authProvider',
+              'termsAccepted', 'termsAcceptedAt', 'fechaRegistro', 'fechaRegistroMs',
+              'ultimaConexion', 'ultimaConexionMs', 'totalSesiones', 'historialSesiones'
+            ])
+          )
+          || (
+            isSafeManualUsuarioWrite(incoming(), uid)
+            && existing().get('authProvider', '') == 'manual'
+            && existing().get('plan', 'gratis') == 'gratis'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'nombreCompleto', 'correo', 'tallerNombre', 'telefono', 'ubicacion',
+              'dispositivo', 'navegador', 'deviceId',
+              'termsAccepted', 'termsAcceptedAt', 'fechaRegistro', 'fechaRegistroMs',
+              'ultimaConexion', 'ultimaConexionMs', 'totalSesiones', 'historialSesiones'
+            ])
+          )
+        );
+      allow delete: if isValidId(uid) && isAdmin();
+    }
 
     match /users/{userId} {
       allow read: if isValidId(userId) && (isOwner(userId) || isAdmin());
