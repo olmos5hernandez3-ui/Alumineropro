@@ -161,7 +161,8 @@ export const PLANS: PlanDefinicion[] = [
   },
 ];
 
-export const APP_VERSION = 'v1.0.2';
+export const APP_VERSION = '1.0.3';
+export const APP_VERSION_LABEL = `v${APP_VERSION}`;
 
 export const TRAMO_STD_CM = 610;
 export const TRAMO_STD_M = 6.1;

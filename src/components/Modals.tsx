@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 const AdminMiniCharts = React.lazy(() => import('./AdminMiniCharts'));
 import {
+  APP_VERSION,
   buildDailyUsageSeries30d,
   CATALOGO_PERFILES,
   CloudDeviceRecord,
@@ -837,7 +838,7 @@ export const FALLBACK_MANIFEST_JSON = JSON.stringify(
   2
 );
 
-export const FALLBACK_SW_JS = `const CACHE_NAME = 'aluminero-pro-v42-20261122';
+export const FALLBACK_SW_JS = `const CACHE_NAME = 'aluminero-pro-v${APP_VERSION}';
 const APP_SHELL_ASSETS = [
   './',
   './index.html',

@@ -5,6 +5,7 @@ import {
   getDoc,
   getDocFromServer,
   getDocs,
+  getDocsFromServer,
   limit,
   onSnapshot,
   query,
@@ -209,7 +210,7 @@ function buildSafeDeviceRecord(
     proActive: proVal,
     plan: derivedPlan,
     planCode: planCodeClean,
-    planLabel: String(input.planLabel || 'Versión Gratuita').trim().slice(0, 120) || 'Versión Gratuita',
+    planLabel: String(input.planLabel || 'Versión Gratuita').trim().slice(0, 80) || 'Versión Gratuita',
     status: derivedStatus,
     expiresAt: input.expiresAt === undefined ? null : input.expiresAt,
     lastKey: String(input.lastKey ?? existing?.lastKey ?? '').trim().toUpperCase().slice(0, 40),
@@ -499,7 +500,7 @@ async function fetchAllCollectionsSnapshot(
   const blockedDeviceIds = new Set<string>();
 
   try {
-    const snap = await getDocs(query(collection(db, 'devices'), limit(500)));
+    const snap = await getDocsFromServer(query(collection(db, 'devices'), limit(500)));
     rawDevices = snap.docs.map((d) => d.data() as CloudDeviceRecord);
   } catch (err) {
     if (isFirestoreOfflineError(err)) throw err;
@@ -507,7 +508,7 @@ async function fetchAllCollectionsSnapshot(
   }
 
   try {
-    const snap = await getDocs(query(collection(db, 'adminKeys'), limit(500)));
+    const snap = await getDocsFromServer(query(collection(db, 'adminKeys'), limit(500)));
     rawAdminKeys = snap.docs.map((d) => d.data() as AdminKeyRecord);
   } catch (err) {
     if (isFirestoreOfflineError(err)) throw err;
@@ -515,7 +516,7 @@ async function fetchAllCollectionsSnapshot(
   }
 
   try {
-    const snap = await getDocs(query(collection(db, 'revokedKeys'), limit(500)));
+    const snap = await getDocsFromServer(query(collection(db, 'revokedKeys'), limit(500)));
     revokedKeysList = snap.docs
       .map((d) => String((d.data() as { key?: string }).key || d.id || '').trim().toUpperCase())
       .filter(Boolean);
@@ -525,7 +526,7 @@ async function fetchAllCollectionsSnapshot(
   }
 
   try {
-    const snap = await getDocs(query(collection(db, 'blockedDevices'), limit(500)));
+    const snap = await getDocsFromServer(query(collection(db, 'blockedDevices'), limit(500)));
     for (const d of snap.docs) {
       const id = toSafeDocId(String((d.data() as { deviceId?: string }).deviceId || d.id || ''));
       if (id) blockedDeviceIds.add(id);
@@ -543,6 +544,57 @@ async function fetchAllCollectionsSnapshot(
     now,
     device,
   });
+}
+
+export interface LiveCloudDevicesServerResult {
+  ok: boolean;
+  count: number;
+  devices: CloudDeviceRecord[];
+  serverTime: number;
+  errorCode?: string;
+  errorMessage?: string;
+  isPermissionDenied?: boolean;
+  isOffline?: boolean;
+}
+
+export async function fetchLiveCloudDevicesFromServer(): Promise<LiveCloudDevicesServerResult> {
+  const now = Date.now();
+  try {
+    const snapshot = await getDocsFromServer(collection(db, 'devices'));
+    const rawDevices = snapshot.docs.map((d) => ({
+      ...(d.data() as CloudDeviceRecord),
+      deviceId: (d.data() as CloudDeviceRecord)?.deviceId || d.id,
+    }));
+    const normalized = buildNormalizedSnapshot({
+      rawDevices,
+      rawAdminKeys: [],
+      revokedKeysList: [],
+      blockedDeviceIds: new Set<string>(),
+      now,
+    });
+    return {
+      ok: true,
+      count: snapshot.size,
+      devices: normalized.devices,
+      serverTime: now,
+    };
+  } catch (err) {
+    const code =
+      typeof err === 'object' && err !== null && 'code' in err
+        ? String((err as { code?: unknown }).code || '')
+        : '';
+    const message = err instanceof Error ? err.message : String(err || 'Error de conexión');
+    return {
+      ok: false,
+      count: 0,
+      devices: [],
+      serverTime: now,
+      errorCode: code || undefined,
+      errorMessage: message,
+      isPermissionDenied: isFirestorePermissionDeniedError(err),
+      isOffline: isFirestoreOfflineError(err),
+    };
+  }
 }
 
 async function readServerDoc<T>(colName: string, docId: string): Promise<T | null> {
@@ -579,6 +631,105 @@ export async function fetchCloudDevicesState(): Promise<CloudSyncSnapshot | null
   }
 }
 
+const PENDING_CLOUD_DEVICE_SYNC_KEY = 'aluminero_pending_device_reg_v1';
+
+export interface PendingCloudDeviceSyncPayload {
+  deviceId: string;
+  cliente?: string;
+  deviceLabel?: string;
+  eventType?: 'open' | 'heartbeat' | 'license_sync';
+  minutesDelta?: number;
+  trialActive?: boolean;
+  trialExpiresAt?: number | null;
+  tallerNombre?: string;
+  tallerResponsable?: string;
+  tallerWhatsapp?: string;
+  ubicacion?: string;
+  termsAcceptedAt?: number | null;
+  queuedAt: number;
+}
+
+export function savePendingCloudDeviceSync(
+  payload: Omit<PendingCloudDeviceSyncPayload, 'queuedAt'>
+): void {
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  try {
+    const item: PendingCloudDeviceSyncPayload = {
+      ...payload,
+      queuedAt: Date.now(),
+    };
+    window.localStorage.setItem(PENDING_CLOUD_DEVICE_SYNC_KEY, JSON.stringify(item));
+  } catch {
+    // Ignorar cuota de almacenamiento
+  }
+}
+
+export function loadPendingCloudDeviceSync(): PendingCloudDeviceSyncPayload | null {
+  if (typeof window === 'undefined' || !window.localStorage) return null;
+  try {
+    const raw = window.localStorage.getItem(PENDING_CLOUD_DEVICE_SYNC_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as PendingCloudDeviceSyncPayload;
+    if (!parsed || typeof parsed.deviceId !== 'string' || !parsed.deviceId.trim()) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export function clearPendingCloudDeviceSync(): void {
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  try {
+    window.localStorage.removeItem(PENDING_CLOUD_DEVICE_SYNC_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+export function buildLeanFreeDeviceUpdatePayload(params: {
+  cliente?: string;
+  tallerNombre?: string;
+  tallerResponsable?: string;
+  tallerWhatsapp?: string;
+  ubicacion?: string;
+  deviceLabel?: string;
+  termsAcceptedAt?: number | null;
+  lastSeenAt: number;
+  totalSessions: number;
+  totalMinutes: number;
+  activeDays: string[];
+}): Record<string, unknown> {
+  const tallerClean = String(params.tallerNombre || params.cliente || '').trim().slice(0, 120);
+  const updateObj: Record<string, unknown> = {
+    cliente: tallerClean,
+    deviceLabel: String(params.deviceLabel || 'Navegador Web').trim().slice(0, 80) || 'Navegador Web',
+    lastSeenAt: params.lastSeenAt,
+    ultimaConexion: params.lastSeenAt,
+    totalSessions: Math.max(0, Math.min(1_000_000, Math.round(params.totalSessions || 1))),
+    totalMinutes: Math.max(0, Math.min(100_000_000, Math.round(params.totalMinutes || 1))),
+    activeDays: Array.isArray(params.activeDays) ? params.activeDays.slice(-60) : [],
+    updatedAt: params.lastSeenAt,
+    plan: 'gratis',
+  };
+  if (tallerClean) {
+    updateObj.tallerNombre = tallerClean;
+    updateObj.nombreTaller = tallerClean;
+  }
+  if (params.tallerResponsable && params.tallerResponsable.trim()) {
+    updateObj.tallerResponsable = params.tallerResponsable.trim().slice(0, 120);
+  }
+  if (params.tallerWhatsapp && params.tallerWhatsapp.trim()) {
+    updateObj.tallerWhatsapp = params.tallerWhatsapp.trim().slice(0, 40);
+  }
+  if (params.ubicacion && params.ubicacion.trim()) {
+    updateObj.ubicacion = params.ubicacion.trim().slice(0, 200);
+  }
+  if (typeof params.termsAcceptedAt === 'number' && Number.isFinite(params.termsAcceptedAt)) {
+    updateObj.termsAcceptedAt = params.termsAcceptedAt;
+  }
+  return cleanForFirestore(updateObj);
+}
+
 export async function syncDeviceToCloud(params: {
   deviceId: string;
   cliente?: string;
@@ -600,72 +751,150 @@ export async function syncDeviceToCloud(params: {
   const normId = toSafeDocId(normalizeDeviceIdInput(params.deviceId));
   if (!normId) return null;
 
+  // Si estamos sin conexión, encolar el registro/latido localmente para sincronizar al reconectar
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    savePendingCloudDeviceSync({
+      deviceId: normId,
+      cliente: params.cliente,
+      deviceLabel: params.deviceLabel,
+      eventType: params.eventType,
+      minutesDelta: params.minutesDelta,
+      trialActive: params.trialActive,
+      trialExpiresAt: params.trialExpiresAt,
+      tallerNombre: params.tallerNombre,
+      tallerResponsable: params.tallerResponsable,
+      tallerWhatsapp: params.tallerWhatsapp,
+      ubicacion: params.ubicacion,
+      termsAcceptedAt: params.termsAcceptedAt,
+    });
+    return null;
+  }
+
   // Registro y latido automático para dispositivos en Modo Gratuito sin sesión de Google
   if (!isFirebaseSignedIn()) {
+    const now = Date.now();
+    const today = new Date(now).toISOString().slice(0, 10);
+    const firstSeenKey = `aluminero_first_seen_v1_${normId}`;
+    const sessionsKey = `aluminero_free_sessions_v1_${normId}`;
+    const createdCloudKey = `aluminero_free_cloud_created_v1_${normId}`;
+    let firstSeenAt = now;
+    let totalSessions = 1;
+    let alreadyCreatedInCloud = false;
     try {
-      const now = Date.now();
-      const today = new Date(now).toISOString().slice(0, 10);
-      const firstSeenKey = `aluminero_first_seen_v1_${normId}`;
-      const sessionsKey = `aluminero_free_sessions_v1_${normId}`;
-      let firstSeenAt = now;
-      let totalSessions = 1;
-      try {
-        const storedFirst = Number(localStorage.getItem(firstSeenKey) || '0');
-        if (storedFirst >= 1577836800000 && storedFirst <= now) {
-          firstSeenAt = storedFirst;
-        } else {
-          localStorage.setItem(firstSeenKey, String(now));
-        }
-        const prevSessions = Math.max(0, Number(localStorage.getItem(sessionsKey) || '0') || 0);
-        totalSessions = params.eventType === 'open' ? prevSessions + 1 : Math.max(1, prevSessions);
-        localStorage.setItem(sessionsKey, String(totalSessions));
-      } catch {
-        // Ignorar si localStorage no está disponible
+      const storedFirst = Number(localStorage.getItem(firstSeenKey) || '0');
+      if (storedFirst >= 1577836800000 && storedFirst <= now) {
+        firstSeenAt = storedFirst;
+      } else {
+        localStorage.setItem(firstSeenKey, String(now));
       }
+      const prevSessions = Math.max(0, Number(localStorage.getItem(sessionsKey) || '0') || 0);
+      totalSessions = params.eventType === 'open' ? prevSessions + 1 : Math.max(1, prevSessions);
+      localStorage.setItem(sessionsKey, String(totalSessions));
+      alreadyCreatedInCloud = localStorage.getItem(createdCloudKey) === '1';
+    } catch {
+      // Ignorar si localStorage no está disponible
+    }
 
-      const tallerClean = String(params.tallerNombre || params.cliente || '').trim().slice(0, 120);
-      const freeRecord = buildSafeDeviceRecord(
-        {
+    const tallerClean = String(params.tallerNombre || params.cliente || '').trim().slice(0, 120);
+    const freeRecord = buildSafeDeviceRecord(
+      {
+        deviceId: normId,
+        cliente: tallerClean,
+        tallerNombre: tallerClean || undefined,
+        nombreTaller: tallerClean || undefined,
+        tallerResponsable: params.tallerResponsable,
+        tallerWhatsapp: params.tallerWhatsapp,
+        ubicacion: params.ubicacion,
+        termsAcceptedAt: params.termsAcceptedAt,
+        deviceLabel: params.deviceLabel || 'Navegador Web',
+        firstSeenAt,
+        lastSeenAt: now,
+        ultimaConexion: now,
+        totalSessions,
+        totalMinutes: Math.max(1, totalSessions),
+        activeDays: [today],
+        proActive: false,
+        plan: 'gratis',
+        planCode: 'FREE',
+        planLabel: 'Versión Gratuita',
+        status: 'free',
+        expiresAt: null,
+        lastKey: '',
+        updatedAt: now,
+        revoked: false,
+        revokedAt: null,
+        blocked: false,
+        blockedAt: null,
+        trialActive: false,
+        adminAssigned: false,
+        promo_colega_usada: false,
+        fecha_activacion_colega: null,
+      },
+      null,
+      now
+    );
+
+    const leanUpdate = buildLeanFreeDeviceUpdatePayload({
+      cliente: params.cliente,
+      tallerNombre: params.tallerNombre,
+      tallerResponsable: params.tallerResponsable,
+      tallerWhatsapp: params.tallerWhatsapp,
+      ubicacion: params.ubicacion,
+      deviceLabel: params.deviceLabel,
+      termsAcceptedAt: params.termsAcceptedAt,
+      lastSeenAt: now,
+      totalSessions,
+      totalMinutes: Math.max(1, totalSessions),
+      activeDays: [today],
+    });
+
+    const devRef = doc(db, 'devices', normId);
+    try {
+      if (alreadyCreatedInCloud) {
+        try {
+          await updateDoc(devRef, leanUpdate);
+        } catch (updErr) {
+          const code = String((updErr as { code?: unknown })?.code || '').toLowerCase();
+          if (code === 'not-found') {
+            await setDoc(devRef, freeRecord, { merge: true });
+          } else {
+            throw updErr;
+          }
+        }
+      } else {
+        try {
+          await setDoc(devRef, freeRecord, { merge: true });
+        } catch (createErr) {
+          if (isFirestorePermissionDeniedError(createErr)) {
+            // El documento ya existía en Firestore con otro firstSeenAt o campos previos: actualizar solo llaves permitidas
+            await updateDoc(devRef, leanUpdate);
+          } else {
+            throw createErr;
+          }
+        }
+      }
+      try {
+        localStorage.setItem(createdCloudKey, '1');
+      } catch {
+        // ignore
+      }
+      clearPendingCloudDeviceSync();
+    } catch (err) {
+      if (isFirestoreOfflineError(err)) {
+        savePendingCloudDeviceSync({
           deviceId: normId,
-          cliente: tallerClean,
-          tallerNombre: tallerClean || undefined,
-          nombreTaller: tallerClean || undefined,
+          cliente: params.cliente,
+          deviceLabel: params.deviceLabel,
+          eventType: params.eventType,
+          minutesDelta: params.minutesDelta,
+          tallerNombre: params.tallerNombre,
           tallerResponsable: params.tallerResponsable,
           tallerWhatsapp: params.tallerWhatsapp,
           ubicacion: params.ubicacion,
           termsAcceptedAt: params.termsAcceptedAt,
-          deviceLabel: params.deviceLabel || 'Navegador Web',
-          firstSeenAt,
-          lastSeenAt: now,
-          ultimaConexion: now,
-          totalSessions,
-          totalMinutes: Math.max(1, totalSessions),
-          activeDays: [today],
-          proActive: false,
-          plan: 'gratis',
-          planCode: 'FREE',
-          planLabel: 'Versión Gratuita',
-          status: 'free',
-          expiresAt: null,
-          lastKey: '',
-          updatedAt: now,
-          revoked: false,
-          revokedAt: null,
-          blocked: false,
-          blockedAt: null,
-          trialActive: false,
-          adminAssigned: false,
-          promo_colega_usada: false,
-          fecha_activacion_colega: null,
-        },
-        null,
-        now
-      );
-
-      await setDoc(doc(db, 'devices', normId), freeRecord, { merge: true });
-    } catch (err) {
-      if (!isFirestoreOfflineError(err) && !isFirestorePermissionDeniedError(err)) {
-        console.warn('[Aluminero Pro] Latido gratuito en Firestore omitido:', err);
+        });
+      } else {
+        console.warn('[Aluminero Pro] Registro/latido gratuito en Firestore no completado:', err);
       }
     }
     return null;
@@ -832,12 +1061,31 @@ export async function syncDeviceToCloud(params: {
         ? params.deviceLabel.trim().slice(0, 80)
         : existing?.deviceLabel || 'Navegador Web';
 
+    const storedFirstSeen = (() => {
+      try {
+        const v = Number(localStorage.getItem(`aluminero_first_seen_v1_${normId}`) || '0');
+        return v >= 1577836800000 && v <= now ? v : null;
+      } catch {
+        return null;
+      }
+    })();
+
+    const authEmailClean =
+      auth.currentUser?.email && isValidEmailFormat(normalizeEmail(auth.currentUser.email))
+        ? normalizeEmail(auth.currentUser.email)
+        : undefined;
+
+    const resolvedLinkedEmail =
+      params.licencia?.linkedEmail && isValidEmailFormat(normalizeEmail(params.licencia.linkedEmail))
+        ? normalizeEmail(params.licencia.linkedEmail)
+        : existing?.linkedEmail || authEmailClean;
+
     const nextRecord = buildSafeDeviceRecord(
       {
         deviceId: normId,
         cliente: clienteClean,
         deviceLabel: labelClean,
-        firstSeenAt: existing?.firstSeenAt ?? now,
+        firstSeenAt: existing?.firstSeenAt ?? storedFirstSeen ?? now,
         lastSeenAt: now,
         totalSessions: (existing?.totalSessions ?? 0) + sessionsDelta,
         totalMinutes: (existing?.totalMinutes ?? 0) + minsDelta,
@@ -861,10 +1109,7 @@ export async function syncDeviceToCloud(params: {
           (isColleaguePromoPlan(planCode, null, lastKey)
             ? params.licencia?.activatedAt ?? now
             : null),
-        linkedEmail:
-          params.licencia?.linkedEmail && isValidEmailFormat(normalizeEmail(params.licencia.linkedEmail))
-            ? normalizeEmail(params.licencia.linkedEmail)
-            : existing?.linkedEmail,
+        linkedEmail: resolvedLinkedEmail,
         tallerNombre:
           typeof params.tallerNombre === 'string' && params.tallerNombre.trim()
             ? params.tallerNombre.trim().slice(0, 120)
@@ -877,17 +1122,87 @@ export async function syncDeviceToCloud(params: {
           typeof params.tallerWhatsapp === 'string' && params.tallerWhatsapp.trim()
             ? params.tallerWhatsapp.trim().slice(0, 40)
             : existing?.tallerWhatsapp,
+        ubicacion:
+          typeof params.ubicacion === 'string' && params.ubicacion.trim()
+            ? params.ubicacion.trim().slice(0, 200)
+            : existing?.ubicacion,
+        termsAcceptedAt:
+          typeof params.termsAcceptedAt === 'number' && Number.isFinite(params.termsAcceptedAt)
+            ? params.termsAcceptedAt
+            : existing?.termsAcceptedAt,
       },
       existing,
       now
     );
 
     const devPath = `devices/${normId}`;
+    const devRef = doc(db, 'devices', normId);
     try {
-      await setDoc(doc(db, 'devices', normId), nextRecord);
+      await setDoc(devRef, nextRecord, { merge: true });
+      clearPendingCloudDeviceSync();
     } catch (err) {
-      if (isFirestoreOfflineError(err) || isFirestorePermissionDeniedError(err)) return null;
-      handleFirestoreError(err, existing ? OperationType.UPDATE : OperationType.CREATE, devPath);
+      if (isFirestorePermissionDeniedError(err) && auth.currentUser?.uid) {
+        // Si el documento existía previamente como 'free_<deviceId>', actualizar solo campos permitidos por regla de dueño
+        try {
+          const ownerPatch: Record<string, unknown> = cleanForFirestore({
+            ownerUid: auth.currentUser.uid,
+            cliente: clienteClean,
+            ...(nextRecord.tallerNombre
+              ? { tallerNombre: nextRecord.tallerNombre, nombreTaller: nextRecord.tallerNombre }
+              : {}),
+            ...(nextRecord.tallerResponsable ? { tallerResponsable: nextRecord.tallerResponsable } : {}),
+            ...(nextRecord.tallerWhatsapp ? { tallerWhatsapp: nextRecord.tallerWhatsapp } : {}),
+            ...(nextRecord.ubicacion ? { ubicacion: nextRecord.ubicacion } : {}),
+            ...(typeof nextRecord.termsAcceptedAt === 'number'
+              ? { termsAcceptedAt: nextRecord.termsAcceptedAt }
+              : {}),
+            ...(resolvedLinkedEmail ? { linkedEmail: resolvedLinkedEmail } : {}),
+            deviceLabel: labelClean,
+            lastSeenAt: now,
+            ultimaConexion: now,
+            totalSessions: nextRecord.totalSessions,
+            totalMinutes: nextRecord.totalMinutes,
+            activeDays: nextRecord.activeDays,
+            updatedAt: now,
+          });
+          await updateDoc(devRef, ownerPatch);
+          clearPendingCloudDeviceSync();
+        } catch (patchErr) {
+          if (isFirestoreOfflineError(patchErr)) {
+            savePendingCloudDeviceSync({
+              deviceId: normId,
+              cliente: params.cliente,
+              deviceLabel: params.deviceLabel,
+              eventType: params.eventType,
+              minutesDelta: params.minutesDelta,
+              tallerNombre: params.tallerNombre,
+              tallerResponsable: params.tallerResponsable,
+              tallerWhatsapp: params.tallerWhatsapp,
+              ubicacion: params.ubicacion,
+              termsAcceptedAt: params.termsAcceptedAt,
+            });
+          }
+          return null;
+        }
+      } else if (isFirestoreOfflineError(err)) {
+        savePendingCloudDeviceSync({
+          deviceId: normId,
+          cliente: params.cliente,
+          deviceLabel: params.deviceLabel,
+          eventType: params.eventType,
+          minutesDelta: params.minutesDelta,
+          tallerNombre: params.tallerNombre,
+          tallerResponsable: params.tallerResponsable,
+          tallerWhatsapp: params.tallerWhatsapp,
+          ubicacion: params.ubicacion,
+          termsAcceptedAt: params.termsAcceptedAt,
+        });
+        return null;
+      } else if (isFirestorePermissionDeniedError(err)) {
+        return null;
+      } else {
+        handleFirestoreError(err, existing ? OperationType.UPDATE : OperationType.CREATE, devPath);
+      }
     }
 
     if (!isAdmin) {
@@ -895,8 +1210,51 @@ export async function syncDeviceToCloud(params: {
     }
     return await fetchAllCollectionsSnapshot(now, nextRecord);
   } catch (err) {
-    if (isFirestoreOfflineError(err) || isFirestorePermissionDeniedError(err)) return null;
+    if (isFirestoreOfflineError(err)) {
+      savePendingCloudDeviceSync({
+        deviceId: normId,
+        cliente: params.cliente,
+        deviceLabel: params.deviceLabel,
+        eventType: params.eventType,
+        minutesDelta: params.minutesDelta,
+        tallerNombre: params.tallerNombre,
+        tallerResponsable: params.tallerResponsable,
+        tallerWhatsapp: params.tallerWhatsapp,
+        ubicacion: params.ubicacion,
+        termsAcceptedAt: params.termsAcceptedAt,
+      });
+      return null;
+    }
+    if (isFirestorePermissionDeniedError(err)) return null;
     throw err;
+  }
+}
+
+export async function flushPendingCloudDeviceSync(
+  licencia?: LicenciaState | null
+): Promise<boolean> {
+  const pending = loadPendingCloudDeviceSync();
+  if (!pending) return false;
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;
+  try {
+    await syncDeviceToCloud({
+      deviceId: pending.deviceId,
+      cliente: pending.cliente,
+      deviceLabel: pending.deviceLabel || detectDeviceLabel(),
+      eventType: pending.eventType || 'open',
+      minutesDelta: pending.minutesDelta ?? 0,
+      trialActive: pending.trialActive,
+      trialExpiresAt: pending.trialExpiresAt,
+      tallerNombre: pending.tallerNombre,
+      tallerResponsable: pending.tallerResponsable,
+      tallerWhatsapp: pending.tallerWhatsapp,
+      ubicacion: pending.ubicacion,
+      termsAcceptedAt: pending.termsAcceptedAt,
+      licencia: licencia ?? null,
+    });
+    return loadPendingCloudDeviceSync() === null;
+  } catch {
+    return false;
   }
 }
 

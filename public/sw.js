@@ -1,5 +1,6 @@
-const CACHE_VERSION = 'aluminero-pro-v1.0.2';
-const CACHE_NAME = CACHE_VERSION;
+const APP_VERSION = '1.0.3';
+const CACHE_NAME = `aluminero-pro-v${APP_VERSION}`;
+const CACHE_VERSION = CACHE_NAME;
 const APP_SHELL_ASSETS = [
   '/',
   '/index.html',
@@ -59,10 +60,15 @@ function normalizePushPayload(raw) {
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) =>
-      Promise.allSettled(APP_SHELL_ASSETS.map((asset) => cache.add(asset).catch(() => {})))
+      Promise.allSettled(
+        APP_SHELL_ASSETS.map((asset) =>
+          cache.add(new Request(asset, { cache: 'reload' })).catch(() => {})
+        )
+      )
     )
   );
-  self.skipWaiting();
+  // NO llamar self.skipWaiting() aquí: el nuevo Service Worker debe permanecer en estado "waiting"
+  // hasta que el usuario confirme "Actualizar ahora" enviando { type: 'SKIP_WAITING' }.
 });
 
 self.addEventListener('activate', (event) => {
@@ -70,7 +76,7 @@ self.addEventListener('activate', (event) => {
     caches
       .keys()
       .then((keys) =>
-        Promise.all(keys.filter((key) => key !== CACHE_VERSION).map((key) => caches.delete(key)))
+        Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))
       )
       .then(() => self.clients.claim())
   );

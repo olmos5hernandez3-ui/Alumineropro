@@ -2,11 +2,17 @@ import {
   AjusteDescuentosConfig,
   AperturaVentanaId,
   CATALOGO_PERFILES,
+  ColorId,
+  COLORES_CONFIG,
   CortePerfil,
   CorteVidrio,
+  getInventarioTramosPorPerfilColor,
   LineaId,
   LINEAS_CONFIG,
+  normalizeColorId,
+  normalizeLineaId,
   OptimizadorConfig,
+  parseInventarioKey,
   PartidaObra,
   PerfilCatalogoId,
   resolveAjusteDescuentos,
@@ -1399,6 +1405,389 @@ export function aggregateModulacionJobs(
     totalPiezas,
     totalAluminioM,
     tramos610Estimados: totalAluminioM > 0 ? Math.max(1, Math.ceil((totalAluminioM * 100) / TRAMO_STD_CM)) : 0,
+  };
+}
+
+/* ==================== ANÁLISIS DE DESPERDICIO DE PERFILES VS INVENTARIO (HOJA COTIZACIÓN) ==================== */
+
+export interface ProfileWasteGroupAnalysis {
+  key: string;
+  linea: LineaId;
+  lineaNombre: string;
+  perfilId: PerfilCatalogoId;
+  perfilNombre: string;
+  color: ColorId;
+  colorLabel: string;
+  totalCortes: number;
+  metrosCortes: number;
+  tramosEstimadosLineal: number;
+  tramosOpt1D: number;
+  tramosEnInventario: number;
+  tramosCubiertosInventario: number;
+  tramosPorComprar: number;
+  aprovechamientoPct: number;
+  desperdicioTotalCm: number;
+  mermaIrrecuperableCm: number;
+  mermaIrrecuperablePct: number;
+  sobranteReutilizableCm: number;
+  isHighWaste: boolean;
+  altColorStock: Array<{ color: ColorId; colorLabel: string; tramos: number }>;
+}
+
+export interface ProfileOptimizationSuggestion {
+  id: string;
+  tipo: 'ahorro' | 'alerta' | 'info';
+  titulo: string;
+  detalle: string;
+  ahorroPotencialTramos?: number;
+}
+
+export interface HojaProfileWasteAnalysisResult {
+  grupos: ProfileWasteGroupAnalysis[];
+  totalTramosOpt1D: number;
+  totalTramosLineal: number;
+  tramosCubiertosInventario: number;
+  tramosPorComprar: number;
+  coberturaInventarioPct: number;
+  aprovechamientoGlobalPct: number;
+  desperdicioTotalM: number;
+  mermaIrrecuperableM: number;
+  mermaIrrecuperablePct: number;
+  perfilesAltoDesperdicio: ProfileWasteGroupAnalysis[];
+  puedeOptimizarse: boolean;
+  sugerencias: ProfileOptimizationSuggestion[];
+}
+
+export function analyzeHojaProfileWasteVsInventory(
+  partidas: PartidaObra[],
+  inventario: Record<string, number>,
+  comprometidos: Record<string, number> = {},
+  optConfig?: Partial<OptimizadorConfig>
+): HojaProfileWasteAnalysisResult {
+  const safePartidas = Array.isArray(partidas) ? partidas : [];
+  if (safePartidas.length === 0) {
+    return {
+      grupos: [],
+      totalTramosOpt1D: 0,
+      totalTramosLineal: 0,
+      tramosCubiertosInventario: 0,
+      tramosPorComprar: 0,
+      coberturaInventarioPct: 0,
+      aprovechamientoGlobalPct: 0,
+      desperdicioTotalM: 0,
+      mermaIrrecuperableM: 0,
+      mermaIrrecuperablePct: 0,
+      perfilesAltoDesperdicio: [],
+      puedeOptimizarse: false,
+      sugerencias: [],
+    };
+  }
+
+  const cfg = resolveOptimizadorConfig(optConfig);
+  const groupedCuts = new Map<
+    string,
+    {
+      linea: LineaId;
+      perfilId: PerfilCatalogoId;
+      perfilNombre: string;
+      color: ColorId;
+      filas: ModulacionPerfilCorteRow[];
+      totalCm: number;
+      totalCortes: number;
+    }
+  >();
+
+  for (const p of safePartidas) {
+    const cuts = p?.despiece?.perfiles;
+    if (!Array.isArray(cuts) || cuts.length === 0) continue;
+    const normLinea = normalizeLineaId(p.linea);
+    const normColor = normalizeColorId(p.color);
+
+    cuts.forEach((c, idx) => {
+      const pzasTotal = Math.max(1, Math.round(Number(c.pzas) || 1));
+      const medidaCm = round1(Math.max(5, Number(c.medidaCm) || 0));
+      const key = `${normLinea}__${c.perfilId}__${normColor}`;
+      const perfilNombre =
+        CATALOGO_PERFILES.find((item) => item.id === c.perfilId)?.nombre || c.nombre;
+
+      const row: ModulacionPerfilCorteRow = {
+        id: `${p.id}__${c.perfilId}__${idx}`,
+        seccion: 'contramarco',
+        codigo: PROFILE_CODES[c.perfilId] || c.perfilId.toUpperCase(),
+        perfilId: c.perfilId,
+        nombre: `${perfilNombre} · ${p.etiqueta || p.area || 'Partida'}`,
+        rol: c.funcion || '',
+        orientacion: 'horizontal',
+        cantidad: pzasTotal,
+        cantidadLabel: `x${pzasTotal}`,
+        formulaTexto: c.funcion || '',
+        medidaCm,
+        medidaM: round2(medidaCm / 100),
+        totalMetros: round2((medidaCm * pzasTotal) / 100),
+        angulo: c.angulo || '90°',
+      };
+
+      const prev = groupedCuts.get(key);
+      if (prev) {
+        prev.filas.push(row);
+        prev.totalCm += medidaCm * pzasTotal;
+        prev.totalCortes += pzasTotal;
+      } else {
+        groupedCuts.set(key, {
+          linea: normLinea,
+          perfilId: c.perfilId,
+          perfilNombre,
+          color: normColor,
+          filas: [row],
+          totalCm: medidaCm * pzasTotal,
+          totalCortes: pzasTotal,
+        });
+      }
+    });
+  }
+
+  // Mapa rápido de existencias disponibles por (linea, perfilId, color) para detectar stock alterno
+  const invByLineaPerfil = new Map<string, Map<ColorId, number>>();
+  for (const [invKey, rawQty] of Object.entries(inventario || {})) {
+    const qty = Number(rawQty) || 0;
+    if (qty <= 0) continue;
+    const parsed = parseInventarioKey(invKey);
+    const lId = normalizeLineaId(parsed.linea);
+    const cId = normalizeColorId(parsed.color);
+    const lpKey = `${lId}__${parsed.perfilId}`;
+    let colorMap = invByLineaPerfil.get(lpKey);
+    if (!colorMap) {
+      colorMap = new Map<ColorId, number>();
+      invByLineaPerfil.set(lpKey, colorMap);
+    }
+    colorMap.set(cId, round2((colorMap.get(cId) || 0) + qty));
+  }
+
+  const grupos: ProfileWasteGroupAnalysis[] = [];
+  let totalTramosOpt1D = 0;
+  let totalTramosLineal = 0;
+  let totalCubiertos = 0;
+  let totalPorComprar = 0;
+  let capacidadGlobalCm = 0;
+  let cortesGlobalCm = 0;
+  let desperdicioTotalCm = 0;
+  let mermaIrrecuperableCm = 0;
+
+  for (const [key, entry] of groupedCuts.entries()) {
+    const optGroupRes = optimizarTramos1D({
+      perfiles: entry.filas,
+      sobrantesInventario: [],
+      largoBarraCm: cfg.largoBarraCm,
+      despuntePorExtremoCm: cfg.despuntePorExtremoCm,
+      kerfCm: cfg.kerfCm,
+      minSobranteGuardableCm: cfg.umbralSobranteUsableCm,
+    });
+    const g = optGroupRes.grupos[0];
+    const tramosOpt1D = g ? g.tramos610Requeridos : Math.max(1, Math.ceil(entry.totalCm / TRAMO_STD_CM));
+    const tramosEstimadosLineal = Math.max(1, Math.ceil((entry.totalCm * 1.06) / TRAMO_STD_CM));
+
+    const tramosEnBodega = getInventarioTramosPorPerfilColor(
+      inventario,
+      entry.linea,
+      entry.perfilId,
+      entry.color
+    );
+    const tramosComp = round2(comprometidos[key] || 0);
+    const tramosEnInventario = Math.max(0, Math.floor(round2(tramosEnBodega - tramosComp)));
+    const tramosCubiertosInventario = Math.min(tramosOpt1D, tramosEnInventario);
+    const tramosPorComprar = Math.max(0, tramosOpt1D - tramosCubiertosInventario);
+
+    const groupCapCm = g
+      ? g.barras.reduce((acc, b) => acc + b.largoUtilCm, 0)
+      : tramosOpt1D * (cfg.largoBarraCm - cfg.despuntePorExtremoCm * 2);
+    const groupMermaCm = g ? g.mermaTotalCm : 0;
+    const groupDesperdicioCm = g ? g.sobranteTotalCm : Math.max(0, round1(groupCapCm - entry.totalCm));
+    const groupSobranteReutilizableCm = Math.max(0, round1(groupDesperdicioCm - groupMermaCm));
+    const aprovechamientoPct =
+      groupCapCm > 0 ? round1(Math.min(100, (entry.totalCm / groupCapCm) * 100)) : 0;
+    const mermaIrrecuperablePct =
+      groupCapCm > 0 ? round1((groupMermaCm / groupCapCm) * 100) : 0;
+
+    // Revisar si existe stock del mismo perfil/línea en otro color cuando falta surtir
+    const altColorStock: Array<{ color: ColorId; colorLabel: string; tramos: number }> = [];
+    if (tramosPorComprar > 0) {
+      const lpMap = invByLineaPerfil.get(`${entry.linea}__${entry.perfilId}`);
+      if (lpMap) {
+        for (const [altColor, altQty] of lpMap.entries()) {
+          if (altColor !== entry.color && Math.floor(altQty) > 0) {
+            altColorStock.push({
+              color: altColor,
+              colorLabel: COLORES_CONFIG[altColor]?.corto || altColor,
+              tramos: Math.floor(altQty),
+            });
+          }
+        }
+      }
+    }
+
+    const isHighWaste = aprovechamientoPct < 70 || mermaIrrecuperablePct >= 18;
+
+    grupos.push({
+      key,
+      linea: entry.linea,
+      lineaNombre: LINEAS_CONFIG[entry.linea]?.nombre || entry.linea,
+      perfilId: entry.perfilId,
+      perfilNombre: entry.perfilNombre,
+      color: entry.color,
+      colorLabel: COLORES_CONFIG[entry.color]?.corto || entry.color,
+      totalCortes: entry.totalCortes,
+      metrosCortes: round2(entry.totalCm / 100),
+      tramosEstimadosLineal,
+      tramosOpt1D,
+      tramosEnInventario,
+      tramosCubiertosInventario,
+      tramosPorComprar,
+      aprovechamientoPct,
+      desperdicioTotalCm: round1(groupDesperdicioCm),
+      mermaIrrecuperableCm: round1(groupMermaCm),
+      mermaIrrecuperablePct,
+      sobranteReutilizableCm: groupSobranteReutilizableCm,
+      isHighWaste,
+      altColorStock,
+    });
+
+    totalTramosOpt1D += tramosOpt1D;
+    totalTramosLineal += tramosEstimadosLineal;
+    totalCubiertos += tramosCubiertosInventario;
+    totalPorComprar += tramosPorComprar;
+    capacidadGlobalCm += groupCapCm;
+    cortesGlobalCm += entry.totalCm;
+    desperdicioTotalCm += groupDesperdicioCm;
+    mermaIrrecuperableCm += groupMermaCm;
+  }
+
+  grupos.sort((a, b) => a.aprovechamientoPct - b.aprovechamientoPct);
+
+  const aprovechamientoGlobalPct =
+    capacidadGlobalCm > 0 ? round1(Math.min(100, (cortesGlobalCm / capacidadGlobalCm) * 100)) : 0;
+  const mermaIrrecuperablePct =
+    capacidadGlobalCm > 0 ? round1((mermaIrrecuperableCm / capacidadGlobalCm) * 100) : 0;
+  const coberturaInventarioPct =
+    totalTramosOpt1D > 0 ? round1((totalCubiertos / totalTramosOpt1D) * 100) : 0;
+  const perfilesAltoDesperdicio = grupos.filter((g) => g.isHighWaste);
+
+  const sugerencias: ProfileOptimizationSuggestion[] = [];
+
+  // 1. Cobertura con inventario existente
+  if (totalCubiertos > 0) {
+    sugerencias.push({
+      id: 'inv-coverage',
+      tipo: 'ahorro',
+      titulo: `Aprovecha ${totalCubiertos} tramo(s) ya disponibles en tu bodega`,
+      detalle:
+        totalPorComprar === 0
+          ? `Tu inventario cubre el 100% de los ${totalTramosOpt1D} tramos de 6.10 m requeridos por corte real 1D. No necesitas comprar aluminio nuevo para esta obra.`
+          : `Tu inventario cubre el ${coberturaInventarioPct}% (${totalCubiertos} de ${totalTramosOpt1D} tramos optimizados). Solo falta surtir ${totalPorComprar} tramo(s) nuevo(s).`,
+      ahorroPotencialTramos: totalCubiertos,
+    });
+  } else if (totalTramosOpt1D > 0) {
+    sugerencias.push({
+      id: 'inv-empty',
+      tipo: 'info',
+      titulo: 'Sin existencias coincidentes en Mi Inventario',
+      detalle: `Ninguno de los ${totalTramosOpt1D} tramos requeridos (por línea, perfil y acabado) tiene stock libre en bodega. Registra tus tramos en Mi Inventario para descontar compras automáticamente.`,
+    });
+  }
+
+  // 2. Diferencia entre cálculo lineal (+6%) vs corte real 1D
+  const deltaLinealVsOpt = totalTramosLineal - totalTramosOpt1D;
+  if (deltaLinealVsOpt > 0) {
+    sugerencias.push({
+      id: 'opt-saves-vs-linear',
+      tipo: 'ahorro',
+      titulo: `El anidado 1D ahorra ${deltaLinealVsOpt} tramo(s) frente al cálculo lineal (+6%)`,
+      detalle: `Agrupando cortes por línea y color en barras de 6.10 m solo requieres ${totalTramosOpt1D} tramos reales en lugar de ${totalTramosLineal} estimados linealmente.`,
+      ahorroPotencialTramos: deltaLinealVsOpt,
+    });
+  } else if (deltaLinealVsOpt < 0) {
+    sugerencias.push({
+      id: 'opt-needs-more-than-linear',
+      tipo: 'alerta',
+      titulo: `Cuidado: el corte real 1D requiere ${Math.abs(deltaLinealVsOpt)} tramo(s) extra`,
+      detalle: `Por el largo de los cortes individuales (pérdida en puntas), necesitas ${totalTramosOpt1D} tramos reales y no ${totalTramosLineal} del estimado lineal. Revisa el diagrama barra por barra antes de pedir.`,
+    });
+  }
+
+  // 3. Perfiles con alto desperdicio (<70% aprovechamiento o >=18% merma)
+  if (perfilesAltoDesperdicio.length > 0) {
+    const topWaste = perfilesAltoDesperdicio.slice(0, 3);
+    const listTxt = topWaste
+      .map(
+        (g) =>
+          `${g.perfilNombre} (${g.lineaNombre} · ${g.colorLabel}: ${g.aprovechamientoPct}% uso, ${(g.desperdicioTotalCm / 100).toFixed(2)} m sin usar)`
+      )
+      .join('; ');
+    sugerencias.push({
+      id: 'high-waste-profiles',
+      tipo: 'alerta',
+      titulo: `${perfilesAltoDesperdicio.length} perfil(es) con bajo aprovechamiento (<70%)`,
+      detalle: `${listTxt}. Sugerencia: agrupa más piezas en la misma línea/color o aprovecha el tramo sobrante (> ${cfg.umbralSobranteUsableCm} cm) para otra ventana de la misma obra.`,
+    });
+  }
+
+  // 4. Fragmentación de acabados / colores en la misma obra
+  const distinctColors = new Set(grupos.map((g) => g.color));
+  const distinctLineas = new Set(grupos.map((g) => g.linea));
+  if (distinctColors.size > 1 && perfilesAltoDesperdicio.length > 0) {
+    const lowFillGroups = grupos.filter((g) => g.aprovechamientoPct < 50);
+    if (lowFillGroups.length >= 2) {
+      sugerencias.push({
+        id: 'fragmented-finishes',
+        tipo: 'alerta',
+        titulo: `Obra fragmentada en ${distinctColors.size} acabados distintos`,
+        detalle: `Tienes ${lowFillGroups.length} perfiles con menos de 50% de uso por mezclar colores (${Array.from(distinctColors)
+          .map((c) => COLORES_CONFIG[c]?.corto || c)
+          .join(', ')}). Si el cliente acepta unificar color${distinctLineas.size > 1 ? ' o línea' : ''}, podrás combinar cortes en las mismas barras de 6.10 m.`,
+        ahorroPotencialTramos: Math.max(1, Math.floor(lowFillGroups.length / 2)),
+      });
+    }
+  }
+
+  // 5. Stock disponible en otro acabado dentro de Mi Inventario
+  const withAltStock = grupos.filter((g) => g.tramosPorComprar > 0 && g.altColorStock.length > 0);
+  if (withAltStock.length > 0) {
+    const sample = withAltStock
+      .slice(0, 2)
+      .map(
+        (g) =>
+          `${g.perfilNombre} ${g.lineaNombre} (tienes ${g.altColorStock
+            .map((a) => `${a.tramos} tr. en ${a.colorLabel}`)
+            .join(', ')})`
+      )
+      .join('; ');
+    sugerencias.push({
+      id: 'alt-color-inventory',
+      tipo: 'info',
+      titulo: `Tienes stock en otro acabado para ${withAltStock.length} perfil(es) faltante(s)`,
+      detalle: `${sample}. Si el cliente es flexible con el color, puedes evitar comprar tramos nuevos y bajar tu desperdicio.`,
+    });
+  }
+
+  const puedeOptimizarse =
+    perfilesAltoDesperdicio.length > 0 ||
+    deltaLinealVsOpt !== 0 ||
+    withAltStock.length > 0 ||
+    (totalCubiertos > 0 && totalPorComprar > 0);
+
+  return {
+    grupos,
+    totalTramosOpt1D,
+    totalTramosLineal,
+    tramosCubiertosInventario: totalCubiertos,
+    tramosPorComprar: totalPorComprar,
+    coberturaInventarioPct,
+    aprovechamientoGlobalPct,
+    desperdicioTotalM: round2(desperdicioTotalCm / 100),
+    mermaIrrecuperableM: round2(mermaIrrecuperableCm / 100),
+    mermaIrrecuperablePct,
+    perfilesAltoDesperdicio,
+    puedeOptimizarse,
+    sugerencias,
   };
 }
 

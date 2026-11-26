@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { flushSync } from 'react-dom';
 import {
   AdminMessageItem,
+  APP_VERSION,
   buildColleaguePromoWhatsappUrl,
   calcularCotizacion,
   calcularDespiece,
@@ -48,6 +49,7 @@ import {
   deleteAdminKeyInCloud,
   detectDeviceLabel,
   fetchCloudDevicesState,
+  flushPendingCloudDeviceSync,
   loginCloudAccount,
   logoutCloudAccount,
   registerCloudAccount,
@@ -894,6 +896,15 @@ export default function App() {
   const [cloudConnected, setCloudConnected] = useState(false);
   const [cloudRefreshing, setCloudRefreshing] = useState(false);
   const [cloudLastSyncAt, setCloudLastSyncAt] = useState<number | null>(null);
+
+  // Estado para actualización manual interactiva del Service Worker (PWA)
+  const [swWaitingWorker, setSwWaitingWorker] = useState<ServiceWorker | null>(null);
+  const [swUpdateDismissed, setSwUpdateDismissed] = useState(false);
+  const [swUpdateApplying, setSwUpdateApplying] = useState(false);
+  const swReloadingRef = useRef(false);
+  const swUserRequestedUpdateRef = useRef(false);
+  const swWaitingWorkerRef = useRef<ServiceWorker | null>(null);
+  swWaitingWorkerRef.current = swWaitingWorker;
 
   const showToast = useCallback((msg: string, topSuccess = false) => {
     setToast({ msg, topSuccess });
@@ -3240,6 +3251,143 @@ export default function App() {
     return () => navigator.serviceWorker.removeEventListener('message', onSwMessage);
   }, [handleSnoozeReminder, navigateTo, openGlobalModal, proActive, showToast]);
 
+  // Monitoreo interactivo de actualizaciones del Service Worker usando navigator.serviceWorker.ready
+  useEffect(() => {
+    if (
+      isRunningInIframe() ||
+      typeof window === 'undefined' ||
+      typeof navigator === 'undefined' ||
+      !('serviceWorker' in navigator) ||
+      !/^https?:$/i.test(window.location.protocol)
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    let activeRegistration: ServiceWorkerRegistration | null = null;
+    let detachUpdateFound: (() => void) | null = null;
+
+    const notifyWaitingWorker = (worker: ServiceWorker | null | undefined) => {
+      if (cancelled || !worker) return;
+      setSwWaitingWorker(worker);
+    };
+
+    const bindRegistration = (reg: ServiceWorkerRegistration) => {
+      if (cancelled) return;
+      activeRegistration = reg;
+
+      if (reg.waiting) {
+        notifyWaitingWorker(reg.waiting);
+      }
+
+      const onUpdateFound = () => {
+        const installing = reg.installing;
+        if (!installing) return;
+        const onStateChange = () => {
+          if (installing.state === 'installed' && navigator.serviceWorker.controller) {
+            notifyWaitingWorker(reg.waiting || installing);
+          }
+        };
+        installing.addEventListener('statechange', onStateChange);
+      };
+
+      reg.addEventListener('updatefound', onUpdateFound);
+      detachUpdateFound = () => {
+        reg.removeEventListener('updatefound', onUpdateFound);
+      };
+    };
+
+    const onControllerChange = () => {
+      if (swReloadingRef.current) return;
+      if (!swUserRequestedUpdateRef.current) return;
+      swReloadingRef.current = true;
+      window.location.reload();
+    };
+    navigator.serviceWorker.addEventListener('controllerchange', onControllerChange);
+
+    // Asegurar registro del SW y monitorear mediante navigator.serviceWorker.ready
+    navigator.serviceWorker
+      .getRegistration('./')
+      .then((existing) => {
+        if (!existing && !cancelled) {
+          return navigator.serviceWorker
+            .register('./sw.js', { scope: './', updateViaCache: 'none' })
+            .catch(() => undefined);
+        }
+        return existing;
+      })
+      .catch(() => undefined);
+
+    navigator.serviceWorker.ready
+      .then((registration) => {
+        if (cancelled) return;
+        bindRegistration(registration);
+        registration.update().catch(() => {});
+      })
+      .catch(() => {});
+
+    const triggerUpdateCheck = () => {
+      if (cancelled || !activeRegistration) return;
+      if (activeRegistration.waiting) {
+        notifyWaitingWorker(activeRegistration.waiting);
+      }
+      activeRegistration.update().catch(() => {});
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') triggerUpdateCheck();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('focus', triggerUpdateCheck);
+    window.addEventListener('online', triggerUpdateCheck);
+
+    return () => {
+      cancelled = true;
+      detachUpdateFound?.();
+      navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange);
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('focus', triggerUpdateCheck);
+      window.removeEventListener('online', triggerUpdateCheck);
+    };
+  }, []);
+
+  // Reintentar automáticamente registros de usuario pendientes en Firestore cuando vuelva la conexión
+  useEffect(() => {
+    const flushPending = () => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+      void flushPendingCloudDeviceSync(licenciaRef.current);
+    };
+    flushPending();
+    window.addEventListener('online', flushPending);
+    return () => window.removeEventListener('online', flushPending);
+  }, []);
+
+  const handleApplyPwaUpdate = useCallback(() => {
+    const waiting = swWaitingWorkerRef.current;
+    swUserRequestedUpdateRef.current = true;
+    setSwUpdateApplying(true);
+    if (waiting) {
+      try {
+        waiting.postMessage({ type: 'SKIP_WAITING' });
+      } catch {
+        window.location.reload();
+        return;
+      }
+      window.setTimeout(() => {
+        if (!swReloadingRef.current && waiting.state === 'activated') {
+          swReloadingRef.current = true;
+          window.location.reload();
+        }
+      }, 2500);
+    } else {
+      window.location.reload();
+    }
+  }, []);
+
+  const handleDismissPwaUpdate = useCallback(() => {
+    setSwUpdateDismissed(true);
+  }, []);
+
   const screenTitleMap: Record<ScreenId, string> = {
     menu: 'Aluminero Pro',
     trabajo: LINEAS_CONFIG[params.linea].nombre,
@@ -5503,6 +5651,50 @@ export default function App() {
               >
                 Acceso Administrador
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {swWaitingWorker && !swUpdateDismissed && (
+        <div
+          id="pwa-update-modal"
+          role="alertdialog"
+          aria-live="polite"
+          aria-label="Actualización disponible de Aluminero Pro"
+          className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[10050] w-[min(440px,calc(100vw-24px))] rounded-2xl border border-blue-400/50 bg-[#0B1528]/95 backdrop-blur-md text-white p-4 shadow-2xl"
+        >
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-blue-600/25 border border-blue-400/40 text-sky-300 flex items-center justify-center shrink-0 text-[18px]">
+              🔄
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-[14px] font-extrabold text-white leading-snug">
+                ¡Hay una nueva actualización disponible!
+              </div>
+              <p className="m-0 mt-0.5 text-[12px] text-slate-300 leading-snug">
+                Aluminero Pro • v{APP_VERSION} tiene mejoras listas para aplicar sin perder tus datos locales.
+              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  id="btn-pwa-update-now"
+                  disabled={swUpdateApplying}
+                  onClick={handleApplyPwaUpdate}
+                  className="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-70 text-white text-[12.5px] font-extrabold border border-blue-400/50 cursor-pointer shadow-md"
+                >
+                  {swUpdateApplying ? 'Actualizando...' : 'Actualizar ahora'}
+                </button>
+                <button
+                  type="button"
+                  id="btn-pwa-update-later"
+                  disabled={swUpdateApplying}
+                  onClick={handleDismissPwaUpdate}
+                  className="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-60 text-slate-200 text-[12.5px] font-bold border border-slate-600 cursor-pointer"
+                >
+                  Más tarde
+                </button>
+              </div>
             </div>
           </div>
         </div>

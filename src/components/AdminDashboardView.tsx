@@ -42,11 +42,15 @@ import {
   signInWithRedirect,
   type User,
 } from 'firebase/auth';
+import { collection, getDocsFromServer } from 'firebase/firestore';
 import {
   auth,
   connectGoogleAccountWithFallback,
+  db,
   getLastGoogleRedirectOutcome,
   isFirebaseAdminUser,
+  isFirestoreOfflineError,
+  isFirestorePermissionDeniedError,
   signOutFirebase,
   subscribeFirebaseAuth,
 } from '../firebase';
@@ -344,11 +348,89 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const [firebaseAuthDiagnostic, setFirebaseAuthDiagnostic] = useState<AdminAuthDiagnostic | null>(
     null
   );
+  const [serverDevicesCount, setServerDevicesCount] = useState<number | null>(null);
+  const [serverDevicesList, setServerDevicesList] = useState<CloudDeviceRecord[] | null>(null);
+  const [serverSyncBusy, setServerSyncBusy] = useState(false);
+  const [serverLastSyncAt, setServerLastSyncAt] = useState<number | null>(null);
+  const [serverSyncFeedback, setServerSyncFeedback] = useState<{
+    type: 'success' | 'error';
+    message: string;
+    syncedAt: number;
+  } | null>(null);
   const lastSyncedAdminUidRef = useRef<string | null>(null);
   const onRefreshCloudRef = useRef(onRefreshCloud);
   onRefreshCloudRef.current = onRefreshCloud;
   const onShowToastRef = useRef(onShowToast);
   onShowToastRef.current = onShowToast;
+
+  const fetchDevicesFromServerDirect = async (options?: { silent?: boolean }) => {
+    if (serverSyncBusy) return;
+    setServerSyncBusy(true);
+    if (!options?.silent) {
+      setServerSyncFeedback(null);
+    }
+    try {
+      const snapshot = await getDocsFromServer(collection(db, 'devices'));
+      const totalServerUsers = snapshot.size;
+      const freshDevices: CloudDeviceRecord[] = snapshot.docs.map((docSnap) => {
+        const data = docSnap.data() as CloudDeviceRecord;
+        const devId = normalizeDeviceIdInput(data?.deviceId || docSnap.id) || docSnap.id;
+        return {
+          ...data,
+          deviceId: devId,
+        };
+      });
+      const syncedNow = Date.now();
+      setServerDevicesCount(totalServerUsers);
+      setServerDevicesList(freshDevices);
+      setServerLastSyncAt(syncedNow);
+
+      const okMsg = `Nube actualizada: ${totalServerUsers} ${
+        totalServerUsers === 1 ? 'usuario encontrado' : 'usuarios encontrados'
+      }`;
+      if (!options?.silent) {
+        setServerSyncFeedback({
+          type: 'success',
+          message: okMsg,
+          syncedAt: syncedNow,
+        });
+        onShowToastRef.current(okMsg, true);
+      }
+
+      // Sincronizar también colecciones complementarias en App.tsx (claves, revocados, bloqueados)
+      try {
+        await onRefreshCloudRef.current();
+      } catch {
+        // Ignorar error secundario si la lectura principal de devices ya tuvo éxito
+      }
+    } catch (err) {
+      const errCode =
+        typeof err === 'object' && err !== null && 'code' in err
+          ? String((err as { code?: unknown }).code || '')
+          : '';
+      const rawMsg = err instanceof Error ? err.message : String(err || 'Error desconocido');
+      let friendlyMsg = `Error al sincronizar nube${errCode ? ` (${errCode})` : ''}: ${rawMsg}`;
+      if (isFirestorePermissionDeniedError(err)) {
+        friendlyMsg = isFirebaseAdminUser(auth.currentUser)
+          ? 'Permisos insuficientes en Firebase (permission-denied) al consultar devices. Verifica las reglas o vuelve a conectar tu cuenta Google.'
+          : 'Permisos insuficientes en Firebase: conecta tu cuenta Google de Administrador (botón "Conectar Google") para leer el conteo real de usuarios en la nube.';
+      } else if (isFirestoreOfflineError(err) || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+        friendlyMsg = 'Sin conexión con Firebase. Verifica tu internet e intenta presionar "Actualizar Nube" nuevamente.';
+      }
+      if (!options?.silent) {
+        setServerSyncFeedback({
+          type: 'error',
+          message: friendlyMsg,
+          syncedAt: Date.now(),
+        });
+        onShowToastRef.current(friendlyMsg);
+      }
+    } finally {
+      setServerSyncBusy(false);
+    }
+  };
+  const fetchDevicesFromServerRef = useRef(fetchDevicesFromServerDirect);
+  fetchDevicesFromServerRef.current = fetchDevicesFromServerDirect;
 
   useEffect(() => {
     let active = true;
@@ -363,7 +445,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           if (showSuccessToast) {
             onShowToastRef.current('Conectado en Nube como Administrador', true);
           }
-          void onRefreshCloudRef.current();
+          void fetchDevicesFromServerRef.current({ silent: true });
         }
       } else if (showSuccessToast) {
         onShowToastRef.current(
@@ -442,7 +524,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         if (isFirebaseAdminUser(result.user)) {
           lastSyncedAdminUidRef.current = result.user.uid;
           onShowToast('Conectado en Nube como Administrador', true);
-          void onRefreshCloud();
+          void fetchDevicesFromServerDirect({ silent: false });
         } else {
           onShowToast(
             'Sesión iniciada, pero solo el correo de Administrador tiene acceso completo a Firestore.'
@@ -564,6 +646,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
   useEffect(() => {
     void onRefreshCloud();
+    if (isFirebaseAdminUser(auth.currentUser)) {
+      void fetchDevicesFromServerRef.current({ silent: true });
+    }
     const timer = window.setInterval(() => setNowTick(Date.now()), 5000);
     return () => window.clearInterval(timer);
   }, []);
@@ -595,13 +680,18 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     onShowToast('Contadores estadísticos reiniciados a 0. Se actualizarán con cada nuevo registro real.', true);
   };
 
+  const activeCloudDevices = useMemo(
+    () => (serverDevicesList !== null ? serverDevicesList : cloudDevices),
+    [serverDevicesList, cloudDevices]
+  );
+
   // Merge filtered cloud devices + adminKeys history into a single auditable user directory (starts at 0 cleanly)
   const auditUsers = useMemo(() => {
     const cleanSelfId = normalizeDeviceIdInput(deviceId) || deviceId.trim().toUpperCase();
     const now = nowTick;
 
     const effectiveAdminKeys = filterAdminRecordsByResetBaseline(adminKeys, countersResetAt);
-    const effectiveCloudDevices = filterAdminRecordsByResetBaseline(cloudDevices, countersResetAt);
+    const effectiveCloudDevices = filterAdminRecordsByResetBaseline(activeCloudDevices, countersResetAt);
 
     // Group all historical keys per device
     const keysByDevice = new Map<string, AdminKeyRecord[]>();
@@ -808,7 +898,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         if (b.isSelf) return 1;
         return b.lastSeenAt - a.lastSeenAt;
       });
-  }, [cloudDevices, adminKeys, deviceId, licencia, backupData.taller, revokedDevicesMap, revokedKeysSet, nowTick, countersResetAt]);
+  }, [activeCloudDevices, adminKeys, deviceId, licencia, backupData.taller, revokedDevicesMap, revokedKeysSet, nowTick, countersResetAt]);
 
   // KPI metrics (los planes internos tipo 'prueba_gratis' NUNCA suman a ventas ni a Conversión a PRO Pagado)
   const kpis = useMemo(() => {
@@ -983,14 +1073,12 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       .slice(-10);
   }, [adminKeys, auditUsers, chartGranularity, countersResetAt]);
 
-  // Conteo directo en tiempo real desde Firestore `devices` (desglose Modo Gratuito vs PRO)
+  // Conteo directo en tiempo real desde Firestore `devices` usando getDocsFromServer (snapshot.size)
   const cloudRealtimeCounts = useMemo(() => {
     const now = nowTick;
-    let total = 0;
     let gratis = 0;
     let pro = 0;
-    for (const dev of cloudDevices) {
-      total += 1;
+    for (const dev of activeCloudDevices) {
       const isProDev = Boolean(
         !dev.blocked &&
           !dev.revoked &&
@@ -1002,8 +1090,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       if (isProDev) pro += 1;
       else gratis += 1;
     }
+    const total = serverDevicesCount !== null ? serverDevicesCount : activeCloudDevices.length;
     return { total, gratis, pro };
-  }, [cloudDevices, nowTick]);
+  }, [activeCloudDevices, serverDevicesCount, nowTick]);
 
   // Gráficas Recharts: Cotizaciones generadas por mes y Materiales más utilizados
   const savedQuotesForCharts = useMemo(
@@ -1777,7 +1866,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   id="admin-app-version"
                   className="px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700 text-slate-300 text-[11px] font-bold mono"
                 >
-                  {APP_VERSION}
+                  v{APP_VERSION}
                 </span>
               </div>
               <p className="m-0 mt-1 text-[12.5px] sm:text-[13.5px] text-slate-300 leading-snug">
@@ -1789,23 +1878,23 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 font-semibold"
                 >
                   <span
-                    className={`w-2 h-2 rounded-full ${isAdminCloudOnline ? 'bg-emerald-400' : 'bg-amber-400'}`}
+                    className={`w-2 h-2 rounded-full ${isAdminCloudOnline || serverDevicesCount !== null ? 'bg-emerald-400' : 'bg-amber-400'}`}
                     aria-hidden="true"
                   />
-                  {isAdminCloudOnline
-                    ? cloudRefreshing
-                      ? 'Sincronizando Nube...'
-                      : 'Conectado en Nube'
-                    : 'Modo Local'}
+                  {serverSyncBusy || cloudRefreshing
+                    ? 'Sincronizando...'
+                    : isAdminCloudOnline || serverDevicesCount !== null
+                      ? 'Conectado en Nube'
+                      : 'Modo Local'}
                 </span>
                 {firebaseUser?.email && (
                   <span className="text-slate-300 font-medium truncate max-w-[220px]">
                     {firebaseUser.email}
                   </span>
                 )}
-                {cloudLastSyncAt && (
+                {(serverLastSyncAt || cloudLastSyncAt) && (
                   <span className="mono">
-                    Últ. sinc.: {formatDateTimeExact(cloudLastSyncAt)}
+                    Últ. sinc.: {formatDateTimeExact(serverLastSyncAt || cloudLastSyncAt || Date.now())}
                   </span>
                 )}
               </div>
@@ -1840,12 +1929,15 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
             <button
               type="button"
               id="btn-admin-refresh-cloud"
-              onClick={() => void onRefreshCloud()}
-              disabled={cloudRefreshing}
+              onClick={() => void fetchDevicesFromServerDirect({ silent: false })}
+              disabled={serverSyncBusy || cloudRefreshing}
               className="min-h-[42px] px-3.5 py-2 rounded-xl border border-sky-400/40 bg-sky-500/15 hover:bg-sky-500/25 text-sky-100 font-bold text-[12px] inline-flex items-center gap-2 cursor-pointer transition-colors disabled:opacity-60"
             >
-              <RefreshCw className={`w-4 h-4 ${cloudRefreshing ? 'animate-spin' : ''}`} aria-hidden="true" />
-              <span>{cloudRefreshing ? 'Actualizando...' : 'Actualizar Nube'}</span>
+              <RefreshCw
+                className={`w-4 h-4 ${serverSyncBusy || cloudRefreshing ? 'animate-spin' : ''}`}
+                aria-hidden="true"
+              />
+              <span>{serverSyncBusy || cloudRefreshing ? 'Sincronizando...' : 'Actualizar Nube'}</span>
             </button>
             <button
               type="button"
@@ -1858,6 +1950,34 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
             </button>
           </div>
         </div>
+
+        {serverSyncFeedback && (
+          <div
+            id="admin-cloud-sync-feedback"
+            role={serverSyncFeedback.type === 'error' ? 'alert' : 'status'}
+            className={`mt-3.5 rounded-xl border px-3.5 py-2.5 text-[12px] font-bold flex items-center justify-between gap-3 ${
+              serverSyncFeedback.type === 'success'
+                ? 'border-emerald-500/45 bg-emerald-950/60 text-emerald-100'
+                : 'border-rose-500/50 bg-rose-950/60 text-rose-100'
+            }`}
+          >
+            <span className="inline-flex items-center gap-2 min-w-0">
+              {serverSyncFeedback.type === 'success' ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" aria-hidden="true" />
+              ) : (
+                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" aria-hidden="true" />
+              )}
+              <span className="leading-snug">{serverSyncFeedback.message}</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setServerSyncFeedback(null)}
+              className="px-2 py-1 rounded-lg bg-slate-900/60 hover:bg-slate-800 text-slate-200 text-[11px] font-bold cursor-pointer shrink-0"
+            >
+              Cerrar
+            </button>
+          </div>
+        )}
 
         {firebaseAuthDiagnostic && (
           <div
@@ -1980,14 +2100,18 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 id="kpi-val-usuarios-nube"
                 className="mt-2 mono text-[28px] font-extrabold text-white leading-none"
               >
-                {cloudRealtimeCounts.total > 0 ? cloudRealtimeCounts.total : kpis.totalUsers}
+                {serverDevicesCount !== null
+                  ? serverDevicesCount
+                  : cloudRealtimeCounts.total > 0
+                    ? cloudRealtimeCounts.total
+                    : kpis.totalUsers}
               </div>
               <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] font-bold">
                 <span className="px-2 py-0.5 rounded-md bg-slate-800 border border-slate-600 text-slate-200 mono">
-                  Gratis: {cloudRealtimeCounts.total > 0 ? cloudRealtimeCounts.gratis : kpis.gratis}
+                  Gratis: {serverDevicesCount !== null || cloudRealtimeCounts.total > 0 ? cloudRealtimeCounts.gratis : kpis.gratis}
                 </span>
                 <span className="px-2 py-0.5 rounded-md bg-amber-500/20 border border-amber-400/40 text-amber-200 mono">
-                  PRO: {cloudRealtimeCounts.total > 0 ? cloudRealtimeCounts.pro : kpis.totalProPaid + kpis.colega3d}
+                  PRO: {serverDevicesCount !== null || cloudRealtimeCounts.total > 0 ? cloudRealtimeCounts.pro : kpis.totalProPaid + kpis.colega3d}
                 </span>
               </div>
               {countersResetAt > 0 && (

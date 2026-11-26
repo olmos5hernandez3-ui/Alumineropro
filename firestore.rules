@@ -428,34 +428,36 @@ service cloud.firestore {
         && isValidDeviceDoc(incoming(), deviceId)
         && incoming().deviceId == existing().deviceId
         && incoming().firstSeenAt == existing().firstSeenAt
-        && (
-          isAdmin()
-          || (
-            isSignedIn()
-            && (existing().ownerUid == request.auth.uid || existing().ownerUid == 'free_' + deviceId)
-            && incoming().ownerUid == request.auth.uid
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-              'ownerUid', 'cliente', 'tallerNombre', 'nombreTaller', 'tallerResponsable', 'tallerWhatsapp',
-              'ubicacion', 'deviceLabel', 'termsAcceptedAt', 'preferredTheme', 'preferredSkin',
-              'preferredSkinVariant', 'lastSeenAt', 'ultimaConexion', 'totalSessions', 'totalMinutes',
-              'activeDays', 'updatedAt', 'linkedEmail', 'activeSessionToken', 'homeMenuLayout', 'plan'
-            ])
-            && incoming().proActive == existing().proActive
-            && incoming().planCode == existing().planCode
-          )
-          || (
-            isSafeFreeDeviceHeartbeat(incoming(), deviceId)
-            && existing().ownerUid == 'free_' + deviceId
-            && existing().proActive == false
-            && existing().planCode == 'FREE'
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-              'cliente', 'tallerNombre', 'nombreTaller', 'tallerResponsable', 'tallerWhatsapp',
-              'ubicacion', 'deviceLabel', 'termsAcceptedAt', 'preferredTheme', 'preferredSkin',
-              'preferredSkinVariant', 'lastSeenAt', 'ultimaConexion', 'totalSessions', 'totalMinutes',
-              'activeDays', 'updatedAt', 'plan'
-            ])
-          )
-        );
+        && isAdmin();
+      allow update: if isValidId(deviceId)
+        && isSignedIn()
+        && isValidDeviceDoc(incoming(), deviceId)
+        && incoming().deviceId == existing().deviceId
+        && incoming().firstSeenAt == existing().firstSeenAt
+        && (existing().ownerUid == request.auth.uid || existing().ownerUid == 'free_' + deviceId)
+        && incoming().ownerUid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'ownerUid', 'cliente', 'tallerNombre', 'nombreTaller', 'tallerResponsable', 'tallerWhatsapp',
+          'ubicacion', 'deviceLabel', 'termsAcceptedAt', 'preferredTheme', 'preferredSkin',
+          'preferredSkinVariant', 'lastSeenAt', 'ultimaConexion', 'totalSessions', 'totalMinutes',
+          'activeDays', 'updatedAt', 'linkedEmail', 'activeSessionToken', 'homeMenuLayout', 'plan'
+        ])
+        && incoming().proActive == existing().proActive
+        && incoming().planCode == existing().planCode;
+      allow update: if isValidId(deviceId)
+        && isValidDeviceDoc(request.resource.data, deviceId)
+        && isSafeFreeDeviceHeartbeat(request.resource.data, deviceId)
+        && request.resource.data.deviceId == resource.data.deviceId
+        && request.resource.data.firstSeenAt == resource.data.firstSeenAt
+        && resource.data.get('ownerUid', '') == 'free_' + deviceId
+        && resource.data.get('proActive', true) == false
+        && resource.data.get('planCode', '') == 'FREE'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'cliente', 'tallerNombre', 'nombreTaller', 'tallerResponsable', 'tallerWhatsapp',
+          'ubicacion', 'deviceLabel', 'termsAcceptedAt', 'preferredTheme', 'preferredSkin',
+          'preferredSkinVariant', 'lastSeenAt', 'ultimaConexion', 'totalSessions', 'totalMinutes',
+          'activeDays', 'updatedAt', 'plan'
+        ]);
       allow delete: if isValidId(deviceId) && isAdmin();
     }
 

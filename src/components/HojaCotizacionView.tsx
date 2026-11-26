@@ -10,7 +10,10 @@ import {
   PRE_CUT_WARNING_TEXT,
   round2,
 } from '../utils/alumineroLogic';
-import { optimizarPartidasTramos1D } from '../utils/modulacionLogic';
+import {
+  analyzeHojaProfileWasteVsInventory,
+  optimizarPartidasTramos1D,
+} from '../utils/modulacionLogic';
 import {
   CotizacionPdfBlobResult,
   generarPdfOrdenProduccionTaller,
@@ -178,6 +181,17 @@ export const HojaCotizacionView: React.FC<Props> = ({
   const opt1D = useMemo(
     () => optimizarPartidasTramos1D(hoja.partidas, sobrantes, taller.optimizador),
     [hoja.partidas, sobrantes, taller.optimizador]
+  );
+
+  const wasteAnalysis = useMemo(
+    () =>
+      analyzeHojaProfileWasteVsInventory(
+        hoja.partidas,
+        inventario,
+        comprometidosMap,
+        taller.optimizador
+      ),
+    [hoja.partidas, inventario, obrasAprobadas, taller.optimizador]
   );
 
   const subtotal = hoja.partidas.reduce((acc, p) => acc + p.totalLinea, 0);
@@ -747,6 +761,138 @@ export const HojaCotizacionView: React.FC<Props> = ({
               )}
             </div>
           </div>
+
+          {hoja.partidas.length > 0 && wasteAnalysis.grupos.length > 0 && (
+            <div
+              id="hoja-waste-analysis-card"
+              className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] p-4 sm:p-5 shadow-xl"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
+                <div>
+                  <h2 className="m-0 text-[16px] font-extrabold text-slate-900">
+                    Análisis de Perfiles y Desperdicio vs Inventario
+                  </h2>
+                  <p className="m-0 text-[12px] text-slate-500">
+                    Cruce real 1D por línea, perfil y acabado contra tus existencias en bodega (tramos 6.10 m)
+                  </p>
+                </div>
+                <span
+                  className={`px-2.5 py-1 rounded-lg border text-[11px] font-extrabold ${
+                    wasteAnalysis.puedeOptimizarse
+                      ? 'bg-amber-50 border-amber-300 text-amber-900'
+                      : 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                  }`}
+                >
+                  {wasteAnalysis.puedeOptimizarse ? 'Optimizable' : 'Buen aprovechamiento'}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
+                  <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-tight">
+                    Uso real
+                  </span>
+                  <strong
+                    className={`mono text-[16px] font-extrabold ${
+                      wasteAnalysis.aprovechamientoGlobalPct >= 75
+                        ? 'text-emerald-700'
+                        : 'text-amber-700'
+                    }`}
+                  >
+                    {wasteAnalysis.aprovechamientoGlobalPct}%
+                  </strong>
+                </div>
+                <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
+                  <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-tight">
+                    Merma total
+                  </span>
+                  <strong className="mono text-[16px] font-extrabold text-rose-700">
+                    {wasteAnalysis.desperdicioTotalM.toFixed(2)} m
+                  </strong>
+                </div>
+                <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200">
+                  <span className="block text-[10px] font-bold text-emerald-800 uppercase tracking-tight">
+                    Cubre bodega
+                  </span>
+                  <strong className="mono text-[16px] font-extrabold text-emerald-900">
+                    {wasteAnalysis.tramosCubiertosInventario}/{wasteAnalysis.totalTramosOpt1D} tr.
+                  </strong>
+                </div>
+                <div className="p-2.5 rounded-xl bg-blue-50 border border-blue-200">
+                  <span className="block text-[10px] font-bold text-blue-800 uppercase tracking-tight">
+                    Por comprar
+                  </span>
+                  <strong className="mono text-[16px] font-extrabold text-blue-900">
+                    {wasteAnalysis.tramosPorComprar} tr.
+                  </strong>
+                </div>
+              </div>
+
+              {wasteAnalysis.sugerencias.length > 0 && (
+                <div className="flex flex-col gap-2 mb-3">
+                  {wasteAnalysis.sugerencias.map((sug) => (
+                    <div
+                      key={sug.id}
+                      className={`p-2.5 rounded-xl border text-[12px] leading-snug ${
+                        sug.tipo === 'ahorro'
+                          ? 'bg-emerald-50 border-emerald-200 text-emerald-950'
+                          : sug.tipo === 'alerta'
+                            ? 'bg-amber-50 border-amber-300 text-amber-950'
+                            : 'bg-slate-50 border-slate-200 text-slate-800'
+                      }`}
+                    >
+                      <strong className="block text-[12.5px] font-extrabold mb-0.5">
+                        {sug.titulo}
+                      </strong>
+                      <span>{sug.detalle}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {wasteAnalysis.perfilesAltoDesperdicio.length > 0 && (
+                <div className="mb-3">
+                  <div className="text-[11.5px] font-extrabold text-slate-700 mb-1.5">
+                    Perfiles con mayor oportunidad de ahorro ({wasteAnalysis.perfilesAltoDesperdicio.length}):
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    {wasteAnalysis.perfilesAltoDesperdicio.slice(0, 4).map((g) => (
+                      <div
+                        key={g.key}
+                        className="flex flex-wrap items-center justify-between gap-2 px-2.5 py-2 rounded-lg bg-slate-50 border border-slate-200 text-[11.5px]"
+                      >
+                        <div className="min-w-0">
+                          <strong className="text-slate-900">{g.perfilNombre}</strong>{' '}
+                          <span className="text-slate-500">
+                            ({g.lineaNombre} · {g.colorLabel})
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 mono font-bold shrink-0">
+                          <span className="text-amber-700">{g.aprovechamientoPct}% uso</span>
+                          <span className="text-slate-600">
+                            Bodega: {g.tramosEnInventario} tr.
+                          </span>
+                          <span className="text-rose-700">
+                            -{(g.desperdicioTotalCm / 100).toFixed(2)} m
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {!showDespieceObra && (
+                <button
+                  type="button"
+                  onClick={() => setShowDespieceObra(true)}
+                  className="w-full min-h-[38px] px-3 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-800 font-bold text-[12px] cursor-pointer"
+                >
+                  Ver diagrama barra por barra y tabla de inventario
+                </button>
+              )}
+            </div>
+          )}
 
           {showDespieceObra && (
             <div

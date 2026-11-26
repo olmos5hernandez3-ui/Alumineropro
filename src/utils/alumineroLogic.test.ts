@@ -3578,4 +3578,201 @@ test('98. SKIN_VARIANTS_BY_SKIN define exactamente colores planos (plastas) para
   }
 });
 
+test('99. Versión centralizada APP_VERSION=1.0.3 sincronizada con public/sw.js sin skipWaiting automático en install', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { APP_VERSION, APP_VERSION_LABEL } = await import('./alumineroLogic.ts');
+  assert.equal(APP_VERSION, '1.0.3');
+  assert.equal(APP_VERSION_LABEL, 'v1.0.3');
+
+  const swSource = readFileSync('public/sw.js', 'utf8');
+  assert.match(swSource, /const APP_VERSION\s*=\s*['"]1\.0\.3['"]/);
+  assert.match(swSource, /const CACHE_NAME\s*=\s*`aluminero-pro-v\$\{APP_VERSION\}`/);
+
+  // Verificar que el bloque install NO llama self.skipWaiting() automáticamente
+  const installMatch = swSource.match(/self\.addEventListener\(\s*['"]install['"][\s\S]*?\n\}\);/);
+  assert.ok(installMatch, 'Debe existir el evento install en public/sw.js');
+  const installNoComments = installMatch[0].replace(/\/\/.*$/gm, '');
+  assert.equal(
+    /self\.skipWaiting\s*\(/.test(installNoComments),
+    false,
+    'install NO debe llamar self.skipWaiting() automáticamente'
+  );
+
+  // Verificar que activate limpia cachés antiguas y message escucha SKIP_WAITING
+  assert.match(swSource, /caches\.delete\(key\)/);
+  assert.match(swSource, /msg\.type === ['"]SKIP_WAITING['"][\s\S]*?self\.skipWaiting\(\)/);
+});
+
+test('100. analyzeHojaProfileWasteVsInventory detecta cobertura de inventario, alto desperdicio y stock en acabado alterno', async () => {
+  const { analyzeHojaProfileWasteVsInventory } = await import('./modulacionLogic.ts');
+  const { calcularDespiece } = await import('./alumineroLogic.ts');
+
+  const d1 = calcularDespiece({
+    linea: '3',
+    anchoCm: 140,
+    altoCm: 120,
+    color: 'natural',
+    vidrio: 'claro6',
+    hojas: 2,
+    apertura: 'corrediza',
+    sentidoPuerta: 'izq',
+    puertaIntermedio: false,
+    puertaEconomica: false,
+    invertido: false,
+    cantidad: 1,
+    tolerancias: LINEAS_CONFIG['3'].toleranciasDefault,
+  });
+  const d2 = calcularDespiece({
+    linea: '3',
+    anchoCm: 90,
+    altoCm: 80,
+    color: 'negro',
+    vidrio: 'claro6',
+    hojas: 2,
+    apertura: 'corrediza',
+    sentidoPuerta: 'izq',
+    puertaIntermedio: false,
+    puertaEconomica: false,
+    invertido: false,
+    cantidad: 1,
+    tolerancias: LINEAS_CONFIG['3'].toleranciasDefault,
+  });
+
+  const partidas = [
+    {
+      id: 'p1',
+      categoria: 'ventanas' as const,
+      linea: '3' as const,
+      area: 'Sala',
+      etiqueta: 'V-1',
+      anchoCm: 140,
+      altoCm: 120,
+      color: 'natural' as const,
+      vidrio: 'claro6' as const,
+      hojas: 2,
+      apertura: 'corrediza' as const,
+      sentidoPuerta: 'izq' as const,
+      puertaIntermedio: false,
+      puertaEconomica: false,
+      invertido: false,
+      cantidad: 1,
+      modoPrecio: 'm2' as const,
+      precioInput: 2600,
+      cobrarMinM2: false,
+      extraPct: 0,
+      totalLinea: 4368,
+      despiece: d1,
+    },
+    {
+      id: 'p2',
+      categoria: 'ventanas' as const,
+      linea: '3' as const,
+      area: 'Baño',
+      etiqueta: 'V-2',
+      anchoCm: 90,
+      altoCm: 80,
+      color: 'negro' as const,
+      vidrio: 'claro6' as const,
+      hojas: 2,
+      apertura: 'corrediza' as const,
+      sentidoPuerta: 'izq' as const,
+      puertaIntermedio: false,
+      puertaEconomica: false,
+      invertido: false,
+      cantidad: 1,
+      modoPrecio: 'm2' as const,
+      precioInput: 2600,
+      cobrarMinM2: false,
+      extraPct: 0,
+      totalLinea: 2400,
+      despiece: d2,
+    },
+  ];
+
+  // Stock en inventario: cabezal y jamba 3" en natural (cubre V-1 y sirve como stock alterno para V-2 negro)
+  const inventario: Record<string, number> = {
+    '3__cabezal__natural': 3,
+    '3__jamba__natural': 3,
+    '3__riel__natural': 2,
+  };
+
+  const analysis = analyzeHojaProfileWasteVsInventory(partidas, inventario);
+  assert.ok(analysis.grupos.length >= 6);
+  assert.ok(analysis.tramosCubiertosInventario >= 3, 'Debe detectar cobertura de inventario para perfiles 3" natural');
+  assert.ok(analysis.perfilesAltoDesperdicio.length > 0, 'Debe detectar perfiles con bajo aprovechamiento (<70%)');
+  assert.equal(analysis.puedeOptimizarse, true);
+  assert.ok(
+    analysis.sugerencias.some((s) => s.id === 'inv-coverage'),
+    'Debe sugerir aprovechar tramos existentes en bodega'
+  );
+  assert.ok(
+    analysis.sugerencias.some((s) => s.id === 'alt-color-inventory'),
+    'Debe detectar stock disponible en otro acabado dentro de Mi Inventario'
+  );
+  assert.ok(
+    analysis.sugerencias.some((s) => s.id === 'fragmented-finishes'),
+    'Debe detectar fragmentación de acabados (natural + negro) con bajo uso por barra'
+  );
+});
+
+test('101. buildLeanFreeDeviceUpdatePayload respeta estrictamente las llaves permitidas por firestore.rules', async () => {
+  const { buildLeanFreeDeviceUpdatePayload } = await import('./cloudSync.ts');
+  const allowedKeys = new Set([
+    'cliente',
+    'tallerNombre',
+    'nombreTaller',
+    'tallerResponsable',
+    'tallerWhatsapp',
+    'ubicacion',
+    'deviceLabel',
+    'termsAcceptedAt',
+    'preferredTheme',
+    'preferredSkin',
+    'preferredSkinVariant',
+    'lastSeenAt',
+    'ultimaConexion',
+    'totalSessions',
+    'totalMinutes',
+    'activeDays',
+    'updatedAt',
+    'plan',
+  ]);
+  const payload = buildLeanFreeDeviceUpdatePayload({
+    cliente: 'Taller El Maestro',
+    tallerNombre: 'Taller El Maestro',
+    tallerResponsable: 'Juan Pérez',
+    tallerWhatsapp: '3312345678',
+    ubicacion: 'Guadalajara, Jal.',
+    deviceLabel: 'Teléfono Android',
+    termsAcceptedAt: 1_765_000_000_000,
+    lastSeenAt: 1_765_000_000_000,
+    totalSessions: 3,
+    totalMinutes: 12,
+    activeDays: ['2026-11-26'],
+  });
+  for (const key of Object.keys(payload)) {
+    assert.ok(allowedKeys.has(key), `Llave no permitida en update gratuito de Firestore: ${key}`);
+  }
+  assert.equal(payload.plan, 'gratis');
+  assert.equal(payload.tallerNombre, 'Taller El Maestro');
+});
+
+test('102. AdminDashboardView consulta devices con getDocsFromServer + snapshot.size y App.tsx monitorea SW ready/waiting', async () => {
+  const { readFileSync } = await import('node:fs');
+  const adminSrc = readFileSync('src/components/AdminDashboardView.tsx', 'utf8');
+  assert.match(adminSrc, /getDocsFromServer\(collection\(db,\s*['"]devices['"]\)\)/);
+  assert.match(adminSrc, /snapshot\.size/);
+  assert.match(adminSrc, /Nube actualizada:/);
+
+  const appSrc = readFileSync('src/App.tsx', 'utf8');
+  assert.match(appSrc, /navigator\.serviceWorker\.ready/);
+  assert.match(appSrc, /reg\.waiting/);
+  assert.match(appSrc, /SKIP_WAITING/);
+  assert.match(appSrc, /controllerchange/);
+  assert.match(appSrc, /¡Hay una nueva actualización disponible!/);
+  assert.match(appSrc, /Actualizar ahora/);
+  assert.match(appSrc, /Más tarde/);
+});
+
+
 

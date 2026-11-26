@@ -1622,7 +1622,7 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
             id="drawer-app-version"
             className={`pt-1 text-center text-[11px] font-bold mono ${subTextClass}`}
           >
-            Aluminero Pro · {APP_VERSION}
+            Aluminero Pro • v{APP_VERSION}
           </div>
         </div>
       </div>
