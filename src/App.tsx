@@ -207,14 +207,24 @@ import { RemindersModal } from './components/CotizacionRemindersPanel';
 import { esMaterialDireccional, PiezaVidrioInput } from './utils/glassOptimizer2D';
 import { aggregateModulacionJobs } from './utils/modulacionLogic';
 import { useOnlineStatus, usePWAInstall } from './utils/usePWAInstall';
-import type { User as FirebaseUser } from 'firebase/auth';
+import {
+  GoogleAuthProvider,
+  signInWithPopup,
+  signInWithRedirect,
+  type User as FirebaseUser,
+} from 'firebase/auth';
+import { collection, getDocs } from 'firebase/firestore';
 import {
   auth,
-  connectGoogleAccountWithFallback,
   consumeGoogleRedirectResult,
+  db,
   signOutFirebase,
   subscribeFirebaseAuth,
 } from './firebase';
+import {
+  extractFirebaseAuthCode,
+  formatFirebaseAuthError,
+} from './utils/firebaseAuthHelpers';
 import {
   enqueueOfflineCotizacion,
   flushOfflineCotizacionesQueue,
@@ -491,7 +501,13 @@ export default function App() {
   const [invTab, setInvTab] = useState<'existencias' | 'perfiles' | 'vidrios' | 'herrajes'>('existencias');
   const [catalogoTab, setCatalogoTab] = useState<'perfiles' | 'herrajes'>('perfiles');
   const [unifiedGateTarget, setUnifiedGateTarget] = useState<null | {
-    tool: 'levantamiento' | 'hoja' | 'modulacion' | 'vidrio';
+    tool:
+      | 'levantamiento'
+      | 'hoja'
+      | 'modulacion'
+      | 'vidrio'
+      | 'trabajo-ventanas'
+      | 'trabajo-puertas';
     label: string;
   }>(null);
   const [modStep, setModStep] = useState<1 | 2 | 3 | 4 | 5>(1);
@@ -2191,20 +2207,23 @@ export default function App() {
     setSelectedFormulaId('std');
   };
 
-  const handleEntrarTrabajo = (cat: CategoriaTrabajo) => {
-    if (cat === 'puertas' && !proActive) {
-      openGlobalModal('pro');
-      return;
-    }
-    setCategoria(cat);
-    const defaultLine: LineaId = cat === 'puertas' ? 'puerta-europea' : '3';
-    if (LINEAS_CONFIG[params.linea].categoria !== cat) {
-      const cfg = LINEAS_CONFIG[defaultLine];
-      setParams(createInitialParams(defaultLine));
-      setPrecioInput(taller.tarifasBase[defaultLine] ?? cfg.tarifaBaseDefault);
-    }
-    navigateTo('trabajo');
-  };
+  const enterTrabajoDirect = useCallback(
+    (cat: CategoriaTrabajo) => {
+      if (cat === 'puertas' && !proActive) {
+        openGlobalModal('pro');
+        return;
+      }
+      setCategoria(cat);
+      const defaultLine: LineaId = cat === 'puertas' ? 'puerta-europea' : '3';
+      if (LINEAS_CONFIG[params.linea].categoria !== cat) {
+        const cfg = LINEAS_CONFIG[defaultLine];
+        setParams(createInitialParams(defaultLine));
+        setPrecioInput(taller.tarifasBase[defaultLine] ?? cfg.tarifaBaseDefault);
+      }
+      navigateTo('trabajo');
+    },
+    [proActive, openGlobalModal, params.linea, taller.tarifasBase, navigateTo]
+  );
 
   const isUserRegisteredAndAccepted = Boolean(
     legalAccepted &&
@@ -2216,16 +2235,16 @@ export default function App() {
 
   const needsFirstTimeWorkshopGate = !isUserRegisteredAndAccepted;
 
-  const isStartupGateBlocking =
-    needsFirstTimeWorkshopGate &&
-    !adminAuthOpen &&
-    !adminModalOpen &&
-    currentView !== 'admin' &&
-    !accessBlocked &&
-    !adminShortcutOnBoot;
-
   const executeActiveTool = useCallback(
-    (tool: 'levantamiento' | 'hoja' | 'modulacion' | 'vidrio') => {
+    (
+      tool:
+        | 'levantamiento'
+        | 'hoja'
+        | 'modulacion'
+        | 'vidrio'
+        | 'trabajo-ventanas'
+        | 'trabajo-puertas'
+    ) => {
       if (tool === 'levantamiento') {
         window.__alumLev?.open();
       } else if (tool === 'hoja') {
@@ -2234,13 +2253,26 @@ export default function App() {
         navigateTo('modulacion');
       } else if (tool === 'vidrio') {
         navigateTo('vidrio');
+      } else if (tool === 'trabajo-ventanas') {
+        enterTrabajoDirect('ventanas');
+      } else if (tool === 'trabajo-puertas') {
+        enterTrabajoDirect('puertas');
       }
     },
-    [navigateTo]
+    [navigateTo, enterTrabajoDirect]
   );
 
   const requestActiveToolAccess = useCallback(
-    (tool: 'levantamiento' | 'hoja' | 'modulacion' | 'vidrio', label: string) => {
+    (
+      tool:
+        | 'levantamiento'
+        | 'hoja'
+        | 'modulacion'
+        | 'vidrio'
+        | 'trabajo-ventanas'
+        | 'trabajo-puertas',
+      label: string
+    ) => {
       if (needsFirstTimeWorkshopGate) {
         setUnifiedGateTarget({ tool, label });
         return;
@@ -2249,6 +2281,17 @@ export default function App() {
     },
     [needsFirstTimeWorkshopGate, executeActiveTool]
   );
+
+  const handleEntrarTrabajo = (cat: CategoriaTrabajo) => {
+    if (cat === 'puertas' && !proActive) {
+      openGlobalModal('pro');
+      return;
+    }
+    requestActiveToolAccess(
+      cat === 'puertas' ? 'trabajo-puertas' : 'trabajo-ventanas',
+      cat === 'puertas' ? 'Cotización y Cortes (Puertas)' : 'Cotización y Cortes (Ventanas)'
+    );
+  };
 
   const handleEntrarHoja = () => {
     requestActiveToolAccess('hoja', 'Hoja de Cotización');
@@ -2703,6 +2746,8 @@ export default function App() {
             | 'hoja'
             | 'modulacion'
             | 'vidrio'
+            | 'trabajo-ventanas'
+            | 'trabajo-puertas'
             | null;
           if (pendingTool) {
             window.sessionStorage.removeItem('ap_pending_google_tool');
@@ -2828,7 +2873,7 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [isOnline, offlineSyncQueue.length, cloudAccountSession?.sessionToken, firebaseUser?.uid]);
 
-  const handleConnectGoogle = async () => {
+  const handleConnectGoogle = () => {
     if (googleAuthLoading) return;
     if (!isOnline || (typeof navigator !== 'undefined' && !navigator.onLine)) {
       const msg = 'Sin conexión a internet para conectar con Google. Revisa tu red e intenta de nuevo.';
@@ -2836,25 +2881,55 @@ export default function App() {
       showToast(msg);
       return;
     }
+
+    if (unifiedGateTarget?.tool) {
+      try {
+        window.sessionStorage.setItem('ap_pending_google_tool', unifiedGateTarget.tool);
+      } catch {
+        // ignore
+      }
+    }
+
+    // Invocar signInWithPopup de forma 100% sincrónica directamente en el gesto de clic
+    // (sin ningún async/await previo) para evitar bloqueos de ventana emergente en móviles.
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+    const popupPromise = signInWithPopup(auth, provider);
+
     setGoogleAuthLoading(true);
     setGoogleAuthError(null);
-    try {
-      if (unifiedGateTarget?.tool) {
-        try {
-          window.sessionStorage.setItem('ap_pending_google_tool', unifiedGateTarget.tool);
-        } catch {
-          // ignore
-        }
-      }
-      const result = await connectGoogleAccountWithFallback();
-      if (result.status === 'signed_in') {
-        setFirebaseUser(result.user);
+
+    void popupPromise
+      .then(async (cred) => {
+        const signedUser = cred.user;
+        // Actualizar de inmediato el estado del usuario en pantalla ("● Nube Conectada" + correo)
+        setFirebaseUser(signedUser);
+        setCloudConnected(true);
         setGoogleAuthError(null);
-        completeGoogleUserRegistration(result.user);
+        completeGoogleUserRegistration(signedUser);
         showToast(
-          `Conectado en Nube${result.user.email ? `: ${result.user.email}` : ''}`,
+          `● Nube Conectada${signedUser.email ? `: ${signedUser.email}` : ''}`,
           true
         );
+
+        // Ejecutar getDocs(collection(db, 'devices')) al resolverse signInWithPopup
+        try {
+          const devicesSnap = await getDocs(collection(db, 'devices'));
+          const loadedDevices: CloudDeviceRecord[] = devicesSnap.docs.map((docSnap) => {
+            const data = docSnap.data() as CloudDeviceRecord;
+            return {
+              ...data,
+              deviceId: (data?.deviceId || docSnap.id).toUpperCase(),
+            };
+          });
+          setCloudDevices(loadedDevices);
+          setCloudStats(computeUsageStats30d(loadedDevices));
+          setCloudLastSyncAt(Date.now());
+          setCloudConnected(true);
+        } catch {
+          // Para usuarios estándar (no administrador), las reglas de Firestore restringen la lectura global de /devices
+        }
+
         if (unifiedGateTarget?.tool) {
           const targetTool = unifiedGateTarget.tool;
           setUnifiedGateTarget(null);
@@ -2868,28 +2943,31 @@ export default function App() {
         if (loadOfflineCotizacionesQueue().length > 0 && cloudAccountSessionRef.current) {
           void handleFlushOfflineCotizacionesQueue({ silentIfUnlinked: true });
         }
-      } else if (result.status === 'redirecting') {
-        showToast(result.message);
-      } else {
-        const detailed = result.code ? `[${result.code}] ${result.message}` : result.message;
+      })
+      .catch(async (popupErr) => {
+        const code = extractFirebaseAuthCode(popupErr);
+        // Usar signInWithRedirect ÚNICAMENTE como respaldo si el error es exactamente auth/popup-blocked
+        if (code === 'auth/popup-blocked') {
+          try {
+            showToast('Ventana emergente bloqueada. Redirigiendo a Google...');
+            await signInWithRedirect(auth, provider);
+            return;
+          } catch (redirectErr) {
+            const redInfo = formatFirebaseAuthError(redirectErr);
+            const detailed = redInfo.code ? `[${redInfo.code}] ${redInfo.message}` : redInfo.message;
+            setGoogleAuthError(detailed);
+            showToast(detailed);
+            return;
+          }
+        }
+        const info = formatFirebaseAuthError(popupErr);
+        const detailed = info.code ? `[${info.code}] ${info.message}` : info.message;
         setGoogleAuthError(detailed);
         showToast(detailed);
-      }
-    } catch (err) {
-      const errCode =
-        typeof err === 'object' && err !== null && 'code' in err
-          ? String((err as { code?: unknown }).code || '')
-          : '';
-      const baseMsg =
-        err instanceof Error && err.message
-          ? err.message
-          : 'No se pudo iniciar sesión con Google. Intenta nuevamente.';
-      const msg = errCode ? `[${errCode}] ${baseMsg}` : baseMsg;
-      setGoogleAuthError(msg);
-      showToast(msg);
-    } finally {
-      setGoogleAuthLoading(false);
-    }
+      })
+      .finally(() => {
+        setGoogleAuthLoading(false);
+      });
   };
 
   const handleDisconnectGoogle = async () => {
@@ -5317,18 +5395,16 @@ export default function App() {
       />
 
       <UnifiedWorkshopGateModal
-        open={isStartupGateBlocking || unifiedGateTarget !== null}
-        blocking={isStartupGateBlocking}
-        targetToolLabel={unifiedGateTarget?.label || 'Aluminero Pro'}
+        open={unifiedGateTarget !== null}
+        blocking={false}
+        targetToolLabel={unifiedGateTarget?.label || 'Cotización y Cortes'}
         taller={taller}
         googleAuthLoading={googleAuthLoading}
         googleAuthError={googleAuthError}
         onOpenLegalDoc={(docType) => setLegalModalDoc(docType)}
         onContinueWithGoogle={handleConnectGoogle}
         onClose={() => {
-          if (!isStartupGateBlocking) {
-            setUnifiedGateTarget(null);
-          }
+          setUnifiedGateTarget(null);
         }}
         onSaveManual={({ nombre, correo, tel, ubicacion, termsAcceptedAt }) => {
           const acceptedTs = termsAcceptedAt || Date.now();

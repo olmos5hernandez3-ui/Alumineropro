@@ -49,13 +49,13 @@ export type GoogleAuthFlowResult =
   | { status: 'redirecting'; message: string }
   | { status: 'error'; code: string; message: string; isUnauthorizedDomain: boolean };
 
-function buildGoogleProvider(): GoogleAuthProvider {
+export function createGoogleAuthProvider(): GoogleAuthProvider {
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
   return provider;
 }
 
-export const googleProvider: GoogleAuthProvider = buildGoogleProvider();
+export const googleProvider: GoogleAuthProvider = createGoogleAuthProvider();
 
 let lastRedirectOutcome: GoogleAuthFlowResult | null = null;
 
@@ -63,58 +63,39 @@ export function getLastGoogleRedirectOutcome(): GoogleAuthFlowResult | null {
   return lastRedirectOutcome;
 }
 
-export async function connectGoogleAccountWithFallback(): Promise<GoogleAuthFlowResult> {
-  const provider = buildGoogleProvider();
+export function connectGoogleAccountWithFallback(): Promise<GoogleAuthFlowResult> {
+  const provider = createGoogleAuthProvider();
 
-  // En celular o app instalada (PWA), usar signInWithRedirect directamente para evitar bloqueo de popups
-  if (isMobileOrStandalonePwa()) {
-    try {
-      await signInWithRedirect(auth, provider);
-      return {
-        status: 'redirecting',
-        message: 'Redirigiendo a Google para iniciar sesión...',
-      };
-    } catch (redirectErr) {
-      const redInfo = formatFirebaseAuthError(redirectErr);
+  // Invocar signInWithPopup de forma sincrónica en el mismo gesto de clic (también en móvil/PWA)
+  // y usar signInWithRedirect ÚNICAMENTE si el error exacto es auth/popup-blocked.
+  return signInWithPopup(auth, provider)
+    .then((cred): GoogleAuthFlowResult => ({ status: 'signed_in', user: cred.user }))
+    .catch(async (popupErr): Promise<GoogleAuthFlowResult> => {
+      const info = formatFirebaseAuthError(popupErr);
+      if (info.code === 'auth/popup-blocked') {
+        try {
+          await signInWithRedirect(auth, provider);
+          return {
+            status: 'redirecting',
+            message: 'Ventana emergente bloqueada. Redirigiendo a Google para iniciar sesión...',
+          };
+        } catch (redirectErr) {
+          const redInfo = formatFirebaseAuthError(redirectErr);
+          return {
+            status: 'error',
+            code: redInfo.code,
+            message: redInfo.message,
+            isUnauthorizedDomain: redInfo.isUnauthorizedDomain,
+          };
+        }
+      }
       return {
         status: 'error',
-        code: redInfo.code,
-        message: redInfo.message,
-        isUnauthorizedDomain: redInfo.isUnauthorizedDomain,
+        code: info.code,
+        message: info.message,
+        isUnauthorizedDomain: info.isUnauthorizedDomain,
       };
-    }
-  }
-
-  // En computadora: signInWithPopup con respaldo automático a signInWithRedirect si bloquean ventana emergente
-  try {
-    const cred = await signInWithPopup(auth, provider);
-    return { status: 'signed_in', user: cred.user };
-  } catch (popupErr) {
-    const info = formatFirebaseAuthError(popupErr);
-    if (info.shouldFallbackToRedirect) {
-      try {
-        await signInWithRedirect(auth, provider);
-        return {
-          status: 'redirecting',
-          message: 'Redirigiendo a Google para iniciar sesión...',
-        };
-      } catch (redirectErr) {
-        const redInfo = formatFirebaseAuthError(redirectErr);
-        return {
-          status: 'error',
-          code: redInfo.code,
-          message: redInfo.message,
-          isUnauthorizedDomain: redInfo.isUnauthorizedDomain,
-        };
-      }
-    }
-    return {
-      status: 'error',
-      code: info.code,
-      message: info.message,
-      isUnauthorizedDomain: info.isUnauthorizedDomain,
-    };
-  }
+    });
 }
 
 export async function consumeGoogleRedirectResult(): Promise<GoogleAuthFlowResult | null> {

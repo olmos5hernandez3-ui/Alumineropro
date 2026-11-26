@@ -4960,14 +4960,14 @@ export const CloudBackupModal: React.FC<CloudBackupModalProps> = ({
                     : 'bg-amber-100 text-amber-800 border border-amber-300'
                 }`}
               >
-                {googleUserEmail ? 'Conectada' : 'Sin conectar'}
+                {googleUserEmail ? '● Nube Conectada' : 'Sin conectar'}
               </span>
             </div>
 
             {googleUserEmail ? (
               <div className="flex items-center justify-between gap-2 bg-white border border-emerald-200 rounded-xl px-3 py-2">
                 <div className="min-w-0">
-                  <div className="text-[11px] font-bold text-emerald-700">Sesión de Google activa</div>
+                  <div className="text-[11px] font-bold text-emerald-700">● Nube Conectada</div>
                   <div className="text-[12.5px] font-extrabold text-slate-900 truncate">{googleUserEmail}</div>
                 </div>
                 {onDisconnectGoogle && (
@@ -4987,7 +4987,7 @@ export const CloudBackupModal: React.FC<CloudBackupModalProps> = ({
                 type="button"
                 id="btn-cloud-connect-google"
                 disabled={googleAuthLoading}
-                onClick={() => void onConnectGoogle()}
+                onClick={() => onConnectGoogle()}
                 className="w-full min-h-[44px] px-3.5 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-900 font-extrabold text-[13px] cursor-pointer flex items-center justify-center gap-2 shadow-xs transition-colors disabled:opacity-60"
               >
                 <svg width="17" height="17" viewBox="0 0 24 24" className="shrink-0" aria-hidden="true">

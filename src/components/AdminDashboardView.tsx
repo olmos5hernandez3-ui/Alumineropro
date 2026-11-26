@@ -41,14 +41,14 @@ import {
 } from 'lucide-react';
 import {
   getRedirectResult,
+  GoogleAuthProvider,
   signInWithPopup,
   signInWithRedirect,
   type User,
 } from 'firebase/auth';
-import { collection, getDocsFromServer } from 'firebase/firestore';
+import { collection, getDocs, getDocsFromServer } from 'firebase/firestore';
 import {
   auth,
-  connectGoogleAccountWithFallback,
   db,
   getLastGoogleRedirectOutcome,
   isFirebaseAdminUser,
@@ -539,51 +539,120 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const isFirebaseAdminSignedIn = isFirebaseAdminUser(firebaseUser);
   const isAdminCloudOnline = cloudConnected || isFirebaseAdminSignedIn;
 
-  const handleToggleFirebaseGoogleAuth = async () => {
+  const handleToggleFirebaseGoogleAuth = () => {
     if (firebaseAuthBusy) return;
-    setFirebaseAuthBusy(true);
     setFirebaseAuthDiagnostic(null);
-    try {
-      if (firebaseUser) {
-        await signOutFirebase();
-        lastSyncedAdminUidRef.current = null;
-        onShowToast('Sesión de nube desconectada');
-        return;
-      }
 
-      const result = await connectGoogleAccountWithFallback();
-      if (result.status === 'redirecting') {
-        onShowToast('Redirigiendo a Google para iniciar sesión...');
-        return;
-      }
-      if (result.status === 'signed_in') {
-        setFirebaseUser(result.user);
-        setFirebaseAuthDiagnostic(null);
-        if (isFirebaseAdminUser(result.user)) {
-          lastSyncedAdminUidRef.current = result.user.uid;
-          onShowToast('Conectado en Nube como Administrador', true);
-          void fetchDevicesFromServerDirect({ silent: false });
-        } else {
-          onShowToast(
-            'Sesión iniciada, pero solo el correo de Administrador tiene acceso completo a Firestore.'
-          );
-        }
-        return;
-      }
-      if (result.code === 'auth/popup-closed-by-user' || result.code === 'auth/cancelled-popup-request') {
-        onShowToast('Ventana de Google cerrada antes de completar el inicio de sesión.');
-        return;
-      }
-
-      const diag = formatAdminAuthDiagnostic({
-        code: result.code,
-        message: result.message,
-      });
-      setFirebaseAuthDiagnostic(diag);
-      onShowToast(`${diag.fullMessage} (${result.code})`);
-    } finally {
-      setFirebaseAuthBusy(false);
+    if (firebaseUser) {
+      setFirebaseAuthBusy(true);
+      void signOutFirebase()
+        .then(() => {
+          lastSyncedAdminUidRef.current = null;
+          setFirebaseUser(null);
+          onShowToast('Sesión de nube desconectada');
+        })
+        .catch((err) => {
+          const diag = formatAdminAuthDiagnostic(err);
+          setFirebaseAuthDiagnostic(diag);
+          onShowToast(diag.fullMessage);
+        })
+        .finally(() => {
+          setFirebaseAuthBusy(false);
+        });
+      return;
     }
+
+    // Invocar signInWithPopup de forma 100% sincrónica directamente dentro del onClick
+    // (sin ningún async/await previo) para evitar bloqueos de popup en navegadores móviles.
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+    const popupPromise = signInWithPopup(auth, provider);
+
+    setFirebaseAuthBusy(true);
+
+    void popupPromise
+      .then(async (cred) => {
+        const signedUser = cred.user;
+        // Actualizar de inmediato el estado del usuario en pantalla ("● Nube Conectada" + correo)
+        setFirebaseUser(signedUser);
+        setFirebaseAuthDiagnostic(null);
+        lastSyncedAdminUidRef.current = signedUser.uid;
+        onShowToast(
+          `● Nube Conectada${signedUser.email ? ` · ${signedUser.email}` : ''}`,
+          true
+        );
+
+        // Ejecutar getDocs(collection(db, 'devices')) de inmediato para cargar usuarios registrados
+        try {
+          const devicesSnapshot = await getDocs(collection(db, 'devices'));
+          const loadedDevices: CloudDeviceRecord[] = devicesSnapshot.docs.map((docSnap) => {
+            const data = docSnap.data() as CloudDeviceRecord;
+            const devId = normalizeDeviceIdInput(data?.deviceId || docSnap.id) || docSnap.id;
+            return {
+              ...data,
+              deviceId: devId,
+            };
+          });
+          const syncedNow = Date.now();
+          setServerDevicesCount(devicesSnapshot.size);
+          setServerDevicesList(loadedDevices);
+          setServerLastSyncAt(syncedNow);
+          setServerSyncFeedback({
+            type: 'success',
+            message: `Nube actualizada: ${devicesSnapshot.size} ${
+              devicesSnapshot.size === 1 ? 'usuario registrado' : 'usuarios registrados'
+            }`,
+            syncedAt: syncedNow,
+          });
+        } catch (devicesErr) {
+          if (!isFirebaseAdminUser(signedUser)) {
+            onShowToast(
+              'Sesión iniciada, pero solo el correo de Administrador tiene acceso completo a Firestore.'
+            );
+          } else {
+            const errMsg =
+              devicesErr instanceof Error ? devicesErr.message : String(devicesErr || '');
+            setServerSyncFeedback({
+              type: 'error',
+              message: `Error al cargar dispositivos: ${errMsg}`,
+              syncedAt: Date.now(),
+            });
+          }
+        }
+
+        // Complementar con lectura directa desde servidor (usuarios + sesiones + claves)
+        if (isFirebaseAdminUser(signedUser)) {
+          void fetchDevicesFromServerDirect({ silent: true });
+        }
+      })
+      .catch(async (popupErr) => {
+        const code = extractFirebaseAuthCode(popupErr);
+        // Usar signInWithRedirect ÚNICAMENTE como respaldo si el error es exactamente auth/popup-blocked
+        if (code === 'auth/popup-blocked') {
+          try {
+            onShowToast('Ventana emergente bloqueada. Redirigiendo a Google...');
+            await signInWithRedirect(auth, provider);
+            return;
+          } catch (redirectErr) {
+            const redDiag = formatAdminAuthDiagnostic(redirectErr);
+            setFirebaseAuthDiagnostic(redDiag);
+            onShowToast(redDiag.fullMessage);
+            return;
+          }
+        }
+
+        if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+          onShowToast('Ventana de Google cerrada antes de completar el inicio de sesión.');
+          return;
+        }
+
+        const diag = formatAdminAuthDiagnostic(popupErr);
+        setFirebaseAuthDiagnostic(diag);
+        onShowToast(`${diag.fullMessage} (${diag.code})`);
+      })
+      .finally(() => {
+        setFirebaseAuthBusy(false);
+      });
   };
 
   // Confirmations
@@ -1913,20 +1982,23 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               <div className="mt-2 flex flex-wrap items-center gap-2.5 text-[11.5px] text-slate-400">
                 <span
                   id="admin-cloud-status-badge"
-                  className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 font-semibold"
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg border font-semibold ${
+                    firebaseUser || isAdminCloudOnline || serverDevicesCount !== null
+                      ? 'bg-emerald-950/60 border-emerald-500/45 text-emerald-200'
+                      : 'bg-slate-800 border-slate-700 text-slate-200'
+                  }`}
                 >
-                  <span
-                    className={`w-2 h-2 rounded-full ${isAdminCloudOnline || serverDevicesCount !== null ? 'bg-emerald-400' : 'bg-amber-400'}`}
-                    aria-hidden="true"
-                  />
                   {serverSyncBusy || cloudRefreshing
                     ? 'Sincronizando...'
-                    : isAdminCloudOnline || serverDevicesCount !== null
-                      ? 'Conectado en Nube'
+                    : firebaseUser || isAdminCloudOnline || serverDevicesCount !== null
+                      ? '● Nube Conectada'
                       : 'Modo Local'}
                 </span>
                 {firebaseUser?.email && (
-                  <span className="text-slate-300 font-medium truncate max-w-[220px]">
+                  <span
+                    id="admin-cloud-user-email"
+                    className="text-slate-200 font-semibold truncate max-w-[240px]"
+                  >
                     {firebaseUser.email}
                   </span>
                 )}
@@ -1943,7 +2015,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
             <button
               type="button"
               id="btn-admin-google-auth"
-              onClick={() => void handleToggleFirebaseGoogleAuth()}
+              onClick={handleToggleFirebaseGoogleAuth}
               disabled={firebaseAuthBusy}
               className={`min-h-[42px] px-3.5 py-2 rounded-xl border font-bold text-[12px] inline-flex items-center gap-2 cursor-pointer transition-colors disabled:opacity-60 ${
                 firebaseUser

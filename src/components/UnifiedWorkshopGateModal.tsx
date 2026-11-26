@@ -250,7 +250,7 @@ export const UnifiedWorkshopGateModal: React.FC<UnifiedWorkshopGateModalProps> =
               type="button"
               id="btn-unified-gate-google"
               disabled={!canUseGoogle}
-              onClick={() => void onContinueWithGoogle()}
+              onClick={() => onContinueWithGoogle()}
               className="w-full min-h-[44px] px-4 rounded-xl bg-white hover:bg-slate-100 disabled:bg-slate-700 disabled:text-slate-400 disabled:border-slate-600 disabled:cursor-not-allowed text-slate-900 font-extrabold text-[14px] flex items-center justify-center gap-2.5 cursor-pointer shadow-md border border-slate-200 transition-colors"
             >
               <svg width="18" height="18" viewBox="0 0 24 24" className="shrink-0" aria-hidden="true">

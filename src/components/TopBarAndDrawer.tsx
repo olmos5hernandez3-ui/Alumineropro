@@ -1331,7 +1331,7 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
                 if (googleUserEmail && onDisconnectGoogle) {
                   void onDisconnectGoogle();
                 } else {
-                  void onConnectGoogle();
+                  onConnectGoogle();
                 }
               }}
               className={`w-full min-h-[44px] px-3.5 py-2 rounded-xl border text-[12.5px] font-extrabold text-left cursor-pointer flex items-center justify-between gap-2 transition-colors disabled:opacity-65 ${
@@ -1361,7 +1361,7 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
                   </span>
                   {googleUserEmail && !googleAuthLoading && (
                     <span className="text-[10.5px] font-extrabold text-emerald-500 dark:text-emerald-300 leading-tight">
-                      ● Conectado en Nube
+                      ● Nube Conectada
                     </span>
                   )}
                 </span>

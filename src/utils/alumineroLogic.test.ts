@@ -3868,6 +3868,110 @@ test('105. Bloque 1 y 2: modal legal bloqueante, colección usuarios en Firestor
   assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
 });
 
+test('106. Acceso libre al inicio y disparador único del modal legal/registro al entrar a Cotización o Cortes', async () => {
+  const { readFileSync } = await import('node:fs');
+  const appSrc = readFileSync('src/App.tsx', 'utf8');
+  const firebaseSrc = readFileSync('src/firebase.ts', 'utf8');
+
+  // Sin bloqueo inicial al abrir la app
+  assert.doesNotMatch(
+    appSrc,
+    /isStartupGateBlocking/,
+    'No debe existir bloqueo inicial al abrir la aplicación'
+  );
+  assert.match(appSrc, /<UnifiedWorkshopGateModal[\s\S]*open=\{unifiedGateTarget !== null\}/);
+  assert.match(appSrc, /<UnifiedWorkshopGateModal[\s\S]*blocking=\{false\}/);
+
+  // Disparador en Cotización (Ventanas/Puertas, Hoja, Levantamiento) y Cortes (Modulación, Vidrio 2D)
+  assert.match(appSrc, /requestActiveToolAccess\(\s*['"]hoja['"]/);
+  assert.match(appSrc, /requestActiveToolAccess\(\s*['"]levantamiento['"]/);
+  assert.match(appSrc, /requestActiveToolAccess\(\s*['"]modulacion['"]/);
+  assert.match(appSrc, /requestActiveToolAccess\(\s*['"]vidrio['"]/);
+  assert.match(appSrc, /'trabajo-ventanas'/);
+  assert.match(appSrc, /'trabajo-puertas'/);
+
+  // Google signInWithPopup + manejo de errores de ventana emergente intacto
+  const authHelpersSrc = readFileSync('src/utils/firebaseAuthHelpers.ts', 'utf8');
+  assert.match(firebaseSrc, /signInWithPopup\(auth,\s*provider\)/);
+  assert.match(firebaseSrc, /formatFirebaseAuthError/);
+  assert.match(authHelpersSrc, /auth\/popup-blocked/);
+  assert.match(authHelpersSrc, /auth\/popup-closed-by-user/);
+});
+
+test('107. Google Auth sincrónico con signInWithPopup en onClick, respaldo exclusivo auth/popup-blocked, ● Nube Conectada y getDocs(devices)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const {
+    formatFirebaseAuthError,
+    shouldAdminFallbackToRedirect,
+  } = await import('./firebaseAuthHelpers.ts');
+
+  // Respaldo a signInWithRedirect ÚNICAMENTE para auth/popup-blocked (incluso en móvil/PWA)
+  assert.equal(
+    shouldAdminFallbackToRedirect({ code: 'auth/popup-blocked' }, { isMobileOrPwa: true }),
+    true
+  );
+  assert.equal(
+    shouldAdminFallbackToRedirect({ code: 'auth/popup-blocked' }, { isMobileOrPwa: false }),
+    true
+  );
+  for (const nonRedirectCode of [
+    'auth/popup-closed-by-user',
+    'auth/cancelled-popup-request',
+    'auth/unauthorized-domain',
+    'auth/network-request-failed',
+    'auth/operation-not-supported-in-this-environment',
+    'auth/unknown',
+  ]) {
+    assert.equal(
+      shouldAdminFallbackToRedirect({ code: nonRedirectCode }, { isMobileOrPwa: true }),
+      false,
+      `${nonRedirectCode} NO debe redirigir con signInWithRedirect`
+    );
+    assert.equal(
+      formatFirebaseAuthError({ code: nonRedirectCode }).shouldFallbackToRedirect,
+      false,
+      `formatFirebaseAuthError(${nonRedirectCode}).shouldFallbackToRedirect debe ser false`
+    );
+  }
+  assert.equal(
+    formatFirebaseAuthError({ code: 'auth/popup-blocked' }).shouldFallbackToRedirect,
+    true
+  );
+
+  // Verificar src/firebase.ts: sin rama móvil previa a signInWithPopup y respaldo exclusivo en auth/popup-blocked
+  const firebaseSrc = readFileSync('src/firebase.ts', 'utf8');
+  assert.doesNotMatch(firebaseSrc, /if\s*\(\s*isMobileOrStandalonePwa\(\)\s*\)/);
+  assert.match(firebaseSrc, /export function connectGoogleAccountWithFallback\(\)/);
+  assert.match(firebaseSrc, /if\s*\(\s*info\.code === 'auth\/popup-blocked'\s*\)/);
+
+  // Verificar AdminDashboardView.tsx: handler sincrónico, signInWithPopup directo, ● Nube Conectada, getDocs(collection(db, 'devices'))
+  const adminSrc = readFileSync('src/components/AdminDashboardView.tsx', 'utf8');
+  assert.match(adminSrc, /const handleToggleFirebaseGoogleAuth = \(\) => \{/);
+  assert.match(adminSrc, /onClick=\{handleToggleFirebaseGoogleAuth\}/);
+  assert.match(adminSrc, /const popupPromise = signInWithPopup\(auth,\s*provider\)/);
+  assert.match(adminSrc, /if\s*\(\s*code === 'auth\/popup-blocked'\s*\)/);
+  assert.match(adminSrc, /● Nube Conectada/);
+  assert.match(adminSrc, /getDocs\(collection\(db,\s*'devices'\)\)/);
+
+  // Verificar App.tsx: handleConnectGoogle sincrónico, signInWithPopup directo, ● Nube Conectada, getDocs(collection(db, 'devices'))
+  const appSrc = readFileSync('src/App.tsx', 'utf8');
+  assert.match(appSrc, /const handleConnectGoogle = \(\) => \{/);
+  assert.match(appSrc, /const popupPromise = signInWithPopup\(auth,\s*provider\)/);
+  assert.match(appSrc, /if\s*\(\s*code === 'auth\/popup-blocked'\s*\)/);
+  assert.match(appSrc, /● Nube Conectada/);
+  assert.match(appSrc, /getDocs\(collection\(db,\s*'devices'\)\)/);
+
+  // Verificar que los botones en TopBarAndDrawer y Modals muestran ● Nube Conectada
+  const drawerSrc = readFileSync('src/components/TopBarAndDrawer.tsx', 'utf8');
+  assert.match(drawerSrc, /● Nube Conectada/);
+  const modalsSrc = readFileSync('src/components/Modals.tsx', 'utf8');
+  assert.match(modalsSrc, /● Nube Conectada/);
+
+  // Verificar seguridad de Admin intacta
+  const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
+  assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
+});
+
 
 
 

@@ -5,12 +5,7 @@ export interface FirebaseAuthErrorInfo {
   shouldFallbackToRedirect: boolean;
 }
 
-const POPUP_FALLBACK_CODES = new Set([
-  'auth/popup-blocked',
-  'auth/cancelled-popup-request',
-  'auth/operation-not-supported-in-this-environment',
-  'auth/web-storage-unsupported',
-]);
+const POPUP_FALLBACK_CODES = new Set(['auth/popup-blocked']);
 
 const NON_POPUP_FIREBASE_BLOCK_CODES = new Set([
   'auth/unauthorized-domain',
@@ -59,27 +54,14 @@ export function extractFirebaseAuthCode(error: unknown): string {
 }
 
 /**
- * Determina si el botón "Conectar Google" del Panel de Administrador debe
- * cambiar automáticamente de signInWithPopup a signInWithRedirect.
+ * Determina si el botón "Conectar Google" debe cambiar a signInWithRedirect.
+ * Se usa signInWithRedirect ÚNICAMENTE cuando el error exacto es auth/popup-blocked.
  */
 export function shouldAdminFallbackToRedirect(
   error: unknown,
-  options?: { isMobileOrPwa?: boolean }
+  _options?: { isMobileOrPwa?: boolean }
 ): boolean {
-  const code = extractFirebaseAuthCode(error);
-  if (POPUP_FALLBACK_CODES.has(code)) {
-    return true;
-  }
-  const mobileOrPwa =
-    typeof options?.isMobileOrPwa === 'boolean'
-      ? options.isMobileOrPwa
-      : isMobileOrStandalonePwa();
-  if (mobileOrPwa) {
-    if (!code || !NON_POPUP_FIREBASE_BLOCK_CODES.has(code)) {
-      return true;
-    }
-  }
-  return false;
+  return extractFirebaseAuthCode(error) === 'auth/popup-blocked';
 }
 
 export interface AdminAuthDiagnostic {
