@@ -1374,7 +1374,7 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
                           playAssistantSound(char.id, 'tap', true);
                         }
                       }}
-                      className={`p-2 rounded-xl border text-left cursor-pointer flex items-center gap-2 transition-colors ${
+                      className={`p-2.5 rounded-xl border text-center cursor-pointer flex flex-col items-center justify-center gap-1.5 transition-colors relative ${
                         isActiveChar
                           ? isDark
                             ? 'border-sky-400 bg-sky-500/20 text-white'
@@ -1384,25 +1384,26 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
                             : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-800'
                       }`}
                     >
-                      <span className="w-10 h-10 shrink-0 flex items-center justify-center bg-transparent" aria-hidden="true">
+                      {isActiveChar && (
+                        <Check
+                          className="w-3.5 h-3.5 text-emerald-400 absolute top-2 right-2"
+                          aria-hidden="true"
+                        />
+                      )}
+                      <span className="w-16 h-16 p-0 shrink-0 flex items-center justify-center bg-transparent" aria-hidden="true">
                         <AssistantCharacterSvg
                           avatarId={char.id}
-                          size={40}
+                          size={64}
                           skin={skin}
                           skinVariant={skinVariant}
                           santaHat={skin === 'navidena'}
                         />
                       </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-1">
-                          <span className="text-[11.5px] font-extrabold leading-tight truncate">
-                            {char.label}
-                          </span>
-                          {isActiveChar && (
-                            <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" aria-hidden="true" />
-                          )}
-                        </div>
-                        <span className={`block text-[9.5px] leading-tight truncate ${subTextClass}`}>
+                      <div className="min-w-0 w-full">
+                        <span className="block text-[11.5px] font-extrabold leading-tight truncate">
+                          {char.label}
+                        </span>
+                        <span className={`block text-[9.5px] leading-tight truncate mt-0.5 ${subTextClass}`}>
                           {char.tagline}
                         </span>
                       </div>

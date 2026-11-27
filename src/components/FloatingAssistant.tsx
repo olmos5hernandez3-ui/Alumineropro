@@ -362,8 +362,8 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
       });
       setDragPos((prev) => {
         if (!prev) return null;
-        const maxX = Math.max(8, window.innerWidth - 76);
-        const maxY = Math.max(66, window.innerHeight - 86);
+        const maxX = Math.max(8, window.innerWidth - 104);
+        const maxY = Math.max(66, window.innerHeight - 108);
         return {
           x: Math.min(Math.max(8, prev.x), maxX),
           y: Math.min(Math.max(66, prev.y), maxY),
@@ -492,8 +492,8 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
       }
     }
     if (st.moved) {
-      const maxX = Math.max(8, window.innerWidth - 76);
-      const maxY = Math.max(66, window.innerHeight - 86);
+      const maxX = Math.max(8, window.innerWidth - 104);
+      const maxY = Math.max(66, window.innerHeight - 108);
       const nextX = Math.min(Math.max(8, st.originX + dx), maxX);
       const nextY = Math.min(Math.max(66, st.originY + dy), maxY);
       setDragPos({ x: nextX, y: nextY });
@@ -1139,13 +1139,13 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
       {/* Globo emergente inteligente (adaptado a las coordenadas x/y sin cortarse en esquinas) */}
       {!open && !travelingToCenter && (gestureBanner || (tipsEnabled && activeTip)) && (() => {
         const defaultOffset = viewportSize.width >= 640 ? 20 : 10;
-        const effectiveAvatarX = dragPos ? dragPos.x : Math.max(8, viewportSize.width - defaultOffset - 72);
-        const effectiveAvatarY = dragPos ? dragPos.y : Math.max(66, viewportSize.height - defaultOffset - 74);
+        const effectiveAvatarX = dragPos ? dragPos.x : Math.max(8, viewportSize.width - defaultOffset - 96);
+        const effectiveAvatarY = dragPos ? dragPos.y : Math.max(66, viewportSize.height - defaultOffset - 96);
         const bubbleLayout = computeSmartBubblePosition({
           avatarX: effectiveAvatarX,
           avatarY: effectiveAvatarY,
-          avatarWidth: 72,
-          avatarHeight: 74,
+          avatarWidth: 96,
+          avatarHeight: 96,
           viewportWidth: viewportSize.width,
           viewportHeight: viewportSize.height,
           bubbleMaxWidth: 240,
@@ -1295,7 +1295,7 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
               className={
                 open
                   ? 'relative w-[44px] h-[44px] rounded-full flex items-center justify-center cursor-pointer transition-transform active:scale-95 text-white bg-slate-900/90'
-                  : 'relative bg-transparent border-0 p-0 m-0 w-[72px] h-[74px] flex items-center justify-center cursor-grab active:cursor-grabbing select-none focus:outline-none'
+                  : 'relative bg-transparent border-0 p-0 m-0 w-24 h-24 flex items-center justify-center cursor-grab active:cursor-grabbing select-none focus:outline-none'
               }
             >
               {open ? (
@@ -1314,7 +1314,7 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
                 </svg>
               ) : (
                 <span
-                  className={`inline-flex items-center justify-center pointer-events-none ${motionClass}`}
+                  className={`w-24 h-24 p-0 inline-flex items-center justify-center pointer-events-none ${motionClass}`}
                   style={{
                     transform: isDraggingAvatar
                       ? `rotate(${dragTiltDeg}deg) scale(1.08)`
@@ -1324,7 +1324,7 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
                 >
                   <AssistantCharacterSvg
                     avatarId={avatarId}
-                    size={68}
+                    size={96}
                     skin={skin}
                     skinVariant={skinVariant}
                     santaHat={skin === 'navidena'}
