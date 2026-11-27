@@ -1,6 +1,6 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { BookOpen, PencilLine, Calendar, Ruler, Layers } from 'lucide-react';
+import { BookOpen, PencilLine, Calendar, Ruler, Layers, Search, X } from 'lucide-react';
 import {
   AperturaVentanaId,
   CATALOGO_MARCAS_MEXICO,
@@ -35,6 +35,20 @@ import {
   OfficialItemTipo,
   OfficialSvgArchetype,
 } from '../utils/officialCatalog2026';
+import {
+  CATALOG_MATERIAL_SERIES_OPTIONS,
+  CatalogMaterialSeriesId,
+  filterOfficialCatalogAdvanced,
+} from '../utils/catalogFilterHelpers';
+
+function useDebouncedValue<T>(value: T, delayMs: number = 220): T {
+  const [debounced, setDebounced] = useState<T>(value);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebounced(value), delayMs);
+    return () => window.clearTimeout(timer);
+  }, [value, delayMs]);
+  return debounced;
+}
 
 interface NotasProps {
   notas: NotaObra[];
@@ -488,79 +502,106 @@ export const CatalogoView: React.FC<CatalogoProps> = ({
   const [officialBrand, setOfficialBrand] = useState<OfficialBrandId | 'all'>('panorama-cuprum');
   const [officialLinea, setOfficialLinea] = useState<string>('all');
   const [officialTipo, setOfficialTipo] = useState<OfficialItemTipo | 'all'>('all');
+  const [officialMaterialSeries, setOfficialMaterialSeries] =
+    useState<CatalogMaterialSeriesId>('all');
   const [officialQuery, setOfficialQuery] = useState('');
+  const debouncedOfficialQuery = useDebouncedValue(officialQuery, 220);
   const [zoomOfficialItem, setZoomOfficialItem] = useState<OfficialCatalogItem | null>(null);
   const [showWorkshopCatalog, setShowWorkshopCatalog] = useState(false);
 
   const [busqueda, setBusqueda] = useState('');
+  const debouncedBusqueda = useDebouncedValue(busqueda, 220);
   const [marcaFilter, setMarcaFilter] = useState<string>('Todos');
   const [familiaFilter, setFamiliaFilter] = useState<PerfilFamilia | 'all'>('all');
   const [mxCatFilter, setMxCatFilter] = useState<MexicoAluminumCategoryId | 'all'>('all');
   const [herrajeCat, setHerrajeCat] = useState<HerrajeCategoria | 'all'>('all');
   const [herrajeQuery, setHerrajeQuery] = useState('');
+  const debouncedHerrajeQuery = useDebouncedValue(herrajeQuery, 220);
   const uploadTargetRef = useRef<PerfilCatalogoId | null>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
 
   const vigenciaTexto = catalogVigenciaLabel?.trim() || DEFAULT_CATALOG_VIGENCIA_LABEL;
 
-  const officialLineasForBrand = Array.from(
-    new Set(
-      OFFICIAL_CATALOG_2026.filter((it) => officialBrand === 'all' || it.brandId === officialBrand).map(
-        (it) => it.linea
-      )
-    )
+  const officialLineasForBrand = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          OFFICIAL_CATALOG_2026.filter(
+            (it) => officialBrand === 'all' || it.brandId === officialBrand
+          ).map((it) => it.linea)
+        )
+      ),
+    [officialBrand]
   );
 
-  const officialFiltered = filterOfficialCatalog(
-    officialBrand,
-    officialQuery,
-    officialTipo,
-    officialLinea
+  const officialFiltered = useMemo(
+    () =>
+      filterOfficialCatalogAdvanced({
+        brandId: officialBrand,
+        query: debouncedOfficialQuery,
+        tipo: officialTipo,
+        linea: officialLinea,
+        materialSeries: officialMaterialSeries,
+      }),
+    [officialBrand, debouncedOfficialQuery, officialTipo, officialLinea, officialMaterialSeries]
   );
 
-  const officialHerrajesAndCanceles = filterOfficialCatalog(
-    'all',
-    herrajeQuery,
-    'all',
-    'all'
-  ).filter((it) => it.tipo === 'herraje' || it.tipo === 'cancel');
-
-  const filtrados = CATALOGO_PERFILES.filter((p) => {
-    const matchFam = familiaFilter === 'all' || p.familia === familiaFilter;
-    const itemMarca = (p.marcaCatalogo || 'Alumer').toLowerCase();
-    const selMarca = marcaFilter.toLowerCase();
-    const matchMarca =
-      marcaFilter === 'Todos' ||
-      itemMarca.includes(selMarca) ||
-      p.codigoRef.toLowerCase().includes(selMarca) ||
-      (p.sistemaCatalogo || '').toLowerCase().includes(selMarca);
-    const q = busqueda.trim().toLowerCase();
-    const matchText =
-      !q ||
-      p.nombre.toLowerCase().includes(q) ||
-      p.codigoRef.toLowerCase().includes(q) ||
-      p.uso.toLowerCase().includes(q) ||
-      (p.marcaCatalogo || '').toLowerCase().includes(q) ||
-      (p.sistemaCatalogo || '').toLowerCase().includes(q);
-    return matchFam && matchMarca && matchText;
-  });
-
-  const herrajesCategorias = Array.from(
-    new Set(HERRAJES_INVENTARIO_CATALOGO.map((h) => h.categoria))
+  const officialHerrajesAndCanceles = useMemo(
+    () =>
+      filterOfficialCatalog('all', debouncedHerrajeQuery, 'all', 'all').filter(
+        (it) => it.tipo === 'herraje' || it.tipo === 'cancel'
+      ),
+    [debouncedHerrajeQuery]
   );
 
-  const herrajesFiltrados = HERRAJES_INVENTARIO_CATALOGO.filter((h) => {
-    const matchCat = herrajeCat === 'all' || h.categoria === herrajeCat;
-    const q = herrajeQuery.trim().toLowerCase();
-    const matchText =
-      !q ||
-      h.nombre.toLowerCase().includes(q) ||
-      (h.modelo || '').toLowerCase().includes(q) ||
-      (h.tamano || '').toLowerCase().includes(q) ||
-      (h.color || '').toLowerCase().includes(q);
-    return matchCat && matchText;
-  });
+  const filtrados = useMemo(
+    () =>
+      CATALOGO_PERFILES.filter((p) => {
+        const matchFam = familiaFilter === 'all' || p.familia === familiaFilter;
+        const itemMarca = (p.marcaCatalogo || 'Alumer').toLowerCase();
+        const selMarca = marcaFilter.toLowerCase();
+        const matchMarca =
+          marcaFilter === 'Todos' ||
+          itemMarca.includes(selMarca) ||
+          p.codigoRef.toLowerCase().includes(selMarca) ||
+          (p.sistemaCatalogo || '').toLowerCase().includes(selMarca);
+        const q = debouncedBusqueda.trim().toLowerCase();
+        const matchText =
+          !q ||
+          p.nombre.toLowerCase().includes(q) ||
+          p.codigoRef.toLowerCase().includes(q) ||
+          p.uso.toLowerCase().includes(q) ||
+          (p.marcaCatalogo || '').toLowerCase().includes(q) ||
+          (p.sistemaCatalogo || '').toLowerCase().includes(q);
+        return matchFam && matchMarca && matchText;
+      }),
+    [familiaFilter, marcaFilter, debouncedBusqueda]
+  );
+
+  const herrajesCategorias = useMemo(
+    () => Array.from(new Set(HERRAJES_INVENTARIO_CATALOGO.map((h) => h.categoria))),
+    []
+  );
+
+  const herrajesFiltrados = useMemo(
+    () =>
+      HERRAJES_INVENTARIO_CATALOGO.filter((h) => {
+        const matchCat = herrajeCat === 'all' || h.categoria === herrajeCat;
+        const q = debouncedHerrajeQuery.trim().toLowerCase();
+        const matchText =
+          !q ||
+          h.nombre.toLowerCase().includes(q) ||
+          (h.modelo || '').toLowerCase().includes(q) ||
+          (h.tamano || '').toLowerCase().includes(q) ||
+          (h.color || '').toLowerCase().includes(q);
+        return matchCat && matchText;
+      }),
+    [herrajeCat, debouncedHerrajeQuery]
+  );
+
+  const isOfficialSearching = officialQuery !== debouncedOfficialQuery;
+  const isHerrajeSearching = herrajeQuery !== debouncedHerrajeQuery;
 
   const triggerUpload = (id: PerfilCatalogoId, source: 'camera' | 'gallery', e: React.MouseEvent) => {
     e.stopPropagation();
@@ -676,13 +717,34 @@ export const CatalogoView: React.FC<CatalogoProps> = ({
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-              <input
-                type="search"
-                value={herrajeQuery}
-                onChange={(e) => setHerrajeQuery(e.target.value)}
-                placeholder="Buscar clave oficial o nombre (ej. 2008, 138201700, 1068149079, A-2501, 1305 Bacalar, 7042)..."
-                className="w-full sm:w-auto sm:flex-1 min-w-0 min-h-[44px] rounded-xl border border-slate-300 px-3 text-[13.5px] font-semibold"
-              />
+              <div className="relative w-full sm:flex-1 min-w-0">
+                <Search
+                  className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                  aria-hidden="true"
+                />
+                <input
+                  id="input-herrajes-catalog-search"
+                  type="text"
+                  inputMode="search"
+                  value={herrajeQuery}
+                  onChange={(e) => setHerrajeQuery(e.target.value)}
+                  placeholder="Buscar clave oficial o nombre (ej. 2008, 138201700, 1068149079, A-2501, 1305 Bacalar, 7042)..."
+                  className="w-full min-h-[44px] rounded-xl border border-slate-300 pl-9 pr-9 text-[13.5px] font-semibold"
+                />
+                {herrajeQuery && (
+                  <button
+                    type="button"
+                    aria-label="Limpiar búsqueda de herrajes"
+                    onClick={() => setHerrajeQuery('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-lg text-slate-400 hover:text-slate-700 cursor-pointer"
+                  >
+                    <X className="w-4 h-4" aria-hidden="true" />
+                  </button>
+                )}
+              </div>
+              {isHerrajeSearching && (
+                <span className="text-[11px] font-bold text-blue-600 shrink-0">Filtrando...</span>
+              )}
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
@@ -851,26 +913,100 @@ export const CatalogoView: React.FC<CatalogoProps> = ({
               })}
             </div>
 
-            {/* Filtros de línea/serie, tipo y búsqueda por clave */}
+            {/* Filtro rápido por tipo de material o serie */}
+            <div className="mb-3">
+              <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filtrar por tipo de material o serie">
+                {CATALOG_MATERIAL_SERIES_OPTIONS.map((opt) => {
+                  const active = officialMaterialSeries === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      id={`cat-mat-chip-${opt.id}`}
+                      aria-pressed={active}
+                      onClick={() => {
+                        setOfficialMaterialSeries(opt.id);
+                        if (opt.id !== 'all') {
+                          setOfficialBrand('all');
+                          setOfficialLinea('all');
+                        }
+                      }}
+                      className={`min-h-[34px] px-2.5 py-1 rounded-lg text-[11.5px] font-extrabold border cursor-pointer transition-colors ${
+                        active
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-blue-50 hover:border-blue-300'
+                      }`}
+                    >
+                      {opt.shortLabel}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Filtros de búsqueda con debounce, tipo de material/serie, línea y tipo */}
             <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 mb-4">
-              <div className="sm:col-span-5">
+              <div className="sm:col-span-4 relative">
+                <Search
+                  className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                  aria-hidden="true"
+                />
                 <input
                   id="input-official-catalog-search"
-                  type="search"
+                  type="text"
+                  inputMode="search"
                   value={officialQuery}
                   onChange={(e) => setOfficialQuery(e.target.value)}
-                  placeholder="Buscar por clave oficial o perfil (ej. 69135, 1695, 12263, A-2501, 6001)..."
-                  className="w-full min-h-[42px] rounded-xl border border-slate-300 px-3 text-[13px] font-semibold bg-white"
+                  placeholder="Buscar por clave, perfil o serie (ej. 69135, 12263, A-2501)..."
+                  className="w-full min-h-[42px] rounded-xl border border-slate-300 pl-9 pr-9 text-[13px] font-semibold bg-white"
                 />
+                {officialQuery && (
+                  <button
+                    type="button"
+                    id="btn-clear-official-search"
+                    aria-label="Limpiar búsqueda del catálogo"
+                    onClick={() => setOfficialQuery('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-lg text-slate-400 hover:text-slate-700 cursor-pointer"
+                  >
+                    <X className="w-4 h-4" aria-hidden="true" />
+                  </button>
+                )}
+                {isOfficialSearching && (
+                  <span className="sr-only" role="status">
+                    Buscando perfiles...
+                  </span>
+                )}
               </div>
-              <div className="sm:col-span-4">
+              <div className="sm:col-span-3">
+                <select
+                  id="select-catalog-material-serie"
+                  aria-label="Filtrar por tipo de material o serie"
+                  value={officialMaterialSeries}
+                  onChange={(e) => {
+                    const next = e.target.value as CatalogMaterialSeriesId;
+                    setOfficialMaterialSeries(next);
+                    if (next !== 'all') {
+                      setOfficialBrand('all');
+                      setOfficialLinea('all');
+                    }
+                  }}
+                  className="w-full min-h-[42px] rounded-xl border border-slate-300 px-2.5 text-[12.5px] font-bold bg-white text-slate-800"
+                >
+                  {CATALOG_MATERIAL_SERIES_OPTIONS.map((opt) => (
+                    <option key={opt.id} value={opt.id}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="sm:col-span-3">
                 <select
                   aria-label="Filtrar por línea o serie oficial"
                   value={officialLinea}
                   onChange={(e) => setOfficialLinea(e.target.value)}
                   className="w-full min-h-[42px] rounded-xl border border-slate-300 px-2.5 text-[12.5px] font-bold bg-white text-slate-800"
                 >
-                  <option value="all">Todas las líneas / series ({officialLineasForBrand.length})</option>
+                  <option value="all">Todas las líneas ({officialLineasForBrand.length})</option>
                   {officialLineasForBrand.map((ln) => (
                     <option key={ln} value={ln}>
                       {ln}
@@ -878,17 +1014,17 @@ export const CatalogoView: React.FC<CatalogoProps> = ({
                   ))}
                 </select>
               </div>
-              <div className="sm:col-span-3">
+              <div className="sm:col-span-2">
                 <select
                   aria-label="Filtrar por tipo de artículo"
                   value={officialTipo}
                   onChange={(e) => setOfficialTipo(e.target.value as OfficialItemTipo | 'all')}
                   className="w-full min-h-[42px] rounded-xl border border-slate-300 px-2.5 text-[12.5px] font-bold bg-white text-slate-800"
                 >
-                  <option value="all">Perfiles, Herrajes y Canceles</option>
-                  <option value="perfil">Solo Perfiles (6.10 m)</option>
-                  <option value="herraje">Solo Herrajes</option>
-                  <option value="cancel">Solo Canceles de Baño</option>
+                  <option value="all">Todos</option>
+                  <option value="perfil">Perfiles (6.10 m)</option>
+                  <option value="herraje">Herrajes</option>
+                  <option value="cancel">Canceles</option>
                 </select>
               </div>
             </div>

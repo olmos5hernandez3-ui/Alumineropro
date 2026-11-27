@@ -828,12 +828,15 @@ export default function App() {
         default: effectiveSkin === 'industrial' ? 'Verde' : 'Azul',
         verde: 'Verde',
         naranja: 'Naranja',
+        negro_anodizado: 'Negro Anodizado',
         plateada: 'Plata',
         dorada: 'Oro',
         bronce: 'Bronce',
+        champagne: 'Champagne',
+        cristal_tintex: 'Cristal Tintex',
       };
       showToastRef.current(
-        `Color plano "${variantLabelMap[normalized]}" aplicado`,
+        `Acabado "${variantLabelMap[normalized]}" aplicado`,
         true
       );
     },

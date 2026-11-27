@@ -3549,25 +3549,28 @@ test('97. applyBulkExistenciasPriceAdjustment aplica incremento y descuento masi
   assert.equal(clampedDisc.inventarioPreciosUnitarios[vidrioItem.id], 100);
 });
 
-test('98. SKIN_VARIANTS_BY_SKIN define exactamente colores planos (plastas) para Ejecutiva (Azul, Verde, Naranja) e Industrial PRO (Verde, Oro, Plata, Bronce)', async () => {
+test('98. SKIN_VARIANTS_BY_SKIN define acabados descansados para Ejecutiva (4) e Industrial PRO (6)', async () => {
   const { SKIN_VARIANTS_BY_SKIN } = await import('./storageHelpers.ts');
 
   assert.deepEqual(
     SKIN_VARIANTS_BY_SKIN.ejecutiva.map((v) => ({ id: v.id, label: v.label })),
     [
       { id: 'default', label: 'Azul' },
-      { id: 'verde', label: 'Verde' },
       { id: 'naranja', label: 'Naranja' },
+      { id: 'verde', label: 'Verde' },
+      { id: 'negro_anodizado', label: 'Negro Anodizado' },
     ]
   );
 
   assert.deepEqual(
     SKIN_VARIANTS_BY_SKIN.industrial.map((v) => ({ id: v.id, label: v.label })),
     [
-      { id: 'default', label: 'Verde' },
       { id: 'dorada', label: 'Oro' },
       { id: 'plateada', label: 'Plata' },
       { id: 'bronce', label: 'Bronce' },
+      { id: 'default', label: 'Verde' },
+      { id: 'champagne', label: 'Champagne' },
+      { id: 'cristal_tintex', label: 'Cristal Tintex' },
     ]
   );
 
@@ -3579,14 +3582,14 @@ test('98. SKIN_VARIANTS_BY_SKIN define exactamente colores planos (plastas) para
   }
 });
 
-test('99. Versión centralizada APP_VERSION=1.0.4 sincronizada con public/sw.js sin skipWaiting automático en install', async () => {
+test('99. Versión centralizada APP_VERSION=1.0.6 sincronizada con public/sw.js sin skipWaiting automático en install', async () => {
   const { readFileSync } = await import('node:fs');
   const { APP_VERSION, APP_VERSION_LABEL } = await import('./alumineroLogic.ts');
-  assert.equal(APP_VERSION, '1.0.4');
-  assert.equal(APP_VERSION_LABEL, 'v1.0.4');
+  assert.equal(APP_VERSION, '1.0.6');
+  assert.equal(APP_VERSION_LABEL, 'v1.0.6');
 
   const swSource = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSource, /const APP_VERSION\s*=\s*['"]1\.0\.4['"]/);
+  assert.match(swSource, /const APP_VERSION\s*=\s*['"]1\.0\.6['"]/);
   assert.match(swSource, /const CACHE_NAME\s*=\s*`aluminero-pro-v\$\{APP_VERSION\}`/);
 
   // Verificar que el bloque install NO llama self.skipWaiting() automáticamente
@@ -3820,11 +3823,11 @@ test('103. Historial de sesiones y detección de dispositivo/navegador para cole
   assert.equal(list.length, 30);
 });
 
-test('104. public/sw.js usa CACHE_NAME unificado aluminero-pro-v1.0.4, limpia cachés en activate y solo ejecuta skipWaiting en SKIP_WAITING', async () => {
+test('104. public/sw.js usa CACHE_NAME unificado aluminero-pro-v1.0.6, limpia cachés en activate y solo ejecuta skipWaiting en SKIP_WAITING', async () => {
   const { readFileSync } = await import('node:fs');
   const swSrc = readFileSync('public/sw.js', 'utf8');
 
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.4';/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.6';/);
   assert.match(swSrc, /const CACHE_NAME = `aluminero-pro-v\$\{APP_VERSION\}`;/);
   assert.doesNotMatch(swSrc, /CACHE_VERSION/, 'No deben quedar referencias sueltas a CACHE_VERSION');
   assert.match(swSrc, /keys\.filter\(\(key\) => key !== CACHE_NAME\)\.map\(\(key\) => caches\.delete\(key\)\)/);
@@ -4095,9 +4098,9 @@ test('108. Top 3 materiales frecuentes en inicio, texto/subtítulo de Google y p
   assert.match(giftModalSrc, /Ver planes y desbloquear recompensas/);
   assert.match(giftModalSrc, /Usar mis 3 días gratis ahora/);
 
-  // 5. Verificar que Admin Login y SW v1.0.4 permanecen completamente intactos
+  // 5. Verificar que Admin Login y SW v1.0.6 permanecen completamente intactos
   const swSrc = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.4'/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.6'/);
   assert.match(swSrc, /aluminero-pro-v\$\{APP_VERSION\}/);
   const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
   assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
@@ -4216,9 +4219,9 @@ test('109. Prompt 1: Escáner IA de croquis (1024px JPEG 0.8 + mm JSON), Tramos 
   const modSrc = readFileSync('src/components/ModulacionCortesView.tsx', 'utf8');
   assert.match(modSrc, /Tramos610AcomodadosSection/);
 
-  // 6. Reglas de oro intactas: SW v1.0.4 y Admin Login sin tocar
+  // 6. Reglas de oro intactas: SW v1.0.6 y Admin Login sin tocar
   const swSrc = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.4'/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.6'/);
   const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
   assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
 });
@@ -4276,16 +4279,16 @@ test('110. Prompt 2: Carátulas plastas (9 combinaciones), 7 personajes transpar
   assert.equal(metrics.hourly24.length, 24);
   assert.ok(metrics.hourly24.every((b) => b.heightPct >= 6 && b.heightPct <= 100));
 
-  // 3. Carátulas plastas (CSS variables unificadas y Ejecutiva Verde #377340)
+  // 3. Carátulas descansadas (CSS variables unificadas + acabados de aluminio)
   const cssSrc = readFileSync('src/index.css', 'utf8');
-  assert.match(cssSrc, /--sk-bg:\s*#0b111f;/);
-  assert.match(cssSrc, /--sk-hero:\s*#aa2e26;/);
-  assert.match(cssSrc, /--sk-hero:\s*#2a4dcf;/);
-  assert.match(cssSrc, /--sk-hero:\s*#377340;/);
-  assert.match(cssSrc, /--sk-hero:\s*#d9622a;/);
-  assert.match(cssSrc, /--sk-hero:\s*#9a6523;/);
-  assert.match(cssSrc, /--sk-hero:\s*#4a5567;/);
-  assert.match(cssSrc, /--sk-hero:\s*#834e2f;/);
+  assert.match(cssSrc, /--sk-bg:\s*#0f1218;/);
+  assert.match(cssSrc, /--sk-hero:\s*#9e2a2b;/);
+  assert.match(cssSrc, /--sk-hero:\s*#3b6ef5;/);
+  assert.match(cssSrc, /--sk-hero:\s*#2e8b57;/);
+  assert.match(cssSrc, /--sk-accent:\s*#d96b27;/);
+  assert.match(cssSrc, /--sk-accent:\s*#c59638;/);
+  assert.match(cssSrc, /--sk-accent:\s*#94a3b8;/);
+  assert.match(cssSrc, /--sk-accent:\s*#a46b3e;/);
   assert.match(cssSrc, /#btn-floating-assistant/);
 
   // 4. 7 Personajes Asistentes + Switch + Keys
@@ -4298,7 +4301,7 @@ test('110. Prompt 2: Carátulas plastas (9 combinaciones), 7 personajes transpar
 
   const drawerSrc = readFileSync('src/components/TopBarAndDrawer.tsx', 'utf8');
   assert.match(drawerSrc, /Mostrar personaje asistente/);
-  assert.match(drawerSrc, /Plastas ejecutivas en Azul, Verde o Naranja/);
+  assert.match(drawerSrc, /4 acabados: Azul, Naranja, Verde y Negro Anodizado/);
   assert.match(drawerSrc, /rounded-full/);
 
   // 5. Modal de Firma con createPortal y orden de botones Aplicar -> Limpiar -> Cancelar
@@ -4438,9 +4441,9 @@ test('111. Botón de tema en TopBar, Acordeones desplegables y Dibujo digitaliza
   assert.match(trabajoSrc, /CollapsibleAccordion/);
   assert.match(trabajoSrc, /id="acc-trabajo-tramos-610"/);
 
-  // 6. Reglas de oro: SW sigue en 1.0.4 (sin subir versión hasta Prompt 2) y Admin Login intacto
+  // 6. Reglas de oro: SW sincronizado en 1.0.6 y Admin Login intacto
   const swSrc = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.4'/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.6'/);
   const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
   assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
 });
@@ -4516,10 +4519,227 @@ test('112. Avatares 3D con halo azul/cobre, animaciones reactivas, Web Audio API
   assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
 });
 
+test('113. Prompt 2: Ajuste de precios de un golpe (%) con filtro por acabado, confirmación y Deshacer + Generador de Publicidad + SW v1.0.5', async () => {
+  const { readFileSync } = await import('node:fs');
+  const {
+    ACABADOS_AJUSTE_OPTIONS,
+    applyOneShotPriceAdjustment,
+    buildBulkAdjustmentConfirmMessage,
+    generateWorkshopAds,
+    getAcabadoCurrentPrice,
+    PUBLICIDAD_SERVICIOS,
+    restoreUndoSnapshot,
+  } = await import('./tallerTools.ts');
+  const { APP_VERSION, APP_VERSION_LABEL } = await import('./alumineroLogic.ts');
 
+  // 1. Opciones de acabado/color y confirmación segura
+  assert.ok(ACABADOS_AJUSTE_OPTIONS.some((o) => o.id === 'todos'));
+  assert.ok(ACABADOS_AJUSTE_OPTIONS.some((o) => o.id === 'blanco'));
+  assert.ok(ACABADOS_AJUSTE_OPTIONS.some((o) => o.id === 'natural'));
+  assert.ok(ACABADOS_AJUSTE_OPTIONS.some((o) => o.id === 'negro'));
+  assert.ok(ACABADOS_AJUSTE_OPTIONS.some((o) => o.id === 'champagne'));
 
+  const confirmMsg = buildBulkAdjustmentConfirmMessage(10, 'todos', 'aluminio');
+  assert.match(confirmMsg, /¿Seguro que deseas ajustar todos los precios seleccionados/);
+  assert.match(confirmMsg, /\+10%/);
 
+  // 2. Ajuste masivo sobre TODOS los perfiles (+10%) y Deshacer exacto
+  const baseSnapshot = {
+    precioListaTramo: 680,
+    tarifasBase: { '2': 1800, '3': 2200 },
+    rellenoPreciosM2: { 'flot-claro__6': 650 },
+    herrajesPrecios: { 'ref-her-carr3': 85 },
+    preciosPorAcabado: { blanco: 760 },
+  };
+  const allRes = applyOneShotPriceAdjustment({
+    pct: 10,
+    acabadoFilter: 'todos',
+    category: 'aluminio',
+    tallerSnapshot: baseSnapshot,
+  });
+  assert.equal(allRes.nextPatch.precioListaTramo, 748);
+  assert.equal(allRes.nextPatch.tarifasBase?.['2'], 1980);
+  assert.equal(allRes.nextPatch.tarifasBase?.['3'], 2420);
+  assert.equal(allRes.nextPatch.preciosPorAcabado?.blanco, 836);
+  assert.equal(allRes.formattedPct, '+10%');
 
+  const restoredAll = restoreUndoSnapshot(allRes.undoSnapshot);
+  assert.equal(restoredAll.precioListaTramo, 680);
+  assert.equal(restoredAll.tarifasBase?.['2'], 1800);
+  assert.equal(restoredAll.preciosPorAcabado?.blanco, 760);
 
+  // 3. Ajuste filtrado a un Acabado específico (Blanco -5%) sin tocar el precio base ni otros colores
+  const finishRes = applyOneShotPriceAdjustment({
+    pct: -5,
+    acabadoFilter: 'blanco',
+    category: 'aluminio',
+    tallerSnapshot: baseSnapshot,
+  });
+  assert.equal(finishRes.nextPatch.precioListaTramo, undefined);
+  assert.equal(finishRes.nextPatch.preciosPorAcabado?.blanco, 722);
+  assert.equal(finishRes.updatedCount, 1);
+  assert.equal(
+    getAcabadoCurrentPrice('blanco', 680, finishRes.nextPatch.preciosPorAcabado),
+    722
+  );
+  const restoredFinish = restoreUndoSnapshot(finishRes.undoSnapshot);
+  assert.equal(restoredFinish.preciosPorAcabado?.blanco, 760);
 
+  // 4. Generador de Publicidad para tu Taller (5 servicios exactos + 2 textos + URLs WhatsApp)
+  assert.deepEqual(
+    PUBLICIDAD_SERVICIOS.map((s) => s.label),
+    [
+      'Ventanas de aluminio',
+      'Puertas y zaguanes',
+      'Canceles de baño (templado/acrílico)',
+      'Domos y techumbres',
+      'Mosquiteros / Reparaciones',
+    ]
+  );
+
+  for (const srv of PUBLICIDAD_SERVICIOS) {
+    const ads = generateWorkshopAds({
+      servicio: srv.id,
+      ciudadZona: 'Cuautla, Morelos y alrededores',
+      telefono: '735 555 0199',
+      tallerNombre: 'Aluminios del Sur',
+    });
+    assert.ok(ads.facebookMarketplaceText.includes('Cuautla, Morelos y alrededores'));
+    assert.ok(ads.facebookMarketplaceText.includes('735 555 0199'));
+    assert.ok(ads.facebookMarketplaceText.includes('medidas a la orden'));
+    assert.ok(ads.facebookMarketplaceText.toLowerCase().includes('cotización sin compromiso'));
+    assert.ok(ads.whatsappStatusText.includes('Cuautla, Morelos y alrededores'));
+    assert.ok(ads.whatsappStatusText.includes('735 555 0199'));
+    assert.ok(ads.whatsappStatusText.length < ads.facebookMarketplaceText.length);
+    assert.ok(ads.whatsappShareUrlFb.startsWith('https://wa.me/?text='));
+    assert.ok(ads.whatsappShareUrlStatus.startsWith('https://wa.me/?text='));
+  }
+
+  // 5. Verificación UI y versión v1.0.6 + TopBar toggle + Admin Login intacto
+  assert.equal(APP_VERSION, '1.0.6');
+  assert.equal(APP_VERSION_LABEL, 'v1.0.6');
+
+  const swSrc = readFileSync('public/sw.js', 'utf8');
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.6'/);
+
+  const tallerSrc = readFileSync('src/components/TallerView.tsx', 'utf8');
+  assert.match(tallerSrc, /⚡ Ajuste de precios de un golpe \(%\)/);
+  assert.match(tallerSrc, /id="sel-bulk-acabado"/);
+  assert.match(tallerSrc, /id="bulk-adjust-confirm-box"/);
+  assert.match(tallerSrc, /id="btn-undo-bulk-pct"/);
+  assert.match(tallerSrc, /PublicidadTallerCard/);
+
+  const pubSrc = readFileSync('src/components/PublicidadTallerCard.tsx', 'utf8');
+  assert.match(pubSrc, /📢 Publicidad para tu Taller/);
+  assert.match(pubSrc, /✓ Copiado/);
+  assert.match(pubSrc, /Compartir directo en WhatsApp/);
+  assert.doesNotMatch(pubSrc, /window\.open\(/);
+  assert.doesNotMatch(pubSrc, /window\.confirm\(/);
+
+  const topBarSrc = readFileSync('src/components/TopBarAndDrawer.tsx', 'utf8');
+  assert.match(topBarSrc, /id="btn-top-theme-toggle"/);
+
+  const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
+  assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
+});
+
+test('114. Rediseño visual descansado de carátulas + 3 acabados de aluminio + búsqueda con debounce y filtro de material/serie en CatalogoView + SW v1.0.6', async () => {
+  const { readFileSync } = await import('node:fs');
+  const {
+    CATALOG_MATERIAL_SERIES_OPTIONS,
+    filterOfficialCatalogAdvanced,
+  } = await import('./catalogFilterHelpers.ts');
+  const {
+    SKIN_VARIANTS_BY_SKIN,
+    normalizeSkinVariantForSkin,
+  } = await import('./storageHelpers.ts');
+  const { APP_VERSION } = await import('./alumineroLogic.ts');
+
+  // 1. Filtro avanzado por tipo de material o serie en CatalogoView
+  assert.ok(CATALOG_MATERIAL_SERIES_OPTIONS.length >= 6);
+  const euroItems = filterOfficialCatalogAdvanced({
+    brandId: 'all',
+    query: '',
+    materialSeries: 'euroalum-espanola',
+  });
+  assert.ok(euroItems.length > 0, 'Debe retornar perfiles EuroAlum / Española');
+
+  const cancelItems = filterOfficialCatalogAdvanced({
+    brandId: 'all',
+    query: '',
+    materialSeries: 'puertas-canceles',
+  });
+  assert.ok(cancelItems.length > 0, 'Debe retornar puertas y canceles de baño');
+
+  const herrajesItems = filterOfficialCatalogAdvanced({
+    brandId: 'all',
+    query: '',
+    materialSeries: 'herrajes-viniles',
+  });
+  assert.ok(herrajesItems.length > 0, 'Debe retornar herrajes y viniles');
+
+  const queryAndSeries = filterOfficialCatalogAdvanced({
+    brandId: 'all',
+    query: '12263',
+    materialSeries: 'euroalum-espanola',
+  });
+  assert.ok(queryAndSeries.some((it) => it.clave === '12263'));
+
+  // 2. Nuevos acabados de aluminio en SKIN_VARIANTS_BY_SKIN y normalización
+  assert.equal(SKIN_VARIANTS_BY_SKIN.ejecutiva.length, 4);
+  assert.equal(SKIN_VARIANTS_BY_SKIN.industrial.length, 6);
+  assert.equal(normalizeSkinVariantForSkin('ejecutiva', 'negro_anodizado'), 'negro_anodizado');
+  assert.equal(normalizeSkinVariantForSkin('industrial', 'champagne'), 'champagne');
+  assert.equal(normalizeSkinVariantForSkin('industrial', 'cristal_tintex'), 'cristal_tintex');
+
+  // 3. Variables CSS descansadas y los 3 nuevos acabados exactos en src/index.css
+  const cssSrc = readFileSync('src/index.css', 'utf8');
+  for (const hex of [
+    '#0f1218',
+    '#181d27',
+    '#3b6ef5',
+    '#e07a3c',
+    '#0d1726',
+    '#132136',
+    '#eab354',
+    '#9e2a2b',
+    '#0e1420',
+    '#121316',
+    '#d96b27',
+    '#101614',
+    '#2e8b57',
+    '#0b0c0e',
+    '#14161a',
+    '#cbd5e1',
+    '#c59638',
+    '#11141a',
+    '#94a3b8',
+    '#131211',
+    '#a46b3e',
+    '#101513',
+    '#3d8b5e',
+    '#131315',
+    '#cbb692',
+    '#0e1518',
+    '#14967f',
+  ]) {
+    assert.ok(cssSrc.includes(hex), `src/index.css debe incluir el tono exacto ${hex}`);
+  }
+  assert.match(cssSrc, /border-left:\s*3px solid var\(--sk-accent/);
+  assert.match(cssSrc, /border:\s*1\.5px solid var\(--sk-lev-border/);
+
+  // 4. Debounce y filtro de material/serie en NotasAndCatalogoViews.tsx
+  const catSrc = readFileSync('src/components/NotasAndCatalogoViews.tsx', 'utf8');
+  assert.match(catSrc, /useDebouncedValue/);
+  assert.match(catSrc, /id="select-catalog-material-serie"/);
+  assert.match(catSrc, /cat-mat-chip-/);
+  assert.match(catSrc, /filterOfficialCatalogAdvanced/);
+
+  // 5. Versión v1.0.6 y Admin Login completamente intacto
+  assert.equal(APP_VERSION, '1.0.6');
+  const swSrc = readFileSync('public/sw.js', 'utf8');
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.6'/);
+  const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
+  assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
+});
 

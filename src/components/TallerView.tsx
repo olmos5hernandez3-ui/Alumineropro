@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AlertTriangle,
   BarChart3,
   ChevronDown,
   ChevronUp,
@@ -7,19 +8,19 @@ import {
   FileDown,
   Lock,
   Palette,
-  Percent,
   RotateCcw,
   SlidersHorizontal,
   Sparkles,
   Sun,
   Moon,
   TrendingUp,
+  Undo2,
   Upload,
   X,
+  Zap,
 } from 'lucide-react';
 import {
   AjusteDescuentosConfig,
-  applyBulkPriceAdjustment,
   COLORES_CONFIG,
   computeSalesAnalytics,
   DEFAULT_AJUSTE_DESCUENTOS,
@@ -45,10 +46,25 @@ import {
   FormulaPersonalizada,
   HistorialItem,
   loadCotizacionesGuardadas,
+  normalizeSkinVariantForSkin,
   parseBackupPayload,
+  SKIN_VARIANTS_BY_SKIN,
   TallerConfig,
 } from '../utils/storageHelpers';
+import {
+  ACABADOS_AJUSTE_OPTIONS,
+  AcabadoFiltroId,
+  applyOneShotPriceAdjustment,
+  buildBulkAdjustmentConfirmMessage,
+  BulkAdjustmentUndoSnapshot,
+  BulkCategoryId,
+  formatSignedPct,
+  getAcabadoCurrentPrice,
+  restoreUndoSnapshot,
+  SPECIFIC_ACABADO_IDS,
+} from '../utils/tallerTools';
 import { PdfHeaderCustomizer } from './PdfHeaderCustomizer';
+import { PublicidadTallerCard } from './PublicidadTallerCard';
 
 interface Props {
   taller: TallerConfig;
@@ -137,8 +153,11 @@ export const TallerView: React.FC<Props> = ({
     loadCotizacionesGuardadas()
   );
   const [refPricesOpen, setRefPricesOpen] = useState(false);
-  const [bulkCat, setBulkCat] = useState<'aluminio' | 'vidrio' | 'herrajes' | 'todo'>('aluminio');
+  const [bulkCat, setBulkCat] = useState<BulkCategoryId>('aluminio');
+  const [bulkAcabado, setBulkAcabado] = useState<AcabadoFiltroId>('todos');
   const [bulkPct, setBulkPct] = useState<string>('10');
+  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
+  const [lastBulkUndo, setLastBulkUndo] = useState<BulkAdjustmentUndoSnapshot | null>(null);
   const [ajusteFinoOpen, setAjusteFinoOpen] = useState(false);
 
   useEffect(() => {
@@ -229,28 +248,50 @@ export const TallerView: React.FC<Props> = ({
     onShowToast('Precios de referencia aplicados a Mi Taller', true);
   };
 
-  const handleApplyBulkAdjustment = () => {
-    const pctNum = Number(bulkPct);
-    if (!Number.isFinite(pctNum) || pctNum === 0) {
-      onShowToast('Ingresa un porcentaje distinto de 0 (ej. 10 o -5)');
+  const bulkPctNum = Number(bulkPct);
+  const bulkPctValid = Number.isFinite(bulkPctNum) && bulkPctNum !== 0;
+
+  const handleRequestBulkAdjustment = () => {
+    if (!bulkPctValid) {
+      onShowToast('Ingresa un porcentaje distinto de 0 (ej. +5, +10 o -5)');
       return;
     }
-    const res = applyBulkPriceAdjustment({
+    setBulkConfirmOpen(true);
+  };
+
+  const handleConfirmBulkAdjustment = () => {
+    if (!bulkPctValid) {
+      setBulkConfirmOpen(false);
+      return;
+    }
+    const res = applyOneShotPriceAdjustment({
+      pct: bulkPctNum,
+      acabadoFilter: bulkAcabado,
       category: bulkCat,
-      pct: pctNum,
-      precioListaTramo: taller.precioListaTramo,
-      tarifasBase: taller.tarifasBase,
-      rellenoPreciosM2: taller.rellenoPreciosM2 || {},
-      herrajesPrecios: taller.herrajesPrecios || {},
+      tallerSnapshot: {
+        precioListaTramo: taller.precioListaTramo,
+        tarifasBase: taller.tarifasBase,
+        rellenoPreciosM2: taller.rellenoPreciosM2,
+        herrajesPrecios: taller.herrajesPrecios,
+        preciosPorAcabado: taller.preciosPorAcabado,
+      },
     });
-    onUpdateTaller({
-      precioListaTramo: res.precioListaTramo,
-      tarifasBase: res.tarifasBase,
-      rellenoPreciosM2: res.rellenoPreciosM2,
-      herrajesPrecios: res.herrajesPrecios,
-    });
-    const sign = pctNum > 0 ? `+${pctNum}%` : `${pctNum}%`;
-    onShowToast(`Ajuste masivo ${sign} aplicado (${res.updatedCount} tarifas actualizadas)`, true);
+    onUpdateTaller(res.nextPatch);
+    setLastBulkUndo(res.undoSnapshot);
+    setBulkConfirmOpen(false);
+    onShowToast(
+      `Ajuste ${res.formattedPct} aplicado en ${res.scopeLabel} (${res.updatedCount} ${res.updatedCount === 1 ? 'tarifa actualizada' : 'tarifas actualizadas'})`,
+      true
+    );
+  };
+
+  const handleUndoLastBulkAdjustment = () => {
+    if (!lastBulkUndo) return;
+    onUpdateTaller(restoreUndoSnapshot(lastBulkUndo));
+    const revertedLabel = `${formatSignedPct(lastBulkUndo.appliedPct)} · ${lastBulkUndo.scopeLabel}`;
+    setLastBulkUndo(null);
+    setBulkConfirmOpen(false);
+    onShowToast(`Último ajuste (${revertedLabel}) deshecho correctamente`, true);
   };
 
   const handleUpdateAjusteField = (key: keyof AjusteDescuentosConfig, raw: string) => {
@@ -420,11 +461,11 @@ export const TallerView: React.FC<Props> = ({
                       Ejecutiva {!ejecutivaUnlocked && '🔒'}
                     </span>
                     <span className="block text-[10.5px] text-slate-500">
-                      {ejecutivaUnlocked ? 'Oscuro luminoso PRO' : 'Planes PRO (30d/90d/1A)'}
+                      {ejecutivaUnlocked ? '4 acabados · Negro Anodizado' : 'Planes PRO (30d/90d/1A)'}
                     </span>
                   </div>
                   {ejecutivaUnlocked ? (
-                    <span className="w-3.5 h-3.5 rounded-full bg-sky-500 shrink-0" aria-hidden="true" />
+                    <span className="w-3.5 h-3.5 rounded-full shrink-0" style={{ backgroundColor: '#3b6ef5' }} aria-hidden="true" />
                   ) : (
                     <Lock className="w-4 h-4 text-amber-600 shrink-0" aria-hidden="true" />
                   )}
@@ -452,16 +493,47 @@ export const TallerView: React.FC<Props> = ({
                       Industrial PRO {!industrialUnlocked && '🔒'}
                     </span>
                     <span className="block text-[10.5px] text-slate-500">
-                      {industrialUnlocked ? 'Cuadrícula metálica PRO' : 'Planes PRO (30d/90d/1A)'}
+                      {industrialUnlocked ? '6 acabados · Champagne / Tintex' : 'Planes PRO (30d/90d/1A)'}
                     </span>
                   </div>
                   {industrialUnlocked ? (
-                    <span className="w-3.5 h-3.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
+                    <span className="w-3.5 h-3.5 rounded-full shrink-0" style={{ backgroundColor: '#3d8b5e' }} aria-hidden="true" />
                   ) : (
                     <Lock className="w-4 h-4 text-amber-600 shrink-0" aria-hidden="true" />
                   )}
                 </button>
               </div>
+
+              {onSelectSkinVariant && SKIN_VARIANTS_BY_SKIN[skin]?.length > 0 && (
+                <div className="pt-2 border-t border-slate-200 flex flex-wrap items-center gap-2">
+                  <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
+                    Acabado:
+                  </span>
+                  {SKIN_VARIANTS_BY_SKIN[skin].map((variant) => {
+                    const activeVar = normalizeSkinVariantForSkin(skin, skinVariant) === variant.id;
+                    return (
+                      <button
+                        key={variant.id}
+                        type="button"
+                        onClick={() => onSelectSkinVariant(variant.id)}
+                        aria-pressed={activeVar}
+                        className={`min-h-[34px] px-2.5 py-1 rounded-lg border text-[11.5px] font-extrabold inline-flex items-center gap-1.5 cursor-pointer transition-colors ${
+                          activeVar
+                            ? 'border-blue-600 bg-blue-50 text-blue-900 ring-1 ring-blue-500'
+                            : 'border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700'
+                        }`}
+                      >
+                        <span
+                          className="w-3.5 h-3.5 rounded-full border border-slate-400/60 shrink-0"
+                          style={{ backgroundColor: variant.swatchBg }}
+                          aria-hidden="true"
+                        />
+                        <span>{variant.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -569,16 +641,18 @@ export const TallerView: React.FC<Props> = ({
         </div>
 
         <div className="flex flex-col gap-4">
-          {/* Precios de Referencia (PRO) + Ajuste Masivo (%) */}
+          {/* Ajuste de precios de un golpe (%) + Precios de Referencia (PRO) */}
           <div
             id="card-taller-bulk-adjust"
             className="bg-white text-[#1E293B] border-[1.5px] border-blue-300 rounded-[18px] p-4 sm:p-5 shadow-xl"
           >
             <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
               <div>
-                <h2 className="m-0 text-[17px] font-extrabold">Precios de Referencia y Ajuste Masivo</h2>
+                <h2 className="m-0 text-[17px] font-extrabold">
+                  ⚡ Ajuste de precios de un golpe (%)
+                </h2>
                 <p className="m-0 text-[12px] text-slate-500">
-                  Compara precios de mercado o sube/baja tus tarifas por porcentaje en un clic
+                  Actualiza tus tarifas en segundos cuando suba o baje el aluminio sin editar perfil por perfil
                 </p>
               </div>
               <button
@@ -599,37 +673,104 @@ export const TallerView: React.FC<Props> = ({
               </button>
             </div>
 
-            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-              <div className="flex items-center gap-1.5 text-[12.5px] font-extrabold text-slate-800 mb-2">
-                <Percent className="w-4 h-4 text-blue-600" aria-hidden="true" />
-                <span>Ajuste Masivo de Precios (%)</span>
+            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex flex-col gap-3">
+              {/* Filtro: Todos los perfiles o por Acabado/Color */}
+              <div>
+                <label
+                  htmlFor="sel-bulk-acabado"
+                  className="flex items-center gap-1.5 text-[12px] font-extrabold text-slate-700 mb-1"
+                >
+                  <Zap className="w-3.5 h-3.5 text-amber-500" aria-hidden="true" />
+                  <span>Aplicar a:</span>
+                </label>
+                <select
+                  id="sel-bulk-acabado"
+                  value={bulkAcabado}
+                  onChange={(e) => {
+                    setBulkAcabado(e.target.value as AcabadoFiltroId);
+                    setBulkConfirmOpen(false);
+                  }}
+                  className="w-full min-h-[40px] rounded-xl border border-slate-300 bg-white px-3 text-[13px] font-bold text-slate-800"
+                >
+                  {ACABADOS_AJUSTE_OPTIONS.map((opt) => (
+                    <option key={opt.id} value={opt.id}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 mb-2.5">
-                {(
-                  [
-                    { id: 'aluminio', label: 'Solo Aluminio' },
-                    { id: 'vidrio', label: 'Solo Vidrio' },
-                    { id: 'herrajes', label: 'Solo Herrajes' },
-                    { id: 'todo', label: 'Todo' },
-                  ] as const
-                ).map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => setBulkCat(c.id)}
-                    aria-pressed={bulkCat === c.id}
-                    className={`min-h-[34px] px-2 rounded-lg text-[11.5px] font-extrabold border cursor-pointer transition-colors ${
-                      bulkCat === c.id
-                        ? 'bg-blue-600 text-white border-blue-600'
-                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    {c.label}
-                  </button>
-                ))}
-              </div>
+              {bulkAcabado === 'todos' ? (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                  {(
+                    [
+                      { id: 'aluminio', label: 'Solo Aluminio' },
+                      { id: 'vidrio', label: 'Solo Vidrio' },
+                      { id: 'herrajes', label: 'Solo Herrajes' },
+                      { id: 'todo', label: 'Todo' },
+                    ] as const
+                  ).map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => {
+                        setBulkCat(c.id);
+                        setBulkConfirmOpen(false);
+                      }}
+                      aria-pressed={bulkCat === c.id}
+                      className={`min-h-[34px] px-2 rounded-lg text-[11.5px] font-extrabold border cursor-pointer transition-colors ${
+                        bulkCat === c.id
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      {c.label}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                  {SPECIFIC_ACABADO_IDS.map((fid) => {
+                    const opt = ACABADOS_AJUSTE_OPTIONS.find((o) => o.id === fid)!;
+                    const price = getAcabadoCurrentPrice(
+                      fid,
+                      taller.precioListaTramo,
+                      taller.preciosPorAcabado
+                    );
+                    const isSelected = bulkAcabado === fid;
+                    return (
+                      <button
+                        key={fid}
+                        type="button"
+                        onClick={() => {
+                          setBulkAcabado(fid);
+                          setBulkConfirmOpen(false);
+                        }}
+                        data-testid={`acabado-price-${fid}`}
+                        className={`flex items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-lg border text-left cursor-pointer transition-colors ${
+                          isSelected
+                            ? 'bg-blue-50 border-blue-500 text-blue-900'
+                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
+                        }`}
+                      >
+                        <span className="inline-flex items-center gap-1.5 text-[11.5px] font-bold truncate">
+                          <span
+                            className="w-2.5 h-2.5 rounded-full border border-slate-300 shrink-0"
+                            style={{ backgroundColor: opt.swatch }}
+                            aria-hidden="true"
+                          />
+                          {opt.shortLabel}
+                        </span>
+                        <span className="mono text-[11.5px] font-extrabold shrink-0">
+                          {formatMXN(price)}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
 
+              {/* Porcentaje + botones rápidos (+5%, +10%, -5%) + Aplicar ajuste */}
               <div className="flex flex-wrap items-center gap-2">
                 <div className="flex items-center gap-1">
                   <input
@@ -639,33 +780,101 @@ export const TallerView: React.FC<Props> = ({
                     max={200}
                     step={1}
                     value={bulkPct}
-                    onChange={(e) => setBulkPct(e.target.value)}
+                    onChange={(e) => {
+                      setBulkPct(e.target.value);
+                      setBulkConfirmOpen(false);
+                    }}
                     aria-label="Porcentaje de ajuste masivo"
-                    className="w-[92px] min-h-[40px] rounded-xl border border-slate-300 bg-white px-2.5 text-center mono text-[14px] font-extrabold"
+                    className="w-[88px] min-h-[40px] rounded-xl border border-slate-300 bg-white px-2.5 text-center mono text-[14px] font-extrabold"
                   />
                   <span className="text-[13px] font-extrabold text-slate-600">%</span>
                 </div>
-                <div className="flex items-center gap-1 flex-wrap">
-                  {['-5', '5', '10', '15'].map((v) => (
-                    <button
-                      key={v}
-                      type="button"
-                      onClick={() => setBulkPct(v)}
-                      className="px-2 py-1 rounded-lg border border-slate-200 bg-white hover:bg-blue-50 text-slate-700 mono text-[11px] font-bold cursor-pointer"
-                    >
-                      {Number(v) > 0 ? `+${v}%` : `${v}%`}
-                    </button>
-                  ))}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {(['5', '10', '-5'] as const).map((v) => {
+                    const num = Number(v);
+                    const active = bulkPct === v;
+                    return (
+                      <button
+                        key={v}
+                        type="button"
+                        id={`btn-quick-pct-${v}`}
+                        onClick={() => {
+                          setBulkPct(v);
+                          setBulkConfirmOpen(false);
+                        }}
+                        className={`min-h-[34px] px-2.5 py-1 rounded-lg border mono text-[12px] font-extrabold cursor-pointer transition-colors ${
+                          active
+                            ? 'bg-blue-600 text-white border-blue-600'
+                            : 'bg-white border-slate-200 hover:bg-blue-50 text-slate-700'
+                        }`}
+                      >
+                        {num > 0 ? `+${v}%` : `${v}%`}
+                      </button>
+                    );
+                  })}
                 </div>
                 <button
                   type="button"
                   id="btn-apply-bulk-pct"
-                  onClick={handleApplyBulkAdjustment}
+                  onClick={handleRequestBulkAdjustment}
                   className="ml-auto min-h-[40px] px-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[12.5px] font-extrabold cursor-pointer"
                 >
                   Aplicar ajuste
                 </button>
               </div>
+
+              {/* Confirmación rápida inline (sin window.confirm) */}
+              {bulkConfirmOpen && bulkPctValid && (
+                <div
+                  id="bulk-adjust-confirm-box"
+                  role="alertdialog"
+                  aria-label="Confirmar ajuste masivo de precios"
+                  className="p-3 rounded-xl bg-amber-50 border-[1.5px] border-amber-300 flex flex-col gap-2.5"
+                >
+                  <div className="flex items-start gap-2 text-[12.5px] font-bold text-amber-950">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" aria-hidden="true" />
+                    <span>
+                      {buildBulkAdjustmentConfirmMessage(bulkPctNum, bulkAcabado, bulkCat)}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      id="btn-cancel-bulk-pct"
+                      onClick={() => setBulkConfirmOpen(false)}
+                      className="min-h-[36px] px-3 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-[12px] font-bold cursor-pointer"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      id="btn-confirm-bulk-pct"
+                      onClick={handleConfirmBulkAdjustment}
+                      className="min-h-[36px] px-3.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[12px] font-extrabold cursor-pointer"
+                    >
+                      Sí, aplicar {formatSignedPct(bulkPctNum)}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Botón de Deshacer último ajuste */}
+              {lastBulkUndo && (
+                <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl bg-emerald-50 border border-emerald-200">
+                  <span className="text-[12px] font-bold text-emerald-900">
+                    Último ajuste guardado: <strong>{formatSignedPct(lastBulkUndo.appliedPct)}</strong> ({lastBulkUndo.scopeLabel})
+                  </span>
+                  <button
+                    type="button"
+                    id="btn-undo-bulk-pct"
+                    onClick={handleUndoLastBulkAdjustment}
+                    className="min-h-[34px] px-3 rounded-lg bg-white hover:bg-rose-50 border border-rose-300 text-rose-700 text-[12px] font-extrabold inline-flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Undo2 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                    <span>Deshacer último ajuste</span>
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
@@ -822,6 +1031,9 @@ export const TallerView: React.FC<Props> = ({
           )}
         </div>
       </div>
+
+      {/* Generador de Publicidad para el Taller del Usuario */}
+      <PublicidadTallerCard taller={taller} onShowToast={onShowToast} />
 
       {/* Ajuste fino de descuentos (cm) y Parámetros de optimización 6.10 m */}
       <div

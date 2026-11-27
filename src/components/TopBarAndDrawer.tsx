@@ -463,46 +463,46 @@ const SKIN_OPTIONS: SkinOptionMeta[] = [
   {
     id: 'basica',
     title: 'Básica',
-    subtitle: 'Colores planos (plastas sólidas y limpias)',
+    subtitle: 'Pizarra oscura descansada con acento Azul Satinado y Terracota',
     tierBadge: 'Gratis y PRO',
-    previewBg: '#0b111f',
-    previewCardA: '#2a4dcf',
-    previewCardB: '#20293a',
-    previewBorder: '#394456',
-    previewAccent: '#3a66e3',
+    previewBg: '#0f1218',
+    previewCardA: '#3b6ef5',
+    previewCardB: '#181d27',
+    previewBorder: '#e07a3c',
+    previewAccent: '#3b6ef5',
   },
   {
     id: 'navidena',
     title: 'Navideña ❄️',
-    subtitle: 'Invierno elegante en plastas, luces cálidas y gorro navideño',
+    subtitle: 'Azul noche profundo, filo dorado cálido y rojo vino elegante',
     tierBadge: 'Gratis y PRO',
-    previewBg: '#0e1b2c',
-    previewCardA: '#aa2e26',
-    previewCardB: '#0f2334',
-    previewBorder: '#f5c26b',
-    previewAccent: '#f5c26b',
+    previewBg: '#0d1726',
+    previewCardA: '#9e2a2b',
+    previewCardB: '#132136',
+    previewBorder: '#eab354',
+    previewAccent: '#eab354',
   },
   {
     id: 'ejecutiva',
     title: 'Ejecutiva',
-    subtitle: 'Plastas ejecutivas en Azul, Verde o Naranja',
+    subtitle: '4 acabados: Azul, Naranja, Verde y Negro Anodizado',
     tierBadge: 'Exclusiva Planes PRO',
-    previewBg: '#0e192d',
-    previewCardA: '#2747be',
-    previewCardB: '#18284a',
-    previewBorder: '#4873dc',
-    previewAccent: '#3a66e3',
+    previewBg: '#0e1420',
+    previewCardA: '#3b6ef5',
+    previewCardB: '#181c26',
+    previewBorder: '#3b6ef5',
+    previewAccent: '#3b6ef5',
   },
   {
     id: 'industrial',
     title: 'Industrial PRO',
-    subtitle: 'Plastas industriales: Verde, Oro, Plata y Bronce',
+    subtitle: '6 acabados: Oro, Plata, Bronce, Verde, Champagne y Cristal Tintex',
     tierBadge: 'Exclusiva Planes PRO',
-    previewBg: '#0c1a12',
-    previewCardA: '#377340',
-    previewCardB: '#14281c',
-    previewBorder: '#4f9a5f',
-    previewAccent: '#4aa05a',
+    previewBg: '#101513',
+    previewCardA: '#30724c',
+    previewCardB: '#181c26',
+    previewBorder: '#3d8b5e',
+    previewAccent: '#3d8b5e',
   },
 ];
 
@@ -951,7 +951,10 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
                   ? normalizeSkinVariantForSkin(opt.id, skinVariant)
                   : 'default';
                 const activeSwatchObj = variants.find((v) => v.id === activeVariantForCard);
-                const cardPreviewAccent = activeSwatchObj?.swatchBg || opt.previewCardA;
+                const cardPreviewBg = activeSwatchObj?.previewBg || opt.previewBg;
+                const cardPreviewCard = activeSwatchObj?.previewCard || opt.previewCardB;
+                const cardPreviewHero = activeSwatchObj?.previewHero || opt.previewCardA;
+                const cardPreviewAccent = activeSwatchObj?.swatchBg || opt.previewAccent;
                 return (
                   <div
                     key={opt.id}
@@ -979,30 +982,32 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
                         <div
                           className="w-11 h-11 rounded-lg p-1.5 flex flex-col justify-between shrink-0"
                           style={{
-                            backgroundColor: isDark ? opt.previewBg : '#F8FAFC',
-                            border: `2px solid ${cardPreviewAccent}`,
+                            backgroundColor: isDark ? cardPreviewBg : '#F8FAFC',
+                            border: `1.5px solid ${cardPreviewAccent}`,
                           }}
                           aria-hidden="true"
                         >
                           <div
                             className="h-2.5 w-full rounded-[3px]"
                             style={{
-                              backgroundColor: cardPreviewAccent,
+                              backgroundColor: cardPreviewHero,
                             }}
                           />
                           <div className="grid grid-cols-2 gap-1">
                             <span
                               className="h-3 rounded-[3px]"
                               style={{
-                                backgroundColor: isDark ? opt.previewCardB : '#FFFFFF',
-                                border: `1px solid ${cardPreviewAccent}`,
+                                backgroundColor: isDark ? cardPreviewCard : '#FFFFFF',
+                                border: '1px solid rgba(255,255,255,0.12)',
+                                borderLeft: `2.5px solid ${cardPreviewAccent}`,
                               }}
                             />
                             <span
                               className="h-3 rounded-[3px]"
                               style={{
-                                backgroundColor: isDark ? opt.previewCardB : '#FFFFFF',
-                                border: `1px solid ${cardPreviewAccent}`,
+                                backgroundColor: isDark ? cardPreviewCard : '#FFFFFF',
+                                border: '1px solid rgba(255,255,255,0.12)',
+                                borderLeft: `2.5px solid ${opt.id === 'basica' ? '#e07a3c' : cardPreviewAccent}`,
                               }}
                             />
                           </div>
@@ -1043,9 +1048,9 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
                         }`}
                       >
                         <div className={`text-[10px] font-extrabold uppercase tracking-wider mb-1.5 ${subTextClass}`}>
-                          Color plano (plasta):
+                          Acabado / Color ({variants.length}):
                         </div>
-                        <div className={`grid gap-1.5 ${variants.length === 3 ? 'grid-cols-3' : 'grid-cols-2'}`}>
+                        <div className="grid grid-cols-2 gap-1.5">
                           {variants.map((variant) => {
                             const isVariantSelected = isSelected && activeVariantForCard === variant.id;
                             return (
@@ -1053,9 +1058,10 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
                                 key={variant.id}
                                 type="button"
                                 id={`btn-skin-${opt.id}-variant-${variant.id}`}
+                                title={variant.label}
                                 aria-pressed={isVariantSelected}
                                 onClick={() => handleVariantTap(opt, variant.id)}
-                                className={`min-h-[34px] px-2 py-1 rounded-lg border text-[11px] font-extrabold cursor-pointer flex items-center justify-center gap-1.5 transition-colors ${
+                                className={`min-h-[34px] px-1.5 py-1 rounded-lg border text-[10.5px] leading-tight font-extrabold cursor-pointer flex items-center justify-center gap-1.5 transition-colors ${
                                   isVariantSelected
                                     ? isDark
                                       ? 'border-white bg-white/15 text-white'
@@ -1066,11 +1072,11 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
                                 }`}
                               >
                                 <span
-                                  className="w-3.5 h-3.5 rounded-full shrink-0 border border-white/75"
+                                  className="w-3 h-3 rounded-full shrink-0 border border-white/75"
                                   style={{ backgroundColor: variant.swatchBg }}
                                   aria-hidden="true"
                                 />
-                                <span className="truncate">{variant.label}</span>
+                                <span className="whitespace-nowrap">{variant.label}</span>
                                 {isVariantSelected && <Check className="w-3 h-3 shrink-0" aria-hidden="true" />}
                               </button>
                             );

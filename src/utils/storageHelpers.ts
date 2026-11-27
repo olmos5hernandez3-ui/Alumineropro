@@ -156,6 +156,7 @@ export interface TallerConfig {
   tarifasBase: Partial<Record<LineaId, number>>;
   rellenoPreciosM2?: Record<string, number>;
   herrajesPrecios?: Record<string, number>;
+  preciosPorAcabado?: Record<string, number>;
   inventarioPreciosUnitarios?: Record<string, number>;
   ajusteDescuentos?: Partial<AjusteDescuentosConfig>;
   optimizador?: Partial<OptimizadorConfig>;
@@ -1670,24 +1671,112 @@ export function addReferralHistoryRecord(
 
 // ==================== CARÁTULAS / APARIENCIA GLOBAL (4 TEMAS CON SUB-VARIANTES) ====================
 export type AppSkin = 'basica' | 'navidena' | 'ejecutiva' | 'industrial';
-export type AppSkinVariant = 'default' | 'verde' | 'naranja' | 'plateada' | 'dorada' | 'bronce';
+export type AppSkinVariant =
+  | 'default'
+  | 'verde'
+  | 'naranja'
+  | 'negro_anodizado'
+  | 'plateada'
+  | 'dorada'
+  | 'bronce'
+  | 'champagne'
+  | 'cristal_tintex';
 
-export const SKIN_VARIANTS_BY_SKIN: Record<
-  AppSkin,
-  Array<{ id: AppSkinVariant; label: string; swatchBg: string }>
-> = {
+export interface SkinVariantMeta {
+  id: AppSkinVariant;
+  label: string;
+  swatchBg: string;
+  previewBg: string;
+  previewCard: string;
+  previewHero: string;
+}
+
+export const SKIN_VARIANTS_BY_SKIN: Record<AppSkin, SkinVariantMeta[]> = {
   basica: [],
   navidena: [],
   ejecutiva: [
-    { id: 'default', label: 'Azul', swatchBg: '#2747be' },
-    { id: 'verde', label: 'Verde', swatchBg: '#377340' },
-    { id: 'naranja', label: 'Naranja', swatchBg: '#c75928' },
+    {
+      id: 'default',
+      label: 'Azul',
+      swatchBg: '#3b6ef5',
+      previewBg: '#0e1420',
+      previewCard: '#181c26',
+      previewHero: '#3b6ef5',
+    },
+    {
+      id: 'naranja',
+      label: 'Naranja',
+      swatchBg: '#d96b27',
+      previewBg: '#121316',
+      previewCard: '#181c26',
+      previewHero: '#c75f1f',
+    },
+    {
+      id: 'verde',
+      label: 'Verde',
+      swatchBg: '#2e8b57',
+      previewBg: '#101614',
+      previewCard: '#181c26',
+      previewHero: '#2e8b57',
+    },
+    {
+      id: 'negro_anodizado',
+      label: 'Negro Anodizado',
+      swatchBg: '#cbd5e1',
+      previewBg: '#0b0c0e',
+      previewCard: '#14161a',
+      previewHero: '#2d3748',
+    },
   ],
   industrial: [
-    { id: 'default', label: 'Verde', swatchBg: '#377340' },
-    { id: 'dorada', label: 'Oro', swatchBg: '#ae7f2d' },
-    { id: 'plateada', label: 'Plata', swatchBg: '#5e6b7e' },
-    { id: 'bronce', label: 'Bronce', swatchBg: '#835732' },
+    {
+      id: 'dorada',
+      label: 'Oro',
+      swatchBg: '#c59638',
+      previewBg: '#121316',
+      previewCard: '#181c26',
+      previewHero: '#997122',
+    },
+    {
+      id: 'plateada',
+      label: 'Plata',
+      swatchBg: '#94a3b8',
+      previewBg: '#11141a',
+      previewCard: '#181c26',
+      previewHero: '#475569',
+    },
+    {
+      id: 'bronce',
+      label: 'Bronce',
+      swatchBg: '#a46b3e',
+      previewBg: '#131211',
+      previewCard: '#181c26',
+      previewHero: '#8c572f',
+    },
+    {
+      id: 'default',
+      label: 'Verde',
+      swatchBg: '#3d8b5e',
+      previewBg: '#101513',
+      previewCard: '#181c26',
+      previewHero: '#30724c',
+    },
+    {
+      id: 'champagne',
+      label: 'Champagne',
+      swatchBg: '#cbb692',
+      previewBg: '#131315',
+      previewCard: '#181c26',
+      previewHero: '#786649',
+    },
+    {
+      id: 'cristal_tintex',
+      label: 'Cristal Tintex',
+      swatchBg: '#14967f',
+      previewBg: '#0e1518',
+      previewCard: '#181c26',
+      previewHero: '#117c69',
+    },
   ],
 };
 

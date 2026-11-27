@@ -2319,142 +2319,194 @@ html[data-theme="light"] #lev-root textarea {
 }
 
 /* ============================================================================
-   SISTEMA UNIFICADO DE CARÁTULAS "PLASTAS" (COLORES PLANOS · VARIABLES CSS)
-   Cero degradados, cero rejillas, cero halos/resplandores de sombra.
+   SISTEMA UNIFICADO DE CARÁTULAS DESCANSADAS (ALTO CONFORT VISUAL · --sk-*)
+   Fondos pizarra/grafito neutros, tarjetas limpias con acento sutil de 3px
+   y 3 acabados inspirados en perfilería y vidrio (Negro Anodizado, Champagne, Cristal Tintex).
    ============================================================================ */
 
-/* Variables base — Básica (Modo Oscuro) */
+/* 1. Básica (Modo Oscuro) — Azul Satinado #3b6ef5 + Terracota #e07a3c */
 html[data-skin="basica"][data-theme="dark"],
 html[data-theme="dark"]:not([data-skin]) {
-  --sk-bg: #0b111f;
-  --sk-header: #101a2e;
-  --sk-line: #3a66e3;
-  --sk-hero: #2a4dcf;
-  --sk-hero-border: #5381f1;
-  --sk-card: #20293a;
-  --sk-card-border: #394456;
-  --sk-lev: #1b2236;
-  --sk-lev-border: #db8143;
+  --sk-bg: #0f1218;
+  --sk-header: #13161f;
+  --sk-accent: #3b6ef5;
+  --sk-line: #3b6ef5;
+  --sk-hero: #3b6ef5;
+  --sk-hero-border: rgba(255, 255, 255, 0.16);
+  --sk-card: #181d27;
+  --sk-card-border: rgba(255, 255, 255, 0.08);
+  --sk-lev: #1b202c;
+  --sk-lev-border: #e07a3c;
 }
 
-/* Navideña (Modo Oscuro) */
+/* 2. Navideña ❄️ (Modo Oscuro) — Azul noche #0d1726 + Dorado cálido #eab354 + Rojo vino #9e2a2b */
 html[data-skin="navidena"][data-theme="dark"] {
-  --sk-bg: #0e1b2c;
-  --sk-header: #0f2234;
-  --sk-line: #f5c26b;
-  --sk-hero: #aa2e26;
-  --sk-hero-border: #f5c26b;
-  --sk-card: #0f2334;
-  --sk-card-border: #f5c26b;
-  --sk-lev: #0f2334;
-  --sk-lev-border: #f5c26b;
+  --sk-bg: #0d1726;
+  --sk-header: #101d30;
+  --sk-accent: #eab354;
+  --sk-line: #eab354;
+  --sk-hero: #9e2a2b;
+  --sk-hero-border: rgba(234, 179, 84, 0.65);
+  --sk-card: #132136;
+  --sk-card-border: rgba(234, 179, 84, 0.34);
+  --sk-lev: #132136;
+  --sk-lev-border: #eab354;
 }
 
-/* Ejecutiva · Azul (default) */
+/* 3A. Ejecutiva · Azul (default) */
 html[data-skin="ejecutiva"][data-theme="dark"] {
-  --sk-bg: #0e192d;
-  --sk-header: #142747;
-  --sk-line: #3a66e3;
-  --sk-hero: #2a4dcf;
-  --sk-hero-border: #72a3ff;
-  --sk-card: #18284a;
-  --sk-card-border: #4873dc;
-  --sk-lev: #1a2d55;
-  --sk-lev-border: #4e7ee4;
+  --sk-bg: #0e1420;
+  --sk-header: #131a29;
+  --sk-accent: #3b6ef5;
+  --sk-line: #3b6ef5;
+  --sk-hero: #3b6ef5;
+  --sk-hero-border: rgba(255, 255, 255, 0.18);
+  --sk-card: #181c26;
+  --sk-card-border: rgba(255, 255, 255, 0.08);
+  --sk-lev: #1b202c;
+  --sk-lev-border: #3b6ef5;
 }
 
-/* Ejecutiva · Naranja */
+/* 3B. Ejecutiva · Naranja (Grafito neutro #121316 + Naranja Cobrizo #d96b27) */
 html[data-skin="ejecutiva"][data-skin-variant="naranja"][data-theme="dark"] {
-  --sk-bg: #1a110c;
-  --sk-header: #251c0d;
-  --sk-line: #d46432;
-  --sk-hero: #d9622a;
-  --sk-hero-border: #ffba7c;
-  --sk-card: #2b1a10;
-  --sk-card-border: #ce7f44;
-  --sk-lev: #311e10;
-  --sk-lev-border: #e37d35;
+  --sk-bg: #121316;
+  --sk-header: #16181d;
+  --sk-accent: #d96b27;
+  --sk-line: #d96b27;
+  --sk-hero: #c75f1f;
+  --sk-hero-border: rgba(255, 255, 255, 0.16);
+  --sk-card: #181c26;
+  --sk-card-border: rgba(255, 255, 255, 0.08);
+  --sk-lev: #1b202c;
+  --sk-lev-border: #d96b27;
 }
 
-/* Ejecutiva · Verde */
+/* 3C. Ejecutiva · Verde (Pizarra #101614 + Verde Esmeralda #2e8b57) */
 html[data-skin="ejecutiva"][data-skin-variant="verde"][data-theme="dark"] {
-  --sk-bg: #0c1a12;
-  --sk-header: #12261a;
-  --sk-line: #4aa05a;
-  --sk-hero: #377340;
-  --sk-hero-border: #8fd49c;
-  --sk-card: #14281c;
-  --sk-card-border: #4f9a5f;
-  --sk-lev: #173022;
-  --sk-lev-border: #5db06d;
+  --sk-bg: #101614;
+  --sk-header: #141c19;
+  --sk-accent: #2e8b57;
+  --sk-line: #2e8b57;
+  --sk-hero: #2e8b57;
+  --sk-hero-border: rgba(255, 255, 255, 0.16);
+  --sk-card: #181c26;
+  --sk-card-border: rgba(255, 255, 255, 0.08);
+  --sk-lev: #1b202c;
+  --sk-lev-border: #2e8b57;
 }
 
-/* Industrial PRO · Verde (default) */
+/* 3D. Ejecutiva · NUEVO Negro Anodizado (#0b0c0e, tarjetas #14161a, Gris Perla #cbd5e1 + azul acero) */
+html[data-skin="ejecutiva"][data-skin-variant="negro_anodizado"][data-theme="dark"] {
+  --sk-bg: #0b0c0e;
+  --sk-header: #111318;
+  --sk-accent: #cbd5e1;
+  --sk-line: #64748b;
+  --sk-hero: #2b3546;
+  --sk-hero-border: rgba(203, 213, 225, 0.45);
+  --sk-card: #14161a;
+  --sk-card-border: rgba(255, 255, 255, 0.08);
+  --sk-lev: #14161a;
+  --sk-lev-border: #cbd5e1;
+}
+
+/* 4A. Industrial PRO · Verde (default) (#101513 + Verde Industrial #3d8b5e) */
 html[data-skin="industrial"][data-theme="dark"] {
-  --sk-bg: #0c1a12;
-  --sk-header: #12261a;
-  --sk-line: #4aa05a;
-  --sk-hero: #377340;
-  --sk-hero-border: #8fd49c;
-  --sk-card: #14281c;
-  --sk-card-border: #4f9a5f;
-  --sk-lev: #173022;
-  --sk-lev-border: #5db06d;
+  --sk-bg: #101513;
+  --sk-header: #141b18;
+  --sk-accent: #3d8b5e;
+  --sk-line: #3d8b5e;
+  --sk-hero: #30724c;
+  --sk-hero-border: rgba(255, 255, 255, 0.16);
+  --sk-card: #181c26;
+  --sk-card-border: rgba(255, 255, 255, 0.08);
+  --sk-lev: #1b202c;
+  --sk-lev-border: #3d8b5e;
 }
 
-/* Industrial PRO · Oro (dorada) */
+/* 4B. Industrial PRO · Oro (dorada) (#121316 + Oro Satinado #c59638) */
 html[data-skin="industrial"][data-skin-variant="dorada"][data-theme="dark"] {
-  --sk-bg: #161408;
-  --sk-header: #261f0d;
-  --sk-line: #bd8e34;
-  --sk-hero: #9a6523;
-  --sk-hero-border: #f8d146;
-  --sk-card: #261f0f;
-  --sk-card-border: #c49b41;
-  --sk-lev: #2b2412;
-  --sk-lev-border: #dfb53f;
+  --sk-bg: #121316;
+  --sk-header: #17181d;
+  --sk-accent: #c59638;
+  --sk-line: #c59638;
+  --sk-hero: #997122;
+  --sk-hero-border: rgba(197, 150, 56, 0.5);
+  --sk-card: #181c26;
+  --sk-card-border: rgba(255, 255, 255, 0.08);
+  --sk-lev: #1b202c;
+  --sk-lev-border: #c59638;
 }
 
-/* Industrial PRO · Plata (plateada) */
+/* 4C. Industrial PRO · Plata (plateada) (#11141a + Plata Anodizado #94a3b8) */
 html[data-skin="industrial"][data-skin-variant="plateada"][data-theme="dark"] {
-  --sk-bg: #121826;
-  --sk-header: #222836;
-  --sk-line: #98a0b3;
-  --sk-hero: #4a5567;
-  --sk-hero-border: #d0dae6;
-  --sk-card: #20293a;
-  --sk-card-border: #8b97a7;
-  --sk-lev: #20293a;
-  --sk-lev-border: #ced4e0;
+  --sk-bg: #11141a;
+  --sk-header: #161a22;
+  --sk-accent: #94a3b8;
+  --sk-line: #94a3b8;
+  --sk-hero: #475569;
+  --sk-hero-border: rgba(148, 163, 184, 0.45);
+  --sk-card: #181c26;
+  --sk-card-border: rgba(255, 255, 255, 0.08);
+  --sk-lev: #1b202c;
+  --sk-lev-border: #94a3b8;
 }
 
-/* Industrial PRO · Bronce */
+/* 4D. Industrial PRO · Bronce (#131211 + Bronce Oscuro #a46b3e) */
 html[data-skin="industrial"][data-skin-variant="bronce"][data-theme="dark"] {
-  --sk-bg: #1a110c;
-  --sk-header: #2a1c11;
-  --sk-line: #935f37;
-  --sk-hero: #834e2f;
-  --sk-hero-border: #d09f74;
-  --sk-card: #281b12;
-  --sk-card-border: #9d724f;
-  --sk-lev: #2f2116;
-  --sk-lev-border: #ab7547;
+  --sk-bg: #131211;
+  --sk-header: #181615;
+  --sk-accent: #a46b3e;
+  --sk-line: #a46b3e;
+  --sk-hero: #8c572f;
+  --sk-hero-border: rgba(164, 107, 62, 0.5);
+  --sk-card: #181c26;
+  --sk-card-border: rgba(255, 255, 255, 0.08);
+  --sk-lev: #1b202c;
+  --sk-lev-border: #a46b3e;
 }
 
-/* Reglas compartidas de PLASTAS SÓLIDAS (Modo Oscuro para todas las carátulas) */
+/* 4E. Industrial PRO · NUEVO Champagne (#131315 + Aluminio Champagne #cbb692) */
+html[data-skin="industrial"][data-skin-variant="champagne"][data-theme="dark"] {
+  --sk-bg: #131315;
+  --sk-header: #18181b;
+  --sk-accent: #cbb692;
+  --sk-line: #cbb692;
+  --sk-hero: #786649;
+  --sk-hero-border: rgba(203, 182, 146, 0.5);
+  --sk-card: #181c26;
+  --sk-card-border: rgba(255, 255, 255, 0.08);
+  --sk-lev: #1b202c;
+  --sk-lev-border: #cbb692;
+}
+
+/* 4F. Industrial PRO · NUEVO Cristal Tintex (#0e1518 + Verde Tintex #14967f) */
+html[data-skin="industrial"][data-skin-variant="cristal_tintex"][data-theme="dark"] {
+  --sk-bg: #0e1518;
+  --sk-header: #131c20;
+  --sk-accent: #14967f;
+  --sk-line: #14967f;
+  --sk-hero: #117c69;
+  --sk-hero-border: rgba(20, 150, 127, 0.5);
+  --sk-card: #181c26;
+  --sk-card-border: rgba(255, 255, 255, 0.08);
+  --sk-lev: #1b202c;
+  --sk-lev-border: #14967f;
+}
+
+/* Reglas compartidas de ALTO CONFORT VISUAL (Modo Oscuro para todas las carátulas) */
 html[data-theme="dark"],
 html[data-theme="dark"] body,
 html[data-theme="dark"] #root {
-  background-color: var(--sk-bg, #0b111f) !important;
+  background-color: var(--sk-bg, #0f1218) !important;
   background-image: none !important;
   color: #f8fafc !important;
 }
 
 html[data-theme="dark"] header,
 html[data-theme="dark"] .metal-topbar-dark {
-  background: var(--sk-header, #101a2e) !important;
+  background: var(--sk-header, #13161f) !important;
   background-image: none !important;
-  border-bottom: 2.5px solid var(--sk-line, #3a66e3) !important;
+  border-bottom: 1.5px solid var(--sk-line, #3b6ef5) !important;
   box-shadow: none !important;
   color: #ffffff !important;
 }
@@ -2464,17 +2516,17 @@ html[data-theme="dark"] header #btn-top-theme-toggle,
 html[data-theme="dark"] header #btn-top-calculadora,
 html[data-theme="dark"] header #btn-open-drawer,
 html[data-theme="dark"] .metal-icon-btn {
-  background: var(--sk-card, #20293a) !important;
+  background: var(--sk-card, #181c26) !important;
   background-image: none !important;
-  border: 1.5px solid var(--sk-line, #3a66e3) !important;
-  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  color: #f8fafc !important;
   box-shadow: none !important;
 }
 
 html[data-theme="dark"] #drawer-panel-surface {
-  background: var(--sk-header, #101a2e) !important;
+  background: var(--sk-header, #13161f) !important;
   background-image: none !important;
-  border-left: 2px solid var(--sk-line, #3a66e3) !important;
+  border-left: 1.5px solid var(--sk-line, #3b6ef5) !important;
   box-shadow: none !important;
   color: #f8fafc !important;
 }
@@ -2484,45 +2536,46 @@ html[data-theme="dark"] #view-menu h2 {
   color: #ffffff !important;
 }
 
-/* Tarjeta destacada: Hoja de Cotización */
+/* Tarjeta principal: Hoja de Cotización (relleno sólido satinado + alto contraste blanco) */
 html[data-theme="dark"] #view-menu .menu-hero-card,
 html[data-theme="dark"] #view-menu .metal-hero-card {
-  background: var(--sk-hero, #2a4dcf) !important;
+  background: var(--sk-hero, #3b6ef5) !important;
   background-image: none !important;
-  border: 2px solid var(--sk-hero-border, #5381f1) !important;
+  border: 1px solid var(--sk-hero-border, rgba(255, 255, 255, 0.16)) !important;
   box-shadow: none !important;
   color: #ffffff !important;
 }
 
-/* Tarjeta destacada: Levantamiento Rápido */
+/* Tarjeta destacada: Levantamiento Rápido (#1b202c + borde limpio 1.5px acento) */
 html[data-theme="dark"] #lev-entry {
-  background: var(--sk-lev, #1b2236) !important;
+  background: var(--sk-lev, #1b202c) !important;
   background-image: none !important;
-  border: 2px solid var(--sk-lev-border, #db8143) !important;
+  border: 1.5px solid var(--sk-lev-border, #e07a3c) !important;
   box-shadow: none !important;
   color: #ffffff !important;
 }
 html[data-theme="dark"] #lev-entry small {
-  color: #e2e8f0 !important;
+  color: #cbd5e1 !important;
 }
 
-/* Tarjetas normales del menú */
+/* Tarjetas secundarias del menú (limpias, sin ruido, borde 1px sutil + franja izquierda 3px del color de acento) */
 html[data-theme="dark"] #view-menu .menu-grid-card,
 html[data-theme="dark"] #view-menu .metal-grid-card {
-  background: var(--sk-card, #20293a) !important;
+  background: var(--sk-card, #181c26) !important;
   background-image: none !important;
-  border: 2px solid var(--sk-card-border, #394456) !important;
+  border: 1px solid var(--sk-card-border, rgba(255, 255, 255, 0.08)) !important;
+  border-left: 3px solid var(--sk-accent, var(--sk-line, #3b6ef5)) !important;
   box-shadow: none !important;
   color: #f8fafc !important;
 }
 html[data-theme="dark"] #view-menu .menu-grid-card .menu-card-sub {
-  color: #cbd5e1 !important;
+  color: #94a3b8 !important;
 }
 html[data-theme="dark"] #view-menu .menu-icon-box {
-  background: var(--sk-header, #101a2e) !important;
+  background: rgba(255, 255, 255, 0.04) !important;
   background-image: none !important;
-  border: 1.5px solid var(--sk-line, #3a66e3) !important;
-  color: #ffffff !important;
+  border: 1px solid color-mix(in srgb, var(--sk-accent, #3b6ef5) 45%, rgba(255, 255, 255, 0.12)) !important;
+  color: var(--sk-accent, #3b6ef5) !important;
   box-shadow: none !important;
 }
 
@@ -2722,8 +2775,57 @@ html[data-skin="ejecutiva"][data-skin-variant="naranja"][data-theme="light"] #vi
 }
 html[data-skin="ejecutiva"][data-skin-variant="naranja"][data-theme="light"] #view-menu .menu-icon-box {
   background: #FFEDD5 !important;
-  border: 1.5px solid #FB923C !important;
+  border: 1px solid #FB923C !important;
   color: #9A3412 !important;
+}
+
+/* Ejecutiva Negro Anodizado — Modo Claro */
+html[data-skin="ejecutiva"][data-skin-variant="negro_anodizado"][data-theme="light"],
+html[data-skin="ejecutiva"][data-skin-variant="negro_anodizado"][data-theme="light"] body,
+html[data-skin="ejecutiva"][data-skin-variant="negro_anodizado"][data-theme="light"] #root {
+  background-color: #F4F5F7 !important;
+  background-image: none !important;
+  color: #0F172A !important;
+}
+html[data-skin="ejecutiva"][data-skin-variant="negro_anodizado"][data-theme="light"] header {
+  background: #181C24 !important;
+  border-bottom: 1.5px solid #475569 !important;
+  box-shadow: none !important;
+  color: #FFFFFF !important;
+}
+html[data-skin="ejecutiva"][data-skin-variant="negro_anodizado"][data-theme="light"] #drawer-panel-surface {
+  background: #FFFFFF !important;
+  border-left: 1.5px solid #CBD5E1 !important;
+  color: #0F172A !important;
+}
+html[data-skin="ejecutiva"][data-skin-variant="negro_anodizado"][data-theme="light"] #lev-entry {
+  background: #FFFFFF !important;
+  border: 1.5px solid #475569 !important;
+  box-shadow: none !important;
+  color: #0F172A !important;
+}
+html[data-skin="ejecutiva"][data-skin-variant="negro_anodizado"][data-theme="light"] #lev-entry small {
+  color: #475569 !important;
+}
+html[data-skin="ejecutiva"][data-skin-variant="negro_anodizado"][data-theme="light"] #view-menu .menu-hero-card,
+html[data-skin="ejecutiva"][data-skin-variant="negro_anodizado"][data-theme="light"] #view-menu .metal-hero-card {
+  background: #1E2430 !important;
+  border: 1px solid #475569 !important;
+  box-shadow: none !important;
+  color: #FFFFFF !important;
+}
+html[data-skin="ejecutiva"][data-skin-variant="negro_anodizado"][data-theme="light"] #view-menu .menu-grid-card,
+html[data-skin="ejecutiva"][data-skin-variant="negro_anodizado"][data-theme="light"] #view-menu .metal-grid-card {
+  background: #FFFFFF !important;
+  border: 1px solid #CBD5E1 !important;
+  border-left: 3px solid #334155 !important;
+  box-shadow: none !important;
+  color: #0F172A !important;
+}
+html[data-skin="ejecutiva"][data-skin-variant="negro_anodizado"][data-theme="light"] #view-menu .menu-icon-box {
+  background: #E2E8F0 !important;
+  border: 1px solid #94A3B8 !important;
+  color: #1E293B !important;
 }
 
 /* ============================================================================
@@ -2935,6 +3037,100 @@ html[data-skin="industrial"][data-skin-variant="bronce"][data-theme="light"] #vi
   background: #F3E4D7 !important;
   border: 1px solid #C6834E !important;
   color: #6B3619 !important;
+}
+
+/* Industrial Champagne — Modo Claro */
+html[data-skin="industrial"][data-skin-variant="champagne"][data-theme="light"],
+html[data-skin="industrial"][data-skin-variant="champagne"][data-theme="light"] body,
+html[data-skin="industrial"][data-skin-variant="champagne"][data-theme="light"] #root {
+  background-color: #FAF8F4 !important;
+  background-image: none !important;
+  color: #1F1C18 !important;
+}
+html[data-skin="industrial"][data-skin-variant="champagne"][data-theme="light"] header {
+  background: #7A6849 !important;
+  border-bottom: 1.5px solid #5F5037 !important;
+  color: #FFFFFF !important;
+}
+html[data-skin="industrial"][data-skin-variant="champagne"][data-theme="light"] #drawer-panel-surface {
+  background: #FFFFFF !important;
+  border-left: 1.5px solid #DDD1BA !important;
+  color: #1F1C18 !important;
+}
+html[data-skin="industrial"][data-skin-variant="champagne"][data-theme="light"] #lev-entry {
+  background: #FFFFFF !important;
+  border: 1.5px solid #B39D77 !important;
+  box-shadow: none !important;
+  color: #1F1C18 !important;
+}
+html[data-skin="industrial"][data-skin-variant="champagne"][data-theme="light"] #lev-entry small {
+  color: #6E5D40 !important;
+}
+html[data-skin="industrial"][data-skin-variant="champagne"][data-theme="light"] #view-menu .menu-hero-card,
+html[data-skin="industrial"][data-skin-variant="champagne"][data-theme="light"] #view-menu .metal-hero-card {
+  background: #786649 !important;
+  border: 1px solid #5F5037 !important;
+  color: #FFFFFF !important;
+}
+html[data-skin="industrial"][data-skin-variant="champagne"][data-theme="light"] #view-menu .menu-grid-card,
+html[data-skin="industrial"][data-skin-variant="champagne"][data-theme="light"] #view-menu .metal-grid-card {
+  background: #FFFFFF !important;
+  border: 1px solid #E2D8C5 !important;
+  border-left: 3px solid #B39D77 !important;
+  box-shadow: none !important;
+  color: #1F1C18 !important;
+}
+html[data-skin="industrial"][data-skin-variant="champagne"][data-theme="light"] #view-menu .menu-icon-box {
+  background: #F4EFE6 !important;
+  border: 1px solid #CBB692 !important;
+  color: #6E5D40 !important;
+}
+
+/* Industrial Cristal Tintex — Modo Claro */
+html[data-skin="industrial"][data-skin-variant="cristal_tintex"][data-theme="light"],
+html[data-skin="industrial"][data-skin-variant="cristal_tintex"][data-theme="light"] body,
+html[data-skin="industrial"][data-skin-variant="cristal_tintex"][data-theme="light"] #root {
+  background-color: #F0FAF8 !important;
+  background-image: none !important;
+  color: #0D2623 !important;
+}
+html[data-skin="industrial"][data-skin-variant="cristal_tintex"][data-theme="light"] header {
+  background: #117C69 !important;
+  border-bottom: 1.5px solid #0D6253 !important;
+  color: #FFFFFF !important;
+}
+html[data-skin="industrial"][data-skin-variant="cristal_tintex"][data-theme="light"] #drawer-panel-surface {
+  background: #FFFFFF !important;
+  border-left: 1.5px solid #99DDD1 !important;
+  color: #0D2623 !important;
+}
+html[data-skin="industrial"][data-skin-variant="cristal_tintex"][data-theme="light"] #lev-entry {
+  background: #FFFFFF !important;
+  border: 1.5px solid #14967F !important;
+  box-shadow: none !important;
+  color: #0D2623 !important;
+}
+html[data-skin="industrial"][data-skin-variant="cristal_tintex"][data-theme="light"] #lev-entry small {
+  color: #0E6959 !important;
+}
+html[data-skin="industrial"][data-skin-variant="cristal_tintex"][data-theme="light"] #view-menu .menu-hero-card,
+html[data-skin="industrial"][data-skin-variant="cristal_tintex"][data-theme="light"] #view-menu .metal-hero-card {
+  background: #117C69 !important;
+  border: 1px solid #0D6253 !important;
+  color: #FFFFFF !important;
+}
+html[data-skin="industrial"][data-skin-variant="cristal_tintex"][data-theme="light"] #view-menu .menu-grid-card,
+html[data-skin="industrial"][data-skin-variant="cristal_tintex"][data-theme="light"] #view-menu .metal-grid-card {
+  background: #FFFFFF !important;
+  border: 1px solid #BDE8E0 !important;
+  border-left: 3px solid #14967F !important;
+  box-shadow: none !important;
+  color: #0D2623 !important;
+}
+html[data-skin="industrial"][data-skin-variant="cristal_tintex"][data-theme="light"] #view-menu .menu-icon-box {
+  background: #DDF5F0 !important;
+  border: 1px solid #63C9B7 !important;
+  color: #0D6253 !important;
 }
 
 
