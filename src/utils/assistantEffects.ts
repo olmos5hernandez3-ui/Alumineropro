@@ -2,6 +2,8 @@ import type { AssistantAvatarId } from '../components/AssistantCharacters';
 
 export const AVATAR_SOUND_KEY = 'aluminero-avatar-sound';
 export const AVATAR_SOUND_EVENT_NAME = 'aluminero-avatar-sound';
+export const AVATAR_TIPS_KEY = 'aluminero-avatar-tips';
+export const AVATAR_TIPS_EVENT_NAME = 'aluminero-avatar-tips';
 export const ASSISTANT_CELEBRATE_EVENT_NAME = 'aluminero:assistant-celebrate';
 
 export type AssistantSoundKind = 'tap' | 'drop' | 'celebrate';
@@ -10,6 +12,28 @@ export type AssistantCelebrateReason = 'piece' | 'quote';
 export interface AssistantCelebrateDetail {
   reason: AssistantCelebrateReason;
   message?: string;
+}
+
+export interface SmartBubblePositionInput {
+  avatarX: number;
+  avatarY: number;
+  avatarWidth?: number;
+  avatarHeight?: number;
+  viewportWidth: number;
+  viewportHeight: number;
+  bubbleMaxWidth?: number;
+  margin?: number;
+  gap?: number;
+}
+
+export interface SmartBubbleLayout {
+  horizontalSide: 'left' | 'right';
+  verticalSide: 'above' | 'below';
+  left: number;
+  top: number | null;
+  bottom: number | null;
+  width: number;
+  tailLeftPx: number;
 }
 
 export function loadAvatarSoundEnabled(): boolean {
@@ -33,6 +57,82 @@ export function saveAvatarSoundEnabled(enabled: boolean): void {
   } catch {
     // ignore
   }
+}
+
+export function loadAvatarTipsEnabled(): boolean {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return true;
+    const raw = window.localStorage.getItem(AVATAR_TIPS_KEY);
+    if (raw === '0' || raw === 'false') return false;
+  } catch {
+    // ignore storage failures
+  }
+  return true;
+}
+
+export function saveAvatarTipsEnabled(enabled: boolean): void {
+  try {
+    if (typeof window === 'undefined') return;
+    window.localStorage?.setItem(AVATAR_TIPS_KEY, enabled ? '1' : '0');
+    window.dispatchEvent(
+      new CustomEvent<boolean>(AVATAR_TIPS_EVENT_NAME, { detail: enabled })
+    );
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Calcula la posición inteligente del globo emergente del personaje asistente
+ * para que nunca se corte fuera de la pantalla en ninguna esquina:
+ * - Mitad izquierda (avatarX < viewportWidth / 2): abre hacia la derecha.
+ * - Mitad derecha (avatarX >= viewportWidth / 2): abre hacia la izquierda.
+ * - Tercio superior (avatarY < 180): abre debajo del personaje; de lo contrario, arriba.
+ * - Ancho máximo 240px con margen mínimo de 12px respecto a bordes izquierdo y derecho.
+ */
+export function computeSmartBubblePosition(
+  input: SmartBubblePositionInput
+): SmartBubbleLayout {
+  const safeViewportW = Math.max(200, Number.isFinite(input.viewportWidth) ? input.viewportWidth : 390);
+  const safeViewportH = Math.max(300, Number.isFinite(input.viewportHeight) ? input.viewportHeight : 844);
+  const avatarW = Math.max(32, input.avatarWidth ?? 72);
+  const avatarH = Math.max(32, input.avatarHeight ?? 74);
+  const margin = Math.max(12, input.margin ?? 12);
+  const gap = Math.max(6, input.gap ?? 10);
+  const maxW = Math.min(240, Math.max(160, input.bubbleMaxWidth ?? 240));
+  const width = Math.min(maxW, Math.max(160, safeViewportW - margin * 2));
+
+  const safeX = Number.isFinite(input.avatarX) ? input.avatarX : safeViewportW - margin - avatarW;
+  const safeY = Number.isFinite(input.avatarY) ? input.avatarY : safeViewportH - margin - avatarH;
+
+  const isLeftHalf = safeX < safeViewportW / 2;
+  const horizontalSide: 'left' | 'right' = isLeftHalf ? 'right' : 'left';
+  const rawLeft = isLeftHalf ? safeX : safeX + avatarW - width;
+  const maxLeft = Math.max(margin, safeViewportW - margin - width);
+  const left = Math.round(Math.min(Math.max(margin, rawLeft), maxLeft));
+
+  const verticalSide: 'above' | 'below' = safeY < 180 ? 'below' : 'above';
+  const top =
+    verticalSide === 'below'
+      ? Math.round(Math.min(safeViewportH - 120, Math.max(margin, safeY + avatarH + gap)))
+      : null;
+  const bottom =
+    verticalSide === 'above'
+      ? Math.round(Math.min(safeViewportH - 120, Math.max(margin, safeViewportH - safeY + gap)))
+      : null;
+
+  const avatarCenterX = safeX + avatarW / 2;
+  const tailLeftPx = Math.round(Math.min(Math.max(18, avatarCenterX - left), width - 18));
+
+  return {
+    horizontalSide,
+    verticalSide,
+    left,
+    top,
+    bottom,
+    width,
+    tailLeftPx,
+  };
 }
 
 export function dispatchAssistantCelebrate(

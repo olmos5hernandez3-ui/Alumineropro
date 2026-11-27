@@ -3582,14 +3582,14 @@ test('98. SKIN_VARIANTS_BY_SKIN define acabados descansados para Ejecutiva (4) e
   }
 });
 
-test('99. Versión centralizada APP_VERSION=1.0.6 sincronizada con public/sw.js sin skipWaiting automático en install', async () => {
+test('99. Versión centralizada APP_VERSION=1.0.7 sincronizada con public/sw.js sin skipWaiting automático en install', async () => {
   const { readFileSync } = await import('node:fs');
   const { APP_VERSION, APP_VERSION_LABEL } = await import('./alumineroLogic.ts');
-  assert.equal(APP_VERSION, '1.0.6');
-  assert.equal(APP_VERSION_LABEL, 'v1.0.6');
+  assert.equal(APP_VERSION, '1.0.7');
+  assert.equal(APP_VERSION_LABEL, 'v1.0.7');
 
   const swSource = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSource, /const APP_VERSION\s*=\s*['"]1\.0\.6['"]/);
+  assert.match(swSource, /const APP_VERSION\s*=\s*['"]1\.0\.7['"]/);
   assert.match(swSource, /const CACHE_NAME\s*=\s*`aluminero-pro-v\$\{APP_VERSION\}`/);
 
   // Verificar que el bloque install NO llama self.skipWaiting() automáticamente
@@ -3823,11 +3823,11 @@ test('103. Historial de sesiones y detección de dispositivo/navegador para cole
   assert.equal(list.length, 30);
 });
 
-test('104. public/sw.js usa CACHE_NAME unificado aluminero-pro-v1.0.6, limpia cachés en activate y solo ejecuta skipWaiting en SKIP_WAITING', async () => {
+test('104. public/sw.js usa CACHE_NAME unificado aluminero-pro-v1.0.7, limpia cachés en activate y solo ejecuta skipWaiting en SKIP_WAITING', async () => {
   const { readFileSync } = await import('node:fs');
   const swSrc = readFileSync('public/sw.js', 'utf8');
 
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.6';/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.7';/);
   assert.match(swSrc, /const CACHE_NAME = `aluminero-pro-v\$\{APP_VERSION\}`;/);
   assert.doesNotMatch(swSrc, /CACHE_VERSION/, 'No deben quedar referencias sueltas a CACHE_VERSION');
   assert.match(swSrc, /keys\.filter\(\(key\) => key !== CACHE_NAME\)\.map\(\(key\) => caches\.delete\(key\)\)/);
@@ -4098,9 +4098,9 @@ test('108. Top 3 materiales frecuentes en inicio, texto/subtítulo de Google y p
   assert.match(giftModalSrc, /Ver planes y desbloquear recompensas/);
   assert.match(giftModalSrc, /Usar mis 3 días gratis ahora/);
 
-  // 5. Verificar que Admin Login y SW v1.0.6 permanecen completamente intactos
+  // 5. Verificar que Admin Login y SW v1.0.7 permanecen completamente intactos
   const swSrc = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.6'/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.7'/);
   assert.match(swSrc, /aluminero-pro-v\$\{APP_VERSION\}/);
   const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
   assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
@@ -4219,9 +4219,9 @@ test('109. Prompt 1: Escáner IA de croquis (1024px JPEG 0.8 + mm JSON), Tramos 
   const modSrc = readFileSync('src/components/ModulacionCortesView.tsx', 'utf8');
   assert.match(modSrc, /Tramos610AcomodadosSection/);
 
-  // 6. Reglas de oro intactas: SW v1.0.6 y Admin Login sin tocar
+  // 6. Reglas de oro intactas: SW v1.0.7 y Admin Login sin tocar
   const swSrc = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.6'/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.7'/);
   const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
   assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
 });
@@ -4441,9 +4441,9 @@ test('111. Botón de tema en TopBar, Acordeones desplegables y Dibujo digitaliza
   assert.match(trabajoSrc, /CollapsibleAccordion/);
   assert.match(trabajoSrc, /id="acc-trabajo-tramos-610"/);
 
-  // 6. Reglas de oro: SW sincronizado en 1.0.6 y Admin Login intacto
+  // 6. Reglas de oro: SW sincronizado en 1.0.7 y Admin Login intacto
   const swSrc = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.6'/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.7'/);
   const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
   assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
 });
@@ -4480,13 +4480,14 @@ test('112. Avatares 3D con halo azul/cobre, animaciones reactivas, Web Audio API
   assert.equal(AVATAR_SOUND_KEY, 'aluminero-avatar-sound');
   assert.equal(ASSISTANT_CELEBRATE_EVENT_NAME, 'aluminero:assistant-celebrate');
 
-  // 3. Rediseño 3D SVG con degradados, halo azul metálico/cobre, parpadeo y destellos
+  // 3. Avatares 3D PNG transparentes desde /avatars/*.png + sombra de contacto y destellos
   const charSrc = readFileSync('src/components/AssistantCharacters.tsx', 'utf8');
-  assert.match(charSrc, /data-halo="blue-copper-bubble"/);
-  assert.match(charSrc, /radialGradient/);
-  assert.match(charSrc, /assistant-eye-blink/);
-  assert.match(charSrc, /assistant-ear-left/);
-  assert.match(charSrc, /assistant-part-wiggle/);
+  assert.match(charSrc, /\/avatars\/robot\.png/);
+  assert.match(charSrc, /\/avatars\/gatito\.png/);
+  assert.match(charSrc, /\/avatars\/perrito\.png/);
+  assert.match(charSrc, /\/avatars\/puerquito\.png/);
+  assert.match(charSrc, /\/avatars\/gallito\.png/);
+  assert.match(charSrc, /drop-shadow\(0 8px 12px rgba\(0,0,0,0\.45\)\)/);
   assert.match(charSrc, /assistant-sparkles/);
 
   // 4. Web Audio API procedural para los 5 sonidos sin archivos externos
@@ -4615,12 +4616,12 @@ test('113. Prompt 2: Ajuste de precios de un golpe (%) con filtro por acabado, c
     assert.ok(ads.whatsappShareUrlStatus.startsWith('https://wa.me/?text='));
   }
 
-  // 5. Verificación UI y versión v1.0.6 + TopBar toggle + Admin Login intacto
-  assert.equal(APP_VERSION, '1.0.6');
-  assert.equal(APP_VERSION_LABEL, 'v1.0.6');
+  // 5. Verificación UI y versión v1.0.7 + TopBar toggle + Admin Login intacto
+  assert.equal(APP_VERSION, '1.0.7');
+  assert.equal(APP_VERSION_LABEL, 'v1.0.7');
 
   const swSrc = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.6'/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.7'/);
 
   const tallerSrc = readFileSync('src/components/TallerView.tsx', 'utf8');
   assert.match(tallerSrc, /⚡ Ajuste de precios de un golpe \(%\)/);
@@ -4735,11 +4736,125 @@ test('114. Rediseño visual descansado de carátulas + 3 acabados de aluminio + 
   assert.match(catSrc, /cat-mat-chip-/);
   assert.match(catSrc, /filterOfficialCatalogAdvanced/);
 
-  // 5. Versión v1.0.6 y Admin Login completamente intacto
-  assert.equal(APP_VERSION, '1.0.6');
+  // 5. Versión v1.0.7 y Admin Login completamente intacto
+  assert.equal(APP_VERSION, '1.0.7');
   const swSrc = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.6'/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.7'/);
   const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
   assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
 });
+
+test('115. Personajes 3D PNG transparentes (/avatars/*.png), globo inteligente sin recorte, interruptor aluminero-avatar-tips, acordeón Hoja 2 líneas y SW v1.0.7', async () => {
+  const { existsSync, readFileSync } = await import('node:fs');
+  const {
+    AVATAR_TIPS_KEY,
+    AVATAR_TIPS_EVENT_NAME,
+    computeSmartBubblePosition,
+    loadAvatarTipsEnabled,
+  } = await import('./assistantEffects.ts');
+  const { APP_VERSION } = await import('./alumineroLogic.ts');
+
+  // 1. Posicionamiento inteligente del globo emergente en las 4 esquinas (sin cortarse, margen >= 12px, max-w 240px)
+  const topLeftMobile = computeSmartBubblePosition({
+    avatarX: 10,
+    avatarY: 80,
+    viewportWidth: 390,
+    viewportHeight: 844,
+  });
+  assert.equal(topLeftMobile.horizontalSide, 'right');
+  assert.equal(topLeftMobile.verticalSide, 'below');
+  assert.ok(topLeftMobile.left >= 12, 'Margen izquierdo mínimo 12px');
+  assert.ok(topLeftMobile.left + topLeftMobile.width <= 390 - 12, 'No debe salirse del borde derecho');
+  assert.ok(topLeftMobile.width <= 240, 'Ancho máximo 240px');
+  assert.ok(topLeftMobile.top !== null && topLeftMobile.top > 80, 'Debe abrir debajo cuando y < 180');
+  assert.equal(topLeftMobile.bottom, null);
+
+  const bottomLeftMobile = computeSmartBubblePosition({
+    avatarX: 12,
+    avatarY: 740,
+    viewportWidth: 390,
+    viewportHeight: 844,
+  });
+  assert.equal(bottomLeftMobile.horizontalSide, 'right');
+  assert.equal(bottomLeftMobile.verticalSide, 'above');
+  assert.ok(bottomLeftMobile.left >= 12);
+  assert.equal(bottomLeftMobile.top, null);
+  assert.ok(bottomLeftMobile.bottom !== null && bottomLeftMobile.bottom > 0);
+
+  const topRightDesktop = computeSmartBubblePosition({
+    avatarX: 1340,
+    avatarY: 90,
+    viewportWidth: 1440,
+    viewportHeight: 900,
+  });
+  assert.equal(topRightDesktop.horizontalSide, 'left');
+  assert.equal(topRightDesktop.verticalSide, 'below');
+  assert.ok(topRightDesktop.left + topRightDesktop.width <= 1440 - 12);
+  assert.ok(topRightDesktop.top !== null && topRightDesktop.top > 90);
+
+  const bottomRightDesktop = computeSmartBubblePosition({
+    avatarX: 1348,
+    avatarY: 806,
+    viewportWidth: 1440,
+    viewportHeight: 900,
+  });
+  assert.equal(bottomRightDesktop.horizontalSide, 'left');
+  assert.equal(bottomRightDesktop.verticalSide, 'above');
+  assert.ok(bottomRightDesktop.left + bottomRightDesktop.width <= 1440 - 12);
+  assert.ok(bottomRightDesktop.bottom !== null && bottomRightDesktop.bottom > 0);
+
+  // 2. Clave y valor por defecto del interruptor de sugerencias automáticas
+  assert.equal(AVATAR_TIPS_KEY, 'aluminero-avatar-tips');
+  assert.equal(AVATAR_TIPS_EVENT_NAME, 'aluminero-avatar-tips');
+  assert.equal(loadAvatarTipsEnabled(), true);
+
+  const drawerSrc = readFileSync('src/components/TopBarAndDrawer.tsx', 'utf8');
+  assert.match(drawerSrc, /id="btn-drawer-avatar-tips-switch"/);
+  assert.match(drawerSrc, /Sugerencias y recordatorios automáticos/);
+  assert.match(drawerSrc, /Avisar cotizaciones pendientes y guías de uso/);
+  const idxVis = drawerSrc.indexOf('id="btn-drawer-avatar-visible-switch"');
+  const idxSnd = drawerSrc.indexOf('id="btn-drawer-avatar-sound-switch"');
+  const idxTip = drawerSrc.indexOf('id="btn-drawer-avatar-tips-switch"');
+  const idxGrid = drawerSrc.indexOf('id="drawer-avatar-grid"');
+  assert.ok(idxVis > 0 && idxSnd > idxVis && idxTip > idxSnd && idxGrid > idxTip);
+
+  const floatSrc = readFileSync('src/components/FloatingAssistant.tsx', 'utf8');
+  assert.match(floatSrc, /computeSmartBubblePosition/);
+  assert.match(floatSrc, /AVATAR_TIPS_EVENT_NAME/);
+  assert.match(floatSrc, /max-w-\[240px\]/);
+
+  // 3. Reacomodo en Hoja de Cotización: encabezado vertical en 2 líneas
+  const hojaSrc = readFileSync('src/components/HojaCotizacionView.tsx', 'utf8');
+  assert.match(hojaSrc, /id="acc-hoja-cliente"[\s\S]*headerLayout="stacked"/);
+  const accSrc = readFileSync('src/components/CollapsibleAccordion.tsx', 'utf8');
+  assert.match(accSrc, /headerLayout\?: 'inline' \| 'stacked'/);
+
+  // 4. 7 imágenes 3D PNG transparentes presentes en public/avatars/ y precacheadas en public/sw.js (v1.0.7)
+  const expectedAvatars = [
+    'robot',
+    'castor',
+    'buho',
+    'gatito',
+    'perrito',
+    'puerquito',
+    'gallito',
+  ];
+  const swSrc = readFileSync('public/sw.js', 'utf8');
+  const charSrc = readFileSync('src/components/AssistantCharacters.tsx', 'utf8');
+  for (const name of expectedAvatars) {
+    assert.ok(existsSync(`public/avatars/${name}.png`), `Debe existir public/avatars/${name}.png`);
+    assert.ok(swSrc.includes(`'/avatars/${name}.png'`), `sw.js debe cachear /avatars/${name}.png`);
+    assert.ok(charSrc.includes(`'/avatars/${name}.png'`), `AssistantCharacters debe mapear /avatars/${name}.png`);
+  }
+  assert.match(charSrc, /bg-transparent/);
+  assert.match(charSrc, /object-contain/);
+  assert.match(charSrc, /drop-shadow\(0 8px 12px rgba\(0,0,0,0\.45\)\)/);
+
+  // 5. SW v1.0.7 y Admin Login intacto
+  assert.equal(APP_VERSION, '1.0.7');
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.7'/);
+  const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
+  assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
+});
+
 

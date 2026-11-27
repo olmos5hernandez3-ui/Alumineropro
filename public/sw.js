@@ -1,4 +1,4 @@
-const APP_VERSION = '1.0.6';
+const APP_VERSION = '1.0.7';
 const CACHE_NAME = `aluminero-pro-v${APP_VERSION}`;
 const APP_SHELL_ASSETS = [
   '/',
@@ -9,6 +9,13 @@ const APP_SHELL_ASSETS = [
   '/pwa-512x512.png',
   '/pwa-maskable-512x512.png',
   '/apple-touch-icon.png',
+  '/avatars/robot.png',
+  '/avatars/castor.png',
+  '/avatars/buho.png',
+  '/avatars/gatito.png',
+  '/avatars/perrito.png',
+  '/avatars/puerquito.png',
+  '/avatars/gallito.png',
 ];
 
 function normalizePushPayload(raw) {

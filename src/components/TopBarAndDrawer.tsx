@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Bell,
+  BellOff,
   Check,
   ChevronDown,
   ChevronUp,
@@ -55,9 +56,12 @@ import {
 } from './AssistantCharacters';
 import {
   AVATAR_SOUND_EVENT_NAME,
+  AVATAR_TIPS_EVENT_NAME,
   loadAvatarSoundEnabled,
+  loadAvatarTipsEnabled,
   playAssistantSound,
   saveAvatarSoundEnabled,
+  saveAvatarTipsEnabled,
 } from '../utils/assistantEffects';
 
 export type ScreenId =
@@ -560,6 +564,7 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
   const [selectedAvatar, setSelectedAvatar] = useState<AssistantAvatarId>(() => loadSelectedAvatar());
   const [avatarVisible, setAvatarVisible] = useState<boolean>(() => loadAvatarVisible());
   const [avatarSoundEnabled, setAvatarSoundEnabled] = useState<boolean>(() => loadAvatarSoundEnabled());
+  const [avatarTipsEnabled, setAvatarTipsEnabled] = useState<boolean>(() => loadAvatarTipsEnabled());
   const [promoFlyerExpanded, setPromoFlyerExpanded] = useState(true);
   const [missionExpanded, setMissionExpanded] = useState(false);
   const [lockedSkinPrompt, setLockedSkinPrompt] = useState<SkinOptionMeta | null>(null);
@@ -581,13 +586,20 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
       if (typeof detail === 'boolean') setAvatarSoundEnabled(detail);
       else setAvatarSoundEnabled(loadAvatarSoundEnabled());
     };
+    const onTipsChange = (ev: Event) => {
+      const detail = (ev as CustomEvent<boolean>).detail;
+      if (typeof detail === 'boolean') setAvatarTipsEnabled(detail);
+      else setAvatarTipsEnabled(loadAvatarTipsEnabled());
+    };
     window.addEventListener(AVATAR_EVENT_NAME, onAvatarChange);
     window.addEventListener(AVATAR_VISIBLE_EVENT_NAME, onVisChange);
     window.addEventListener(AVATAR_SOUND_EVENT_NAME, onSoundChange);
+    window.addEventListener(AVATAR_TIPS_EVENT_NAME, onTipsChange);
     return () => {
       window.removeEventListener(AVATAR_EVENT_NAME, onAvatarChange);
       window.removeEventListener(AVATAR_VISIBLE_EVENT_NAME, onVisChange);
       window.removeEventListener(AVATAR_SOUND_EVENT_NAME, onSoundChange);
+      window.removeEventListener(AVATAR_TIPS_EVENT_NAME, onTipsChange);
     };
   }, []);
   const drawerBrandTapTimerRef = useRef<number | null>(null);
@@ -1184,105 +1196,161 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
 
           {avatarExpanded && (
             <div className={`px-2.5 pb-3 pt-2 border-t flex flex-col gap-2.5 ${dividerClass}`}>
-              {/* Switch Mostrar personaje asistente */}
-              <button
-                type="button"
-                id="btn-drawer-avatar-visible-switch"
-                role="switch"
-                aria-checked={avatarVisible}
-                onClick={() => {
-                  const next = !avatarVisible;
-                  setAvatarVisible(next);
-                  saveAvatarVisible(next);
-                }}
-                className={`w-full min-h-[44px] px-3 py-2 rounded-lg border text-left cursor-pointer flex items-center justify-between gap-3 transition-colors ${
-                  isDark
-                    ? 'border-white/15 bg-white/5 hover:bg-white/10 text-white'
-                    : 'border-slate-300 bg-white hover:bg-slate-50 text-slate-900'
-                }`}
-              >
-                <div className="min-w-0 flex-1">
-                  <span className="block text-[12.5px] font-extrabold leading-tight">
-                    Mostrar personaje asistente
-                  </span>
-                  <span className={`block text-[10.5px] leading-snug mt-0.5 ${subTextClass}`}>
-                    Arrastrable, con gestos y consejos del taller
-                  </span>
-                </div>
-                <span
-                  aria-hidden="true"
-                  className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors ${
-                    avatarVisible
-                      ? 'bg-emerald-500 border-emerald-400'
-                      : isDark
-                        ? 'bg-slate-700 border-slate-500'
-                        : 'bg-slate-300 border-slate-400'
+              {/* Controles ordenados del Personaje Asistente antes de la cuadrícula */}
+              <div className="flex flex-col gap-2">
+                {/* 1. Switch Mostrar personaje asistente */}
+                <button
+                  type="button"
+                  id="btn-drawer-avatar-visible-switch"
+                  role="switch"
+                  aria-checked={avatarVisible}
+                  onClick={() => {
+                    const next = !avatarVisible;
+                    setAvatarVisible(next);
+                    saveAvatarVisible(next);
+                  }}
+                  className={`w-full min-h-[44px] px-3 py-2 rounded-lg border text-left cursor-pointer flex items-center justify-between gap-3 transition-colors ${
+                    isDark
+                      ? 'border-white/15 bg-white/5 hover:bg-white/10 text-white'
+                      : 'border-slate-300 bg-white hover:bg-slate-50 text-slate-900'
                   }`}
                 >
-                  <span
-                    className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${
-                      avatarVisible ? 'translate-x-5' : 'translate-x-1'
-                    }`}
-                  />
-                </span>
-              </button>
-
-              {/* Interruptor Silenciar / Activar sonidos del personaje */}
-              <button
-                type="button"
-                id="btn-drawer-avatar-sound-switch"
-                role="switch"
-                aria-checked={avatarSoundEnabled}
-                onClick={() => {
-                  const next = !avatarSoundEnabled;
-                  setAvatarSoundEnabled(next);
-                  saveAvatarSoundEnabled(next);
-                  if (next) {
-                    playAssistantSound(selectedAvatar, 'tap', true);
-                  }
-                }}
-                className={`w-full min-h-[42px] px-3 py-2 rounded-lg border text-left cursor-pointer flex items-center justify-between gap-3 transition-colors ${
-                  isDark
-                    ? 'border-white/15 bg-white/5 hover:bg-white/10 text-white'
-                    : 'border-slate-300 bg-white hover:bg-slate-50 text-slate-900'
-                }`}
-              >
-                <div className="flex items-center gap-2 min-w-0 flex-1">
-                  {avatarSoundEnabled ? (
-                    <Volume2 className="w-4 h-4 text-sky-400 shrink-0" aria-hidden="true" />
-                  ) : (
-                    <VolumeX className="w-4 h-4 text-slate-400 shrink-0" aria-hidden="true" />
-                  )}
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <span className="block text-[12px] font-extrabold leading-tight">
-                      Sonidos interactivos
+                      Mostrar personaje asistente
                     </span>
                     <span className={`block text-[10px] leading-snug mt-0.5 ${subTextClass}`}>
-                      {avatarSoundEnabled
-                        ? 'Activados al tocar, soltar o celebrar'
-                        : 'Silenciados (sin efectos de audio)'}
+                      Arrastrable, con gestos y consejos del taller
                     </span>
                   </div>
-                </div>
-                <span
-                  aria-hidden="true"
-                  className={`relative inline-flex h-5 w-10 shrink-0 items-center rounded-full border transition-colors ${
-                    avatarSoundEnabled
-                      ? 'bg-sky-500 border-sky-400'
-                      : isDark
-                        ? 'bg-slate-700 border-slate-500'
-                        : 'bg-slate-300 border-slate-400'
+                  <span
+                    aria-hidden="true"
+                    className={`relative inline-flex h-5 w-10 shrink-0 items-center rounded-full border transition-colors ${
+                      avatarVisible
+                        ? 'bg-emerald-500 border-emerald-400'
+                        : isDark
+                          ? 'bg-slate-700 border-slate-500'
+                          : 'bg-slate-300 border-slate-400'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform duration-200 ${
+                        avatarVisible ? 'translate-x-5' : 'translate-x-0.5'
+                      }`}
+                    />
+                  </span>
+                </button>
+
+                {/* 2. Interruptor Silenciar / Activar sonidos del personaje */}
+                <button
+                  type="button"
+                  id="btn-drawer-avatar-sound-switch"
+                  role="switch"
+                  aria-checked={avatarSoundEnabled}
+                  onClick={() => {
+                    const next = !avatarSoundEnabled;
+                    setAvatarSoundEnabled(next);
+                    saveAvatarSoundEnabled(next);
+                    if (next) {
+                      playAssistantSound(selectedAvatar, 'tap', true);
+                    }
+                  }}
+                  className={`w-full min-h-[44px] px-3 py-2 rounded-lg border text-left cursor-pointer flex items-center justify-between gap-3 transition-colors ${
+                    isDark
+                      ? 'border-white/15 bg-white/5 hover:bg-white/10 text-white'
+                      : 'border-slate-300 bg-white hover:bg-slate-50 text-slate-900'
                   }`}
                 >
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    {avatarSoundEnabled ? (
+                      <Volume2 className="w-4 h-4 text-sky-400 shrink-0" aria-hidden="true" />
+                    ) : (
+                      <VolumeX className="w-4 h-4 text-slate-400 shrink-0" aria-hidden="true" />
+                    )}
+                    <div className="min-w-0">
+                      <span className="block text-[12px] font-extrabold leading-tight">
+                        Sonidos interactivos
+                      </span>
+                      <span className={`block text-[10px] leading-snug mt-0.5 ${subTextClass}`}>
+                        {avatarSoundEnabled
+                          ? 'Activados al tocar, soltar o celebrar'
+                          : 'Silenciados (sin efectos de audio)'}
+                      </span>
+                    </div>
+                  </div>
                   <span
-                    className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform duration-200 ${
-                      avatarSoundEnabled ? 'translate-x-5' : 'translate-x-0.5'
+                    aria-hidden="true"
+                    className={`relative inline-flex h-5 w-10 shrink-0 items-center rounded-full border transition-colors ${
+                      avatarSoundEnabled
+                        ? 'bg-sky-500 border-sky-400'
+                        : isDark
+                          ? 'bg-slate-700 border-slate-500'
+                          : 'bg-slate-300 border-slate-400'
                     }`}
-                  />
-                </span>
-              </button>
+                  >
+                    <span
+                      className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform duration-200 ${
+                        avatarSoundEnabled ? 'translate-x-5' : 'translate-x-0.5'
+                      }`}
+                    />
+                  </span>
+                </button>
 
-              {/* Cuadrícula de los 7 personajes */}
+                {/* 3. Interruptor Sugerencias y recordatorios automáticos */}
+                <button
+                  type="button"
+                  id="btn-drawer-avatar-tips-switch"
+                  role="switch"
+                  aria-checked={avatarTipsEnabled}
+                  onClick={() => {
+                    const next = !avatarTipsEnabled;
+                    setAvatarTipsEnabled(next);
+                    saveAvatarTipsEnabled(next);
+                  }}
+                  className={`w-full min-h-[44px] px-3 py-2 rounded-lg border text-left cursor-pointer flex items-center justify-between gap-3 transition-colors ${
+                    isDark
+                      ? 'border-white/15 bg-white/5 hover:bg-white/10 text-white'
+                      : 'border-slate-300 bg-white hover:bg-slate-50 text-slate-900'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    {avatarTipsEnabled ? (
+                      <Bell className="w-4 h-4 text-amber-400 shrink-0" aria-hidden="true" />
+                    ) : (
+                      <BellOff className="w-4 h-4 text-slate-400 shrink-0" aria-hidden="true" />
+                    )}
+                    <div className="min-w-0">
+                      <span className="block text-[12px] font-extrabold leading-tight">
+                        Sugerencias y recordatorios automáticos
+                      </span>
+                      <span className={`block text-[10px] leading-snug mt-0.5 ${subTextClass}`}>
+                        Avisar cotizaciones pendientes y guías de uso
+                      </span>
+                    </div>
+                  </div>
+                  <span
+                    aria-hidden="true"
+                    className={`relative inline-flex h-5 w-10 shrink-0 items-center rounded-full border transition-colors ${
+                      avatarTipsEnabled
+                        ? 'bg-amber-500 border-amber-400'
+                        : isDark
+                          ? 'bg-slate-700 border-slate-500'
+                          : 'bg-slate-300 border-slate-400'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform duration-200 ${
+                        avatarTipsEnabled ? 'translate-x-5' : 'translate-x-0.5'
+                      }`}
+                    />
+                  </span>
+                </button>
+              </div>
+
+              {/* Cuadrícula de los 7 personajes 3D transparentes */}
+              <div className={`text-[10px] font-extrabold uppercase tracking-wider pt-0.5 ${subTextClass}`}>
+                Elige tu personaje (7):
+              </div>
               <div
                 id="drawer-avatar-grid"
                 className="grid grid-cols-2 gap-1.5"
@@ -1316,10 +1384,10 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
                             : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-800'
                       }`}
                     >
-                      <span className="w-9 h-9 shrink-0 flex items-center justify-center" aria-hidden="true">
+                      <span className="w-10 h-10 shrink-0 flex items-center justify-center bg-transparent" aria-hidden="true">
                         <AssistantCharacterSvg
                           avatarId={char.id}
-                          size={36}
+                          size={40}
                           skin={skin}
                           skinVariant={skinVariant}
                           santaHat={skin === 'navidena'}

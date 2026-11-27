@@ -332,7 +332,8 @@ export const HojaCotizacionView: React.FC<Props> = ({
       <CollapsibleAccordion
         id="acc-hoja-cliente"
         title="👤 Datos del Proyecto / Obra"
-        summary={`${hoja.proyecto?.trim() || 'Sin nombre de proyecto'} · Cotización No. ${currentFolio}`}
+        summary={hoja.proyecto?.trim() || 'Sin nombre de proyecto'}
+        headerLayout="stacked"
         open={accClienteOpen}
         onToggle={() => setAccClienteOpen((p) => !p)}
         tone="light"
@@ -340,9 +341,9 @@ export const HojaCotizacionView: React.FC<Props> = ({
         rightAction={
           <span
             id="hoja-folio-badge"
-            className="px-2.5 py-1 rounded-lg bg-blue-50 border border-blue-200 text-blue-800 mono text-[11px] font-extrabold"
+            className="px-2.5 py-1 rounded-lg bg-blue-50 border border-blue-200 text-blue-800 mono text-[11px] font-extrabold whitespace-nowrap"
           >
-            No. {currentFolio} · {todayLabel}
+            No. {currentFolio} • {todayLabel}
           </span>
         }
       >

@@ -32,10 +32,13 @@ import {
   ASSISTANT_CELEBRATE_EVENT_NAME,
   AssistantCelebrateDetail,
   AVATAR_SOUND_EVENT_NAME,
+  AVATAR_TIPS_EVENT_NAME,
   computeDragTiltDegrees,
+  computeSmartBubblePosition,
   getCharacterCelebrationText,
   getCharacterQuickGreeting,
   loadAvatarSoundEnabled,
+  loadAvatarTipsEnabled,
   playAssistantSound,
 } from '../utils/assistantEffects';
 
@@ -153,10 +156,15 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
   const [activeOption, setActiveOption] = useState<'A' | 'B'>('A');
   const [quotaRec, setQuotaRec] = useState(() => loadAssistantDailyQuota());
 
-  // 7 personajes + switch de visibilidad + sonido sincronizados con el Menú ☰
+  // 7 personajes + switch de visibilidad + sonido + recordatorios sincronizados con el Menú ☰
   const [avatarId, setAvatarId] = useState<AssistantAvatarId>(() => loadSelectedAvatar());
   const [avatarVisible, setAvatarVisible] = useState<boolean>(() => loadAvatarVisible());
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => loadAvatarSoundEnabled());
+  const [tipsEnabled, setTipsEnabled] = useState<boolean>(() => loadAvatarTipsEnabled());
+  const [viewportSize, setViewportSize] = useState<{ width: number; height: number }>(() => ({
+    width: typeof window !== 'undefined' ? window.innerWidth : 390,
+    height: typeof window !== 'undefined' ? window.innerHeight : 844,
+  }));
   const [hopActive, setHopActive] = useState(false);
   const [gestureActive, setGestureActive] = useState(false);
   const [celebrating, setCelebrating] = useState(false);
@@ -222,7 +230,7 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
     }, 2400);
   };
 
-  // Escuchar cambios de personaje, visibilidad, sonido y celebraciones
+  // Escuchar cambios de personaje, visibilidad, sonido, recordatorios y celebraciones
   useEffect(() => {
     const onAvatarEv = (ev: Event) => {
       const next = (ev as CustomEvent<AssistantAvatarId>).detail;
@@ -236,6 +244,14 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
       const next = (ev as CustomEvent<boolean>).detail;
       setSoundEnabled(typeof next === 'boolean' ? next : loadAvatarSoundEnabled());
     };
+    const onTipsEv = (ev: Event) => {
+      const next = (ev as CustomEvent<boolean>).detail;
+      const resolved = typeof next === 'boolean' ? next : loadAvatarTipsEnabled();
+      setTipsEnabled(resolved);
+      if (!resolved) {
+        setActiveTip(null);
+      }
+    };
     const onCelebrateEv = (ev: Event) => {
       const detail = (ev as CustomEvent<AssistantCelebrateDetail>).detail;
       triggerCelebration(detail?.reason || 'piece', detail?.message);
@@ -243,11 +259,13 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
     window.addEventListener(AVATAR_EVENT_NAME, onAvatarEv);
     window.addEventListener(AVATAR_VISIBLE_EVENT_NAME, onVisEv);
     window.addEventListener(AVATAR_SOUND_EVENT_NAME, onSoundEv);
+    window.addEventListener(AVATAR_TIPS_EVENT_NAME, onTipsEv);
     window.addEventListener(ASSISTANT_CELEBRATE_EVENT_NAME, onCelebrateEv);
     return () => {
       window.removeEventListener(AVATAR_EVENT_NAME, onAvatarEv);
       window.removeEventListener(AVATAR_VISIBLE_EVENT_NAME, onVisEv);
       window.removeEventListener(AVATAR_SOUND_EVENT_NAME, onSoundEv);
+      window.removeEventListener(AVATAR_TIPS_EVENT_NAME, onTipsEv);
       window.removeEventListener(ASSISTANT_CELEBRATE_EVENT_NAME, onCelebrateEv);
     };
   }, [avatarId, avatarVisible, soundEnabled]);
@@ -290,9 +308,9 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
     }
   }, [currentView]);
 
-  // Calcular globo proactivo contextual discreto
+  // Calcular globo proactivo contextual discreto (respetando aluminero-avatar-tips)
   const computedProactiveTip = useMemo<ProactiveTip | null>(() => {
-    if (open || !avatarVisible) return null;
+    if (open || !avatarVisible || !tipsEnabled) return null;
     if (unvisitedSectionNow && !dismissedTipIds[`unvisited-${currentView}`]) {
       return {
         id: `unvisited-${currentView}`,
@@ -321,11 +339,11 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
       };
     }
     return null;
-  }, [open, avatarVisible, unvisitedSectionNow, currentView, hasPendingQuote, hasPendingLev, proActive, dismissedTipIds]);
+  }, [open, avatarVisible, tipsEnabled, unvisitedSectionNow, currentView, hasPendingQuote, hasPendingLev, proActive, dismissedTipIds]);
 
   // Mostrar globo proactivo de forma discreta tras 4.5 s (nunca invasivo)
   useEffect(() => {
-    if (!computedProactiveTip) {
+    if (!tipsEnabled || !computedProactiveTip) {
       setActiveTip(null);
       return;
     }
@@ -333,12 +351,15 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
       setActiveTip(computedProactiveTip);
     }, 4500);
     return () => window.clearTimeout(timer);
-  }, [computedProactiveTip]);
+  }, [computedProactiveTip, tipsEnabled]);
 
-  // Asegurar que la posición arrastrada nunca se salga de la pantalla al rotar/redimensionar
+  // Mantener dimensiones de ventana sincronizadas y evitar que la posición arrastrada salga de pantalla
   useEffect(() => {
-    if (!dragPos) return;
     const onResize = () => {
+      setViewportSize({
+        width: window.innerWidth,
+        height: window.innerHeight,
+      });
       setDragPos((prev) => {
         if (!prev) return null;
         const maxX = Math.max(8, window.innerWidth - 76);
@@ -351,7 +372,7 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
     };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
-  }, [dragPos]);
+  }, []);
 
   const quotaState = useMemo(
     () =>
@@ -1115,47 +1136,89 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
         </section>
       )}
 
-      {/* Globo proactivo contextual o mensaje de gesto largo (discreto y descartable con ✕) */}
-      {!open && !travelingToCenter && (gestureBanner || activeTip) && (
-        <div
-          id="floating-assistant-bubble"
-          role="status"
-          className="absolute bottom-[78px] right-0 w-[245px] sm:w-[268px] rounded-2xl bg-slate-900 text-white border-2 border-sky-400/75 p-3 shadow-xl z-40"
-        >
-          <div className="flex items-start justify-between gap-2">
-            <p className="m-0 text-[11.5px] font-bold leading-snug text-slate-100">
-              {gestureBanner || activeTip?.text}
-            </p>
-            <button
-              type="button"
-              id="btn-assistant-bubble-dismiss"
-              aria-label="Cerrar sugerencia del asistente"
-              onClick={() => {
-                setGestureBanner(null);
-                if (activeTip) {
-                  setDismissedTipIds((prev) => ({ ...prev, [activeTip.id]: true }));
-                  setActiveTip(null);
-                }
+      {/* Globo emergente inteligente (adaptado a las coordenadas x/y sin cortarse en esquinas) */}
+      {!open && !travelingToCenter && (gestureBanner || (tipsEnabled && activeTip)) && (() => {
+        const defaultOffset = viewportSize.width >= 640 ? 20 : 10;
+        const effectiveAvatarX = dragPos ? dragPos.x : Math.max(8, viewportSize.width - defaultOffset - 72);
+        const effectiveAvatarY = dragPos ? dragPos.y : Math.max(66, viewportSize.height - defaultOffset - 74);
+        const bubbleLayout = computeSmartBubblePosition({
+          avatarX: effectiveAvatarX,
+          avatarY: effectiveAvatarY,
+          avatarWidth: 72,
+          avatarHeight: 74,
+          viewportWidth: viewportSize.width,
+          viewportHeight: viewportSize.height,
+          bubbleMaxWidth: 240,
+          margin: 12,
+          gap: 10,
+        });
+        const visibleTip = tipsEnabled ? activeTip : null;
+
+        return (
+          <div
+            id="floating-assistant-bubble"
+            role="status"
+            data-bubble-horizontal={bubbleLayout.horizontalSide}
+            data-bubble-vertical={bubbleLayout.verticalSide}
+            style={{
+              position: 'fixed',
+              left: `${bubbleLayout.left}px`,
+              width: `${bubbleLayout.width}px`,
+              top: bubbleLayout.top !== null ? `${bubbleLayout.top}px` : undefined,
+              bottom: bubbleLayout.bottom !== null ? `${bubbleLayout.bottom}px` : undefined,
+              backgroundColor: '#0f172a',
+              opacity: 1,
+            }}
+            className="max-w-[240px] rounded-2xl text-white border-[1.5px] border-sky-400/85 p-3 shadow-2xl z-40"
+          >
+            {/* Punta direccional hacia el personaje */}
+            <span
+              aria-hidden="true"
+              style={{
+                left: `${bubbleLayout.tailLeftPx}px`,
+                backgroundColor: '#0f172a',
               }}
-              className="w-6 h-6 rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 text-[11px] font-black cursor-pointer shrink-0 flex items-center justify-center"
-            >
-              ✕
-            </button>
-          </div>
-          {!gestureBanner && activeTip && (
-            <div className="mt-2 flex items-center justify-end">
+              className={`absolute -translate-x-1/2 w-2.5 h-2.5 rotate-45 border-sky-400/85 ${
+                bubbleLayout.verticalSide === 'below'
+                  ? '-top-[6px] border-l-[1.5px] border-t-[1.5px]'
+                  : '-bottom-[6px] border-r-[1.5px] border-b-[1.5px]'
+              }`}
+            />
+            <div className="flex items-start justify-between gap-2">
+              <p className="m-0 text-[11.5px] font-bold leading-snug text-slate-100 break-words">
+                {gestureBanner || visibleTip?.text}
+              </p>
               <button
                 type="button"
-                id="btn-assistant-bubble-cta"
-                onClick={() => handleExecuteTipAction(activeTip)}
-                className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-extrabold cursor-pointer"
+                id="btn-assistant-bubble-dismiss"
+                aria-label="Cerrar sugerencia del asistente"
+                onClick={() => {
+                  setGestureBanner(null);
+                  if (activeTip) {
+                    setDismissedTipIds((prev) => ({ ...prev, [activeTip.id]: true }));
+                    setActiveTip(null);
+                  }
+                }}
+                className="w-6 h-6 rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 text-[11px] font-black cursor-pointer shrink-0 flex items-center justify-center"
               >
-                {activeTip.ctaLabel}
+                ✕
               </button>
             </div>
-          )}
-        </div>
-      )}
+            {!gestureBanner && visibleTip && (
+              <div className="mt-2 flex items-center justify-end">
+                <button
+                  type="button"
+                  id="btn-assistant-bubble-cta"
+                  onClick={() => handleExecuteTipAction(visibleTip)}
+                  className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-extrabold cursor-pointer"
+                >
+                  {visibleTip.ctaLabel}
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Personaje Asistente Flotante (3D con halo azul metálico/cobre, arrastrable, reactivo y con sonido) */}
       {!travelingToCenter && (() => {
