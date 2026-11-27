@@ -1742,9 +1742,9 @@ export const LevantamientoRapido: React.FC<Props> = ({
                         fontWeight: 800,
                         minHeight: '30px',
                         borderRadius: '8px',
-                        border: active ? '1.5px solid #38bdf8' : '1px solid rgba(148,163,184,0.38)',
-                        background: active ? '#1b7a9c' : 'rgba(15,23,42,0.55)',
-                        color: active ? '#ffffff' : '#cbd5e1',
+                        border: active ? '1px solid #2563EB' : '1px solid #334155',
+                        background: active ? '#1D4ED8' : '#222936',
+                        color: active ? '#FFFFFF' : '#CBD5E1',
                         cursor: 'pointer',
                         flex: '0 0 auto',
                       }}
@@ -1858,8 +1858,8 @@ export const LevantamientoRapido: React.FC<Props> = ({
                     marginTop: '8px',
                     padding: '10px',
                     borderRadius: '12px',
-                    background: 'rgba(15, 23, 42, 0.72)',
-                    border: '1px solid rgba(56, 189, 248, 0.35)',
+                    background: '#161B22',
+                    border: '1px solid #2A3241',
                   }}
                 >
                   <div className="lev-chip-group" style={{ marginBottom: '8px' }}>

@@ -5,6 +5,27 @@ export const AVATAR_SOUND_EVENT_NAME = 'aluminero-avatar-sound';
 export const AVATAR_TIPS_KEY = 'aluminero-avatar-tips';
 export const AVATAR_TIPS_EVENT_NAME = 'aluminero-avatar-tips';
 export const ASSISTANT_CELEBRATE_EVENT_NAME = 'aluminero:assistant-celebrate';
+export const GHOST_CLICK_SHIELD_MS = 300;
+
+export function isGhostClickShieldActive(
+  shieldUntilMs: number,
+  nowMs: number = Date.now()
+): boolean {
+  if (!Number.isFinite(shieldUntilMs) || !Number.isFinite(nowMs)) return false;
+  return nowMs < shieldUntilMs;
+}
+
+export function shouldBlockGhostClickTarget(
+  target: EventTarget | null,
+  assistantRootSelector: string = '#floating-assistant-root'
+): boolean {
+  if (!target || typeof target !== 'object') return true;
+  const el = target as { closest?: (selector: string) => unknown };
+  if (typeof el.closest === 'function') {
+    return !el.closest(assistantRootSelector);
+  }
+  return true;
+}
 
 export type AssistantSoundKind = 'tap' | 'drop' | 'celebrate';
 export type AssistantCelebrateReason = 'piece' | 'quote';

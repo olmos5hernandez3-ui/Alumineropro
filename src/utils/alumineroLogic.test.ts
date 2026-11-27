@@ -3582,14 +3582,14 @@ test('98. SKIN_VARIANTS_BY_SKIN define acabados descansados para Ejecutiva (4) e
   }
 });
 
-test('99. Versión centralizada APP_VERSION=1.0.9 sincronizada con public/sw.js sin skipWaiting automático en install', async () => {
+test('99. Versión centralizada APP_VERSION=1.0.11 sincronizada con public/sw.js sin skipWaiting automático en install', async () => {
   const { readFileSync } = await import('node:fs');
   const { APP_VERSION, APP_VERSION_LABEL } = await import('./alumineroLogic.ts');
-  assert.equal(APP_VERSION, '1.0.9');
-  assert.equal(APP_VERSION_LABEL, 'v1.0.9');
+  assert.equal(APP_VERSION, '1.0.11');
+  assert.equal(APP_VERSION_LABEL, 'v1.0.11');
 
   const swSource = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSource, /const APP_VERSION\s*=\s*['"]1\.0\.9['"]/);
+  assert.match(swSource, /const APP_VERSION\s*=\s*['"]1\.0\.11['"]/);
   assert.match(swSource, /const CACHE_NAME\s*=\s*`aluminero-pro-v\$\{APP_VERSION\}`/);
 
   // Verificar que el bloque install NO llama self.skipWaiting() automáticamente
@@ -3823,11 +3823,11 @@ test('103. Historial de sesiones y detección de dispositivo/navegador para cole
   assert.equal(list.length, 30);
 });
 
-test('104. public/sw.js usa CACHE_NAME unificado aluminero-pro-v1.0.9, limpia cachés en activate y solo ejecuta skipWaiting en SKIP_WAITING', async () => {
+test('104. public/sw.js usa CACHE_NAME unificado aluminero-pro-v1.0.11, limpia cachés en activate y solo ejecuta skipWaiting en SKIP_WAITING', async () => {
   const { readFileSync } = await import('node:fs');
   const swSrc = readFileSync('public/sw.js', 'utf8');
 
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.9';/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.11';/);
   assert.match(swSrc, /const CACHE_NAME = `aluminero-pro-v\$\{APP_VERSION\}`;/);
   assert.doesNotMatch(swSrc, /CACHE_VERSION/, 'No deben quedar referencias sueltas a CACHE_VERSION');
   assert.match(swSrc, /keys\.filter\(\(key\) => key !== CACHE_NAME\)\.map\(\(key\) => caches\.delete\(key\)\)/);
@@ -4098,9 +4098,9 @@ test('108. Top 3 materiales frecuentes en inicio, texto/subtítulo de Google y p
   assert.match(giftModalSrc, /Ver planes y desbloquear recompensas/);
   assert.match(giftModalSrc, /Usar mis 3 días gratis ahora/);
 
-  // 5. Verificar que Admin Login y SW v1.0.9 permanecen completamente intactos
+  // 5. Verificar que Admin Login y SW v1.0.11 permanecen completamente intactos
   const swSrc = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.9'/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.11'/);
   assert.match(swSrc, /aluminero-pro-v\$\{APP_VERSION\}/);
   const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
   assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
@@ -4219,9 +4219,9 @@ test('109. Prompt 1: Escáner IA de croquis (1024px JPEG 0.8 + mm JSON), Tramos 
   const modSrc = readFileSync('src/components/ModulacionCortesView.tsx', 'utf8');
   assert.match(modSrc, /Tramos610AcomodadosSection/);
 
-  // 6. Reglas de oro intactas: SW v1.0.9 y Admin Login sin tocar
+  // 6. Reglas de oro intactas: SW v1.0.11 y Admin Login sin tocar
   const swSrc = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.9'/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.11'/);
   const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
   assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
 });
@@ -4441,9 +4441,9 @@ test('111. Botón de tema en TopBar, Acordeones desplegables y Dibujo digitaliza
   assert.match(trabajoSrc, /CollapsibleAccordion/);
   assert.match(trabajoSrc, /id="acc-trabajo-tramos-610"/);
 
-  // 6. Reglas de oro: SW sincronizado en 1.0.9 y Admin Login intacto
+  // 6. Reglas de oro: SW sincronizado en 1.0.11 y Admin Login intacto
   const swSrc = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.9'/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.11'/);
   const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
   assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
 });
@@ -4616,12 +4616,12 @@ test('113. Prompt 2: Ajuste de precios de un golpe (%) con filtro por acabado, c
     assert.ok(ads.whatsappShareUrlStatus.startsWith('https://wa.me/?text='));
   }
 
-  // 5. Verificación UI y versión v1.0.9 + TopBar toggle + Admin Login intacto
-  assert.equal(APP_VERSION, '1.0.9');
-  assert.equal(APP_VERSION_LABEL, 'v1.0.9');
+  // 5. Verificación UI y versión v1.0.11 + TopBar toggle + Admin Login intacto
+  assert.equal(APP_VERSION, '1.0.11');
+  assert.equal(APP_VERSION_LABEL, 'v1.0.11');
 
   const swSrc = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.9'/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.11'/);
 
   const tallerSrc = readFileSync('src/components/TallerView.tsx', 'utf8');
   assert.match(tallerSrc, /⚡ Ajuste de precios de un golpe \(%\)/);
@@ -4736,15 +4736,15 @@ test('114. Rediseño visual descansado de carátulas + 3 acabados de aluminio + 
   assert.match(catSrc, /cat-mat-chip-/);
   assert.match(catSrc, /filterOfficialCatalogAdvanced/);
 
-  // 5. Versión v1.0.9 y Admin Login completamente intacto
-  assert.equal(APP_VERSION, '1.0.9');
+  // 5. Versión v1.0.11 y Admin Login completamente intacto
+  assert.equal(APP_VERSION, '1.0.11');
   const swSrc = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.9'/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.11'/);
   const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
   assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
 });
 
-test('115. Personajes 3D PNG transparentes (/avatars/*.png), Robot SVG parpadeante 84x84, globo inteligente sin recorte, interruptor aluminero-avatar-tips, acordeón Hoja 2 líneas y SW v1.0.9', async () => {
+test('115. Personajes 3D PNG transparentes (/avatars/*.png), Alumi-Bot 3D SVG parpadeante 92x92, globo inteligente sin recorte, interruptor aluminero-avatar-tips, acordeón Hoja 2 líneas y SW v1.0.11', async () => {
   const { existsSync, readFileSync } = await import('node:fs');
   const {
     AVATAR_TIPS_KEY,
@@ -4850,21 +4850,21 @@ test('115. Personajes 3D PNG transparentes (/avatars/*.png), Robot SVG parpadean
   assert.match(charSrc, /object-contain/);
   assert.match(charSrc, /drop-shadow\(0 8px 12px rgba\(0,0,0,0\.45\)\)/);
 
-  // 4b. Robot SVG parpadeante 84x84 + 6 personajes PNG con zoom scale-[1.45] en 84x84 overflow-visible
-  assert.match(floatSrc, /w-\[84px\] h-\[84px\] overflow-visible/);
-  assert.match(floatSrc, /size=\{84\}/);
-  assert.match(floatSrc, /avatarWidth:\s*84/);
-  assert.match(floatSrc, /avatarHeight:\s*84/);
+  // 4b. Alumi-Bot 3D SVG parpadeante 92x92 + 6 personajes PNG con zoom scale-[1.45] en 92x92 overflow-visible
+  assert.match(floatSrc, /w-\[92px\] h-\[92px\] overflow-visible/);
+  assert.match(floatSrc, /size=\{92\}/);
+  assert.match(floatSrc, /avatarWidth:\s*92/);
+  assert.match(floatSrc, /avatarHeight:\s*92/);
   assert.match(drawerSrc, /w-16 h-16 p-0/);
   assert.match(drawerSrc, /size=\{64\}/);
-  assert.match(charSrc, /BlinkingRobotSvg/);
-  assert.match(charSrc, /assistant-eye-blink/);
+  assert.match(charSrc, /AlumiBot3DSvg/);
+  assert.match(charSrc, /alumibot-eye-blink/);
   assert.match(charSrc, /scale-\[1\.45\]/);
-  assert.match(charSrc, /w-\[84px\] h-\[84px\]/);
+  assert.match(charSrc, /w-\[92px\] h-\[92px\]/);
 
-  // 5. SW v1.0.9 y Admin Login intacto
-  assert.equal(APP_VERSION, '1.0.9');
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.9'/);
+  // 5. SW v1.0.11 y Admin Login intacto
+  assert.equal(APP_VERSION, '1.0.11');
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.11'/);
   const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
   assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
 });
@@ -4929,5 +4929,184 @@ test('116. Validación en tiempo real de límites estándar por línea en Levant
   assert.match(cssSrc, /html\[data-theme="dark"\] header #title-ap[\s\S]*#F8FAFC !important/);
   assert.match(cssSrc, /html\[data-theme="dark"\] #view-menu #menu-welcome-heading[\s\S]*#CBD5E1 !important/);
 });
+
+test('117. Alumi-Bot 3D SVG oficial (92px, casco LED, visor parpadeante 3.5s, medidor láser 0.6s) + Modo Oscuro Descansado sin paneles blancos (#161B22 / #1E2530 / #222936 / #1D4ED8)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { APP_VERSION } = await import('./alumineroLogic.ts');
+
+  const cssSrc = readFileSync('src/index.css', 'utf8');
+  // Paleta descansada en modo oscuro: tarjetas #161B22 / #2A3241, inputs #1E2530 / #F1F5F9 / #64748B / #334155,
+  // botones sin seleccionar #222936 / #CBD5E1, activos #1D4ED8 / #FFFFFF
+  for (const token of [
+    '#161B22',
+    '#2A3241',
+    '#1E2530',
+    '#F1F5F9',
+    '#64748B',
+    '#334155',
+    '#222936',
+    '#CBD5E1',
+    '#1D4ED8',
+    'data-preserve-light="true"',
+  ]) {
+    assert.ok(cssSrc.includes(token), `src/index.css debe definir ${token} para el modo oscuro descansado`);
+  }
+
+  // Animaciones CSS de Alumi-Bot 3D
+  assert.match(cssSrc, /@keyframes alumibotEyeBlink/);
+  assert.match(cssSrc, /alumibotEyeBlink\s+3\.5s/);
+  assert.match(cssSrc, /@keyframes alumibotWaveHand/);
+  assert.match(cssSrc, /@keyframes alumibotThrusterPulse/);
+  assert.match(cssSrc, /@keyframes alumibotLaserFlash/);
+  assert.match(cssSrc, /alumibotLaserFlash\s+0\.6s/);
+
+  // Alumi-Bot 3D SVG detallado sin contornos negros planos y con fondo 100% transparente
+  const charSrc = readFileSync('src/components/AssistantCharacters.tsx', 'utf8');
+  assert.match(charSrc, /data-robot-svg="alumi-bot-3d"/);
+  assert.match(charSrc, /label:\s*'Alumi-Bot 3D'/);
+  assert.match(charSrc, /#090d16/);
+  assert.match(charSrc, /#facc15/);
+  assert.match(charSrc, /alumibot-eye-blink/);
+  assert.match(charSrc, /alumibot-wave-hand/);
+  assert.match(charSrc, /alumibot-thruster/);
+  assert.match(charSrc, /alumibot-laser-flash/);
+  assert.match(charSrc, /w-\[92px\] h-\[92px\]/);
+
+  // Destello láser al tocar en FloatingAssistant.tsx
+  const floatSrc = readFileSync('src/components/FloatingAssistant.tsx', 'utf8');
+  assert.match(floatSrc, /laserFlashActive/);
+  assert.match(floatSrc, /triggerLaserFlash/);
+  assert.match(floatSrc, /laserFlash=\{/);
+
+  // Reglas de oro intactas: SW v1.0.11 y Admin Login sin tocar
+  assert.equal(APP_VERSION, '1.0.11');
+  const swSrc = readFileSync('public/sw.js', 'utf8');
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.11'/);
+  const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
+  assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
+});
+
+test('118. Tour guiado paso a paso para usuarios nuevos (Levantamiento Rápido + Hoja de Cotización) y escudo anti-clic fantasma de 300 ms en FloatingAssistant + SW v1.0.11', async () => {
+  const { readFileSync } = await import('node:fs');
+  const {
+    ONBOARDING_TOUR_KEY,
+    ONBOARDING_TOUR_STEPS,
+    shouldAutoStartOnboardingTour,
+    computeTourPopoverLayout,
+  } = await import('./onboardingTour.ts');
+  const {
+    GHOST_CLICK_SHIELD_MS,
+    isGhostClickShieldActive,
+    shouldBlockGhostClickTarget,
+  } = await import('./assistantEffects.ts');
+  const { APP_VERSION } = await import('./alumineroLogic.ts');
+
+  // 1. Pasos del tour guiado: Levantamiento Rápido (#lev-entry) y Hoja de Cotización (#btn-menu-hoja)
+  assert.equal(ONBOARDING_TOUR_KEY, 'aluminero_onboarding_tour_done_v1');
+  assert.equal(ONBOARDING_TOUR_STEPS.length, 2);
+  assert.equal(ONBOARDING_TOUR_STEPS[0].id, 'levantamiento');
+  assert.equal(ONBOARDING_TOUR_STEPS[0].targetSelector, '#lev-entry');
+  assert.equal(ONBOARDING_TOUR_STEPS[1].id, 'hoja-cotizacion');
+  assert.equal(ONBOARDING_TOUR_STEPS[1].targetSelector, '#btn-menu-hoja');
+
+  // Auto-activación únicamente en primera visita limpia en el menú principal
+  assert.equal(
+    shouldAutoStartOnboardingTour({
+      completed: false,
+      currentView: 'menu',
+      splashVisible: false,
+      hasBlockingModal: false,
+      reorderMode: false,
+    }),
+    true
+  );
+  assert.equal(
+    shouldAutoStartOnboardingTour({
+      completed: true,
+      currentView: 'menu',
+      splashVisible: false,
+      hasBlockingModal: false,
+      reorderMode: false,
+    }),
+    false
+  );
+  assert.equal(
+    shouldAutoStartOnboardingTour({
+      completed: false,
+      currentView: 'trabajo',
+      splashVisible: false,
+      hasBlockingModal: false,
+      reorderMode: false,
+    }),
+    false
+  );
+  assert.equal(
+    shouldAutoStartOnboardingTour({
+      completed: false,
+      currentView: 'menu',
+      splashVisible: false,
+      hasBlockingModal: true,
+      reorderMode: false,
+    }),
+    false
+  );
+
+  // Cálculo seguro del popover del tour en móvil y escritorio
+  const layoutBelow = computeTourPopoverLayout(
+    { top: 180, left: 16, width: 358, height: 84 },
+    { width: 390, height: 844 }
+  );
+  assert.equal(layoutBelow.placement, 'below');
+  assert.ok(layoutBelow.left >= 14);
+  assert.ok(layoutBelow.left + layoutBelow.width <= 390 - 14);
+  assert.ok(layoutBelow.top > 264);
+
+  const layoutAbove = computeTourPopoverLayout(
+    { top: 690, left: 16, width: 358, height: 90 },
+    { width: 390, height: 844 }
+  );
+  assert.equal(layoutAbove.placement, 'above');
+  assert.ok(layoutAbove.top < 690);
+
+  // 2. Escudo anti-clic fantasma de 300 ms
+  assert.equal(GHOST_CLICK_SHIELD_MS, 300);
+  assert.equal(isGhostClickShieldActive(1300, 1100), true);
+  assert.equal(isGhostClickShieldActive(1300, 1299), true);
+  assert.equal(isGhostClickShieldActive(1300, 1300), false);
+  assert.equal(isGhostClickShieldActive(1300, 1450), false);
+
+  const insideTarget = {
+    closest: (sel: string) => (sel === '#floating-assistant-root' ? {} : null),
+  } as unknown as EventTarget;
+  const outsideTarget = {
+    closest: () => null,
+  } as unknown as EventTarget;
+  assert.equal(shouldBlockGhostClickTarget(insideTarget), false);
+  assert.equal(shouldBlockGhostClickTarget(outsideTarget), true);
+
+  // 3. Verificación estática de aislamiento táctil/puntero, z-[9999] y touch-action en FloatingAssistant.tsx
+  const floatSrc = readFileSync('src/components/FloatingAssistant.tsx', 'utf8');
+  assert.match(floatSrc, /z-\[9999\]/);
+  assert.match(floatSrc, /select-none/);
+  assert.match(floatSrc, /touchAction:\s*'none'/);
+  assert.match(floatSrc, /touchAction:\s*'auto'/);
+  assert.match(floatSrc, /onTouchStart=/);
+  assert.match(floatSrc, /onTouchEnd=/);
+  assert.match(floatSrc, /activateGhostClickShield/);
+  assert.match(floatSrc, /stopImmediatePropagation/);
+  assert.match(floatSrc, /e\.preventDefault\(\)/);
+  assert.match(floatSrc, /e\.stopPropagation\(\)/);
+
+  // 4. Montaje de OnboardingTour en App.tsx y reglas de oro intactas (SW v1.0.11 + Admin Login)
+  const appSrc = readFileSync('src/App.tsx', 'utf8');
+  assert.match(appSrc, /<OnboardingTour/);
+  assert.equal(APP_VERSION, '1.0.11');
+  const swSrc = readFileSync('public/sw.js', 'utf8');
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.11'/);
+  const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
+  assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
+});
+
+
 
 

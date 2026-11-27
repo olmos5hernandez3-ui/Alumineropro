@@ -37,9 +37,12 @@ import {
   computeSmartBubblePosition,
   getCharacterCelebrationText,
   getCharacterQuickGreeting,
+  GHOST_CLICK_SHIELD_MS,
+  isGhostClickShieldActive,
   loadAvatarSoundEnabled,
   loadAvatarTipsEnabled,
   playAssistantSound,
+  shouldBlockGhostClickTarget,
 } from '../utils/assistantEffects';
 
 const VISITED_VIEWS_KEY = 'aluminero_visited_views_v1';
@@ -166,6 +169,12 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
     height: typeof window !== 'undefined' ? window.innerHeight : 844,
   }));
   const [hopActive, setHopActive] = useState(false);
+  const [laserFlashActive, setLaserFlashActive] = useState(false);
+  const laserFlashTimerRef = useRef<number | null>(null);
+  const ghostShieldUntilRef = useRef<number>(0);
+  const ghostShieldTimerRef = useRef<number | null>(null);
+  const [ghostShieldActive, setGhostShieldActive] = useState(false);
+  const touchTapRef = useRef<{ startX: number; startY: number; moved: boolean } | null>(null);
   const [gestureActive, setGestureActive] = useState(false);
   const [celebrating, setCelebrating] = useState(false);
   const [isDraggingAvatar, setIsDraggingAvatar] = useState(false);
@@ -362,8 +371,8 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
       });
       setDragPos((prev) => {
         if (!prev) return null;
-        const maxX = Math.max(8, window.innerWidth - 92);
-        const maxY = Math.max(66, window.innerHeight - 96);
+        const maxX = Math.max(8, window.innerWidth - 100);
+        const maxY = Math.max(66, window.innerHeight - 104);
         return {
           x: Math.min(Math.max(8, prev.x), maxX),
           y: Math.min(Math.max(66, prev.y), maxY),
@@ -396,13 +405,78 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
       if (dropBounceTimerRef.current !== null) {
         window.clearTimeout(dropBounceTimerRef.current);
       }
+      if (laserFlashTimerRef.current !== null) {
+        window.clearTimeout(laserFlashTimerRef.current);
+      }
+      if (ghostShieldTimerRef.current !== null) {
+        window.clearTimeout(ghostShieldTimerRef.current);
+      }
       if (dragRef.current?.longPressTimer != null) {
         window.clearTimeout(dragRef.current.longPressTimer);
       }
     };
   }, []);
 
+  // Escudo anti-traspaso de 300 ms en fase de captura: bloquea cualquier clic fantasma
+  // accidental sobre tarjetas inferiores (Ventanas, Puertas, Cotización) tras tocar el avatar o abrir/cerrar su globo.
+  const activateGhostClickShield = () => {
+    ghostShieldUntilRef.current = Date.now() + GHOST_CLICK_SHIELD_MS;
+    setGhostShieldActive(true);
+    if (ghostShieldTimerRef.current !== null) {
+      window.clearTimeout(ghostShieldTimerRef.current);
+    }
+    ghostShieldTimerRef.current = window.setTimeout(() => {
+      ghostShieldTimerRef.current = null;
+      setGhostShieldActive(false);
+    }, GHOST_CLICK_SHIELD_MS + 10);
+  };
+
+  useEffect(() => {
+    const interceptGhostEvent = (ev: Event) => {
+      if (!isGhostClickShieldActive(ghostShieldUntilRef.current)) return;
+      if (!shouldBlockGhostClickTarget(ev.target, '#floating-assistant-root')) return;
+      if (ev.cancelable) {
+        ev.preventDefault();
+      }
+      ev.stopPropagation();
+      ev.stopImmediatePropagation();
+    };
+    const eventTypes: Array<keyof WindowEventMap> = [
+      'click',
+      'mousedown',
+      'mouseup',
+      'pointerdown',
+      'pointerup',
+      'touchstart',
+      'touchend',
+    ];
+    for (const type of eventTypes) {
+      window.addEventListener(type, interceptGhostEvent, { capture: true, passive: false });
+    }
+    return () => {
+      for (const type of eventTypes) {
+        window.removeEventListener(type, interceptGhostEvent, true);
+      }
+    };
+  }, []);
+
+  const stopEventBubble = (e: React.SyntheticEvent) => {
+    e.stopPropagation();
+  };
+
+  const triggerLaserFlash = () => {
+    if (laserFlashTimerRef.current !== null) {
+      window.clearTimeout(laserFlashTimerRef.current);
+    }
+    setLaserFlashActive(true);
+    laserFlashTimerRef.current = window.setTimeout(() => {
+      laserFlashTimerRef.current = null;
+      setLaserFlashActive(false);
+    }, 600);
+  };
+
   const handleCloseAssistant = () => {
+    activateGhostClickShield();
     if (travelTimerRef.current !== null) {
       window.clearTimeout(travelTimerRef.current);
       travelTimerRef.current = null;
@@ -413,6 +487,7 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
   };
 
   const handleToggleAssistant = () => {
+    activateGhostClickShield();
     if (open || travelingToCenter) {
       handleCloseAssistant();
       return;
@@ -420,6 +495,7 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
     setActiveTip(null);
     setGestureBanner(getCharacterQuickGreeting(avatarId));
     setHopActive(true);
+    triggerLaserFlash();
     playAssistantSound(avatarId, 'tap', soundEnabled);
     window.setTimeout(() => setHopActive(false), 520);
 
@@ -436,6 +512,7 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
 
   const triggerLongPressGesture = () => {
     setGestureActive(true);
+    triggerLaserFlash();
     setGestureBanner(avatarMeta.gestureText);
     playAssistantSound(avatarId, 'tap', soundEnabled);
     window.setTimeout(() => setGestureActive(false), 950);
@@ -443,6 +520,7 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
   };
 
   const handleAvatarPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
     if (open || e.button === 2) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const originX = dragPos ? dragPos.x : rect.left;
@@ -474,6 +552,7 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
   };
 
   const handleAvatarPointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
     const st = dragRef.current;
     if (!st || st.pointerId !== e.pointerId) return;
     const dx = e.clientX - st.startX;
@@ -492,8 +571,8 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
       }
     }
     if (st.moved) {
-      const maxX = Math.max(8, window.innerWidth - 92);
-      const maxY = Math.max(66, window.innerHeight - 96);
+      const maxX = Math.max(8, window.innerWidth - 100);
+      const maxY = Math.max(66, window.innerHeight - 104);
       const nextX = Math.min(Math.max(8, st.originX + dx), maxX);
       const nextY = Math.min(Math.max(66, st.originY + dy), maxY);
       setDragPos({ x: nextX, y: nextY });
@@ -503,6 +582,7 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
   };
 
   const handleAvatarPointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
     const st = dragRef.current;
     if (!st || st.pointerId !== e.pointerId) return;
     if (st.longPressTimer !== null) {
@@ -518,6 +598,7 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
     dragRef.current = null;
     setIsDraggingAvatar(false);
     setDragTiltDeg(0);
+    activateGhostClickShield();
 
     if (wasMoved && dragPos) {
       try {
@@ -536,8 +617,39 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
       }, 540);
       return;
     }
+    // Bloquear clic fantasma sintetizado por el navegador móvil al soltar sin arrastrar
+    e.preventDefault();
     if (!wasLongPressed) {
       handleToggleAssistant();
+    }
+  };
+
+  const handleAvatarTouchStart = (e: React.TouchEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    const t = e.touches[0];
+    touchTapRef.current = t
+      ? { startX: t.clientX, startY: t.clientY, moved: false }
+      : { startX: 0, startY: 0, moved: false };
+  };
+
+  const handleAvatarTouchMove = (e: React.TouchEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    const t = e.touches[0];
+    if (t && touchTapRef.current && !touchTapRef.current.moved) {
+      if (Math.hypot(t.clientX - touchTapRef.current.startX, t.clientY - touchTapRef.current.startY) > 8) {
+        touchTapRef.current.moved = true;
+      }
+    }
+  };
+
+  const handleAvatarTouchEnd = (e: React.TouchEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    const wasTouchDrag = Boolean(touchTapRef.current?.moved);
+    touchTapRef.current = null;
+    activateGhostClickShield();
+    if (!wasTouchDrag && e.cancelable) {
+      // Evita que navegadores móviles disparen un clic retardado ("ghost click") sobre tarjetas inferiores
+      e.preventDefault();
     }
   };
 
@@ -798,19 +910,42 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
       data-skin={skin}
       data-skin-variant={skinVariant}
       data-avatar-id={avatarId}
+      data-ghost-shield-active={ghostShieldActive ? 'true' : 'false'}
+      onClick={stopEventBubble}
+      onPointerDown={stopEventBubble}
+      onPointerMove={stopEventBubble}
+      onPointerUp={stopEventBubble}
+      onTouchStart={stopEventBubble}
+      onTouchEnd={stopEventBubble}
       style={rootPosStyle}
-      className={dragPos ? 'z-40' : 'fixed bottom-2.5 right-2.5 sm:bottom-5 sm:right-5 z-40'}
+      className={
+        dragPos
+          ? 'z-[9999] select-none'
+          : 'fixed bottom-2.5 right-2.5 sm:bottom-5 sm:right-5 z-[9999] select-none'
+      }
     >
       {/* Escenario de desplazamiento del personaje hacia el centro */}
       {travelingToCenter && (
         <div
           id="assistant-travel-stage"
           aria-hidden="true"
-          className="fixed inset-0 z-50 pointer-events-none bg-[#040c12]/45 backdrop-blur-[1.5px]"
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+          }}
+          onPointerDown={stopEventBubble}
+          onPointerMove={stopEventBubble}
+          onPointerUp={stopEventBubble}
+          onTouchStart={stopEventBubble}
+          onTouchEnd={(e) => {
+            e.stopPropagation();
+            if (e.cancelable) e.preventDefault();
+          }}
+          className="fixed inset-0 z-[9999] pointer-events-auto bg-[#040c12]/45 backdrop-blur-[1.5px]"
         >
           <div
             id="assistant-traveling-robot"
-            className="robot-3d-glide-center flex items-center justify-center"
+            className="robot-3d-glide-center flex items-center justify-center pointer-events-none"
           >
             <AssistantCharacterSvg
               avatarId={avatarId}
@@ -826,8 +961,21 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
       {open && morphedAtCenter && (
         <div
           aria-hidden="true"
-          onClick={handleCloseAssistant}
-          className="fixed inset-0 z-40 bg-[#040c12]/65 backdrop-blur-[3px]"
+          onPointerDown={stopEventBubble}
+          onPointerMove={stopEventBubble}
+          onPointerUp={stopEventBubble}
+          onTouchStart={stopEventBubble}
+          onTouchEnd={(e) => {
+            e.stopPropagation();
+            if (e.cancelable) e.preventDefault();
+            handleCloseAssistant();
+          }}
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            handleCloseAssistant();
+          }}
+          className="fixed inset-0 z-[9999] bg-[#040c12]/65 backdrop-blur-[3px]"
         />
       )}
 
@@ -837,10 +985,16 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
           role="dialog"
           aria-label="Asistente Aluminero Pro"
           data-centered-morph={morphedAtCenter ? 'true' : 'false'}
+          onClick={stopEventBubble}
+          onPointerDown={stopEventBubble}
+          onPointerMove={stopEventBubble}
+          onPointerUp={stopEventBubble}
+          onTouchStart={stopEventBubble}
+          onTouchEnd={stopEventBubble}
           className={`${
             morphedAtCenter
-              ? 'assistant-card-morph-center z-50 w-[calc(100vw-2rem)] max-w-[404px] max-h-[calc(100vh-5rem)]'
-              : 'assistant-card-enter fixed bottom-[92px] right-4 sm:right-5 w-[calc(100vw-2rem)] max-w-[388px] max-h-[calc(100vh-7rem)]'
+              ? 'assistant-card-morph-center z-[9999] w-[calc(100vw-2rem)] max-w-[404px] max-h-[calc(100vh-5rem)]'
+              : 'assistant-card-enter fixed bottom-[92px] right-4 sm:right-5 z-[9999] w-[calc(100vw-2rem)] max-w-[388px] max-h-[calc(100vh-7rem)]'
           } overflow-y-auto rounded-[22px] border-[1.5px] shadow-2xl p-4`}
         >
           {/* Encabezado */}
@@ -869,7 +1023,19 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
             <button
               type="button"
               id="btn-assistant-close"
-              onClick={handleCloseAssistant}
+              onPointerDown={stopEventBubble}
+              onPointerUp={stopEventBubble}
+              onTouchStart={stopEventBubble}
+              onTouchEnd={(e) => {
+                e.stopPropagation();
+                if (e.cancelable) e.preventDefault();
+                handleCloseAssistant();
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                handleCloseAssistant();
+              }}
               aria-label="Cerrar Asistente Aluminero Pro"
               className="min-w-[34px] min-h-[34px] rounded-xl assistant-close-btn font-extrabold text-[14px] cursor-pointer shrink-0 transition-colors"
             >
@@ -899,7 +1065,12 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
               <button
                 type="button"
                 id="btn-assistant-upgrade-pro"
-                onClick={() => {
+                onPointerDown={stopEventBubble}
+                onPointerUp={stopEventBubble}
+                onTouchStart={stopEventBubble}
+                onTouchEnd={stopEventBubble}
+                onClick={(e) => {
+                  e.stopPropagation();
                   handleCloseAssistant();
                   onOpenPro();
                 }}
@@ -917,7 +1088,12 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
               role="tab"
               aria-selected={activeOption === 'A'}
               id="btn-assistant-opt-a"
-              onClick={() => {
+              onPointerDown={stopEventBubble}
+              onPointerUp={stopEventBubble}
+              onTouchStart={stopEventBubble}
+              onTouchEnd={stopEventBubble}
+              onClick={(e) => {
+                e.stopPropagation();
                 setActiveOption('A');
                 setErrorB('');
               }}
@@ -940,7 +1116,12 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
               role="tab"
               aria-selected={activeOption === 'B'}
               id="btn-assistant-opt-b"
-              onClick={() => {
+              onPointerDown={stopEventBubble}
+              onPointerUp={stopEventBubble}
+              onTouchStart={stopEventBubble}
+              onTouchEnd={stopEventBubble}
+              onClick={(e) => {
+                e.stopPropagation();
                 setActiveOption('B');
                 setErrorA('');
               }}
@@ -973,12 +1154,19 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
                   id="inp-asistente-sugerencia"
                   rows={3}
                   value={sugerenciaTexto}
+                  onClick={stopEventBubble}
+                  onPointerDown={stopEventBubble}
+                  onPointerMove={stopEventBubble}
+                  onPointerUp={stopEventBubble}
+                  onTouchStart={stopEventBubble}
+                  onTouchEnd={stopEventBubble}
+                  style={{ touchAction: 'auto' }}
                   onChange={(e) => {
                     setSugerenciaTexto(e.target.value);
                     if (errorA) setErrorA('');
                   }}
                   placeholder="Ej. Marca Cuprum, Línea Eurovent Serie 70, perfil riel curvo o jaladera multipunto..."
-                  className="w-full rounded-xl border border-[#4A6072] p-2.5 text-[13px] font-medium"
+                  className="w-full rounded-xl border border-[#4A6072] p-2.5 text-[13px] font-medium select-text"
                 />
               </div>
 
@@ -998,6 +1186,11 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
                 type="submit"
                 id="btn-assistant-send-a"
                 disabled={sending}
+                onClick={stopEventBubble}
+                onPointerDown={stopEventBubble}
+                onPointerUp={stopEventBubble}
+                onTouchStart={stopEventBubble}
+                onTouchEnd={stopEventBubble}
                 className="metal-emerald-pill w-full min-h-[44px] px-4 rounded-xl font-extrabold text-[13.5px] cursor-pointer flex items-center justify-center gap-2 disabled:opacity-60"
               >
                 <span>{sending ? 'Abriendo envío...' : 'Enviar sugerencia al Administrador'}</span>
@@ -1018,6 +1211,12 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
                 <select
                   id="sel-asistente-perfil"
                   value={selectedPerfilId}
+                  onClick={stopEventBubble}
+                  onPointerDown={stopEventBubble}
+                  onPointerUp={stopEventBubble}
+                  onTouchStart={stopEventBubble}
+                  onTouchEnd={stopEventBubble}
+                  style={{ touchAction: 'auto' }}
                   onChange={(e) => {
                     setSelectedPerfilId(e.target.value);
                     if (errorB) setErrorB('');
@@ -1050,6 +1249,13 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
                   id="inp-asistente-perfil-nombre"
                   type="text"
                   value={customPerfilNombre}
+                  onClick={stopEventBubble}
+                  onPointerDown={stopEventBubble}
+                  onPointerMove={stopEventBubble}
+                  onPointerUp={stopEventBubble}
+                  onTouchStart={stopEventBubble}
+                  onTouchEnd={stopEventBubble}
+                  style={{ touchAction: 'auto' }}
                   onChange={(e) => {
                     setCustomPerfilNombre(e.target.value);
                     if (errorB) setErrorB('');
@@ -1059,7 +1265,7 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
                       ? 'Ej. Corte visto de frente / marca específica'
                       : 'Ej. Cabezal Serie 4500 o perfil nuevo'
                   }
-                  className="w-full min-h-[40px] rounded-xl border border-[#4A6072] px-3 text-[13px] font-semibold"
+                  className="w-full min-h-[40px] rounded-xl border border-[#4A6072] px-3 text-[13px] font-semibold select-text"
                 />
               </div>
 
@@ -1099,7 +1305,12 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
                     <button
                       type="button"
                       id="btn-assistant-clear-photo"
-                      onClick={() => {
+                      onPointerDown={stopEventBubble}
+                      onPointerUp={stopEventBubble}
+                      onTouchStart={stopEventBubble}
+                      onTouchEnd={stopEventBubble}
+                      onClick={(e) => {
+                        e.stopPropagation();
                         setFotoDataUrl('');
                         setFotoFileName('');
                       }}
@@ -1127,6 +1338,11 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
                 type="submit"
                 id="btn-asistente-enviar-foto"
                 disabled={sending || compressing}
+                onClick={stopEventBubble}
+                onPointerDown={stopEventBubble}
+                onPointerUp={stopEventBubble}
+                onTouchStart={stopEventBubble}
+                onTouchEnd={stopEventBubble}
                 className="metal-emerald-pill w-full min-h-[44px] px-4 rounded-xl font-extrabold text-[13.5px] cursor-pointer flex items-center justify-center gap-2 disabled:opacity-60"
               >
                 <span>{sending ? 'Preparando envío...' : 'Enviar foto para aprobación'}</span>
@@ -1139,13 +1355,13 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
       {/* Globo emergente inteligente (adaptado a las coordenadas x/y sin cortarse en esquinas) */}
       {!open && !travelingToCenter && (gestureBanner || (tipsEnabled && activeTip)) && (() => {
         const defaultOffset = viewportSize.width >= 640 ? 20 : 10;
-        const effectiveAvatarX = dragPos ? dragPos.x : Math.max(8, viewportSize.width - defaultOffset - 84);
-        const effectiveAvatarY = dragPos ? dragPos.y : Math.max(66, viewportSize.height - defaultOffset - 84);
+        const effectiveAvatarX = dragPos ? dragPos.x : Math.max(8, viewportSize.width - defaultOffset - 92);
+        const effectiveAvatarY = dragPos ? dragPos.y : Math.max(66, viewportSize.height - defaultOffset - 92);
         const bubbleLayout = computeSmartBubblePosition({
           avatarX: effectiveAvatarX,
           avatarY: effectiveAvatarY,
-          avatarWidth: 84,
-          avatarHeight: 84,
+          avatarWidth: 92,
+          avatarHeight: 92,
           viewportWidth: viewportSize.width,
           viewportHeight: viewportSize.height,
           bubbleMaxWidth: 240,
@@ -1160,6 +1376,12 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
             role="status"
             data-bubble-horizontal={bubbleLayout.horizontalSide}
             data-bubble-vertical={bubbleLayout.verticalSide}
+            onClick={stopEventBubble}
+            onPointerDown={stopEventBubble}
+            onPointerMove={stopEventBubble}
+            onPointerUp={stopEventBubble}
+            onTouchStart={stopEventBubble}
+            onTouchEnd={stopEventBubble}
             style={{
               position: 'fixed',
               left: `${bubbleLayout.left}px`,
@@ -1169,7 +1391,7 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
               backgroundColor: '#0f172a',
               opacity: 1,
             }}
-            className="max-w-[240px] rounded-2xl text-white border-[1.5px] border-sky-400/85 p-3 shadow-2xl z-40"
+            className="max-w-[240px] rounded-2xl text-white border-[1.5px] border-sky-400/85 p-3 shadow-2xl z-[9999] select-none"
           >
             {/* Punta direccional hacia el personaje */}
             <span
@@ -1192,7 +1414,23 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
                 type="button"
                 id="btn-assistant-bubble-dismiss"
                 aria-label="Cerrar sugerencia del asistente"
-                onClick={() => {
+                onPointerDown={stopEventBubble}
+                onPointerUp={stopEventBubble}
+                onTouchStart={stopEventBubble}
+                onTouchEnd={(e) => {
+                  e.stopPropagation();
+                  if (e.cancelable) e.preventDefault();
+                  activateGhostClickShield();
+                  setGestureBanner(null);
+                  if (activeTip) {
+                    setDismissedTipIds((prev) => ({ ...prev, [activeTip.id]: true }));
+                    setActiveTip(null);
+                  }
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  activateGhostClickShield();
                   setGestureBanner(null);
                   if (activeTip) {
                     setDismissedTipIds((prev) => ({ ...prev, [activeTip.id]: true }));
@@ -1209,7 +1447,21 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
                 <button
                   type="button"
                   id="btn-assistant-bubble-cta"
-                  onClick={() => handleExecuteTipAction(visibleTip)}
+                  onPointerDown={stopEventBubble}
+                  onPointerUp={stopEventBubble}
+                  onTouchStart={stopEventBubble}
+                  onTouchEnd={(e) => {
+                    e.stopPropagation();
+                    if (e.cancelable) e.preventDefault();
+                    activateGhostClickShield();
+                    handleExecuteTipAction(visibleTip);
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    activateGhostClickShield();
+                    handleExecuteTipAction(visibleTip);
+                  }}
                   className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-extrabold cursor-pointer"
                 >
                   {visibleTip.ctaLabel}
@@ -1245,7 +1497,14 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
         return (
           <div
             id="floating-assistant-shell"
-            style={{ background: 'transparent', border: 'none', boxShadow: 'none' }}
+            onClick={stopEventBubble}
+            onPointerDown={stopEventBubble}
+            onPointerMove={stopEventBubble}
+            onPointerUp={stopEventBubble}
+            onTouchStart={stopEventBubble}
+            onTouchEnd={stopEventBubble}
+            className="select-none"
+            style={{ background: 'transparent', border: 'none', boxShadow: 'none', touchAction: 'none' }}
           >
             <button
               type="button"
@@ -1267,21 +1526,30 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
               onPointerDown={handleAvatarPointerDown}
               onPointerMove={handleAvatarPointerMove}
               onPointerUp={handleAvatarPointerUp}
-              onPointerCancel={() => {
+              onTouchStart={handleAvatarTouchStart}
+              onTouchMove={handleAvatarTouchMove}
+              onTouchEnd={handleAvatarTouchEnd}
+              onPointerCancel={(e) => {
+                e.stopPropagation();
                 if (dragRef.current?.longPressTimer != null) {
                   window.clearTimeout(dragRef.current.longPressTimer);
                 }
                 dragRef.current = null;
+                touchTapRef.current = null;
                 setIsDraggingAvatar(false);
                 setDragTiltDeg(0);
               }}
               onClick={(e) => {
+                e.stopPropagation();
                 // Evitar doble disparo cuando pointerUp ya manejó el tap/drag/long-press;
                 // permitir activación por teclado (detail === 0)
                 if (e.detail === 0) {
                   handleToggleAssistant();
                 } else if (open) {
+                  e.preventDefault();
                   handleCloseAssistant();
+                } else {
+                  e.preventDefault();
                 }
               }}
               style={{
@@ -1294,8 +1562,8 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
               }}
               className={
                 open
-                  ? 'relative w-[44px] h-[44px] rounded-full flex items-center justify-center cursor-pointer transition-transform active:scale-95 text-white bg-slate-900/90'
-                  : 'relative bg-transparent border-0 p-0 m-0 w-[84px] h-[84px] overflow-visible flex items-center justify-center cursor-grab active:cursor-grabbing select-none focus:outline-none'
+                  ? 'relative w-[44px] h-[44px] rounded-full flex items-center justify-center cursor-pointer transition-transform active:scale-95 text-white bg-slate-900/90 select-none'
+                  : 'relative bg-transparent border-0 p-0 m-0 w-[92px] h-[92px] overflow-visible flex items-center justify-center cursor-grab active:cursor-grabbing select-none focus:outline-none'
               }
             >
               {open ? (
@@ -1314,7 +1582,7 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
                 </svg>
               ) : (
                 <span
-                  className={`w-[84px] h-[84px] overflow-visible p-0 inline-flex items-center justify-center pointer-events-none ${motionClass}`}
+                  className={`w-[92px] h-[92px] overflow-visible p-0 inline-flex items-center justify-center pointer-events-none ${motionClass}`}
                   style={{
                     transform: isDraggingAvatar
                       ? `rotate(${dragTiltDeg}deg) scale(1.08)`
@@ -1324,11 +1592,12 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
                 >
                   <AssistantCharacterSvg
                     avatarId={avatarId}
-                    size={84}
+                    size={92}
                     skin={skin}
                     skinVariant={skinVariant}
                     santaHat={skin === 'navidena'}
                     gestureActive={gestureActive}
+                    laserFlash={laserFlashActive || hopActive || gestureActive || celebrating}
                     mood={currentMood}
                     withHalo
                     animated

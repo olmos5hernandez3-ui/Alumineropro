@@ -263,7 +263,13 @@ import {
   SugerenciasModal,
 } from './components/Modals';
 import { FloatingAssistant } from './components/FloatingAssistant';
+import { OnboardingTour } from './components/OnboardingTour';
 import { ReferralGiftRewardModal } from './components/ReferralGiftRewardModal';
+import {
+  loadOnboardingTourCompleted,
+  saveOnboardingTourCompleted,
+  shouldAutoStartOnboardingTour,
+} from './utils/onboardingTour';
 
 const NAVIDENA_SNOW_FLAKES = [
   { left: '6%', size: 4, duration: '11s', delay: '0s', drift: '14px' },
@@ -851,6 +857,50 @@ export default function App() {
       setHomeReorderMode(false);
     }
   }, [homeMenuTier]);
+
+  // Tour guiado paso a paso (solo primera vez que un usuario nuevo entra al menú principal)
+  const [onboardingTourCompleted, setOnboardingTourCompleted] = useState<boolean>(() =>
+    loadOnboardingTourCompleted()
+  );
+  const [onboardingTourOpen, setOnboardingTourOpen] = useState(false);
+
+  const handleCompleteOnboardingTour = useCallback(() => {
+    saveOnboardingTourCompleted(true);
+    setOnboardingTourCompleted(true);
+    setOnboardingTourOpen(false);
+  }, []);
+
+  useEffect(() => {
+    const canAutoStart = shouldAutoStartOnboardingTour({
+      completed: onboardingTourCompleted,
+      currentView: displayedView,
+      splashVisible: false,
+      hasBlockingModal:
+        accessBlocked ||
+        isReferralWelcomeShowing ||
+        globalModals.length > 0 ||
+        annualCelebrationOpen ||
+        referralGiftModalOpen,
+      reorderMode: homeReorderMode,
+    });
+    if (!canAutoStart) {
+      setOnboardingTourOpen(false);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setOnboardingTourOpen(true);
+    }, 650);
+    return () => window.clearTimeout(timer);
+  }, [
+    onboardingTourCompleted,
+    displayedView,
+    accessBlocked,
+    isReferralWelcomeShowing,
+    globalModals.length,
+    annualCelebrationOpen,
+    referralGiftModalOpen,
+    homeReorderMode,
+  ]);
 
   const handleChangeHomeMenuLayout = useCallback((next: HomeMenuLayout) => {
     const saved = saveHomeMenuLayout(next);
@@ -5980,6 +6030,12 @@ export default function App() {
           setReferralGiftModalOpen(false);
           showToast('¡Disfruta tus 3 días PRO gratis activados en este equipo!', true);
         }}
+      />
+
+      <OnboardingTour
+        open={onboardingTourOpen}
+        onFinish={handleCompleteOnboardingTour}
+        onSkip={handleCompleteOnboardingTour}
       />
 
       <LevantamientoRapido
