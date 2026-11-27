@@ -88,6 +88,7 @@ body {
     min-height: 30px;
   }
   #btn-top-back,
+  #btn-top-theme-toggle,
   #btn-top-calculadora,
   #btn-open-drawer {
     min-width: 32px;
@@ -2459,6 +2460,7 @@ html[data-theme="dark"] .metal-topbar-dark {
 }
 
 html[data-theme="dark"] header #btn-top-back,
+html[data-theme="dark"] header #btn-top-theme-toggle,
 html[data-theme="dark"] header #btn-top-calculadora,
 html[data-theme="dark"] header #btn-open-drawer,
 html[data-theme="dark"] .metal-icon-btn {
@@ -2554,12 +2556,15 @@ html[data-skin="navidena"][data-theme="light"] header #title-ap {
   text-shadow: none !important;
 }
 html[data-skin="ejecutiva"][data-theme="light"] header #btn-top-back,
+html[data-skin="ejecutiva"][data-theme="light"] header #btn-top-theme-toggle,
 html[data-skin="ejecutiva"][data-theme="light"] header #btn-top-calculadora,
 html[data-skin="ejecutiva"][data-theme="light"] header #btn-open-drawer,
 html[data-skin="industrial"][data-theme="light"] header #btn-top-back,
+html[data-skin="industrial"][data-theme="light"] header #btn-top-theme-toggle,
 html[data-skin="industrial"][data-theme="light"] header #btn-top-calculadora,
 html[data-skin="industrial"][data-theme="light"] header #btn-open-drawer,
 html[data-skin="navidena"][data-theme="light"] header #btn-top-back,
+html[data-skin="navidena"][data-theme="light"] header #btn-top-theme-toggle,
 html[data-skin="navidena"][data-theme="light"] header #btn-top-calculadora,
 html[data-skin="navidena"][data-theme="light"] header #btn-open-drawer {
   background: rgba(255, 255, 255, 0.18) !important;
@@ -3345,6 +3350,159 @@ html #floating-assistant-shell {
 
 .assistant-gesture-once {
   animation: assistantLongGesture 0.85s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes assistantIdleFloat {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(0, -4.5px, 0) scale(1.022);
+  }
+}
+
+@keyframes assistantEyeBlink {
+  0%, 90%, 100% {
+    transform: scaleY(1);
+  }
+  94% {
+    transform: scaleY(0.08);
+  }
+}
+
+@keyframes assistantEarLeft {
+  0%, 74%, 100% {
+    transform: rotate(0deg);
+  }
+  80% {
+    transform: rotate(-8deg);
+  }
+  86% {
+    transform: rotate(3deg);
+  }
+}
+
+@keyframes assistantEarRight {
+  0%, 78%, 100% {
+    transform: rotate(0deg);
+  }
+  84% {
+    transform: rotate(8deg);
+  }
+  90% {
+    transform: rotate(-3deg);
+  }
+}
+
+@keyframes assistantPartWiggle {
+  0%, 68%, 100% {
+    transform: rotate(0deg);
+  }
+  76% {
+    transform: rotate(-7deg);
+  }
+  84% {
+    transform: rotate(7deg);
+  }
+  92% {
+    transform: rotate(-3deg);
+  }
+}
+
+@keyframes assistantDropBounce {
+  0% {
+    transform: scale3d(1.16, 0.84, 1) translate3d(0, 4px, 0);
+  }
+  32% {
+    transform: scale3d(0.91, 1.13, 1) translate3d(0, -9px, 0);
+  }
+  62% {
+    transform: scale3d(1.05, 0.95, 1) translate3d(0, 2px, 0);
+  }
+  82% {
+    transform: scale3d(0.98, 1.02, 1) translate3d(0, -2px, 0);
+  }
+  100% {
+    transform: scale3d(1, 1, 1) translate3d(0, 0, 0);
+  }
+}
+
+@keyframes assistantCelebrateJump {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1) rotate(0deg);
+  }
+  18% {
+    transform: translate3d(0, -14px, 0) scale(1.1) rotate(-8deg);
+  }
+  36% {
+    transform: translate3d(0, 0, 0) scale(0.96) rotate(4deg);
+  }
+  56% {
+    transform: translate3d(0, -16px, 0) scale(1.12) rotate(8deg);
+  }
+  78% {
+    transform: translate3d(0, -3px, 0) scale(1.02) rotate(-4deg);
+  }
+}
+
+@keyframes assistantSparklesPop {
+  0%, 100% {
+    opacity: 0.96;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(1.12);
+  }
+}
+
+.assistant-idle-float {
+  animation: assistantIdleFloat 3.4s ease-in-out infinite;
+  will-change: transform;
+}
+
+.assistant-drop-bounce {
+  animation: assistantDropBounce 0.52s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+.assistant-celebrate-jump {
+  animation: assistantCelebrateJump 0.95s cubic-bezier(0.22, 1, 0.36, 1) 2;
+  will-change: transform;
+}
+
+.assistant-eye-blink {
+  animation: assistantEyeBlink 4.2s ease-in-out infinite;
+}
+
+.assistant-ear-left {
+  animation: assistantEarLeft 4.8s ease-in-out infinite;
+}
+
+.assistant-ear-right {
+  animation: assistantEarRight 4.8s ease-in-out infinite;
+}
+
+.assistant-part-wiggle {
+  animation: assistantPartWiggle 3.8s ease-in-out infinite;
+}
+
+.assistant-sparkles {
+  transform-origin: 40px 40px;
+  animation: assistantSparklesPop 0.7s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .assistant-idle-float,
+  .assistant-drop-bounce,
+  .assistant-celebrate-jump,
+  .assistant-eye-blink,
+  .assistant-ear-left,
+  .assistant-ear-right,
+  .assistant-part-wiggle,
+  .assistant-sparkles {
+    animation: none !important;
+  }
 }
 
 /* ==================== ANIMACIÓN FLAMA PROMOCIÓN EXCLUSIVA DE LANZAMIENTO (GPU) ==================== */

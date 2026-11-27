@@ -3867,6 +3867,7 @@ export default function App() {
         onOpenPro={() => openGlobalModal('pro')}
         onOpenDrawer={() => openGlobalModal('drawer')}
         onOpenCalculadora={() => openGlobalModal('calculadora')}
+        onToggleTheme={handleToggleTheme}
         onRequestExit={() => setExitConfirmOpen(true)}
         onClickOfflineStatus={() => {
           if (!isOnline) {
@@ -5933,6 +5934,8 @@ export default function App() {
           proActive={proActive}
           currentView={displayedView}
           hasPendingQuote={hoja.partidas.length > 0}
+          partidasCount={hoja.partidas.length}
+          historialCount={historial.length}
           hasPendingLev={
             Boolean(pendingLevBatch) ||
             (() => {

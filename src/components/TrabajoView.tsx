@@ -31,6 +31,7 @@ import {
   ModulacionMultiJobInput,
 } from '../utils/modulacionLogic';
 import { Tramos610AcomodadosSection } from './Tramos610AcomodadosSection';
+import { CollapsibleAccordion } from './CollapsibleAccordion';
 import { generarPdfTecnico } from '../utils/pdfExport';
 import { computeSimProgressFromElapsed } from '../utils/blueprintMotion';
 import {
@@ -167,6 +168,7 @@ export const TrabajoView: React.FC<Props> = ({
   };
   const [despieceTab, setDespieceTab] = useState<'perfiles' | 'vidrios' | 'herrajes'>('perfiles');
   const [showTolerancias, setShowTolerancias] = useState(false);
+  const [accTrabajoTramosOpen, setAccTrabajoTramosOpen] = useState(false);
   const [simPlaying, setSimPlaying] = useState(false);
   const [simProgress, setSimProgress] = useState(0);
 
@@ -1280,17 +1282,32 @@ export const TrabajoView: React.FC<Props> = ({
                   Total aluminio: {despiece.totalAluminioM.toFixed(2)} m · {despiece.tramos610} tramo(s) de 6.10 m
                 </p>
 
-                <Tramos610AcomodadosSection
-                  id="trabajo-tramos-610-acomodados"
-                  optimizacion={buildDespieceTramos1D(
+                {(() => {
+                  const trabajoOpt = buildDespieceTramos1D(
                     despiece.perfiles,
                     etiquetaPieza || lineaCfg.nombre,
                     taller.optimizador
-                  )}
-                  defaultAcabado={COLORES_CONFIG[params.color]?.corto || 'Natural'}
-                  compact
-                  onSelectPerfil={(card) => onOpenPerfilModal(card.perfilId)}
-                />
+                  );
+                  return (
+                    <CollapsibleAccordion
+                      id="acc-trabajo-tramos-610"
+                      title={`✂️ Tramos de 6.10 m ya acomodados (${trabajoOpt.tramos610Totales} ${trabajoOpt.tramos610Totales === 1 ? 'barra' : 'barras'} · ${Math.round(trabajoOpt.aprovechamientoGlobalPct)}% uso)`}
+                      summary="Toca para desplegar las tarjetas gráficas de cortes barra por barra"
+                      open={accTrabajoTramosOpen}
+                      onToggle={() => setAccTrabajoTramosOpen((p) => !p)}
+                      tone="light"
+                      className="mt-3"
+                    >
+                      <Tramos610AcomodadosSection
+                        id="trabajo-tramos-610-acomodados"
+                        optimizacion={trabajoOpt}
+                        defaultAcabado={COLORES_CONFIG[params.color]?.corto || 'Natural'}
+                        compact
+                        onSelectPerfil={(card) => onOpenPerfilModal(card.perfilId)}
+                      />
+                    </CollapsibleAccordion>
+                  );
+                })()}
               </div>
             )}
 

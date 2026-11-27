@@ -18,6 +18,8 @@ import {
   RefreshCw,
   Scale,
   Sun,
+  Volume2,
+  VolumeX,
   WifiOff,
 } from 'lucide-react';
 import {
@@ -51,6 +53,12 @@ import {
   saveAvatarVisible,
   saveSelectedAvatar,
 } from './AssistantCharacters';
+import {
+  AVATAR_SOUND_EVENT_NAME,
+  loadAvatarSoundEnabled,
+  playAssistantSound,
+  saveAvatarSoundEnabled,
+} from '../utils/assistantEffects';
 
 export type ScreenId =
   | 'menu'
@@ -85,6 +93,7 @@ interface TopBarProps {
   onOpenPro: () => void;
   onOpenDrawer: () => void;
   onOpenCalculadora: () => void;
+  onToggleTheme?: () => void;
   onRequestExit?: () => void;
   onOpenMessages?: () => void;
   onClickOfflineStatus?: () => void;
@@ -105,6 +114,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   onOpenPro,
   onOpenDrawer,
   onOpenCalculadora,
+  onToggleTheme,
   onRequestExit,
   onOpenMessages,
   onClickOfflineStatus,
@@ -297,6 +307,27 @@ export const TopBar: React.FC<TopBarProps> = ({
               <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1 rounded-full bg-rose-500 text-white text-[9.5px] font-extrabold flex items-center justify-center">
                 {unreadMessagesCount}
               </span>
+            </button>
+          )}
+
+          {onToggleTheme && (
+            <button
+              type="button"
+              id="btn-top-theme-toggle"
+              onClick={onToggleTheme}
+              aria-label={isDark ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+              title={isDark ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+              className={`inline-flex items-center justify-center min-w-[34px] min-h-[34px] sm:min-w-[36px] sm:min-h-[36px] px-2 py-1 rounded-[11px] border cursor-pointer shrink-0 transition-all active:scale-95 ${
+                isDark
+                  ? 'metal-icon-btn text-amber-300'
+                  : 'border-slate-300 bg-slate-100 hover:bg-slate-200 text-slate-800'
+              }`}
+            >
+              {isDark ? (
+                <Sun className="w-[16px] h-[16px]" aria-hidden="true" />
+              ) : (
+                <Moon className="w-[16px] h-[16px]" aria-hidden="true" />
+              )}
             </button>
           )}
 
@@ -528,6 +559,7 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
   const [avatarExpanded, setAvatarExpanded] = useState(false);
   const [selectedAvatar, setSelectedAvatar] = useState<AssistantAvatarId>(() => loadSelectedAvatar());
   const [avatarVisible, setAvatarVisible] = useState<boolean>(() => loadAvatarVisible());
+  const [avatarSoundEnabled, setAvatarSoundEnabled] = useState<boolean>(() => loadAvatarSoundEnabled());
   const [promoFlyerExpanded, setPromoFlyerExpanded] = useState(true);
   const [missionExpanded, setMissionExpanded] = useState(false);
   const [lockedSkinPrompt, setLockedSkinPrompt] = useState<SkinOptionMeta | null>(null);
@@ -544,11 +576,18 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
       if (typeof detail === 'boolean') setAvatarVisible(detail);
       else setAvatarVisible(loadAvatarVisible());
     };
+    const onSoundChange = (ev: Event) => {
+      const detail = (ev as CustomEvent<boolean>).detail;
+      if (typeof detail === 'boolean') setAvatarSoundEnabled(detail);
+      else setAvatarSoundEnabled(loadAvatarSoundEnabled());
+    };
     window.addEventListener(AVATAR_EVENT_NAME, onAvatarChange);
     window.addEventListener(AVATAR_VISIBLE_EVENT_NAME, onVisChange);
+    window.addEventListener(AVATAR_SOUND_EVENT_NAME, onSoundChange);
     return () => {
       window.removeEventListener(AVATAR_EVENT_NAME, onAvatarChange);
       window.removeEventListener(AVATAR_VISIBLE_EVENT_NAME, onVisChange);
+      window.removeEventListener(AVATAR_SOUND_EVENT_NAME, onSoundChange);
     };
   }, []);
   const drawerBrandTapTimerRef = useRef<number | null>(null);
@@ -1182,6 +1221,61 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
                 </span>
               </button>
 
+              {/* Interruptor Silenciar / Activar sonidos del personaje */}
+              <button
+                type="button"
+                id="btn-drawer-avatar-sound-switch"
+                role="switch"
+                aria-checked={avatarSoundEnabled}
+                onClick={() => {
+                  const next = !avatarSoundEnabled;
+                  setAvatarSoundEnabled(next);
+                  saveAvatarSoundEnabled(next);
+                  if (next) {
+                    playAssistantSound(selectedAvatar, 'tap', true);
+                  }
+                }}
+                className={`w-full min-h-[42px] px-3 py-2 rounded-lg border text-left cursor-pointer flex items-center justify-between gap-3 transition-colors ${
+                  isDark
+                    ? 'border-white/15 bg-white/5 hover:bg-white/10 text-white'
+                    : 'border-slate-300 bg-white hover:bg-slate-50 text-slate-900'
+                }`}
+              >
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  {avatarSoundEnabled ? (
+                    <Volume2 className="w-4 h-4 text-sky-400 shrink-0" aria-hidden="true" />
+                  ) : (
+                    <VolumeX className="w-4 h-4 text-slate-400 shrink-0" aria-hidden="true" />
+                  )}
+                  <div className="min-w-0">
+                    <span className="block text-[12px] font-extrabold leading-tight">
+                      Sonidos interactivos
+                    </span>
+                    <span className={`block text-[10px] leading-snug mt-0.5 ${subTextClass}`}>
+                      {avatarSoundEnabled
+                        ? 'Activados al tocar, soltar o celebrar'
+                        : 'Silenciados (sin efectos de audio)'}
+                    </span>
+                  </div>
+                </div>
+                <span
+                  aria-hidden="true"
+                  className={`relative inline-flex h-5 w-10 shrink-0 items-center rounded-full border transition-colors ${
+                    avatarSoundEnabled
+                      ? 'bg-sky-500 border-sky-400'
+                      : isDark
+                        ? 'bg-slate-700 border-slate-500'
+                        : 'bg-slate-300 border-slate-400'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform duration-200 ${
+                      avatarSoundEnabled ? 'translate-x-5' : 'translate-x-0.5'
+                    }`}
+                  />
+                </span>
+              </button>
+
               {/* Cuadrícula de los 7 personajes */}
               <div
                 id="drawer-avatar-grid"
@@ -1201,6 +1295,9 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
                         if (!avatarVisible) {
                           setAvatarVisible(true);
                           saveAvatarVisible(true);
+                        }
+                        if (avatarSoundEnabled) {
+                          playAssistantSound(char.id, 'tap', true);
                         }
                       }}
                       className={`p-2 rounded-xl border text-left cursor-pointer flex items-center gap-2 transition-colors ${

@@ -17,10 +17,10 @@ import {
   sanitizeWhatsappNumber,
 } from '../utils/storageHelpers';
 import { PhotoPickerButtons } from './PhotoPickerButtons';
-import { MetallicRobot3D } from './MetallicIcons';
 import {
   ASSISTANT_CHARACTERS,
   AssistantAvatarId,
+  AssistantAvatarMood,
   AssistantCharacterSvg,
   AVATAR_EVENT_NAME,
   AVATAR_POS_KEY,
@@ -28,6 +28,16 @@ import {
   loadAvatarVisible,
   loadSelectedAvatar,
 } from './AssistantCharacters';
+import {
+  ASSISTANT_CELEBRATE_EVENT_NAME,
+  AssistantCelebrateDetail,
+  AVATAR_SOUND_EVENT_NAME,
+  computeDragTiltDegrees,
+  getCharacterCelebrationText,
+  getCharacterQuickGreeting,
+  loadAvatarSoundEnabled,
+  playAssistantSound,
+} from '../utils/assistantEffects';
 
 const VISITED_VIEWS_KEY = 'aluminero_visited_views_v1';
 
@@ -47,6 +57,8 @@ interface FloatingAssistantProps {
   currentView?: string;
   hasPendingQuote?: boolean;
   hasPendingLev?: boolean;
+  partidasCount?: number;
+  historialCount?: number;
   onNavigateView?: (view: 'hoja' | 'videos') => void;
   onOpenLevantamiento?: () => void;
   onOpenTutorial?: () => void;
@@ -124,6 +136,8 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
   currentView = 'menu',
   hasPendingQuote = false,
   hasPendingLev = false,
+  partidasCount = 0,
+  historialCount = 0,
   onNavigateView,
   onOpenLevantamiento,
   onOpenTutorial,
@@ -134,17 +148,26 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
   const [travelingToCenter, setTravelingToCenter] = useState(false);
   const [morphedAtCenter, setMorphedAtCenter] = useState(false);
   const travelTimerRef = useRef<number | null>(null);
+  const celebrateTimerRef = useRef<number | null>(null);
+  const dropBounceTimerRef = useRef<number | null>(null);
   const [activeOption, setActiveOption] = useState<'A' | 'B'>('A');
   const [quotaRec, setQuotaRec] = useState(() => loadAssistantDailyQuota());
 
-  // 7 personajes + switch de visibilidad sincronizados con el Menú ☰
+  // 7 personajes + switch de visibilidad + sonido sincronizados con el Menú ☰
   const [avatarId, setAvatarId] = useState<AssistantAvatarId>(() => loadSelectedAvatar());
   const [avatarVisible, setAvatarVisible] = useState<boolean>(() => loadAvatarVisible());
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(() => loadAvatarSoundEnabled());
   const [hopActive, setHopActive] = useState(false);
   const [gestureActive, setGestureActive] = useState(false);
+  const [celebrating, setCelebrating] = useState(false);
+  const [isDraggingAvatar, setIsDraggingAvatar] = useState(false);
+  const [dragTiltDeg, setDragTiltDeg] = useState(0);
+  const [dropBounceActive, setDropBounceActive] = useState(false);
   const [gestureBanner, setGestureBanner] = useState<string | null>(null);
   const [dismissedTipIds, setDismissedTipIds] = useState<Record<string, boolean>>({});
   const [activeTip, setActiveTip] = useState<ProactiveTip | null>(null);
+  const prevPartidasCountRef = useRef<number>(partidasCount);
+  const prevHistorialCountRef = useRef<number>(historialCount);
 
   // Posición libre arrastrable guardada en localStorage
   const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(() => {
@@ -170,6 +193,8 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
     pointerId: number;
     startX: number;
     startY: number;
+    lastX: number;
+    lastY: number;
     originX: number;
     originY: number;
     moved: boolean;
@@ -182,7 +207,22 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
     [avatarId]
   );
 
-  // Escuchar cambios de personaje y visibilidad desde el Menú ☰
+  const triggerCelebration = (reason: 'piece' | 'quote', customMsg?: string) => {
+    if (!avatarVisible) return;
+    if (celebrateTimerRef.current !== null) {
+      window.clearTimeout(celebrateTimerRef.current);
+    }
+    setCelebrating(true);
+    setGestureBanner(customMsg || getCharacterCelebrationText(avatarId, reason));
+    playAssistantSound(avatarId, 'celebrate', soundEnabled);
+    celebrateTimerRef.current = window.setTimeout(() => {
+      celebrateTimerRef.current = null;
+      setCelebrating(false);
+      setGestureBanner(null);
+    }, 2400);
+  };
+
+  // Escuchar cambios de personaje, visibilidad, sonido y celebraciones
   useEffect(() => {
     const onAvatarEv = (ev: Event) => {
       const next = (ev as CustomEvent<AssistantAvatarId>).detail;
@@ -192,13 +232,40 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
       const next = (ev as CustomEvent<boolean>).detail;
       setAvatarVisible(typeof next === 'boolean' ? next : loadAvatarVisible());
     };
+    const onSoundEv = (ev: Event) => {
+      const next = (ev as CustomEvent<boolean>).detail;
+      setSoundEnabled(typeof next === 'boolean' ? next : loadAvatarSoundEnabled());
+    };
+    const onCelebrateEv = (ev: Event) => {
+      const detail = (ev as CustomEvent<AssistantCelebrateDetail>).detail;
+      triggerCelebration(detail?.reason || 'piece', detail?.message);
+    };
     window.addEventListener(AVATAR_EVENT_NAME, onAvatarEv);
     window.addEventListener(AVATAR_VISIBLE_EVENT_NAME, onVisEv);
+    window.addEventListener(AVATAR_SOUND_EVENT_NAME, onSoundEv);
+    window.addEventListener(ASSISTANT_CELEBRATE_EVENT_NAME, onCelebrateEv);
     return () => {
       window.removeEventListener(AVATAR_EVENT_NAME, onAvatarEv);
       window.removeEventListener(AVATAR_VISIBLE_EVENT_NAME, onVisEv);
+      window.removeEventListener(AVATAR_SOUND_EVENT_NAME, onSoundEv);
+      window.removeEventListener(ASSISTANT_CELEBRATE_EVENT_NAME, onCelebrateEv);
     };
-  }, []);
+  }, [avatarId, avatarVisible, soundEnabled]);
+
+  // Celebración automática cuando el usuario agrega ventana/puerta o guarda cotización
+  useEffect(() => {
+    if (partidasCount > prevPartidasCountRef.current) {
+      triggerCelebration('piece');
+    }
+    prevPartidasCountRef.current = partidasCount;
+  }, [partidasCount]);
+
+  useEffect(() => {
+    if (historialCount > prevHistorialCountRef.current) {
+      triggerCelebration('quote');
+    }
+    prevHistorialCountRef.current = historialCount;
+  }, [historialCount]);
 
   // Registrar secciones visitadas para sugerencias proactivas inteligentes
   const [unvisitedSectionNow, setUnvisitedSectionNow] = useState(false);
@@ -302,6 +369,12 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
       if (travelTimerRef.current !== null) {
         window.clearTimeout(travelTimerRef.current);
       }
+      if (celebrateTimerRef.current !== null) {
+        window.clearTimeout(celebrateTimerRef.current);
+      }
+      if (dropBounceTimerRef.current !== null) {
+        window.clearTimeout(dropBounceTimerRef.current);
+      }
       if (dragRef.current?.longPressTimer != null) {
         window.clearTimeout(dragRef.current.longPressTimer);
       }
@@ -324,9 +397,10 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
       return;
     }
     setActiveTip(null);
-    setGestureBanner(null);
+    setGestureBanner(getCharacterQuickGreeting(avatarId));
     setHopActive(true);
-    window.setTimeout(() => setHopActive(false), 450);
+    playAssistantSound(avatarId, 'tap', soundEnabled);
+    window.setTimeout(() => setHopActive(false), 520);
 
     setTravelingToCenter(true);
     setMorphedAtCenter(false);
@@ -334,6 +408,7 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
       travelTimerRef.current = null;
       setTravelingToCenter(false);
       setMorphedAtCenter(true);
+      setGestureBanner(null);
       setOpen(true);
     }, 420);
   };
@@ -341,6 +416,7 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
   const triggerLongPressGesture = () => {
     setGestureActive(true);
     setGestureBanner(avatarMeta.gestureText);
+    playAssistantSound(avatarId, 'tap', soundEnabled);
     window.setTimeout(() => setGestureActive(false), 950);
     window.setTimeout(() => setGestureBanner(null), 2800);
   };
@@ -366,6 +442,8 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
       pointerId: e.pointerId,
       startX: e.clientX,
       startY: e.clientY,
+      lastX: e.clientX,
+      lastY: e.clientY,
       originX,
       originY,
       moved: false,
@@ -379,8 +457,14 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
     if (!st || st.pointerId !== e.pointerId) return;
     const dx = e.clientX - st.startX;
     const dy = e.clientY - st.startY;
+    const stepDx = e.clientX - st.lastX;
+    const stepDy = e.clientY - st.lastY;
+    st.lastX = e.clientX;
+    st.lastY = e.clientY;
+
     if (!st.moved && Math.hypot(dx, dy) > 8) {
       st.moved = true;
+      setIsDraggingAvatar(true);
       if (st.longPressTimer !== null) {
         window.clearTimeout(st.longPressTimer);
         st.longPressTimer = null;
@@ -392,6 +476,8 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
       const nextX = Math.min(Math.max(8, st.originX + dx), maxX);
       const nextY = Math.min(Math.max(66, st.originY + dy), maxY);
       setDragPos({ x: nextX, y: nextY });
+      const tilt = computeDragTiltDegrees(stepDx !== 0 ? stepDx : dx * 0.15, stepDy);
+      setDragTiltDeg(tilt);
     }
   };
 
@@ -409,6 +495,8 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
     const wasMoved = st.moved;
     const wasLongPressed = st.longPressed;
     dragRef.current = null;
+    setIsDraggingAvatar(false);
+    setDragTiltDeg(0);
 
     if (wasMoved && dragPos) {
       try {
@@ -416,6 +504,15 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
       } catch {
         // ignore
       }
+      if (dropBounceTimerRef.current !== null) {
+        window.clearTimeout(dropBounceTimerRef.current);
+      }
+      setDropBounceActive(true);
+      playAssistantSound(avatarId, 'drop', soundEnabled);
+      dropBounceTimerRef.current = window.setTimeout(() => {
+        dropBounceTimerRef.current = null;
+        setDropBounceActive(false);
+      }, 540);
       return;
     }
     if (!wasLongPressed) {
@@ -729,24 +826,22 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
           <div className="flex items-center justify-between gap-2.5 pb-3 mb-3 border-b border-[#4A6072]/45 assistant-card-divider">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="metal-icon-btn w-11 h-11 rounded-2xl flex items-center justify-center shrink-0">
-                {avatarId === 'robot' ? (
-                  <MetallicRobot3D size={36} compactHeadOnly skin={skin} skinVariant={skinVariant} />
-                ) : (
-                  <AssistantCharacterSvg
-                    avatarId={avatarId}
-                    size={36}
-                    skin={skin}
-                    skinVariant={skinVariant}
-                    santaHat={skin === 'navidena'}
-                  />
-                )}
+                <AssistantCharacterSvg
+                  avatarId={avatarId}
+                  size={38}
+                  skin={skin}
+                  skinVariant={skinVariant}
+                  santaHat={skin === 'navidena'}
+                  mood="happy"
+                  withHalo={false}
+                />
               </div>
               <div className="min-w-0">
                 <h2 className="m-0 text-[15px] font-extrabold leading-tight truncate">
                   Asistente · {avatarMeta.label}
                 </h2>
                 <p className="m-0 text-[11.5px] font-semibold assistant-subtext leading-tight mt-0.5">
-                  Contacto directo con el Administrador
+                  {getCharacterQuickGreeting(avatarId)}
                 </p>
               </div>
             </div>
@@ -1062,91 +1157,125 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
         </div>
       )}
 
-      {/* Personaje Asistente Flotante (100% transparente, arrastrable, tap + long-press 600ms) */}
-      {!travelingToCenter && (
-        <div
-          id="floating-assistant-shell"
-          style={{ background: 'transparent', border: 'none', boxShadow: 'none' }}
-        >
-          <button
-            type="button"
-            id="btn-floating-assistant"
-            data-robot-style="metallic-3d-floating"
-            data-avatar-id={avatarId}
-            data-skin={skin}
-            data-skin-variant={skinVariant}
-            aria-label={
-              open
-                ? 'Cerrar Asistente Aluminero Pro'
-                : `Abrir Asistente ${avatarMeta.label} (arrastra para mover o mantén pulsado para gesto)`
-            }
-            aria-expanded={open}
-            aria-controls="card-floating-assistant"
-            onPointerDown={handleAvatarPointerDown}
-            onPointerMove={handleAvatarPointerMove}
-            onPointerUp={handleAvatarPointerUp}
-            onPointerCancel={() => {
-              if (dragRef.current?.longPressTimer != null) {
-                window.clearTimeout(dragRef.current.longPressTimer);
-              }
-              dragRef.current = null;
-            }}
-            onClick={(e) => {
-              // Evitar doble disparo cuando pointerUp ya manejó el tap/drag/long-press;
-              // permitir activación por teclado (detail === 0)
-              if (e.detail === 0) {
-                handleToggleAssistant();
-              } else if (open) {
-                handleCloseAssistant();
-              }
-            }}
-            style={{
-              background: 'transparent',
-              backgroundColor: 'transparent',
-              border: 'none',
-              boxShadow: 'none',
-              filter: 'none',
-              touchAction: 'none',
-            }}
-            className={
-              open
-                ? 'relative w-[44px] h-[44px] rounded-full flex items-center justify-center cursor-pointer transition-transform active:scale-95 text-white bg-slate-900/90'
-                : `relative bg-transparent border-0 p-0 m-0 w-[68px] h-[74px] flex items-center justify-center cursor-grab active:cursor-grabbing select-none focus:outline-none ${
-                    gestureActive
-                      ? 'assistant-gesture-once'
-                      : hopActive
-                        ? 'assistant-hop-once'
-                        : ''
-                  }`
-            }
+      {/* Personaje Asistente Flotante (3D con halo azul metálico/cobre, arrastrable, reactivo y con sonido) */}
+      {!travelingToCenter && (() => {
+        const currentMood: AssistantAvatarMood = isDraggingAvatar
+          ? 'dragging'
+          : celebrating
+            ? 'celebrating'
+            : dropBounceActive
+              ? 'bouncing'
+              : hopActive || gestureActive
+                ? 'happy'
+                : 'idle';
+        const motionClass = isDraggingAvatar
+          ? ''
+          : celebrating
+            ? 'assistant-celebrate-jump'
+            : dropBounceActive
+              ? 'assistant-drop-bounce'
+              : gestureActive
+                ? 'assistant-gesture-once'
+                : hopActive
+                  ? 'assistant-hop-once'
+                  : 'assistant-idle-float';
+        return (
+          <div
+            id="floating-assistant-shell"
+            style={{ background: 'transparent', border: 'none', boxShadow: 'none' }}
           >
-            {open ? (
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.6"
-                strokeLinecap="round"
-                aria-hidden="true"
-              >
-                <line x1="6" y1="6" x2="18" y2="18" />
-                <line x1="18" y1="6" x2="6" y2="18" />
-              </svg>
-            ) : (
-              <AssistantCharacterSvg
-                avatarId={avatarId}
-                size={62}
-                skin={skin}
-                skinVariant={skinVariant}
-                santaHat={skin === 'navidena'}
-                gestureActive={gestureActive}
-              />
-            )}
-          </button>
-        </div>
-      )}
+            <button
+              type="button"
+              id="btn-floating-assistant"
+              data-robot-style="metallic-3d-floating"
+              data-avatar-id={avatarId}
+              data-mood={currentMood}
+              data-drag-tilt={String(dragTiltDeg)}
+              data-sound-enabled={soundEnabled ? 'true' : 'false'}
+              data-skin={skin}
+              data-skin-variant={skinVariant}
+              aria-label={
+                open
+                  ? 'Cerrar Asistente Aluminero Pro'
+                  : `Abrir Asistente ${avatarMeta.label} (arrastra para mover o mantén pulsado para gesto)`
+              }
+              aria-expanded={open}
+              aria-controls="card-floating-assistant"
+              onPointerDown={handleAvatarPointerDown}
+              onPointerMove={handleAvatarPointerMove}
+              onPointerUp={handleAvatarPointerUp}
+              onPointerCancel={() => {
+                if (dragRef.current?.longPressTimer != null) {
+                  window.clearTimeout(dragRef.current.longPressTimer);
+                }
+                dragRef.current = null;
+                setIsDraggingAvatar(false);
+                setDragTiltDeg(0);
+              }}
+              onClick={(e) => {
+                // Evitar doble disparo cuando pointerUp ya manejó el tap/drag/long-press;
+                // permitir activación por teclado (detail === 0)
+                if (e.detail === 0) {
+                  handleToggleAssistant();
+                } else if (open) {
+                  handleCloseAssistant();
+                }
+              }}
+              style={{
+                background: 'transparent',
+                backgroundColor: 'transparent',
+                border: 'none',
+                boxShadow: 'none',
+                filter: 'none',
+                touchAction: 'none',
+              }}
+              className={
+                open
+                  ? 'relative w-[44px] h-[44px] rounded-full flex items-center justify-center cursor-pointer transition-transform active:scale-95 text-white bg-slate-900/90'
+                  : 'relative bg-transparent border-0 p-0 m-0 w-[72px] h-[74px] flex items-center justify-center cursor-grab active:cursor-grabbing select-none focus:outline-none'
+              }
+            >
+              {open ? (
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.6"
+                  strokeLinecap="round"
+                  aria-hidden="true"
+                >
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                </svg>
+              ) : (
+                <span
+                  className={`inline-flex items-center justify-center pointer-events-none ${motionClass}`}
+                  style={{
+                    transform: isDraggingAvatar
+                      ? `rotate(${dragTiltDeg}deg) scale(1.08)`
+                      : undefined,
+                    transition: isDraggingAvatar ? 'transform 60ms linear' : 'transform 180ms ease-out',
+                  }}
+                >
+                  <AssistantCharacterSvg
+                    avatarId={avatarId}
+                    size={68}
+                    skin={skin}
+                    skinVariant={skinVariant}
+                    santaHat={skin === 'navidena'}
+                    gestureActive={gestureActive}
+                    mood={currentMood}
+                    withHalo
+                    animated
+                  />
+                </span>
+              )}
+            </button>
+          </div>
+        );
+      })()}
     </div>
   );
 };

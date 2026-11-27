@@ -50,6 +50,15 @@ import {
 import { buildDespieceTramos1D } from '../utils/modulacionLogic';
 import { Tramos610AcomodadosSection } from './Tramos610AcomodadosSection';
 import { MarginTrafficLightCard } from './MarginTrafficLightCard';
+import { CollapsibleAccordion } from './CollapsibleAccordion';
+import { DigitalWindowDrawingSvg } from './DigitalWindowDrawingSvg';
+import {
+  filterSelectedPiezasForCut,
+  syncSelectedPiezaIds,
+  togglePiezaSelection,
+  toggleSelectAllPiezas,
+} from '../utils/levantamientoSelection';
+import { dispatchAssistantCelebrate } from '../utils/assistantEffects';
 import {
   ClienteGuardado,
   loadClientes,
@@ -199,10 +208,28 @@ export const LevantamientoRapido: React.FC<Props> = ({
   const [sketchError, setSketchError] = useState<string | null>(null);
   const [sketchOfflineAlert, setSketchOfflineAlert] = useState<boolean>(false);
   const [sketchResult, setSketchResult] = useState<NormalizedSketchScanResult | null>(null);
+  const [accScannerOpen, setAccScannerOpen] = useState<boolean>(false);
+  const [accManualOpen, setAccManualOpen] = useState<boolean>(true);
+  const [accPiezasOpen, setAccPiezasOpen] = useState<boolean>(() => draft.piezas.length > 0);
+  const [accTramosOpen, setAccTramosOpen] = useState<boolean>(false);
+  const [selectedCutIds, setSelectedCutIds] = useState<string[]>(() =>
+    draft.piezas.map((p) => p.id)
+  );
+  const knownPiezaIdsRef = useRef<Set<string>>(new Set(draft.piezas.map((p) => p.id)));
   const importFileRef = useRef<HTMLInputElement | null>(null);
   const sketchCameraInputRef = useRef<HTMLInputElement | null>(null);
   const sketchGalleryInputRef = useRef<HTMLInputElement | null>(null);
   const lastTapRef = useRef<{ id: string; ts: number }>({ id: '', ts: 0 });
+
+  useEffect(() => {
+    const prevKnown = knownPiezaIdsRef.current;
+    const newlyAddedIds = draft.piezas.filter((p) => !prevKnown.has(p.id)).map((p) => p.id);
+    knownPiezaIdsRef.current = new Set(draft.piezas.map((p) => p.id));
+    setSelectedCutIds((prev) => syncSelectedPiezaIds(prev, draft.piezas, newlyAddedIds));
+    if (newlyAddedIds.length > 0) {
+      setAccPiezasOpen(true);
+    }
+  }, [draft.piezas]);
 
   const rootRef = useRef<HTMLDivElement | null>(null);
   const cliInputRef = useRef<HTMLInputElement | null>(null);
@@ -571,6 +598,9 @@ export const LevantamientoRapido: React.FC<Props> = ({
       })
     );
     setLocalError(null);
+    if (!isEditing) {
+      dispatchAssistantCelebrate('piece');
+    }
     notify(
       isEditing
         ? 'Cambios guardados en la pieza.'
@@ -761,6 +791,8 @@ export const LevantamientoRapido: React.FC<Props> = ({
       const normalized = normalizeScannedSketchResult(payload.result);
       setSketchResult(normalized);
       setSketchPanelOpen(false);
+      setAccScannerOpen(true);
+      setAccManualOpen(true);
       setLocalError(null);
 
       setForm((prev) => {
@@ -1164,28 +1196,42 @@ export const LevantamientoRapido: React.FC<Props> = ({
               />
             </div>
 
-            <div className="card">
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
-                <b>{form.editId ? '✏️ Editando pieza' : '➕ Nueva medida'}</b>
+            {/* ACORDEÓN 1: Escáner de Croquis con IA (colapsado por defecto) */}
+            <CollapsibleAccordion
+              id="acc-lev-scanner"
+              title="📷 Escáner de Croquis con IA"
+              summary={
+                accScannerOpen
+                  ? isOnline
+                    ? 'IA Lista · En línea · Lee medidas y hojas X / O'
+                    : 'Modo Sin Red · Captura manual disponible abajo'
+                  : 'Toca para escanear dibujo con cámara o foto'
+              }
+              open={accScannerOpen}
+              onToggle={() => setAccScannerOpen((prev) => !prev)}
+              tone="dark"
+              className="card !p-0"
+              rightAction={
                 <span
                   style={{
-                    fontSize: '10.5px',
+                    fontSize: '10px',
                     fontWeight: 800,
-                    padding: '2px 8px',
+                    padding: '2px 7px',
                     borderRadius: '999px',
                     background: isOnline ? 'rgba(14, 165, 233, 0.2)' : 'rgba(244, 63, 94, 0.22)',
                     border: isOnline
                       ? '1px solid rgba(56, 189, 248, 0.55)'
                       : '1px solid rgba(251, 113, 133, 0.65)',
                     color: isOnline ? '#7dd3fc' : '#fecdd3',
+                    whiteSpace: 'nowrap',
                   }}
                 >
-                  {isOnline ? 'IA Lista · En línea' : 'Modo Sin Red · Captura manual'}
+                  {isOnline ? 'IA Lista' : 'Sin Red'}
                 </span>
-              </div>
-
+              }
+            >
               {/* Escáner de Croquis a Mano con Cámara / IA */}
-              <div style={{ marginTop: '10px', marginBottom: '12px' }}>
+              <div>
                 <input
                   ref={sketchCameraInputRef}
                   id="lv-sketch-camera-input"
@@ -1501,6 +1547,19 @@ export const LevantamientoRapido: React.FC<Props> = ({
                       </div>
                     )}
 
+                    {sketchResult.anchoCm && sketchResult.altoCm && (
+                      <div style={{ marginTop: '10px', display: 'flex', justifyContent: 'center' }}>
+                        <DigitalWindowDrawingSvg
+                          anchoCm={sketchResult.anchoCm}
+                          altoCm={sketchResult.altoCm}
+                          unit="cm"
+                          hojas={sketchResult.hojasDistribucion}
+                          tipo={sketchResult.tipo}
+                          selected
+                        />
+                      </div>
+                    )}
+
                     <div style={{ marginTop: '8px', fontSize: '11.5px', color: '#d1fae5', lineHeight: 1.4 }}>
                       Verifica o ajusta los datos prellenados abajo y pulsa{' '}
                       <strong style={{ color: '#fff' }}>＋ Agregar más medidas</strong> para enviar a cortes o cotización.
@@ -1508,7 +1567,18 @@ export const LevantamientoRapido: React.FC<Props> = ({
                   </div>
                 )}
               </div>
+            </CollapsibleAccordion>
 
+            {/* ACORDEÓN 2: Nueva Medida (Captura Manual — abierto por defecto) */}
+            <CollapsibleAccordion
+              id="acc-lev-manual"
+              title={form.editId ? '✏️ Editando Medida (Captura Manual)' : '➕ Nueva Medida (Captura Manual)'}
+              summary={!accManualOpen ? 'Captura tipo, ancho, alto y acabado' : undefined}
+              open={accManualOpen}
+              onToggle={() => setAccManualOpen((prev) => !prev)}
+              tone="dark"
+              className="card !p-0"
+            >
               <label htmlFor="lv-tipo">Tipo</label>
               <select
                 id="lv-tipo"
@@ -1921,6 +1991,35 @@ export const LevantamientoRapido: React.FC<Props> = ({
                 </div>
               )}
 
+              {(() => {
+                const prevAncho = cmFromUnit(form.ancho, form.u);
+                const prevAlto = cmFromUnit(form.alto, form.u);
+                if (!prevAncho || !prevAlto || prevAncho <= 0 || prevAlto <= 0) return null;
+                return (
+                  <div
+                    style={{
+                      marginTop: '10px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                  >
+                    <small style={{ color: '#7dd3fc', fontSize: '11px', fontWeight: 700 }}>
+                      Vista previa del plano digitalizado
+                    </small>
+                    <DigitalWindowDrawingSvg
+                      anchoCm={prevAncho}
+                      altoCm={prevAlto}
+                      unit={form.u}
+                      hojas={form.hojas}
+                      tipo={form.tipo}
+                      selected
+                    />
+                  </div>
+                );
+              })()}
+
               <div className="grid" style={{ marginTop: '12px' }}>
                 <button type="button" className="or" id="lv-btn-add" onClick={handleAddOrUpdatePieza}>
                   {form.editId ? '💾 Guardar cambios' : '＋ Agregar más medidas'}
@@ -1935,183 +2034,19 @@ export const LevantamientoRapido: React.FC<Props> = ({
                   </button>
                 )}
               </div>
-            </div>
+            </CollapsibleAccordion>
 
-            <div className="card">
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
-                <b>Piezas del levantamiento ({draft.piezas.length})</b>
-                {draft.piezas.length > 0 && (
-                  <small style={{ color: '#93c5fd', fontSize: '11.5px', fontWeight: 600 }}>
-                    Toca para seleccionar · Doble toque/clic para editar
-                  </small>
-                )}
-              </div>
-              {draft.piezas.length === 0 ? (
-                <div className="pv" style={{ color: '#94a3b8', padding: '10px 0' }}>
-                  Aún no has agregado medidas.
-                </div>
-              ) : (
-                draft.piezas.map((p, idx) => {
-                  const isSelected = selectedPieceId === p.id;
-                  return (
-                  <div
-                    className="it"
-                    key={p.id}
-                    data-piece-id={p.id}
-                    data-selected={isSelected ? 'true' : 'false'}
-                    style={{
-                      cursor: 'pointer',
-                      border: isSelected ? '2px solid #f97316' : '1px solid #26324d',
-                      background: isSelected ? 'rgba(249, 115, 22, 0.12)' : undefined,
-                      borderRadius: '12px',
-                      padding: '10px',
-                      marginTop: '8px',
-                      transition: 'border-color 140ms ease, background-color 140ms ease',
-                    }}
-                    onClick={() => {
-                      const now = Date.now();
-                      if (lastTapRef.current.id === p.id && now - lastTapRef.current.ts < 360) {
-                        lastTapRef.current = { id: '', ts: 0 };
-                        openPieceEditModal(p);
-                        return;
-                      }
-                      lastTapRef.current = { id: p.id, ts: now };
-                      setSelectedPieceId(p.id);
-                    }}
-                    onDoubleClick={(e) => {
-                      e.stopPropagation();
-                      openPieceEditModal(p);
-                    }}
-                  >
-                    {p.foto ? (
-                      <img
-                        className="th"
-                        src={p.foto}
-                        alt="Foto"
-                        style={{ cursor: 'pointer' }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setViewerFoto(p.foto);
-                          pushView('foto');
-                        }}
-                      />
-                    ) : (
-                      <div
-                        className="th"
-                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                      >
-                        {p.tipo === 'Mosquitero abatible' ? '🦟' : '🪟'}
-                      </div>
-                    )}
-                    <div className="tx">
-                      <b>
-                        {idx + 1}. {p.tipo}
-                        {isSelected && (
-                          <span
-                            style={{
-                              marginLeft: '6px',
-                              fontSize: '10.5px',
-                              padding: '1px 6px',
-                              borderRadius: '6px',
-                              background: '#ea580c',
-                              color: '#fff',
-                              fontWeight: 800,
-                            }}
-                          >
-                            Seleccionada
-                          </span>
-                        )}
-                      </b>
-                      {p.area && <small>{p.area}</small>}
-                      <div>
-                        {formatMedidaText(p)} · Cant: {p.cant}
-                      </div>
-                      {(p.lineaPerfil || p.colorAluminio || p.colorVidrio || p.mosquitero) && (
-                        <div className="lev-piece-badges">
-                          {p.lineaPerfil && (
-                            <span className="lev-piece-badge">{p.lineaPerfil}</span>
-                          )}
-                          {p.colorAluminio && (() => {
-                            const alumOpt = LEV_COLOR_ALUMINIO_OPTS.find(
-                              (o) => o.label === p.colorAluminio
-                            );
-                            return (
-                              <span className="lev-piece-badge">
-                                {alumOpt?.hex && (
-                                  <span
-                                    className="lev-piece-dot"
-                                    style={{ backgroundColor: alumOpt.hex }}
-                                    aria-hidden="true"
-                                  />
-                                )}
-                                {p.colorAluminio}
-                              </span>
-                            );
-                          })()}
-                          {p.colorVidrio && (
-                            <span className="lev-piece-badge">Vidrio: {p.colorVidrio}</span>
-                          )}
-                          {p.mosquitero && (
-                            <span className="lev-piece-badge">{p.mosquitero}</span>
-                          )}
-                        </div>
-                      )}
-                      {p.notas && <small>{p.notas}</small>}
-                    </div>
-                    <div className="ac" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        type="button"
-                        title="Duplicar medida"
-                        aria-label={`Duplicar ${p.tipo}`}
-                        onClick={() => handleDuplicatePieza(idx)}
-                      >
-                        📋
-                      </button>
-                      <button
-                        type="button"
-                        title="Editar medida"
-                        aria-label={`Editar ${p.tipo}`}
-                        onClick={() => openPieceEditModal(p)}
-                      >
-                        ✏️
-                      </button>
-                      {confirmDeletePieceId === p.id ? (
-                        <button
-                          type="button"
-                          className="dg"
-                          onClick={() => {
-                            const nextPiezas = draft.piezas.filter((x) => x.id !== p.id);
-                            persistDraft({ ...draft, piezas: nextPiezas });
-                            if (form.editId === p.id) setForm(createEmptyForm());
-                            if (selectedPieceId === p.id) setSelectedPieceId(null);
-                            setConfirmDeletePieceId(null);
-                          }}
-                        >
-                          Confirmar
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          className="dg"
-                          title="Eliminar medida"
-                          aria-label={`Eliminar ${p.tipo}`}
-                          onClick={() => setConfirmDeletePieceId(p.id)}
-                        >
-                          🗑
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  );
-                })
-              )}
-              <div className="tot">{resumenLevantamiento(draft.piezas)}</div>
-            </div>
+            {/* ACORDEÓN 3: Piezas del Levantamiento con dibujo digitalizado y selección múltiple */}
+            {(() => {
+              const allCutSelected =
+                draft.piezas.length > 0 &&
+                draft.piezas.every((pz) => selectedCutIds.includes(pz.id));
+              const selectedPiezasForCut = filterSelectedPiezasForCut(draft.piezas, selectedCutIds);
 
-            {draft.piezas.length > 0 && (() => {
+              // Optimización de tramos 6.10 m calculada ÚNICAMENTE con las piezas marcadas (✓)
               const acabadoByPerfil: Partial<Record<PerfilCatalogoId, string>> = {};
               const allPerfiles: CortePerfil[] = [];
-              for (const pz of draft.piezas) {
+              for (const pz of selectedPiezasForCut) {
                 const resolved = resolveLineaFromLevantamiento(pz);
                 const colorId = resolveColorAluminioFromLevantamiento(pz.colorAluminio);
                 const vidrioInfo = resolveVidrioFromLevantamiento(pz.colorVidrio);
@@ -2143,27 +2078,404 @@ export const LevantamientoRapido: React.FC<Props> = ({
                   allPerfiles.push(perf);
                 }
               }
-              const levOpt = buildDespieceTramos1D(allPerfiles, 'Levantamiento');
-              if (levOpt.grupos.length === 0) return null;
+              const levOpt =
+                allPerfiles.length > 0
+                  ? buildDespieceTramos1D(allPerfiles, 'Levantamiento')
+                  : null;
+              const totalBarras = levOpt ? levOpt.tramos610Totales : 0;
+              const usoPct = levOpt ? Math.round(levOpt.aprovechamientoGlobalPct) : 0;
+
               return (
-                <div
-                  style={{
-                    marginTop: '12px',
-                    marginBottom: '12px',
-                    padding: '12px',
-                    borderRadius: '14px',
-                    background: '#f8fafc',
-                    color: '#0f172a',
-                  }}
-                >
-                  <Tramos610AcomodadosSection
-                    id="lev-tramos-610-acomodados"
-                    optimizacion={levOpt}
-                    acabadoByPerfil={acabadoByPerfil}
-                    defaultAcabado={draft.piezas[0]?.colorAluminio || 'Natural'}
-                    compact
-                  />
-                </div>
+                <>
+                  <CollapsibleAccordion
+                    id="acc-lev-piezas"
+                    title={`🪟 Piezas del Levantamiento (${draft.piezas.length} ${draft.piezas.length === 1 ? 'pieza' : 'piezas'})`}
+                    summary={
+                      draft.piezas.length === 0
+                        ? 'Aún no has agregado medidas'
+                        : `${selectedPiezasForCut.length} de ${draft.piezas.length} marcadas (✓) para tramos de 6.10 m`
+                    }
+                    open={accPiezasOpen}
+                    onToggle={() => setAccPiezasOpen((prev) => !prev)}
+                    tone="dark"
+                    className="card !p-0"
+                    rightAction={
+                      draft.piezas.length > 0 ? (
+                        <button
+                          type="button"
+                          id="btn-lev-select-all-cut"
+                          onClick={() =>
+                            setSelectedCutIds((prev) => toggleSelectAllPiezas(prev, draft.piezas))
+                          }
+                          style={{
+                            width: 'auto',
+                            padding: '5px 10px',
+                            minHeight: '30px',
+                            borderRadius: '999px',
+                            border: allCutSelected
+                              ? '1px solid rgba(148, 163, 184, 0.55)'
+                              : '1px solid rgba(52, 211, 153, 0.75)',
+                            background: allCutSelected
+                              ? 'rgba(30, 41, 59, 0.9)'
+                              : 'rgba(16, 185, 129, 0.22)',
+                            color: allCutSelected ? '#e2e8f0' : '#6ee7b7',
+                            fontSize: '11px',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {allCutSelected ? 'Ninguna' : 'Seleccionar todas'}
+                        </button>
+                      ) : undefined
+                    }
+                  >
+                    {draft.piezas.length === 0 ? (
+                      <div className="pv" style={{ color: '#94a3b8', padding: '8px 0' }}>
+                        Aún no has agregado medidas. Captura arriba o usa el Escáner IA.
+                      </div>
+                    ) : (
+                      <>
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: '8px',
+                            flexWrap: 'wrap',
+                            marginBottom: '6px',
+                          }}
+                        >
+                          <small style={{ color: '#93c5fd', fontSize: '11.5px', fontWeight: 600 }}>
+                            Marca el círculo ○/✓ de las medidas que deseas incluir en cortes de 6.10 m · Doble toque para editar
+                          </small>
+                        </div>
+
+                        {draft.piezas.map((p, idx) => {
+                          const isCheckedForCut = selectedCutIds.includes(p.id);
+                          const isSelected = selectedPieceId === p.id;
+                          return (
+                            <div
+                              className="it"
+                              key={p.id}
+                              data-piece-id={p.id}
+                              data-selected={isSelected ? 'true' : 'false'}
+                              data-cut-selected={isCheckedForCut ? 'true' : 'false'}
+                              style={{
+                                cursor: 'pointer',
+                                border: isCheckedForCut
+                                  ? '2px solid #10b981'
+                                  : isSelected
+                                    ? '2px solid #f97316'
+                                    : '1px solid #26324d',
+                                background: isCheckedForCut
+                                  ? 'rgba(16, 185, 129, 0.08)'
+                                  : isSelected
+                                    ? 'rgba(249, 115, 22, 0.1)'
+                                    : undefined,
+                                borderRadius: '13px',
+                                padding: '10px',
+                                marginTop: '8px',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '10px',
+                                transition: 'border-color 140ms ease, background-color 140ms ease',
+                              }}
+                              onClick={() => {
+                                const now = Date.now();
+                                if (lastTapRef.current.id === p.id && now - lastTapRef.current.ts < 360) {
+                                  lastTapRef.current = { id: '', ts: 0 };
+                                  openPieceEditModal(p);
+                                  return;
+                                }
+                                lastTapRef.current = { id: p.id, ts: now };
+                                setSelectedPieceId(p.id);
+                              }}
+                              onDoubleClick={(e) => {
+                                e.stopPropagation();
+                                openPieceEditModal(p);
+                              }}
+                            >
+                              {/* Fila superior: Círculo de selección múltiple (○ / ✓) + Título + Acciones */}
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'flex-start',
+                                  justifyContent: 'space-between',
+                                  gap: '10px',
+                                  width: '100%',
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', minWidth: 0, flex: 1 }}>
+                                  <button
+                                    type="button"
+                                    id={`btn-lev-check-${p.id}`}
+                                    role="checkbox"
+                                    aria-checked={isCheckedForCut}
+                                    aria-label={
+                                      isCheckedForCut
+                                        ? `Quitar pieza ${idx + 1} (${p.tipo}) de cortes 6.10 m`
+                                        : `Seleccionar pieza ${idx + 1} (${p.tipo}) para cortes 6.10 m`
+                                    }
+                                    title={isCheckedForCut ? 'Incluida en cortes 6.10 m' : 'Toca para incluir en cortes 6.10 m'}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedCutIds((prev) => togglePiezaSelection(prev, p.id));
+                                    }}
+                                    style={{
+                                      width: '30px',
+                                      height: '30px',
+                                      minWidth: '30px',
+                                      minHeight: '30px',
+                                      padding: 0,
+                                      borderRadius: '999px',
+                                      border: isCheckedForCut
+                                        ? '2px solid #34d399'
+                                        : '2px solid #64748b',
+                                      background: isCheckedForCut
+                                        ? '#10b981'
+                                        : 'rgba(15, 23, 42, 0.7)',
+                                      color: isCheckedForCut ? '#ffffff' : '#94a3b8',
+                                      fontSize: '15px',
+                                      fontWeight: 900,
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      cursor: 'pointer',
+                                      flexShrink: 0,
+                                      marginTop: '1px',
+                                    }}
+                                  >
+                                    {isCheckedForCut ? '✓' : '○'}
+                                  </button>
+
+                                  <div className="tx" style={{ flex: 1, minWidth: 0 }}>
+                                    <b>
+                                      {idx + 1}. {p.tipo}
+                                      {p.hojas && (
+                                        <span
+                                          style={{
+                                            marginLeft: '6px',
+                                            fontSize: '10.5px',
+                                            padding: '1px 6px',
+                                            borderRadius: '6px',
+                                            background: 'rgba(14, 165, 233, 0.25)',
+                                            border: '1px solid rgba(56, 189, 248, 0.5)',
+                                            color: '#bae6fd',
+                                            fontWeight: 800,
+                                          }}
+                                        >
+                                          {p.hojas}
+                                        </span>
+                                      )}
+                                      {isCheckedForCut && (
+                                        <span
+                                          style={{
+                                            marginLeft: '6px',
+                                            fontSize: '10px',
+                                            padding: '1px 6px',
+                                            borderRadius: '6px',
+                                            background: '#059669',
+                                            color: '#fff',
+                                            fontWeight: 800,
+                                            whiteSpace: 'nowrap',
+                                            display: 'inline-block',
+                                          }}
+                                        >
+                                          En corte
+                                        </span>
+                                      )}
+                                    </b>
+                                    {p.area && <small>{p.area}</small>}
+                                    <div>
+                                      {formatMedidaText(p)} · Cant: {p.cant}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="ac" onClick={(e) => e.stopPropagation()}>
+                                  <button
+                                    type="button"
+                                    title="Duplicar medida"
+                                    aria-label={`Duplicar ${p.tipo}`}
+                                    onClick={() => handleDuplicatePieza(idx)}
+                                  >
+                                    📋
+                                  </button>
+                                  <button
+                                    type="button"
+                                    title="Editar medida"
+                                    aria-label={`Editar ${p.tipo}`}
+                                    onClick={() => openPieceEditModal(p)}
+                                  >
+                                    ✏️
+                                  </button>
+                                  {confirmDeletePieceId === p.id ? (
+                                    <button
+                                      type="button"
+                                      className="dg"
+                                      onClick={() => {
+                                        const nextPiezas = draft.piezas.filter((x) => x.id !== p.id);
+                                        persistDraft({ ...draft, piezas: nextPiezas });
+                                        if (form.editId === p.id) setForm(createEmptyForm());
+                                        if (selectedPieceId === p.id) setSelectedPieceId(null);
+                                        setConfirmDeletePieceId(null);
+                                      }}
+                                    >
+                                      Confirmar
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      className="dg"
+                                      title="Eliminar medida"
+                                      aria-label={`Eliminar ${p.tipo}`}
+                                      onClick={() => setConfirmDeletePieceId(p.id)}
+                                    >
+                                      🗑
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Fila central: Dibujo técnico digitalizado (SVG) + foto opcional + especificaciones */}
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '10px',
+                                  flexWrap: 'wrap',
+                                  width: '100%',
+                                }}
+                              >
+                                <DigitalWindowDrawingSvg
+                                  anchoCm={p.anchoCm}
+                                  altoCm={p.altoCm}
+                                  unit={form.u}
+                                  hojas={p.hojas}
+                                  tipo={p.tipo}
+                                  selected={isCheckedForCut}
+                                  compact
+                                />
+
+                                <div style={{ flex: '1 1 160px', minWidth: 0 }}>
+                                  {(p.lineaPerfil || p.colorAluminio || p.colorVidrio || p.mosquitero) && (
+                                    <div className="lev-piece-badges">
+                                      {p.lineaPerfil && (
+                                        <span className="lev-piece-badge">{p.lineaPerfil}</span>
+                                      )}
+                                      {p.colorAluminio && (() => {
+                                        const alumOpt = LEV_COLOR_ALUMINIO_OPTS.find(
+                                          (o) => o.label === p.colorAluminio
+                                        );
+                                        return (
+                                          <span className="lev-piece-badge">
+                                            {alumOpt?.hex && (
+                                              <span
+                                                className="lev-piece-dot"
+                                                style={{ backgroundColor: alumOpt.hex }}
+                                                aria-hidden="true"
+                                              />
+                                            )}
+                                            {p.colorAluminio}
+                                          </span>
+                                        );
+                                      })()}
+                                      {p.colorVidrio && (
+                                        <span className="lev-piece-badge">Vidrio: {p.colorVidrio}</span>
+                                      )}
+                                      {p.mosquitero && (
+                                        <span className="lev-piece-badge">{p.mosquitero}</span>
+                                      )}
+                                    </div>
+                                  )}
+                                  {p.notas && (
+                                    <small style={{ display: 'block', marginTop: '4px', color: '#cbd5e1' }}>
+                                      {p.notas}
+                                    </small>
+                                  )}
+                                  {p.foto && (
+                                    <button
+                                      type="button"
+                                      className="gh"
+                                      style={{
+                                        marginTop: '6px',
+                                        minHeight: '30px',
+                                        padding: '4px 10px',
+                                        fontSize: '11.5px',
+                                        fontWeight: 700,
+                                      }}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setViewerFoto(p.foto);
+                                        pushView('foto');
+                                      }}
+                                    >
+                                      📷 Ver foto adjunta
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </>
+                    )}
+                    <div className="tot">{resumenLevantamiento(draft.piezas)}</div>
+                  </CollapsibleAccordion>
+
+                  {/* ACORDEÓN 4: Tramos de 6.10 m ya acomodados (colapsado por defecto, calcula SOLO seleccionadas ✓) */}
+                  <CollapsibleAccordion
+                    id="acc-lev-tramos-610"
+                    title={`✂️ Tramos de 6.10 m ya acomodados (${totalBarras} ${totalBarras === 1 ? 'barra' : 'barras'} · ${usoPct}% uso)`}
+                    summary={
+                      draft.piezas.length === 0
+                        ? 'Agrega medidas para calcular barras de 6.10 m'
+                        : selectedPiezasForCut.length === 0
+                          ? 'Ninguna pieza marcada · Toca el círculo ○ en las piezas que deseas cortar'
+                          : `${selectedPiezasForCut.length} de ${draft.piezas.length} pieza(s) seleccionada(s) · Toca para ver cortes`
+                    }
+                    open={accTramosOpen}
+                    onToggle={() => setAccTramosOpen((prev) => !prev)}
+                    tone="dark"
+                    className="card !p-0"
+                  >
+                    {selectedPiezasForCut.length === 0 || !levOpt || levOpt.grupos.length === 0 ? (
+                      <div
+                        style={{
+                          padding: '12px',
+                          borderRadius: '11px',
+                          background: 'rgba(15, 23, 42, 0.7)',
+                          border: '1px dashed rgba(148, 163, 184, 0.45)',
+                          color: '#cbd5e1',
+                          fontSize: '12.5px',
+                          fontWeight: 600,
+                          lineHeight: 1.45,
+                        }}
+                      >
+                        Marca el círculo <strong>○</strong> de una o más piezas en{' '}
+                        <strong>🪟 Piezas del Levantamiento</strong> para calcular al instante los cortes en barras de 6.10 m.
+                      </div>
+                    ) : (
+                      <div
+                        style={{
+                          padding: '10px',
+                          borderRadius: '12px',
+                          background: '#f8fafc',
+                          color: '#0f172a',
+                        }}
+                      >
+                        <Tramos610AcomodadosSection
+                          id="lev-tramos-610-acomodados"
+                          optimizacion={levOpt}
+                          acabadoByPerfil={acabadoByPerfil}
+                          defaultAcabado={selectedPiezasForCut[0]?.colorAluminio || 'Natural'}
+                          compact
+                        />
+                      </div>
+                    )}
+                  </CollapsibleAccordion>
+                </>
               );
             })()}
 

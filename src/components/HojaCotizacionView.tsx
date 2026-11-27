@@ -16,6 +16,7 @@ import {
   optimizarPartidasTramos1D,
 } from '../utils/modulacionLogic';
 import { Tramos610AcomodadosSection } from './Tramos610AcomodadosSection';
+import { CollapsibleAccordion } from './CollapsibleAccordion';
 import {
   CotizacionPdfBlobResult,
   generarPdfOrdenProduccionTaller,
@@ -139,6 +140,8 @@ export const HojaCotizacionView: React.FC<Props> = ({
   onShowToast,
 }) => {
   const [showDespieceObra, setShowDespieceObra] = useState(false);
+  const [accClienteOpen, setAccClienteOpen] = useState(true);
+  const [accCondicionesOpen, setAccCondicionesOpen] = useState(false);
   const [contratoOpen, setContratoOpen] = useState(false);
   const [pdfHeaderModalOpen, setPdfHeaderModalOpen] = useState(false);
   const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
@@ -326,16 +329,23 @@ export const HojaCotizacionView: React.FC<Props> = ({
         </button>
       </div>
 
-      <div className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] p-4 sm:p-5 shadow-xl mb-4">
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
-          <h2 className="m-0 text-[17px] font-extrabold">Datos del Proyecto / Obra</h2>
+      <CollapsibleAccordion
+        id="acc-hoja-cliente"
+        title="👤 Datos del Proyecto / Obra"
+        summary={`${hoja.proyecto?.trim() || 'Sin nombre de proyecto'} · Cotización No. ${currentFolio}`}
+        open={accClienteOpen}
+        onToggle={() => setAccClienteOpen((p) => !p)}
+        tone="light"
+        className="mb-4 shadow-xl"
+        rightAction={
           <span
             id="hoja-folio-badge"
-            className="px-2.5 py-1 rounded-lg bg-blue-50 border border-blue-200 text-blue-800 mono text-[11.5px] font-extrabold"
+            className="px-2.5 py-1 rounded-lg bg-blue-50 border border-blue-200 text-blue-800 mono text-[11px] font-extrabold"
           >
-            Cotización No. {currentFolio} · {todayLabel}
+            No. {currentFolio} · {todayLabel}
           </span>
-        </div>
+        }
+      >
         <p className="m-0 text-[12px] text-slate-600 mb-3">
           Se mostrará en el encabezado de la cotización, PDF para cliente y WhatsApp
         </p>
@@ -432,7 +442,7 @@ export const HojaCotizacionView: React.FC<Props> = ({
             />
           </div>
         </div>
-      </div>
+      </CollapsibleAccordion>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-5 items-start">
         {/* Lista de partidas */}
@@ -631,72 +641,81 @@ export const HojaCotizacionView: React.FC<Props> = ({
               </div>
             </div>
 
-            <div className="mb-3.5 p-3 rounded-[12px] bg-slate-50 border border-slate-200 text-[11.8px] text-slate-600 leading-relaxed flex flex-col gap-2">
-              <strong className="block text-slate-900 text-[12px]">Condiciones editables del PDF</strong>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                <div>
-                  <label htmlFor="inp-hoja-vigencia" className="block text-[10.5px] font-bold text-slate-500 mb-0.5">
-                    Vigencia (días)
-                  </label>
-                  <input
-                    id="inp-hoja-vigencia"
-                    type="number"
-                    min={1}
-                    max={90}
-                    value={hoja.vigenciaDias ?? DEFAULT_HOJA_CONDITIONS.vigenciaDias}
-                    onChange={(e) =>
-                      onUpdateHoja({
-                        vigenciaDias: Math.max(1, Math.min(90, Math.round(Number(e.target.value) || 8))),
-                      })
-                    }
-                    className="w-full min-h-[34px] rounded-lg border border-slate-300 bg-white px-2 mono text-[12.5px] font-bold"
-                  />
+            <CollapsibleAccordion
+              id="acc-hoja-condiciones"
+              title="📋 Condiciones editables del PDF"
+              summary={`Vigencia ${hoja.vigenciaDias ?? DEFAULT_HOJA_CONDITIONS.vigenciaDias} días · Anticipo ${anticipoPctVal}% · ${hoja.tiempoEntrega || DEFAULT_HOJA_CONDITIONS.tiempoEntrega}`}
+              open={accCondicionesOpen}
+              onToggle={() => setAccCondicionesOpen((p) => !p)}
+              tone="light"
+              className="mb-3.5"
+            >
+              <div className="text-[11.8px] text-slate-600 leading-relaxed flex flex-col gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  <div>
+                    <label htmlFor="inp-hoja-vigencia" className="block text-[10.5px] font-bold text-slate-500 mb-0.5">
+                      Vigencia (días)
+                    </label>
+                    <input
+                      id="inp-hoja-vigencia"
+                      type="number"
+                      min={1}
+                      max={90}
+                      value={hoja.vigenciaDias ?? DEFAULT_HOJA_CONDITIONS.vigenciaDias}
+                      onChange={(e) =>
+                        onUpdateHoja({
+                          vigenciaDias: Math.max(1, Math.min(90, Math.round(Number(e.target.value) || 8))),
+                        })
+                      }
+                      className="w-full min-h-[34px] rounded-lg border border-slate-300 bg-white px-2 mono text-[12.5px] font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="inp-hoja-anticipo" className="block text-[10.5px] font-bold text-slate-500 mb-0.5">
+                      Anticipo (%)
+                    </label>
+                    <input
+                      id="inp-hoja-anticipo"
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={hoja.anticipoPct ?? DEFAULT_HOJA_CONDITIONS.anticipoPct}
+                      onChange={(e) =>
+                        onUpdateHoja({
+                          anticipoPct: Math.max(0, Math.min(100, Math.round(Number(e.target.value) || 0))),
+                        })
+                      }
+                      className="w-full min-h-[34px] rounded-lg border border-slate-300 bg-white px-2 mono text-[12.5px] font-bold"
+                    />
+                  </div>
+                  <div className="col-span-2 sm:col-span-1">
+                    <label htmlFor="inp-hoja-entrega" className="block text-[10.5px] font-bold text-slate-500 mb-0.5">
+                      Entrega
+                    </label>
+                    <input
+                      id="inp-hoja-entrega"
+                      type="text"
+                      value={hoja.tiempoEntrega ?? DEFAULT_HOJA_CONDITIONS.tiempoEntrega}
+                      onChange={(e) => onUpdateHoja({ tiempoEntrega: e.target.value })}
+                      placeholder="5 a 7 días hábiles"
+                      className="w-full min-h-[34px] rounded-lg border border-slate-300 bg-white px-2 text-[12px] font-semibold"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label htmlFor="inp-hoja-anticipo" className="block text-[10.5px] font-bold text-slate-500 mb-0.5">
-                    Anticipo (%)
-                  </label>
+                <label className="inline-flex items-center gap-2 cursor-pointer text-[11.5px] font-bold text-slate-700 pt-1">
                   <input
-                    id="inp-hoja-anticipo"
-                    type="number"
-                    min={0}
-                    max={100}
-                    value={hoja.anticipoPct ?? DEFAULT_HOJA_CONDITIONS.anticipoPct}
-                    onChange={(e) =>
-                      onUpdateHoja({
-                        anticipoPct: Math.max(0, Math.min(100, Math.round(Number(e.target.value) || 0))),
-                      })
-                    }
-                    className="w-full min-h-[34px] rounded-lg border border-slate-300 bg-white px-2 mono text-[12.5px] font-bold"
+                    id="chk-hoja-fotos-pdf"
+                    type="checkbox"
+                    checked={Boolean(hoja.incluirFotosPdf)}
+                    onChange={(e) => onUpdateHoja({ incluirFotosPdf: e.target.checked })}
                   />
-                </div>
-                <div className="col-span-2 sm:col-span-1">
-                  <label htmlFor="inp-hoja-entrega" className="block text-[10.5px] font-bold text-slate-500 mb-0.5">
-                    Entrega
-                  </label>
-                  <input
-                    id="inp-hoja-entrega"
-                    type="text"
-                    value={hoja.tiempoEntrega ?? DEFAULT_HOJA_CONDITIONS.tiempoEntrega}
-                    onChange={(e) => onUpdateHoja({ tiempoEntrega: e.target.value })}
-                    placeholder="5 a 7 días hábiles"
-                    className="w-full min-h-[34px] rounded-lg border border-slate-300 bg-white px-2 text-[12px] font-semibold"
-                  />
+                  Incluir fotos de piezas en el PDF (si existen)
+                </label>
+                <div className="text-[11px] text-slate-500">
+                  • Garantía de 30 días en mano de obra, sellado hermético y funcionamiento de herrajes
                 </div>
               </div>
-              <label className="inline-flex items-center gap-2 cursor-pointer text-[11.5px] font-bold text-slate-700 pt-1">
-                <input
-                  id="chk-hoja-fotos-pdf"
-                  type="checkbox"
-                  checked={Boolean(hoja.incluirFotosPdf)}
-                  onChange={(e) => onUpdateHoja({ incluirFotosPdf: e.target.checked })}
-                />
-                Incluir fotos de piezas en el PDF (si existen)
-              </label>
-              <div className="text-[11px] text-slate-500">
-                • Garantía de 30 días en mano de obra, sellado hermético y funcionamiento de herrajes
-              </div>
-            </div>
+            </CollapsibleAccordion>
 
             {/* Semáforo de Margen — Exclusivo PRO / Administrador (oculto en Versión Gratuita) */}
             <MarginTrafficLightCard
@@ -912,29 +931,26 @@ export const HojaCotizacionView: React.FC<Props> = ({
             </div>
           )}
 
-          {showDespieceObra && (
-            <div
-              id="hoja-despiece-total-card"
-              className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] p-4 sm:p-5 shadow-xl"
-            >
-              <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
-                <div>
-                  <h2 className="m-0 text-[17px] font-extrabold">Despiece Total de Material (Uso Interno)</h2>
-                  <p className="m-0 text-[12px] text-slate-500">
-                    Cruce en tiempo real contra tus existencias en Mi Inventario (tramos de 6.10 m)
-                  </p>
+          <CollapsibleAccordion
+            id="hoja-despiece-total-card"
+            title={`✂️ Despiece Total de Material y Tramos 6.10 m (${opt1D.tramos610Totales} barras · ${Math.round(opt1D.aprovechamientoGlobalPct)}% uso)`}
+            summary="Cruce en tiempo real contra tus existencias en Mi Inventario (tramos de 6.10 m)"
+            open={showDespieceObra}
+            onToggle={() => setShowDespieceObra((p) => !p)}
+            tone="light"
+            className="shadow-xl"
+          >
+            <div>
+              {consolidado.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 text-[11px] font-extrabold mono mb-3">
+                  <span className="px-2 py-1 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-800">
+                    En existencia: {consolidado.reduce((a, r) => a + r.tramosDisponibles, 0)} tr.
+                  </span>
+                  <span className="px-2 py-1 rounded-lg bg-orange-50 border border-orange-300 text-orange-800">
+                    Falta surtir: {consolidado.reduce((a, r) => a + r.tramosFaltantes, 0)} tr.
+                  </span>
                 </div>
-                {consolidado.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 text-[11px] font-extrabold mono">
-                    <span className="px-2 py-1 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-800">
-                      En existencia: {consolidado.reduce((a, r) => a + r.tramosDisponibles, 0)} tr.
-                    </span>
-                    <span className="px-2 py-1 rounded-lg bg-orange-50 border border-orange-300 text-orange-800">
-                      Falta surtir: {consolidado.reduce((a, r) => a + r.tramosFaltantes, 0)} tr.
-                    </span>
-                  </div>
-                )}
-              </div>
+              )}
 
               {consolidado.length === 0 ? (
                 <p className="text-[12.5px] text-slate-500">Sin partidas en la hoja.</p>
@@ -1079,7 +1095,7 @@ export const HojaCotizacionView: React.FC<Props> = ({
                 </>
               )}
             </div>
-          )}
+          </CollapsibleAccordion>
         </div>
       </div>
 

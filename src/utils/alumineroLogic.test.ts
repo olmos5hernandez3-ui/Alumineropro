@@ -4328,6 +4328,195 @@ test('110. Prompt 2: Carátulas plastas (9 combinaciones), 7 personajes transpar
   assert.match(adminDashSrc, /Versión Gratuita/);
 });
 
+test('111. Botón de tema en TopBar, Acordeones desplegables y Dibujo digitalizado con selección múltiple para cortes 6.10 m', async () => {
+  const { readFileSync } = await import('node:fs');
+  const {
+    parseHojasBlueprint,
+    formatCotaMedida,
+    syncSelectedPiezaIds,
+    togglePiezaSelection,
+    toggleSelectAllPiezas,
+    filterSelectedPiezasForCut,
+  } = await import('./levantamientoSelection.ts');
+
+  // 1. Parseo de plano digitalizado (X corrediza con flecha, O fija, puerta/abatible)
+  const ox = parseHojasBlueprint('O-X', 'Ventana Corrediza');
+  assert.equal(ox.length, 2);
+  assert.equal(ox[0].code, 'O');
+  assert.equal(ox[1].code, 'X');
+  assert.equal(ox[1].arrowDir, 'left');
+
+  const xo = parseHojasBlueprint('X-O', 'Ventana Corrediza');
+  assert.equal(xo[0].code, 'X');
+  assert.equal(xo[0].arrowDir, 'right');
+  assert.equal(xo[1].code, 'O');
+
+  const oxo = parseHojasBlueprint('O-X-O', 'Ventana Corrediza');
+  assert.equal(oxo.length, 3);
+  assert.deepEqual(oxo.map((l) => l.code), ['O', 'X', 'O']);
+
+  const fija = parseHojasBlueprint('', 'Ventana Fija');
+  assert.deepEqual(fija.map((l) => l.code), ['O']);
+
+  const puerta = parseHojasBlueprint('', 'Puerta');
+  assert.deepEqual(puerta.map((l) => l.code), ['A']);
+
+  // 2. Formato limpio de cotas de plano
+  assert.equal(formatCotaMedida(132, 'cm'), '132 cm');
+  assert.equal(formatCotaMedida(147.9, 'cm'), '147.9 cm');
+  assert.equal(formatCotaMedida(150, 'mm'), '1,500 mm');
+  assert.equal(formatCotaMedida(132, 'm'), '1.32 m');
+
+  // 3. Selección múltiple y filtrado para tramos de 6.10 m
+  const mockPiezas = [
+    {
+      id: 'p1',
+      tipo: 'Ventana Corrediza',
+      area: 'Sala',
+      anchoCm: 132,
+      altoCm: 147.9,
+      cant: 1,
+      hojas: 'O-X',
+      notas: '',
+      foto: '',
+    },
+    {
+      id: 'p2',
+      tipo: 'Ventana Corrediza',
+      area: 'Recámara',
+      anchoCm: 180,
+      altoCm: 120,
+      cant: 1,
+      hojas: 'O-X-O',
+      notas: '',
+      foto: '',
+    },
+  ];
+  let sel = syncSelectedPiezaIds(['p1'], mockPiezas, ['p2']);
+  assert.deepEqual(sel, ['p1', 'p2']);
+
+  sel = togglePiezaSelection(sel, 'p1');
+  assert.deepEqual(sel, ['p2']);
+  assert.deepEqual(
+    filterSelectedPiezasForCut(mockPiezas, sel).map((p) => p.id),
+    ['p2']
+  );
+
+  // Seleccionar todas / Ninguna
+  sel = toggleSelectAllPiezas(sel, mockPiezas);
+  assert.deepEqual(sel, ['p1', 'p2']);
+  sel = toggleSelectAllPiezas(sel, mockPiezas);
+  assert.deepEqual(sel, []);
+  assert.equal(filterSelectedPiezasForCut(mockPiezas, sel).length, 0);
+
+  // 4. Botón directo de tema claro/oscuro en TopBar conectado en App.tsx
+  const topBarSrc = readFileSync('src/components/TopBarAndDrawer.tsx', 'utf8');
+  assert.match(topBarSrc, /id="btn-top-theme-toggle"/);
+  assert.match(topBarSrc, /onToggleTheme\?: \(\) => void/);
+  const appSrc = readFileSync('src/App.tsx', 'utf8');
+  assert.match(appSrc, /onToggleTheme=\{handleToggleTheme\}/);
+
+  // 5. Acordeones desplegables en Levantamiento Rápido, Hoja y Trabajo + Dibujo SVG + selección múltiple
+  const levSrc = readFileSync('src/components/LevantamientoRapido.tsx', 'utf8');
+  assert.match(levSrc, /id="acc-lev-scanner"/);
+  assert.match(levSrc, /📷 Escáner de Croquis con IA/);
+  assert.match(levSrc, /Toca para escanear dibujo con cámara o foto/);
+  assert.match(levSrc, /id="acc-lev-manual"/);
+  assert.match(levSrc, /Captura tipo, ancho, alto y acabado/);
+  assert.match(levSrc, /id="acc-lev-piezas"/);
+  assert.match(levSrc, /id="btn-lev-select-all-cut"/);
+  assert.match(levSrc, /id="acc-lev-tramos-610"/);
+  assert.match(levSrc, /DigitalWindowDrawingSvg/);
+  assert.match(levSrc, /filterSelectedPiezasForCut/);
+
+  const hojaSrc = readFileSync('src/components/HojaCotizacionView.tsx', 'utf8');
+  assert.match(hojaSrc, /CollapsibleAccordion/);
+  assert.match(hojaSrc, /id="acc-hoja-cliente"/);
+  assert.match(hojaSrc, /id="acc-hoja-condiciones"/);
+
+  const trabajoSrc = readFileSync('src/components/TrabajoView.tsx', 'utf8');
+  assert.match(trabajoSrc, /CollapsibleAccordion/);
+  assert.match(trabajoSrc, /id="acc-trabajo-tramos-610"/);
+
+  // 6. Reglas de oro: SW sigue en 1.0.4 (sin subir versión hasta Prompt 2) y Admin Login intacto
+  const swSrc = readFileSync('public/sw.js', 'utf8');
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.4'/);
+  const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
+  assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
+});
+
+test('112. Avatares 3D con halo azul/cobre, animaciones reactivas, Web Audio API, silencio en selector y enlace de selección múltiple 6.10 m', async () => {
+  const { readFileSync } = await import('node:fs');
+  const {
+    computeDragTiltDegrees,
+    getCharacterQuickGreeting,
+    getCharacterCelebrationText,
+    playAssistantSound,
+    AVATAR_SOUND_KEY,
+    ASSISTANT_CELEBRATE_EVENT_NAME,
+  } = await import('./assistantEffects.ts');
+
+  // 1. Física pura de inclinación al arrastrar (dirección y límite [-22°, +22°])
+  assert.equal(computeDragTiltDegrees(0, 0), 0);
+  assert.ok(computeDragTiltDegrees(8, 0) > 0, 'Debe inclinarse a la derecha');
+  assert.ok(computeDragTiltDegrees(-8, 0) < 0, 'Debe inclinarse a la izquierda');
+  assert.equal(computeDragTiltDegrees(120, 50), 22);
+  assert.equal(computeDragTiltDegrees(-120, -50), -22);
+
+  // 2. Saludos y mensajes de celebración para los 5 personajes principales
+  const mainChars = ['gatito', 'perrito', 'gallito', 'puerquito', 'robot'] as const;
+  for (const id of mainChars) {
+    assert.ok(getCharacterQuickGreeting(id).length > 8);
+    assert.ok(getCharacterCelebrationText(id, 'piece').length > 8);
+    assert.ok(getCharacterCelebrationText(id, 'quote').length > 8);
+    // Silenciado explícitamente nunca reproduce ni lanza excepción
+    assert.equal(playAssistantSound(id, 'tap', false), false);
+    assert.equal(playAssistantSound(id, 'drop', false), false);
+    assert.equal(playAssistantSound(id, 'celebrate', false), false);
+  }
+  assert.equal(AVATAR_SOUND_KEY, 'aluminero-avatar-sound');
+  assert.equal(ASSISTANT_CELEBRATE_EVENT_NAME, 'aluminero:assistant-celebrate');
+
+  // 3. Rediseño 3D SVG con degradados, halo azul metálico/cobre, parpadeo y destellos
+  const charSrc = readFileSync('src/components/AssistantCharacters.tsx', 'utf8');
+  assert.match(charSrc, /data-halo="blue-copper-bubble"/);
+  assert.match(charSrc, /radialGradient/);
+  assert.match(charSrc, /assistant-eye-blink/);
+  assert.match(charSrc, /assistant-ear-left/);
+  assert.match(charSrc, /assistant-part-wiggle/);
+  assert.match(charSrc, /assistant-sparkles/);
+
+  // 4. Web Audio API procedural para los 5 sonidos sin archivos externos
+  const fxSrc = readFileSync('src/utils/assistantEffects.ts', 'utf8');
+  assert.match(fxSrc, /scheduleCatMeow/);
+  assert.match(fxSrc, /scheduleDogBark/);
+  assert.match(fxSrc, /scheduleRoosterCrow/);
+  assert.match(fxSrc, /schedulePigOink/);
+  assert.match(fxSrc, /scheduleRobotBipBop/);
+
+  // 5. Interactividad en FloatingAssistant + switch de sonido en SideDrawer + celebración en App y Levantamiento
+  const floatSrc = readFileSync('src/components/FloatingAssistant.tsx', 'utf8');
+  assert.match(floatSrc, /AVATAR_POS_KEY/);
+  assert.match(floatSrc, /computeDragTiltDegrees/);
+  assert.match(floatSrc, /assistant-drop-bounce/);
+  assert.match(floatSrc, /assistant-celebrate-jump/);
+  assert.match(floatSrc, /assistant-idle-float/);
+  assert.match(floatSrc, /playAssistantSound/);
+
+  const drawerSrc = readFileSync('src/components/TopBarAndDrawer.tsx', 'utf8');
+  assert.match(drawerSrc, /id="btn-drawer-avatar-sound-switch"/);
+  assert.match(drawerSrc, /saveAvatarSoundEnabled/);
+
+  const levSrc = readFileSync('src/components/LevantamientoRapido.tsx', 'utf8');
+  assert.match(levSrc, /filterSelectedPiezasForCut/);
+  assert.match(levSrc, /dispatchAssistantCelebrate\('piece'\)/);
+
+  // 6. Login del administrador intacto
+  const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
+  assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
+});
+
+
 
 
 
