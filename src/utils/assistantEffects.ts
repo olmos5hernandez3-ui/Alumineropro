@@ -27,13 +27,18 @@ export function shouldBlockGhostClickTarget(
   return true;
 }
 
-export type AssistantSoundKind = 'tap' | 'drop' | 'celebrate';
+export type AssistantSoundKind = 'tap' | 'drop' | 'celebrate' | 'longpress';
 export type AssistantCelebrateReason = 'piece' | 'quote';
 
 export interface AssistantCelebrateDetail {
   reason: AssistantCelebrateReason;
   message?: string;
 }
+
+export const ASSISTANT_AUDIO_GAIN_TAP = 0.48;
+export const ASSISTANT_AUDIO_GAIN_LONGPRESS = 0.45;
+export const ASSISTANT_AUDIO_GAIN_DROP = 0.38;
+export const ASSISTANT_AUDIO_GAIN_CELEBRATE = 0.46;
 
 export interface SmartBubblePositionInput {
   avatarX: number;

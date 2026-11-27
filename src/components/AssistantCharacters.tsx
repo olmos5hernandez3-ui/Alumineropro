@@ -1,5 +1,6 @@
 import React from 'react';
 import { AppSkin, AppSkinVariant } from '../utils/storageHelpers';
+import type { RobotPoseMode } from '../utils/assistantGuideLogic';
 
 export type AssistantAvatarId =
   | 'robot'
@@ -169,33 +170,36 @@ interface CharacterSvgProps {
   santaHat?: boolean;
   gestureActive?: boolean;
   laserFlash?: boolean;
+  robotPose?: RobotPoseMode;
   mood?: AssistantAvatarMood;
   withHalo?: boolean;
   animated?: boolean;
 }
 
 /**
- * Mascota Oficial "Alumi-Bot 3D":
- * - Cuerpo dron metálico en acero cepillado (#e2e8f0, #94a3b8, #334155) con 2 propulsores luminosos
- * - Casco de seguridad estilizado con franja LED frontal brillante y antena lateral derecha
- * - Visor oscuro (#090d16) con ojos circulares LED y sonrisa en acento activo (parpadeo natural ~3.5s)
- * - Mano derecha levantada saludando + mano izquierda con medidor láser amarillo/negro y destello 0.6s al toque
+ * Mascota Oficial "Alumi-Bot 3D" con 3 vistas integradas en un solo personaje dinámico:
+ * - Vista 1 ('classic'): Robot Metálico Cian clásico en reposo (cuerpo plateado/azul, visor oscuro, ojos parpadeantes y sonrisa LED).
+ * - Vista 2 ('waving'): Robot Saludando / Activo (levanta manita saludando, expresión alegre y pulso luminoso cian).
+ * - Vista 3 ('technical'): Robot Técnico con Casco de seguridad con franja LED + Medidor Láser amarillo/rojo hacia abajo.
  */
 const AlumiBot3DSvg: React.FC<{
   size: number;
   accent: string;
   mood: AssistantAvatarMood;
+  pose: RobotPoseMode;
   animated: boolean;
   laserFlash: boolean;
-}> = ({ size, accent, mood, animated, laserFlash }) => {
+}> = ({ size, accent, mood, pose, animated, laserFlash }) => {
   const uid = React.useId().replace(/:/g, '');
-  const isHappy = mood === 'happy' || mood === 'celebrating';
+  const isWavingPose = pose === 'waving';
+  const isTechnicalPose = pose === 'technical';
+  const isHappy = isWavingPose || mood === 'happy' || mood === 'celebrating';
   const isSurprised = mood === 'dragging';
   const blinkClass = animated && !isHappy && !isSurprised ? 'alumibot-eye-blink' : '';
   const antennaClass = animated ? 'assistant-part-wiggle' : '';
   const waveClass = animated ? 'alumibot-wave-hand' : '';
   const thrusterClass = animated ? 'alumibot-thruster' : '';
-  const laserActive = laserFlash || isHappy;
+  const laserActive = isTechnicalPose && (laserFlash || isHappy);
 
   return (
     <svg
@@ -210,6 +214,7 @@ const AlumiBot3DSvg: React.FC<{
         filter: 'drop-shadow(0 8px 12px rgba(0,0,0,0.45))',
       }}
       data-robot-svg="alumi-bot-3d"
+      data-robot-pose={pose}
       data-laser-flash={laserActive ? 'true' : 'false'}
       aria-hidden="true"
     >
@@ -339,25 +344,54 @@ const AlumiBot3DSvg: React.FC<{
       <rect x="74.5" y="34" width="5" height="12" rx="2.5" fill="#475569" />
       <rect x="76.2" y="36.2" width="2" height="7.6" rx="1" fill={accent} opacity="0.9" />
 
-      {/* Casco de seguridad aluminero estilizado arriba */}
-      <path
-        d="M22.5 29.5 C23 15.5 33 10 48 10 C63 10 73 15.5 73.5 29.5 C66 26.8 57.5 25.5 48 25.5 C38.5 25.5 30 26.8 22.5 29.5 Z"
-        fill={`url(#ab-helmet-${uid})`}
-      />
-      {/* Cresta central volumétrica del casco */}
-      <path
-        d="M42.5 11.2 C44 9.5 52 9.5 53.5 11.2 L55 24.5 C50.5 23.9 45.5 23.9 41 24.5 Z"
-        fill="#f8fafc"
-        opacity="0.72"
-      />
-      {/* Visera del casco */}
-      <path
-        d="M21 29.2 Q48 23.8 75 29.2 Q75.5 31.8 72.5 32.2 Q48 27.6 23.5 32.2 Q20.5 31.8 21 29.2 Z"
-        fill="#64748b"
-      />
-      {/* Franja LED frontal brillante del casco */}
-      <rect x="37" y="19.2" width="22" height="3.6" rx="1.8" fill={accent} opacity="0.35" />
-      <rect x="38.5" y="19.8" width="19" height="2.4" rx="1.2" fill={`url(#ab-led-${uid})`} />
+      {/* Pulso luminoso cian cuando está en Vista 2 (Saludando / Activo) */}
+      {isWavingPose && (
+        <circle
+          cx="48"
+          cy="47"
+          r="37"
+          stroke={accent}
+          strokeWidth="1.8"
+          strokeOpacity="0.45"
+          strokeDasharray="6 5"
+          fill="none"
+        />
+      )}
+
+      {/* Casco de seguridad aluminero estilizado SOLO en Vista 3 (Técnico) */}
+      {isTechnicalPose && (
+        <g data-robot-part="safety-helmet">
+          <path
+            d="M22.5 29.5 C23 15.5 33 10 48 10 C63 10 73 15.5 73.5 29.5 C66 26.8 57.5 25.5 48 25.5 C38.5 25.5 30 26.8 22.5 29.5 Z"
+            fill={`url(#ab-helmet-${uid})`}
+          />
+          {/* Cresta central volumétrica del casco */}
+          <path
+            d="M42.5 11.2 C44 9.5 52 9.5 53.5 11.2 L55 24.5 C50.5 23.9 45.5 23.9 41 24.5 Z"
+            fill="#f8fafc"
+            opacity="0.72"
+          />
+          {/* Visera del casco */}
+          <path
+            d="M21 29.2 Q48 23.8 75 29.2 Q75.5 31.8 72.5 32.2 Q48 27.6 23.5 32.2 Q20.5 31.8 21 29.2 Z"
+            fill="#64748b"
+          />
+          {/* Franja LED frontal brillante del casco */}
+          <rect x="37" y="19.2" width="22" height="3.6" rx="1.8" fill={accent} opacity="0.42" />
+          <rect x="38.5" y="19.8" width="19" height="2.4" rx="1.2" fill={`url(#ab-led-${uid})`} />
+        </g>
+      )}
+
+      {/* Brillo superior metálico limpio cuando está en Vista 1 (Clásico) o Vista 2 (Saludando) */}
+      {!isTechnicalPose && (
+        <path
+          d="M31 24.2 Q48 20.5 65 24.2"
+          stroke="#ffffff"
+          strokeWidth="2"
+          strokeLinecap="round"
+          opacity="0.65"
+        />
+      )}
 
       {/* Visor oscuro frontal curvo (#090d16) */}
       <rect x="25.5" y="31" width="45" height="23.5" rx="11" fill={`url(#ab-visor-${uid})`} />
@@ -369,8 +403,8 @@ const AlumiBot3DSvg: React.FC<{
         height="22.1"
         rx="10.4"
         stroke={accent}
-        strokeWidth="1.15"
-        strokeOpacity="0.65"
+        strokeWidth={isWavingPose ? '1.6' : '1.15'}
+        strokeOpacity={isWavingPose ? '0.9' : '0.65'}
         fill="none"
       />
       {/* Brillo especular curvo en cristal del visor */}
@@ -423,60 +457,81 @@ const AlumiBot3DSvg: React.FC<{
         />
       )}
 
-      {/* Mano izquierda flotante sosteniendo medidor láser amarillo/negro + haz hacia abajo */}
-      <g>
-        {/* Haz láser continuo hacia abajo */}
-        <path
-          d={laserActive ? 'M14.5 72.5 L11.5 92 L17.5 92 Z' : 'M14.5 72.5 L13.4 89 L15.6 89 Z'}
-          fill={`url(#ab-laser-beam-${uid})`}
-          className={laserActive ? 'alumibot-laser-flash' : ''}
-        />
-        <line
-          x1="14.5"
-          y1="72.5"
-          x2="14.5"
-          y2={laserActive ? '91' : '87.5'}
-          stroke={laserActive ? '#ffffff' : '#ff4d6d'}
-          strokeWidth={laserActive ? '1.8' : '1.1'}
-          strokeLinecap="round"
-          opacity={laserActive ? '1' : '0.85'}
-        />
-        {/* Punto láser / destello 0.6s en el impacto inferior */}
-        <circle
-          cx="14.5"
-          cy={laserActive ? '90' : '87.5'}
-          r={laserActive ? '5.2' : '2.1'}
-          fill={`url(#ab-laser-flare-${uid})`}
-          className={laserActive ? 'alumibot-laser-flash' : ''}
-        />
-        {laserActive && (
-          <g className="alumibot-laser-flash">
-            <line x1="8.5" y1="90" x2="20.5" y2="90" stroke="#ffffff" strokeWidth="1.2" strokeLinecap="round" />
-            <line x1="14.5" y1="84.5" x2="14.5" y2="94.5" stroke="#ffffff" strokeWidth="1.2" strokeLinecap="round" />
-          </g>
-        )}
+      {/* Mano izquierda: Medidor Láser amarillo/rojo SOLO en Vista 3 (Técnico); en reposo/saludando mano flotante limpia */}
+      {isTechnicalPose ? (
+        <g data-robot-part="laser-meter">
+          {/* Haz láser continuo hacia abajo */}
+          <path
+            d={laserActive ? 'M14.5 72.5 L11.5 92 L17.5 92 Z' : 'M14.5 72.5 L13.4 89 L15.6 89 Z'}
+            fill={`url(#ab-laser-beam-${uid})`}
+            className={laserActive ? 'alumibot-laser-flash' : ''}
+          />
+          <line
+            x1="14.5"
+            y1="72.5"
+            x2="14.5"
+            y2={laserActive ? '91' : '87.5'}
+            stroke={laserActive ? '#ffffff' : '#ff4d6d'}
+            strokeWidth={laserActive ? '1.8' : '1.1'}
+            strokeLinecap="round"
+            opacity={laserActive ? '1' : '0.85'}
+          />
+          {/* Punto láser / destello 0.6s en el impacto inferior */}
+          <circle
+            cx="14.5"
+            cy={laserActive ? '90' : '87.5'}
+            r={laserActive ? '5.2' : '2.3'}
+            fill={`url(#ab-laser-flare-${uid})`}
+            className={laserActive ? 'alumibot-laser-flash' : ''}
+          />
+          {laserActive && (
+            <g className="alumibot-laser-flash">
+              <line x1="8.5" y1="90" x2="20.5" y2="90" stroke="#ffffff" strokeWidth="1.2" strokeLinecap="round" />
+              <line x1="14.5" y1="84.5" x2="14.5" y2="94.5" stroke="#ffffff" strokeWidth="1.2" strokeLinecap="round" />
+            </g>
+          )}
 
-        {/* Medidor láser amarillo y negro */}
-        <rect x="9.5" y="55" width="10" height="17.5" rx="2.6" fill={`url(#ab-meter-yellow-${uid})`} />
-        <rect x="11" y="57.2" width="7" height="5.5" rx="1.2" fill="#0f172a" />
-        <rect x="12" y="58.5" width="5" height="2.4" rx="0.6" fill="#38bdf8" opacity="0.85" />
-        <rect x="10.8" y="64" width="7.4" height="6.8" rx="1.4" fill="#1e293b" />
-        <circle cx="14.5" cy="66.6" r="1.4" fill="#ef4444" />
-        <circle cx="14.5" cy="72.3" r="1.3" fill="#ff4d6d" />
+          {/* Medidor láser amarillo y negro */}
+          <rect x="9.5" y="55" width="10" height="17.5" rx="2.6" fill={`url(#ab-meter-yellow-${uid})`} />
+          <rect x="11" y="57.2" width="7" height="5.5" rx="1.2" fill="#0f172a" />
+          <rect x="12" y="58.5" width="5" height="2.4" rx="0.6" fill="#38bdf8" opacity="0.85" />
+          <rect x="10.8" y="64" width="7.4" height="6.8" rx="1.4" fill="#1e293b" />
+          <circle cx="14.5" cy="66.6" r="1.4" fill="#ef4444" />
+          <circle cx="14.5" cy="72.3" r="1.3" fill="#ff4d6d" />
 
-        {/* Mano metálica flotante izquierda sujetando el medidor */}
-        <ellipse cx="21.2" cy="63.5" rx="4.4" ry="4.8" fill={`url(#ab-drone-${uid})`} />
-        <ellipse cx="20.2" cy="61.8" rx="1.5" ry="1.8" fill="#ffffff" opacity="0.65" />
-      </g>
+          {/* Mano metálica flotante izquierda sujetando el medidor */}
+          <ellipse cx="21.2" cy="63.5" rx="4.4" ry="4.8" fill={`url(#ab-drone-${uid})`} />
+          <ellipse cx="20.2" cy="61.8" rx="1.5" ry="1.8" fill="#ffffff" opacity="0.65" />
+        </g>
+      ) : (
+        <g data-robot-part="idle-left-hand">
+          <ellipse cx="21.5" cy="63.5" rx="4.4" ry="5" transform="rotate(-14 21.5 63.5)" fill={`url(#ab-drone-${uid})`} />
+          <ellipse cx="20.4" cy="61.8" rx="1.5" ry="1.8" fill="#ffffff" opacity="0.68" />
+        </g>
+      )}
 
-      {/* Mano derecha flotante levantada saludando */}
-      <g className={waveClass} style={{ transformBox: 'fill-box', transformOrigin: 'bottom left' }}>
-        <ellipse cx="80.5" cy="50" rx="4.8" ry="5.5" transform="rotate(18 80.5 50)" fill={`url(#ab-drone-${uid})`} />
-        <rect x="79.5" y="40.5" width="2.5" height="6.2" rx="1.25" transform="rotate(10 79.5 40.5)" fill="#e2e8f0" />
-        <rect x="82.6" y="41.4" width="2.4" height="6" rx="1.2" transform="rotate(20 82.6 41.4)" fill="#cbd5e1" />
-        <rect x="85.2" y="43.8" width="2.2" height="5.2" rx="1.1" transform="rotate(30 85.2 43.8)" fill="#94a3b8" />
-        <ellipse cx="79.5" cy="48.5" rx="1.5" ry="1.9" fill="#ffffff" opacity="0.7" />
-      </g>
+      {/* Mano derecha: Levantada saludando en Vista 2 (Saludando / Activo) y Vista 3; relajada flotando en Vista 1 (Clásico) */}
+      {isWavingPose ? (
+        <g
+          data-robot-part="waving-hand"
+          className={waveClass}
+          style={{ transformBox: 'fill-box', transformOrigin: 'bottom left' }}
+        >
+          <ellipse cx="81" cy="46.5" rx="5" ry="5.8" transform="rotate(18 81 46.5)" fill={`url(#ab-drone-${uid})`} />
+          <rect x="79.5" y="36.5" width="2.6" height="6.6" rx="1.3" transform="rotate(8 79.5 36.5)" fill="#e2e8f0" />
+          <rect x="82.8" y="37.4" width="2.5" height="6.4" rx="1.25" transform="rotate(18 82.8 37.4)" fill="#cbd5e1" />
+          <rect x="85.8" y="40" width="2.3" height="5.5" rx="1.15" transform="rotate(28 85.8 40)" fill="#94a3b8" />
+          <ellipse cx="79.8" cy="45" rx="1.6" ry="2" fill="#ffffff" opacity="0.78" />
+          {/* Líneas de saludo cian */}
+          <path d="M88 33.5 Q91 36 89.5 39.5" stroke={accent} strokeWidth="1.6" strokeLinecap="round" fill="none" />
+          <path d="M91.2 35.5 Q93.5 38 92.2 41.2" stroke={accent} strokeWidth="1.3" strokeLinecap="round" opacity="0.7" fill="none" />
+        </g>
+      ) : (
+        <g data-robot-part="rest-right-hand">
+          <ellipse cx="74.5" cy="63.5" rx="4.4" ry="5" transform="rotate(14 74.5 63.5)" fill={`url(#ab-drone-${uid})`} />
+          <ellipse cx="73.6" cy="61.8" rx="1.5" ry="1.8" fill="#ffffff" opacity="0.68" />
+        </g>
+      )}
     </svg>
   );
 };
@@ -489,6 +544,7 @@ export const AssistantCharacterSvg: React.FC<CharacterSvgProps> = ({
   santaHat = false,
   gestureActive = false,
   laserFlash = false,
+  robotPose,
   mood = 'idle',
   animated = true,
 }) => {
@@ -498,6 +554,9 @@ export const AssistantCharacterSvg: React.FC<CharacterSvgProps> = ({
 
   const effectiveMood: AssistantAvatarMood =
     gestureActive && mood === 'idle' ? 'happy' : mood;
+  const effectivePose: RobotPoseMode =
+    robotPose ??
+    (gestureActive ? 'technical' : effectiveMood === 'happy' || effectiveMood === 'celebrating' ? 'waving' : 'classic');
   const showToolSparkle =
     effectiveMood === 'happy' || effectiveMood === 'celebrating' || gestureActive;
 
@@ -509,6 +568,7 @@ export const AssistantCharacterSvg: React.FC<CharacterSvgProps> = ({
       data-avatar-svg={avatarId}
       data-avatar-src={isRobot ? 'svg:alumi-bot-3d' : imageSrc}
       data-avatar-mood={effectiveMood}
+      data-robot-pose={isRobot ? effectivePose : undefined}
       className={`relative ${sizeClass} overflow-visible inline-flex items-center justify-center bg-transparent select-none pointer-events-none`}
       style={{
         width: `${size}px`,
@@ -524,6 +584,7 @@ export const AssistantCharacterSvg: React.FC<CharacterSvgProps> = ({
           size={size}
           accent={accent}
           mood={effectiveMood}
+          pose={effectivePose}
           animated={animated}
           laserFlash={laserFlash}
         />
