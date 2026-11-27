@@ -49,6 +49,7 @@ import {
 } from '../utils/alumineroLogic';
 import { buildDespieceTramos1D } from '../utils/modulacionLogic';
 import { Tramos610AcomodadosSection } from './Tramos610AcomodadosSection';
+import { MarginTrafficLightCard } from './MarginTrafficLightCard';
 import {
   ClienteGuardado,
   loadClientes,
@@ -133,6 +134,8 @@ function safeSave(key: string, value: unknown): boolean {
 type LevScreen = 'main' | 'dest' | 'hist' | 'foto';
 
 interface Props {
+  proActive?: boolean;
+  isAdmin?: boolean;
   onSetHojaProyecto: (cliente: string, telefono?: string, direccion?: string) => void;
   onBatchSendToHoja?: (draft: LevantamientoDraft) => void;
   onOpenModulacion?: () => void;
@@ -140,6 +143,8 @@ interface Props {
 }
 
 export const LevantamientoRapido: React.FC<Props> = ({
+  proActive = false,
+  isAdmin = false,
   onSetHojaProyecto,
   onBatchSendToHoja,
   onOpenModulacion,
@@ -2161,6 +2166,16 @@ export const LevantamientoRapido: React.FC<Props> = ({
                 </div>
               );
             })()}
+
+            {/* Semáforo de Margen compacto — Exclusivo PRO / Administrador (oculto en Versión Gratuita) */}
+            <div style={{ marginBottom: '12px' }}>
+              <MarginTrafficLightCard
+                id="semaforo-margen-levantamiento"
+                proActive={proActive}
+                isAdmin={isAdmin}
+                variant="compact"
+              />
+            </div>
 
             <div className="grid">
               <button type="button" className="or" id="lv-btn-send" onClick={handleOpenSendDest}>

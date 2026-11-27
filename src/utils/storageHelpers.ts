@@ -1679,14 +1679,15 @@ export const SKIN_VARIANTS_BY_SKIN: Record<
   basica: [],
   navidena: [],
   ejecutiva: [
-    { id: 'default', label: 'Azul', swatchBg: '#1D4ED8' },
-    { id: 'naranja', label: 'Naranja', swatchBg: '#EA580C' },
+    { id: 'default', label: 'Azul', swatchBg: '#2747be' },
+    { id: 'verde', label: 'Verde', swatchBg: '#377340' },
+    { id: 'naranja', label: 'Naranja', swatchBg: '#c75928' },
   ],
   industrial: [
-    { id: 'default', label: 'Verde', swatchBg: '#15803D' },
-    { id: 'dorada', label: 'Oro', swatchBg: '#CA8A04' },
-    { id: 'plateada', label: 'Plata', swatchBg: '#64748B' },
-    { id: 'bronce', label: 'Bronce', swatchBg: '#9A5B2C' },
+    { id: 'default', label: 'Verde', swatchBg: '#377340' },
+    { id: 'dorada', label: 'Oro', swatchBg: '#ae7f2d' },
+    { id: 'plateada', label: 'Plata', swatchBg: '#5e6b7e' },
+    { id: 'bronce', label: 'Bronce', swatchBg: '#835732' },
   ],
 };
 

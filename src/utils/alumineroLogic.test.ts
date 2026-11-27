@@ -3028,7 +3028,7 @@ test('85. Carátulas y sub-variantes desbloqueadas por plan (Free/3d: Básica+Na
     ['basica', 'navidena', 'ejecutiva', 'industrial']
   );
 
-  assert.equal(normalizeSkinVariantForSkin('ejecutiva', 'verde'), 'default');
+  assert.equal(normalizeSkinVariantForSkin('ejecutiva', 'verde'), 'verde');
   assert.equal(normalizeSkinVariantForSkin('ejecutiva', 'naranja'), 'naranja');
   assert.equal(normalizeSkinVariantForSkin('ejecutiva', 'bronce'), 'default');
   assert.equal(normalizeSkinVariantForSkin('industrial', 'bronce'), 'bronce');
@@ -3549,13 +3549,14 @@ test('97. applyBulkExistenciasPriceAdjustment aplica incremento y descuento masi
   assert.equal(clampedDisc.inventarioPreciosUnitarios[vidrioItem.id], 100);
 });
 
-test('98. SKIN_VARIANTS_BY_SKIN define exactamente colores planos (plastas) para Ejecutiva (Azul, Naranja) e Industrial PRO (Verde, Oro, Plata, Bronce)', async () => {
+test('98. SKIN_VARIANTS_BY_SKIN define exactamente colores planos (plastas) para Ejecutiva (Azul, Verde, Naranja) e Industrial PRO (Verde, Oro, Plata, Bronce)', async () => {
   const { SKIN_VARIANTS_BY_SKIN } = await import('./storageHelpers.ts');
 
   assert.deepEqual(
     SKIN_VARIANTS_BY_SKIN.ejecutiva.map((v) => ({ id: v.id, label: v.label })),
     [
       { id: 'default', label: 'Azul' },
+      { id: 'verde', label: 'Verde' },
       { id: 'naranja', label: 'Naranja' },
     ]
   );
@@ -3578,14 +3579,14 @@ test('98. SKIN_VARIANTS_BY_SKIN define exactamente colores planos (plastas) para
   }
 });
 
-test('99. Versión centralizada APP_VERSION=1.0.3 sincronizada con public/sw.js sin skipWaiting automático en install', async () => {
+test('99. Versión centralizada APP_VERSION=1.0.4 sincronizada con public/sw.js sin skipWaiting automático en install', async () => {
   const { readFileSync } = await import('node:fs');
   const { APP_VERSION, APP_VERSION_LABEL } = await import('./alumineroLogic.ts');
-  assert.equal(APP_VERSION, '1.0.3');
-  assert.equal(APP_VERSION_LABEL, 'v1.0.3');
+  assert.equal(APP_VERSION, '1.0.4');
+  assert.equal(APP_VERSION_LABEL, 'v1.0.4');
 
   const swSource = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSource, /const APP_VERSION\s*=\s*['"]1\.0\.3['"]/);
+  assert.match(swSource, /const APP_VERSION\s*=\s*['"]1\.0\.4['"]/);
   assert.match(swSource, /const CACHE_NAME\s*=\s*`aluminero-pro-v\$\{APP_VERSION\}`/);
 
   // Verificar que el bloque install NO llama self.skipWaiting() automáticamente
@@ -3819,11 +3820,11 @@ test('103. Historial de sesiones y detección de dispositivo/navegador para cole
   assert.equal(list.length, 30);
 });
 
-test('104. public/sw.js usa CACHE_NAME unificado aluminero-pro-v1.0.3, limpia cachés en activate y solo ejecuta skipWaiting en SKIP_WAITING', async () => {
+test('104. public/sw.js usa CACHE_NAME unificado aluminero-pro-v1.0.4, limpia cachés en activate y solo ejecuta skipWaiting en SKIP_WAITING', async () => {
   const { readFileSync } = await import('node:fs');
   const swSrc = readFileSync('public/sw.js', 'utf8');
 
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.3';/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.4';/);
   assert.match(swSrc, /const CACHE_NAME = `aluminero-pro-v\$\{APP_VERSION\}`;/);
   assert.doesNotMatch(swSrc, /CACHE_VERSION/, 'No deben quedar referencias sueltas a CACHE_VERSION');
   assert.match(swSrc, /keys\.filter\(\(key\) => key !== CACHE_NAME\)\.map\(\(key\) => caches\.delete\(key\)\)/);
@@ -4094,9 +4095,9 @@ test('108. Top 3 materiales frecuentes en inicio, texto/subtítulo de Google y p
   assert.match(giftModalSrc, /Ver planes y desbloquear recompensas/);
   assert.match(giftModalSrc, /Usar mis 3 días gratis ahora/);
 
-  // 5. Verificar que Admin Login y SW v1.0.3 permanecen completamente intactos
+  // 5. Verificar que Admin Login y SW v1.0.4 permanecen completamente intactos
   const swSrc = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.3'/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.4'/);
   assert.match(swSrc, /aluminero-pro-v\$\{APP_VERSION\}/);
   const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
   assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
@@ -4215,12 +4216,118 @@ test('109. Prompt 1: Escáner IA de croquis (1024px JPEG 0.8 + mm JSON), Tramos 
   const modSrc = readFileSync('src/components/ModulacionCortesView.tsx', 'utf8');
   assert.match(modSrc, /Tramos610AcomodadosSection/);
 
-  // 6. Reglas de oro intactas: SW v1.0.3 y Admin Login sin tocar
+  // 6. Reglas de oro intactas: SW v1.0.4 y Admin Login sin tocar
   const swSrc = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.3'/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.4'/);
   const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
   assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
 });
+
+test('110. Prompt 2: Carátulas plastas (9 combinaciones), 7 personajes transparentes, Firma Portal, Contrato Tabs, Semáforo de Margen PRO y Admin Activos Ahora + getDocsFromServer', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { computeMarginTrafficLight, computeActiveDevicesMetrics } = await import(
+    './marginTrafficLight.ts'
+  );
+
+  // 1. Semáforo de Margen — lógica pura y umbrales exactos (<15% rojo, 15%-29.99% amarillo, >=30% verde)
+  const loss = computeMarginTrafficLight({ precioCliente: 1000, costoBase: 1200 });
+  assert.equal(loss.status, 'rojo');
+  assert.equal(loss.label, 'Muy por debajo del margen');
+  assert.equal(loss.gananciaNeta, -200);
+
+  const low = computeMarginTrafficLight({ precioCliente: 1000, costoBase: 880 }); // 12%
+  assert.equal(low.status, 'rojo');
+  assert.equal(low.label, 'Muy por debajo del margen');
+
+  const midLow = computeMarginTrafficLight({ precioCliente: 1000, costoBase: 850 }); // 15%
+  assert.equal(midLow.status, 'amarillo');
+  assert.equal(midLow.label, 'Un poco por debajo');
+
+  const midHigh = computeMarginTrafficLight({ precioCliente: 1000, costoBase: 701 }); // 29.9%
+  assert.equal(midHigh.status, 'amarillo');
+  assert.equal(midHigh.label, 'Un poco por debajo');
+
+  const okExact = computeMarginTrafficLight({
+    precioCliente: 1000,
+    costoBase: 600,
+    flete: 50,
+    herrajesExtra: 50,
+  }); // 30%
+  assert.equal(okExact.status, 'verde');
+  assert.equal(okExact.label, 'Cumples tu margen');
+  assert.equal(okExact.gananciaNeta, 300);
+
+  // 2. Métricas de Actividad en Tiempo Real (Activos ahora: 15m, 24h, 7d, 30d y 24 barras min 6%)
+  const now = Date.UTC(2026, 10, 27, 12, 0, 0);
+  const metrics = computeActiveDevicesMetrics(
+    [
+      { lastSeenAt: now - 5 * 60 * 1000 }, // 5 min ago -> 15m, 24h, 7d, 30d
+      { lastSeenAt: now - 2 * 60 * 60 * 1000 }, // 2h ago -> 24h, 7d, 30d
+      { lastSeenAt: now - 3 * 24 * 60 * 60 * 1000 }, // 3d ago -> 7d, 30d
+      { lastSeenAt: now - 20 * 24 * 60 * 60 * 1000 }, // 20d ago -> 30d
+      { lastSeenAt: now - 45 * 24 * 60 * 60 * 1000 }, // 45d ago -> none
+    ],
+    now
+  );
+  assert.equal(metrics.activos15m, 1);
+  assert.equal(metrics.activos24h, 2);
+  assert.equal(metrics.activos7d, 3);
+  assert.equal(metrics.activos30d, 4);
+  assert.equal(metrics.hourly24.length, 24);
+  assert.ok(metrics.hourly24.every((b) => b.heightPct >= 6 && b.heightPct <= 100));
+
+  // 3. Carátulas plastas (CSS variables unificadas y Ejecutiva Verde #377340)
+  const cssSrc = readFileSync('src/index.css', 'utf8');
+  assert.match(cssSrc, /--sk-bg:\s*#0b111f;/);
+  assert.match(cssSrc, /--sk-hero:\s*#aa2e26;/);
+  assert.match(cssSrc, /--sk-hero:\s*#2a4dcf;/);
+  assert.match(cssSrc, /--sk-hero:\s*#377340;/);
+  assert.match(cssSrc, /--sk-hero:\s*#d9622a;/);
+  assert.match(cssSrc, /--sk-hero:\s*#9a6523;/);
+  assert.match(cssSrc, /--sk-hero:\s*#4a5567;/);
+  assert.match(cssSrc, /--sk-hero:\s*#834e2f;/);
+  assert.match(cssSrc, /#btn-floating-assistant/);
+
+  // 4. 7 Personajes Asistentes + Switch + Keys
+  const charSrc = readFileSync('src/components/AssistantCharacters.tsx', 'utf8');
+  for (const id of ['robot', 'gatito', 'perrito', 'puerquito', 'gallito', 'castor', 'buho']) {
+    assert.ok(charSrc.includes(`'${id}'`), `Debe existir el personaje ${id}`);
+  }
+  assert.match(charSrc, /aluminero-avatar-visible/);
+  assert.match(charSrc, /aluminero-avatar-pos/);
+
+  const drawerSrc = readFileSync('src/components/TopBarAndDrawer.tsx', 'utf8');
+  assert.match(drawerSrc, /Mostrar personaje asistente/);
+  assert.match(drawerSrc, /Plastas ejecutivas en Azul, Verde o Naranja/);
+  assert.match(drawerSrc, /rounded-full/);
+
+  // 5. Modal de Firma con createPortal y orden de botones Aplicar -> Limpiar -> Cancelar
+  const sigSrc = readFileSync('src/components/SignaturePadModal.tsx', 'utf8');
+  assert.match(sigSrc, /createPortal\(/);
+  const idxApply = sigSrc.indexOf('id="btn-signature-apply"');
+  const idxClear = sigSrc.indexOf('id="btn-signature-clear"');
+  const idxCancel = sigSrc.indexOf('id="btn-signature-cancel"');
+  assert.ok(idxApply > 0 && idxClear > idxApply && idxCancel > idxClear);
+
+  // 6. ContratoModal con pestañas Vista Documento y Vista PDF
+  const contratoSrc = readFileSync('src/components/ContratoModal.tsx', 'utf8');
+  assert.match(contratoSrc, /Vista Documento/);
+  assert.match(contratoSrc, /Vista PDF/);
+  assert.match(contratoSrc, /buildPdfContratoServicioFile/);
+
+  // 7. Semáforo de Margen 100% oculto en Gratis (PRO/Admin only)
+  const marginCardSrc = readFileSync('src/components/MarginTrafficLightCard.tsx', 'utf8');
+  assert.match(marginCardSrc, /if\s*\(!props\.proActive\s*&&\s*!props\.isAdmin\)\s*\{\s*return\s+null;\s*\}/);
+
+  // 8. AdminDashboardView con getDocsFromServer(collection(db, 'usuarios')) + snapshot.size + Activos ahora
+  const adminDashSrc = readFileSync('src/components/AdminDashboardView.tsx', 'utf8');
+  assert.match(adminDashSrc, /getDocsFromServer\(collection\(db,\s*'usuarios'\)\)/);
+  assert.match(adminDashSrc, /snapshot\.size/);
+  assert.match(adminDashSrc, /Activos ahora/);
+  assert.match(adminDashSrc, /Total Registrados/);
+  assert.match(adminDashSrc, /Versión Gratuita/);
+});
+
 
 
 

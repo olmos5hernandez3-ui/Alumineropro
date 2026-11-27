@@ -127,6 +127,7 @@ import {
   TutorialVideoItem,
   validateWhatsappNumber,
 } from '../utils/storageHelpers';
+import { computeActiveDevicesMetrics } from '../utils/marginTrafficLight';
 import {
   CloudSessionFeedItem,
   CloudUsuarioRecord,
@@ -381,7 +382,13 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       setServerSyncFeedback(null);
     }
     try {
-      const [usuariosRes, devicesRes] = await Promise.all([
+      const [usuariosDirectRes, usuariosRes, devicesRes] = await Promise.all([
+        getDocsFromServer(collection(db, 'usuarios'))
+          .then((snapshot) => ({
+            ok: true as const,
+            size: snapshot.size,
+          }))
+          .catch((err) => ({ ok: false as const, err })),
         fetchLiveCloudUsuariosFromServer(),
         getDocsFromServer(collection(db, 'devices'))
           .then((snapshot) => ({
@@ -399,24 +406,31 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           .catch((err) => ({ ok: false as const, err })),
       ]);
 
-      if (!usuariosRes.ok && !devicesRes.ok) {
+      if (!usuariosDirectRes.ok && !usuariosRes.ok && !devicesRes.ok) {
         throw devicesRes.err || new Error(usuariosRes.errorMessage || 'Error al consultar Firebase');
       }
 
       const syncedNow = Date.now();
       let resolvedCount = 0;
 
+      if (usuariosDirectRes.ok) {
+        setServerUsuariosCount(usuariosDirectRes.size);
+        resolvedCount = usuariosDirectRes.size;
+      }
+
       if (usuariosRes.ok) {
-        setServerUsuariosCount(usuariosRes.count);
+        if (!usuariosDirectRes.ok) {
+          setServerUsuariosCount(usuariosRes.count);
+          resolvedCount = usuariosRes.count;
+        }
         setServerUsuariosList(usuariosRes.usuarios);
         setServerRecentSessions(usuariosRes.recentSessions);
-        resolvedCount = usuariosRes.count;
       }
 
       if (devicesRes.ok) {
         setServerDevicesCount(devicesRes.size);
         setServerDevicesList(devicesRes.devices);
-        if (!usuariosRes.ok) {
+        if (!usuariosDirectRes.ok && !usuariosRes.ok) {
           resolvedCount = devicesRes.size;
         }
       }
@@ -790,6 +804,11 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const activeCloudDevices = useMemo(
     () => (serverDevicesList !== null ? serverDevicesList : cloudDevices),
     [serverDevicesList, cloudDevices]
+  );
+
+  const activeDevicesMetrics = useMemo(
+    () => computeActiveDevicesMetrics(activeCloudDevices, nowTick),
+    [activeCloudDevices, nowTick]
   );
 
   // Merge filtered cloud devices + adminKeys history into a single auditable user directory (starts at 0 cleanly)
@@ -2194,7 +2213,88 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       {/* ==================== PÁGINA 1: RESUMEN KPI Y AUDITORÍA DETALLADA DE USUARIOS ==================== */}
       {activeTab === 'dashboard' && (
         <div className="flex flex-col gap-6">
-          {/* 1. Tarjetas KPI superiores */}
+          {/* 1. Tarjeta 1 (ANCHO COMPLETO): Activos ahora + Mini-gráfica de 24 horas */}
+          <div
+            id="kpi-card-activos-ahora"
+            className="rounded-2xl border-2 border-emerald-500/70 bg-slate-900/95 p-4 sm:p-5 shadow-md"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="relative flex h-3 w-3 shrink-0" aria-hidden="true">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500" />
+                  </span>
+                  <span className="text-[12px] font-extrabold uppercase tracking-wider text-emerald-300">
+                    Activos ahora
+                  </span>
+                </div>
+                <div
+                  id="kpi-val-activos-ahora"
+                  className="mt-2 mono text-[36px] font-black text-white leading-none"
+                >
+                  {activeDevicesMetrics.activos15m}
+                </div>
+                <p className="m-0 mt-1.5 text-[12px] text-emerald-200/90 font-semibold">
+                  Equipos conectados en los últimos 15 min
+                </p>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 sm:gap-3 w-full sm:w-auto">
+                <div className="rounded-xl bg-slate-950/90 border border-slate-700/80 px-3 py-2 text-center">
+                  <div className="text-[10.5px] font-bold text-slate-400">Hoy (24 h)</div>
+                  <div className="mono text-[18px] font-extrabold text-emerald-300 mt-0.5">
+                    {activeDevicesMetrics.activos24h}
+                  </div>
+                </div>
+                <div className="rounded-xl bg-slate-950/90 border border-slate-700/80 px-3 py-2 text-center">
+                  <div className="text-[10.5px] font-bold text-slate-400">7 días</div>
+                  <div className="mono text-[18px] font-extrabold text-sky-300 mt-0.5">
+                    {activeDevicesMetrics.activos7d}
+                  </div>
+                </div>
+                <div className="rounded-xl bg-slate-950/90 border border-slate-700/80 px-3 py-2 text-center">
+                  <div className="text-[10.5px] font-bold text-slate-400">30 días</div>
+                  <div className="mono text-[18px] font-extrabold text-amber-300 mt-0.5">
+                    {activeDevicesMetrics.activos30d}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Mini-gráfica de 24 barras (1 por hora, derecha = hora actual, altura mín 6%) */}
+            <div className="mt-4 pt-3 border-t border-slate-800">
+              <div
+                id="kpi-activos-hourly-chart"
+                className="h-14 flex items-end gap-[3px]"
+                aria-label="Última conexión por hora en las últimas 24 horas"
+              >
+                {activeDevicesMetrics.hourly24.map((bucket) => (
+                  <div
+                    key={bucket.hourIndex}
+                    title={`${bucket.hourLabel}: ${bucket.count} equipo(s)`}
+                    className="flex-1 h-full flex items-end"
+                  >
+                    <div
+                      style={{ height: `${bucket.heightPct}%` }}
+                      className={`w-full rounded-t-[3px] transition-all ${
+                        bucket.count > 0
+                          ? bucket.hourIndex === 23
+                            ? 'bg-emerald-400'
+                            : 'bg-emerald-500/80'
+                          : 'bg-slate-700/70'
+                      }`}
+                    />
+                  </div>
+                ))}
+              </div>
+              <div className="mt-1.5 text-[10.5px] font-semibold text-slate-400 text-right">
+                Última conexión por hora · últimas 24 h (izq. más antiguo)
+              </div>
+            </div>
+          </div>
+
+          {/* 2. Tarjetas KPI principales */}
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3.5">
             <div
               id="kpi-card-usuarios-nube"
@@ -2202,7 +2302,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[11.5px] font-bold uppercase tracking-wider text-sky-300">
-                  Usuarios en la Nube
+                  Total Registrados
                 </span>
                 <Users className="w-4 h-4 text-sky-400 shrink-0" aria-hidden="true" />
               </div>
@@ -2218,6 +2318,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       ? cloudRealtimeCounts.total
                       : kpis.totalUsers}
               </div>
+              <p className="m-0 mt-1 text-[11px] text-slate-400">
+                Equipos únicos en directorio y nube
+              </p>
               <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] font-bold">
                 <span className="px-2 py-0.5 rounded-md bg-slate-800 border border-slate-600 text-slate-200 mono">
                   Gratis: {serverDevicesCount !== null || cloudRealtimeCounts.total > 0 ? cloudRealtimeCounts.gratis : kpis.gratis}
@@ -2261,7 +2364,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 {kpis.gratis}
               </div>
               <p className="m-0 mt-1.5 text-[11.5px] text-slate-400">
-                Activos en plan gratuito{kpis.bloqueados > 0 ? ` · ${kpis.bloqueados} bloqueado(s)` : ''}
+                Equipos en plan gratuito{kpis.bloqueados > 0 ? ` · ${kpis.bloqueados} bloqueado(s)` : ''}
               </p>
             </div>
 

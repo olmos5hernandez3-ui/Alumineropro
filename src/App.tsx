@@ -4133,6 +4133,8 @@ export default function App() {
             sobrantes={sobrantes}
             obrasAprobadas={obrasAprobadas}
             perfilFotos={perfilFotos}
+            proActive={proActive}
+            isAdmin={Boolean(licencia?.adminAssigned || adminShortcutOnBoot)}
             onUpdateHoja={(patch) => setHoja((prev) => ({ ...prev, ...patch }))}
             onUpdateTaller={(patch) => setTaller((prev) => ({ ...prev, ...patch }))}
             onUpdateContratoCliente={(patch) =>
@@ -5503,6 +5505,8 @@ export default function App() {
 
       <CalculadoraModal
         open={calculadoraOpen}
+        proActive={proActive}
+        isAdmin={Boolean(licencia?.adminAssigned || adminShortcutOnBoot)}
         onClose={requestBack}
         onShowToast={showToast}
       />
@@ -5927,6 +5931,24 @@ export default function App() {
           skin={skin}
           skinVariant={skinVariant}
           proActive={proActive}
+          currentView={displayedView}
+          hasPendingQuote={hoja.partidas.length > 0}
+          hasPendingLev={
+            Boolean(pendingLevBatch) ||
+            (() => {
+              try {
+                const raw = window.localStorage.getItem('aluminero_levantamiento_borrador_v1');
+                if (!raw) return false;
+                const parsed = JSON.parse(raw);
+                return Array.isArray(parsed?.piezas) && parsed.piezas.length > 0;
+              } catch {
+                return false;
+              }
+            })()
+          }
+          onNavigateView={(v) => navigateTo(v)}
+          onOpenLevantamiento={() => window.__alumLev?.open()}
+          onOpenTutorial={() => openGlobalModal('tutorial')}
           onOpenPro={() => openGlobalModal('pro')}
           onShowToast={showToast}
         />
@@ -5955,6 +5977,8 @@ export default function App() {
       />
 
       <LevantamientoRapido
+        proActive={proActive}
+        isAdmin={Boolean(licencia?.adminAssigned || adminShortcutOnBoot)}
         onSetHojaProyecto={handleSetHojaProyectoFromLev}
         onBatchSendToHoja={handleBatchSendToHojaFromLev}
         onOpenModulacion={() => navigateTo('modulacion', { modStep: 1 })}

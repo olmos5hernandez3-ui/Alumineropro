@@ -48,6 +48,8 @@ import { ErrorBoundary } from './ErrorBoundary';
 import { PartidaMiniSvg } from './PartidaMiniSvg';
 import { PdfHeaderCustomizerModal, PdfHeaderPreview } from './PdfHeaderCustomizer';
 import { PerfilSectionSvg } from './PerfilSectionSvg';
+import { MarginTrafficLightCard } from './MarginTrafficLightCard';
+import { estimateHojaBaseCost } from '../utils/marginTrafficLight';
 
 const LazyPdfPreviewModal = lazy(() =>
   import('./PdfPreviewModal').then((m) => ({ default: m.PdfPreviewModal }))
@@ -95,6 +97,8 @@ interface Props {
   onTestPushNotification?: () => Promise<void>;
   onRequestPushPermission?: () => Promise<NotificationPermission | 'unsupported'>;
   onRecordFinalPdf?: (res: CotizacionPdfBlobResult) => void;
+  proActive?: boolean;
+  isAdmin?: boolean;
   onShowToast: (msg: string, topSuccess?: boolean) => void;
 }
 
@@ -130,6 +134,8 @@ export const HojaCotizacionView: React.FC<Props> = ({
   onTestPushNotification,
   onRequestPushPermission,
   onRecordFinalPdf,
+  proActive = false,
+  isAdmin = false,
   onShowToast,
 }) => {
   const [showDespieceObra, setShowDespieceObra] = useState(false);
@@ -691,6 +697,16 @@ export const HojaCotizacionView: React.FC<Props> = ({
                 • Garantía de 30 días en mano de obra, sellado hermético y funcionamiento de herrajes
               </div>
             </div>
+
+            {/* Semáforo de Margen — Exclusivo PRO / Administrador (oculto en Versión Gratuita) */}
+            <MarginTrafficLightCard
+              id="semaforo-margen-hoja"
+              proActive={proActive}
+              isAdmin={isAdmin}
+              variant="full"
+              initialBaseCost={estimateHojaBaseCost(hoja)}
+              clientPrice={grandTotal}
+            />
 
             <div className="flex flex-col gap-2.5">
               <button

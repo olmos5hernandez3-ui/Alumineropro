@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { pushHistoryOverlay, removeHistoryOverlay } from '../utils/historyOverlayStack';
 import { isRunningInIframe } from '../utils/iframeEnv';
 
@@ -269,16 +270,21 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
       onShowToast?.('Dibuja una firma antes de aplicar');
       return;
     }
+    // Limpiar capa de historial de inmediato y cerrar sin esperar popstate asíncrono
+    // para evitar capas oscuras residuales sobre la vista previa PDF/Contrato.
+    removeHistoryOverlay(overlayTokenRef.current);
+    overlayTokenRef.current = null;
+    pushedHistoryRef.current = false;
     onApply(cropped);
-    requestCloseLayer();
+    onClose();
   };
 
   if (!open) return null;
 
-  return (
+  const modalContent = (
     <div
       id="modal-signature-pad"
-      className="fixed inset-0 z-[80] bg-slate-950/85 flex items-center justify-center p-2.5 sm:p-4"
+      className="fixed inset-0 z-[9998] bg-slate-950/85 flex items-center justify-center p-2.5 sm:p-4 overflow-y-auto"
       role="dialog"
       aria-modal="true"
       aria-label={title}
@@ -287,7 +293,7 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
       }}
     >
       <div
-        className={`w-full ${
+        className={`w-full my-auto ${
           expanded ? 'max-w-[96vw] h-[92vh]' : 'max-w-[540px]'
         } bg-[#111827] text-white border border-slate-700 rounded-[22px] p-4 sm:p-5 shadow-2xl flex flex-col gap-3 transition-all`}
       >
@@ -341,22 +347,15 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
           )}
         </div>
 
+        {/* Orden exacto izquierda a derecha: Aplicar (azul) | Limpiar (secundario) | Cancelar (neutro) */}
         <div className="grid grid-cols-3 gap-2 items-center pt-1">
-          <button
-            type="button"
-            id="btn-signature-cancel"
-            onClick={requestCloseLayer}
-            className="w-full min-h-[44px] px-2.5 rounded-xl border border-slate-600 bg-transparent hover:bg-slate-800 text-slate-200 text-[12.5px] font-bold cursor-pointer whitespace-nowrap"
-          >
-            Cancelar
-          </button>
           <button
             type="button"
             id="btn-signature-apply"
             onClick={handleApplySignature}
             className="w-full min-h-[44px] px-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[12.5px] font-extrabold cursor-pointer shadow-lg whitespace-nowrap"
           >
-            Aplicar PDF
+            Aplicar
           </button>
           <button
             type="button"
@@ -366,8 +365,21 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
           >
             Limpiar
           </button>
+          <button
+            type="button"
+            id="btn-signature-cancel"
+            onClick={requestCloseLayer}
+            className="w-full min-h-[44px] px-2.5 rounded-xl border border-slate-600 bg-transparent hover:bg-slate-800 text-slate-200 text-[12.5px] font-bold cursor-pointer whitespace-nowrap"
+          >
+            Cancelar
+          </button>
         </div>
       </div>
     </div>
   );
+
+  if (typeof document !== 'undefined' && document.body) {
+    return createPortal(modalContent, document.body);
+  }
+  return modalContent;
 };

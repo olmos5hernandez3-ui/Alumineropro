@@ -40,6 +40,17 @@ import {
 } from '../utils/storageHelpers';
 import { AlumineroProMetallicLogo } from './MetallicIcons';
 import { ReferralPromoBanner } from './ReferralPromoBanner';
+import {
+  ASSISTANT_CHARACTERS,
+  AssistantAvatarId,
+  AssistantCharacterSvg,
+  AVATAR_EVENT_NAME,
+  AVATAR_VISIBLE_EVENT_NAME,
+  loadAvatarVisible,
+  loadSelectedAvatar,
+  saveAvatarVisible,
+  saveSelectedAvatar,
+} from './AssistantCharacters';
 
 export type ScreenId =
   | 'menu'
@@ -423,44 +434,44 @@ const SKIN_OPTIONS: SkinOptionMeta[] = [
     title: 'Básica',
     subtitle: 'Colores planos (plastas sólidas y limpias)',
     tierBadge: 'Gratis y PRO',
-    previewBg: '#0F172A',
-    previewCardA: '#1D4ED8',
-    previewCardB: '#1E293B',
-    previewBorder: '#475569',
-    previewAccent: '#3B82F6',
+    previewBg: '#0b111f',
+    previewCardA: '#2a4dcf',
+    previewCardB: '#20293a',
+    previewBorder: '#394456',
+    previewAccent: '#3a66e3',
   },
   {
     id: 'navidena',
     title: 'Navideña ❄️',
     subtitle: 'Invierno elegante en plastas, luces cálidas y gorro navideño',
     tierBadge: 'Gratis y PRO',
-    previewBg: '#091828',
-    previewCardA: '#B91C1C',
-    previewCardB: '#102438',
-    previewBorder: '#D97706',
-    previewAccent: '#F59E0B',
+    previewBg: '#0e1b2c',
+    previewCardA: '#aa2e26',
+    previewCardB: '#0f2334',
+    previewBorder: '#f5c26b',
+    previewAccent: '#f5c26b',
   },
   {
     id: 'ejecutiva',
     title: 'Ejecutiva',
-    subtitle: 'Plastas ejecutivas en Azul o Naranja',
+    subtitle: 'Plastas ejecutivas en Azul, Verde o Naranja',
     tierBadge: 'Exclusiva Planes PRO',
-    previewBg: '#0A192F',
-    previewCardA: '#1D4ED8',
-    previewCardB: '#132E57',
-    previewBorder: '#3B82F6',
-    previewAccent: '#60A5FA',
+    previewBg: '#0e192d',
+    previewCardA: '#2747be',
+    previewCardB: '#18284a',
+    previewBorder: '#4873dc',
+    previewAccent: '#3a66e3',
   },
   {
     id: 'industrial',
     title: 'Industrial PRO',
     subtitle: 'Plastas industriales: Verde, Oro, Plata y Bronce',
     tierBadge: 'Exclusiva Planes PRO',
-    previewBg: '#071F17',
-    previewCardA: '#15803D',
-    previewCardB: '#0E3326',
-    previewBorder: '#22C55E',
-    previewAccent: '#4ADE80',
+    previewBg: '#0c1a12',
+    previewCardA: '#377340',
+    previewCardB: '#14281c',
+    previewBorder: '#4f9a5f',
+    previewAccent: '#4aa05a',
   },
 ];
 
@@ -514,10 +525,32 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
   onReferralShareFeedback,
 }) => {
   const [skinsExpanded, setSkinsExpanded] = useState(false);
+  const [avatarExpanded, setAvatarExpanded] = useState(false);
+  const [selectedAvatar, setSelectedAvatar] = useState<AssistantAvatarId>(() => loadSelectedAvatar());
+  const [avatarVisible, setAvatarVisible] = useState<boolean>(() => loadAvatarVisible());
   const [promoFlyerExpanded, setPromoFlyerExpanded] = useState(true);
   const [missionExpanded, setMissionExpanded] = useState(false);
   const [lockedSkinPrompt, setLockedSkinPrompt] = useState<SkinOptionMeta | null>(null);
   const drawerBrandTapsRef = useRef<{ count: number; lastTs: number }>({ count: 0, lastTs: 0 });
+
+  useEffect(() => {
+    const onAvatarChange = (ev: Event) => {
+      const detail = (ev as CustomEvent<AssistantAvatarId>).detail;
+      if (detail) setSelectedAvatar(detail);
+      else setSelectedAvatar(loadSelectedAvatar());
+    };
+    const onVisChange = (ev: Event) => {
+      const detail = (ev as CustomEvent<boolean>).detail;
+      if (typeof detail === 'boolean') setAvatarVisible(detail);
+      else setAvatarVisible(loadAvatarVisible());
+    };
+    window.addEventListener(AVATAR_EVENT_NAME, onAvatarChange);
+    window.addEventListener(AVATAR_VISIBLE_EVENT_NAME, onVisChange);
+    return () => {
+      window.removeEventListener(AVATAR_EVENT_NAME, onAvatarChange);
+      window.removeEventListener(AVATAR_VISIBLE_EVENT_NAME, onVisChange);
+    };
+  }, []);
   const drawerBrandTapTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -973,7 +1006,7 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
                         <div className={`text-[10px] font-extrabold uppercase tracking-wider mb-1.5 ${subTextClass}`}>
                           Color plano (plasta):
                         </div>
-                        <div className={`grid gap-1.5 ${variants.length === 2 ? 'grid-cols-2' : 'grid-cols-2'}`}>
+                        <div className={`grid gap-1.5 ${variants.length === 3 ? 'grid-cols-3' : 'grid-cols-2'}`}>
                           {variants.map((variant) => {
                             const isVariantSelected = isSelected && activeVariantForCard === variant.id;
                             return (
@@ -994,7 +1027,7 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
                                 }`}
                               >
                                 <span
-                                  className="w-3 h-3 rounded-sm shrink-0 border border-white/60"
+                                  className="w-3.5 h-3.5 rounded-full shrink-0 border border-white/75"
                                   style={{ backgroundColor: variant.swatchBg }}
                                   aria-hidden="true"
                                 />
@@ -1056,6 +1089,156 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
                   </div>
                 </div>
               )}
+            </div>
+          )}
+        </div>
+
+        {/* 1.6 Personaje Asistente Inteligente (7 personajes + switch visibilidad) */}
+        <div
+          id="drawer-assistant-character-section"
+          className={`rounded-xl border overflow-hidden shrink-0 ${
+            isDark ? 'border-sky-400/35 bg-slate-950/35' : 'border-blue-200 bg-blue-50/50'
+          }`}
+        >
+          <button
+            type="button"
+            id="btn-drawer-assistant-toggle-accordion"
+            aria-expanded={avatarExpanded}
+            onClick={() => setAvatarExpanded((prev) => !prev)}
+            className={`w-full min-h-[48px] px-3.5 py-2.5 flex items-center justify-between gap-2 text-left cursor-pointer transition-colors ${
+              isDark ? 'text-white hover:bg-white/10' : 'text-slate-900 hover:bg-blue-100/60'
+            }`}
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="w-7 h-7 shrink-0 flex items-center justify-center" aria-hidden="true">
+                <AssistantCharacterSvg
+                  avatarId={selectedAvatar}
+                  size={28}
+                  skin={skin}
+                  skinVariant={skinVariant}
+                  santaHat={skin === 'navidena'}
+                />
+              </span>
+              <div className="min-w-0">
+                <span className="block text-[13.5px] font-extrabold leading-tight">
+                  Personaje Asistente
+                </span>
+                <span className={`block text-[11px] font-semibold ${isDark ? 'text-sky-200/90' : 'text-blue-700'}`}>
+                  {avatarVisible
+                    ? `Activo: ${ASSISTANT_CHARACTERS.find((c) => c.id === selectedAvatar)?.label || 'Robot'}`
+                    : 'Oculto en pantalla'}
+                </span>
+              </div>
+            </div>
+            {avatarExpanded ? (
+              <ChevronUp className="w-4 h-4 opacity-70 shrink-0" aria-hidden="true" />
+            ) : (
+              <ChevronDown className="w-4 h-4 opacity-70 shrink-0" aria-hidden="true" />
+            )}
+          </button>
+
+          {avatarExpanded && (
+            <div className={`px-2.5 pb-3 pt-2 border-t flex flex-col gap-2.5 ${dividerClass}`}>
+              {/* Switch Mostrar personaje asistente */}
+              <button
+                type="button"
+                id="btn-drawer-avatar-visible-switch"
+                role="switch"
+                aria-checked={avatarVisible}
+                onClick={() => {
+                  const next = !avatarVisible;
+                  setAvatarVisible(next);
+                  saveAvatarVisible(next);
+                }}
+                className={`w-full min-h-[44px] px-3 py-2 rounded-lg border text-left cursor-pointer flex items-center justify-between gap-3 transition-colors ${
+                  isDark
+                    ? 'border-white/15 bg-white/5 hover:bg-white/10 text-white'
+                    : 'border-slate-300 bg-white hover:bg-slate-50 text-slate-900'
+                }`}
+              >
+                <div className="min-w-0 flex-1">
+                  <span className="block text-[12.5px] font-extrabold leading-tight">
+                    Mostrar personaje asistente
+                  </span>
+                  <span className={`block text-[10.5px] leading-snug mt-0.5 ${subTextClass}`}>
+                    Arrastrable, con gestos y consejos del taller
+                  </span>
+                </div>
+                <span
+                  aria-hidden="true"
+                  className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors ${
+                    avatarVisible
+                      ? 'bg-emerald-500 border-emerald-400'
+                      : isDark
+                        ? 'bg-slate-700 border-slate-500'
+                        : 'bg-slate-300 border-slate-400'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${
+                      avatarVisible ? 'translate-x-5' : 'translate-x-1'
+                    }`}
+                  />
+                </span>
+              </button>
+
+              {/* Cuadrícula de los 7 personajes */}
+              <div
+                id="drawer-avatar-grid"
+                className="grid grid-cols-2 gap-1.5"
+              >
+                {ASSISTANT_CHARACTERS.map((char) => {
+                  const isActiveChar = selectedAvatar === char.id;
+                  return (
+                    <button
+                      key={char.id}
+                      type="button"
+                      id={`btn-drawer-avatar-${char.id}`}
+                      aria-pressed={isActiveChar}
+                      onClick={() => {
+                        setSelectedAvatar(char.id);
+                        saveSelectedAvatar(char.id);
+                        if (!avatarVisible) {
+                          setAvatarVisible(true);
+                          saveAvatarVisible(true);
+                        }
+                      }}
+                      className={`p-2 rounded-xl border text-left cursor-pointer flex items-center gap-2 transition-colors ${
+                        isActiveChar
+                          ? isDark
+                            ? 'border-sky-400 bg-sky-500/20 text-white'
+                            : 'border-blue-600 bg-blue-100 text-slate-900'
+                          : isDark
+                            ? 'border-white/15 bg-white/5 hover:bg-white/10 text-slate-200'
+                            : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-800'
+                      }`}
+                    >
+                      <span className="w-9 h-9 shrink-0 flex items-center justify-center" aria-hidden="true">
+                        <AssistantCharacterSvg
+                          avatarId={char.id}
+                          size={36}
+                          skin={skin}
+                          skinVariant={skinVariant}
+                          santaHat={skin === 'navidena'}
+                        />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="text-[11.5px] font-extrabold leading-tight truncate">
+                            {char.label}
+                          </span>
+                          {isActiveChar && (
+                            <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" aria-hidden="true" />
+                          )}
+                        </div>
+                        <span className={`block text-[9.5px] leading-tight truncate ${subTextClass}`}>
+                          {char.tagline}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>

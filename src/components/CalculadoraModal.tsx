@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from 'react';
+import { MarginTrafficLightCard } from './MarginTrafficLightCard';
 
 interface CalculadoraModalProps {
   open: boolean;
+  proActive?: boolean;
+  isAdmin?: boolean;
   onClose: () => void;
   onShowToast?: (msg: string, topSuccess?: boolean) => void;
 }
@@ -94,6 +97,8 @@ function evaluateExpression(rawExpr: string): string {
 
 export const CalculadoraModal: React.FC<CalculadoraModalProps> = ({
   open,
+  proActive = false,
+  isAdmin = false,
   onClose,
   onShowToast,
 }) => {
@@ -236,7 +241,7 @@ export const CalculadoraModal: React.FC<CalculadoraModalProps> = ({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-[360px] bg-white text-slate-900 border-[1.5px] border-slate-300 rounded-[22px] p-4 shadow-2xl">
+      <div className="w-full max-w-[380px] max-h-[92vh] overflow-y-auto bg-white text-slate-900 border-[1.5px] border-slate-300 rounded-[22px] p-4 shadow-2xl">
         <div className="flex items-center justify-between gap-2 mb-3">
           <div>
             <h2 className="m-0 text-[16.5px] font-extrabold">Calculadora Rápida</h2>
@@ -389,6 +394,14 @@ export const CalculadoraModal: React.FC<CalculadoraModalProps> = ({
         >
           Copiar resultado
         </button>
+
+        {/* Semáforo de Margen compacto — Exclusivo PRO / Administrador (oculto en Versión Gratuita) */}
+        <MarginTrafficLightCard
+          id="semaforo-margen-calculadora"
+          proActive={proActive}
+          isAdmin={isAdmin}
+          variant="compact"
+        />
       </div>
     </div>
   );

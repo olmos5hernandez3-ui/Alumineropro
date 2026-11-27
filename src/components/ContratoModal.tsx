@@ -65,6 +65,7 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
   onShowToast,
 }) => {
   const [phase, setPhase] = useState<'setup' | 'preview'>('setup');
+  const [previewTab, setPreviewTab] = useState<'documento' | 'pdf'>('documento');
   const [cleanPreview, setCleanPreview] = useState(false);
   const [folioActivo, setFolioActivo] = useState<string>(() => peekNextContratoFolio());
   const [editarClausulas, setEditarClausulas] = useState(false);
@@ -73,13 +74,17 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
   const [clientSignatureUrl, setClientSignatureUrl] = useState<string>('');
   const [generatedContract, setGeneratedContract] = useState<ContratoPdfFileResult | null>(null);
   const [generatingContract, setGeneratingContract] = useState<boolean>(false);
+  const [renderingPdfPages, setRenderingPdfPages] = useState<boolean>(false);
+  const [pdfRenderError, setPdfRenderError] = useState<string | null>(null);
   const [gateAlertMsg, setGateAlertMsg] = useState<string | null>(null);
   const previewCardRef = useRef<HTMLDivElement | null>(null);
+  const pdfPagesContainerRef = useRef<HTMLDivElement | null>(null);
   const previewOverlayTokenRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (open) {
       setPhase('setup');
+      setPreviewTab('documento');
       setCleanPreview(false);
       setEditarClausulas(false);
       setSignatureTarget(null);
@@ -87,6 +92,8 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
       setClientSignatureUrl('');
       setGeneratedContract(null);
       setGeneratingContract(false);
+      setRenderingPdfPages(false);
+      setPdfRenderError(null);
       setGateAlertMsg(null);
       setFolioActivo(peekNextContratoFolio());
     }
@@ -144,7 +151,96 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
     if (open && phase === 'preview' && previewCardRef.current) {
       previewCardRef.current.scrollTop = 0;
     }
-  }, [open, phase, cleanPreview]);
+  }, [open, phase, cleanPreview, previewTab]);
+
+  // Renderizado real del PDF del contrato en la pestaña "Vista PDF" (reflejando firmas aplicadas)
+  useEffect(() => {
+    if (!open || phase !== 'preview' || previewTab !== 'pdf') return;
+    let cancelled = false;
+    const renderContractPdf = async () => {
+      setRenderingPdfPages(true);
+      setPdfRenderError(null);
+      try {
+        let docReady = generatedContract;
+        if (!docReady) {
+          docReady = await buildPdfContratoServicioFile(
+            hoja,
+            taller,
+            cliente,
+            folioActivo,
+            clientSignatureUrl || undefined,
+            providerSignatureUrl || undefined
+          );
+          if (cancelled) return;
+          setGeneratedContract(docReady);
+        }
+        const pdfjsLib = await import('pdfjs-dist');
+        const workerMod = await import('pdfjs-dist/build/pdf.worker.min.mjs?url');
+        pdfjsLib.GlobalWorkerOptions.workerSrc = workerMod.default;
+
+        const arrayBuf = await docReady.blob.arrayBuffer();
+        const loadingTask = pdfjsLib.getDocument({ data: arrayBuf });
+        const pdfDoc = await loadingTask.promise;
+        if (cancelled) return;
+
+        const container = pdfPagesContainerRef.current;
+        if (!container) return;
+        container.innerHTML = '';
+
+        const targetCssWidth = Math.min(760, Math.max(280, container.clientWidth - 12));
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+        for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+          if (cancelled) return;
+          const page = await pdfDoc.getPage(pageNum);
+          const unscaledVp = page.getViewport({ scale: 1 });
+          const cssScale = targetCssWidth / unscaledVp.width;
+          const viewport = page.getViewport({ scale: cssScale * dpr });
+
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.round(viewport.width);
+          canvas.height = Math.round(viewport.height);
+          canvas.style.width = `${Math.round(unscaledVp.width * cssScale)}px`;
+          canvas.style.height = `${Math.round(unscaledVp.height * cssScale)}px`;
+          canvas.style.background = '#ffffff';
+          canvas.style.borderRadius = '12px';
+          canvas.style.boxShadow = '0 6px 20px rgba(15, 23, 42, 0.22)';
+          canvas.style.display = 'block';
+
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            await page.render({ canvasContext: ctx, viewport, canvas }).promise;
+          }
+          container.appendChild(canvas);
+        }
+      } catch {
+        if (!cancelled) {
+          setPdfRenderError(
+            'No se pudo renderizar la vista previa PDF en este navegador. Usa Vista Documento o descarga el archivo PDF directamente.'
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setRenderingPdfPages(false);
+        }
+      }
+    };
+    void renderContractPdf();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    open,
+    phase,
+    previewTab,
+    generatedContract,
+    hoja,
+    taller,
+    cliente,
+    folioActivo,
+    clientSignatureUrl,
+    providerSignatureUrl,
+  ]);
 
   if (!open) return null;
 
@@ -601,59 +697,102 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
           style={{ backgroundColor: '#f8fafc', color: '#0f172a' }}
           className="w-full max-w-[880px] bg-slate-50 text-[#1E293B] border border-slate-300 rounded-[20px] p-3 sm:p-6 shadow-2xl max-h-[94vh] overflow-y-auto my-auto flex flex-col gap-4"
         >
-          {/* Barra superior de edición rápida */}
-          <div className="contrato-no-print flex items-start justify-between gap-2 pb-3 border-b border-slate-300">
-            <div className="flex flex-wrap items-center gap-2 min-w-0 flex-1">
-              <button
-                type="button"
-                id="btn-contrato-volver-datos"
-                onClick={() => {
-                  if (cleanPreview) {
-                    setCleanPreview(false);
-                  } else {
-                    setPhase('setup');
-                  }
-                }}
-                style={{ backgroundColor: '#e2e8f0', color: '#0f172a' }}
-                className="min-h-[38px] px-3 rounded-xl border border-slate-300 bg-slate-200 hover:bg-slate-300 text-slate-900 text-[12px] font-extrabold cursor-pointer"
-              >
-                {cleanPreview ? '← Salir de vista previa' : '← Ajustar datos'}
-              </button>
-              {!cleanPreview && (
+          {/* Barra superior de edición rápida y pestañas Vista Documento / Vista PDF */}
+          <div className="contrato-no-print flex flex-col gap-2.5 pb-3 border-b border-slate-300">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2 min-w-0 flex-1">
                 <button
                   type="button"
-                  onClick={() => setEditarClausulas((p) => !p)}
-                  style={{ backgroundColor: '#eff6ff', color: '#1e40af' }}
-                  className="min-h-[38px] px-3 rounded-xl border border-blue-300 bg-blue-50 hover:bg-blue-100 text-blue-800 text-[12px] font-extrabold cursor-pointer"
+                  id="btn-contrato-volver-datos"
+                  onClick={() => {
+                    if (cleanPreview) {
+                      setCleanPreview(false);
+                    } else {
+                      setPhase('setup');
+                    }
+                  }}
+                  style={{ backgroundColor: '#e2e8f0', color: '#0f172a' }}
+                  className="min-h-[38px] px-3 rounded-xl border border-slate-300 bg-slate-200 hover:bg-slate-300 text-slate-900 text-[12px] font-extrabold cursor-pointer"
                 >
-                  {editarClausulas ? 'Ocultar cláusulas' : '✏️ Editar cláusulas'}
+                  {cleanPreview ? '← Salir de vista previa' : '← Ajustar datos'}
                 </button>
-              )}
+                {previewTab === 'documento' && !cleanPreview && (
+                  <button
+                    type="button"
+                    onClick={() => setEditarClausulas((p) => !p)}
+                    style={{ backgroundColor: '#eff6ff', color: '#1e40af' }}
+                    className="min-h-[38px] px-3 rounded-xl border border-blue-300 bg-blue-50 hover:bg-blue-100 text-blue-800 text-[12px] font-extrabold cursor-pointer"
+                  >
+                    {editarClausulas ? 'Ocultar cláusulas' : '✏️ Editar cláusulas'}
+                  </button>
+                )}
+                {previewTab === 'documento' && (
+                  <button
+                    type="button"
+                    id="btn-contrato-vista-previa-doc"
+                    onClick={() => {
+                      setEditarClausulas(false);
+                      setCleanPreview((prev) => !prev);
+                      if (previewCardRef.current) {
+                        previewCardRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+                      }
+                    }}
+                    style={{ backgroundColor: '#eef2ff', color: '#3730a3' }}
+                    className="min-h-[38px] px-3 rounded-xl border border-indigo-300 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 text-[12px] font-extrabold cursor-pointer"
+                  >
+                    {cleanPreview ? '✏️ Editar vista' : '👁 Vista limpia'}
+                  </button>
+                )}
+              </div>
               <button
                 type="button"
-                id="btn-contrato-vista-previa-doc"
-                onClick={() => {
-                  setEditarClausulas(false);
-                  setCleanPreview((prev) => !prev);
-                  if (previewCardRef.current) {
-                    previewCardRef.current.scrollTo({ top: 0, behavior: 'smooth' });
-                  }
-                }}
-                style={{ backgroundColor: '#eef2ff', color: '#3730a3' }}
-                className="min-h-[38px] px-3 rounded-xl border border-indigo-300 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 text-[12px] font-extrabold cursor-pointer"
+                onClick={handleCloseModal}
+                aria-label="Cerrar modal de contrato"
+                style={{ backgroundColor: '#e2e8f0', color: '#0f172a' }}
+                className="min-w-[36px] min-h-[36px] rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-900 font-bold cursor-pointer shrink-0"
               >
-                {cleanPreview ? '✏️ Editar vista' : '👁 Vista limpia'}
+                ✕
               </button>
             </div>
-            <button
-              type="button"
-              onClick={handleCloseModal}
-              aria-label="Cerrar modal de contrato"
-              style={{ backgroundColor: '#e2e8f0', color: '#0f172a' }}
-              className="min-w-[36px] min-h-[36px] rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-900 font-bold cursor-pointer shrink-0"
+
+            {/* Selector de pestañas Vista Documento / Vista PDF */}
+            <div
+              role="tablist"
+              aria-label="Modo de vista previa del contrato"
+              className="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-slate-200/90 border border-slate-300"
             >
-              ✕
-            </button>
+              <button
+                type="button"
+                role="tab"
+                id="btn-contrato-tab-documento"
+                aria-selected={previewTab === 'documento'}
+                onClick={() => setPreviewTab('documento')}
+                style={{
+                  backgroundColor: previewTab === 'documento' ? '#0B2545' : 'transparent',
+                  color: previewTab === 'documento' ? '#ffffff' : '#334155',
+                }}
+                className="min-h-[36px] rounded-lg text-[12.5px] font-extrabold cursor-pointer transition-colors"
+              >
+                📄 Vista Documento
+              </button>
+              <button
+                type="button"
+                role="tab"
+                id="btn-contrato-tab-pdf"
+                aria-selected={previewTab === 'pdf'}
+                onClick={() => {
+                  setEditarClausulas(false);
+                  setPreviewTab('pdf');
+                }}
+                style={{
+                  backgroundColor: previewTab === 'pdf' ? '#0B2545' : 'transparent',
+                  color: previewTab === 'pdf' ? '#ffffff' : '#334155',
+                }}
+                className="min-h-[36px] rounded-lg text-[12.5px] font-extrabold cursor-pointer transition-colors"
+              >
+                📑 Vista PDF
+              </button>
+            </div>
           </div>
 
           {/* Editor opcional de proyecto y 4 cláusulas */}
@@ -752,13 +891,45 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
             </div>
           )}
 
-          {/* ==================== DOCUMENTO LEGAL TAMAÑO CARTA (SIEMPRE PAPEL BLANCO ALTO CONTRASTE) ==================== */}
-          <div
-            id="contrato-print-area"
-            data-preserve-light="true"
-            style={{ backgroundColor: '#ffffff', color: '#0f172a' }}
-            className="w-full bg-white text-slate-900 border border-slate-300 rounded-2xl p-4 sm:p-7 shadow-sm"
-          >
+          {/* ==================== PESTAÑA 2: VISTA PDF REAL ==================== */}
+          {previewTab === 'pdf' ? (
+            <div
+              id="contrato-pdf-preview-panel"
+              className="w-full rounded-2xl bg-slate-800/95 p-3 sm:p-5 flex flex-col items-center gap-3 min-h-[360px]"
+            >
+              {renderingPdfPages && (
+                <div className="text-center text-slate-200 text-[13px] font-bold py-6">
+                  ⏳ Generando y renderizando páginas del Contrato PDF...
+                </div>
+              )}
+              {pdfRenderError && (
+                <div className="max-w-[520px] mx-auto p-4 rounded-xl bg-amber-950/70 border border-amber-400/50 text-amber-100 text-[12.5px] text-center">
+                  {pdfRenderError}
+                  <div className="mt-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setPreviewTab('documento')}
+                      className="px-3 py-1.5 rounded-lg bg-blue-600 text-white font-bold text-[12px] cursor-pointer"
+                    >
+                      Volver a Vista Documento
+                    </button>
+                  </div>
+                </div>
+              )}
+              <div
+                ref={pdfPagesContainerRef}
+                id="contrato-pdf-pages-container"
+                className="w-full flex flex-col items-center gap-4"
+              />
+            </div>
+          ) : (
+            /* ==================== PESTAÑA 1: DOCUMENTO LEGAL TAMAÑO CARTA ==================== */
+            <div
+              id="contrato-print-area"
+              data-preserve-light="true"
+              style={{ backgroundColor: '#ffffff', color: '#0f172a' }}
+              className="w-full bg-white text-slate-900 border border-slate-300 rounded-2xl p-4 sm:p-7 shadow-sm"
+            >
             {/* Encabezado Ejecutivo del Taller + Folio Único */}
             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 pb-4 border-b-2 border-[#0B2545] w-full">
               <div className="flex items-start gap-3 w-full sm:flex-1 sm:min-w-[240px]">
@@ -1067,6 +1238,7 @@ export const ContratoModal: React.FC<ContratoModalProps> = ({
               </div>
             </div>
           </div>
+          )}
 
           {/* Barra inferior fija: Firmas + Generar Contrato (Naranja -> Verde) + Guardar PDF + WhatsApp (sin Imprimir) */}
           <div className="contrato-no-print sticky bottom-0 z-10 -mx-3 sm:-mx-6 -mb-3 sm:-mb-6 px-3 sm:px-6 pt-3 pb-4 rounded-b-[19px] bg-[#0f172a] border-t border-slate-700 flex flex-col gap-2.5">

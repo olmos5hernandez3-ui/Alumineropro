@@ -131,20 +131,7 @@ const CARD_DISPLAY_LABELS: Record<HomeMenuCardId, string> = {
   videos: 'Video Tutoriales',
 };
 
-const SteelCornerAccent: React.FC<{ gold?: boolean }> = ({ gold = false }) => (
-  <span
-    aria-hidden="true"
-    className="pointer-events-none absolute top-0 right-5 w-16 h-[5px] rounded-b-md opacity-90"
-    style={{
-      background: gold
-        ? 'linear-gradient(90deg, rgba(164,132,76,0.2) 0%, #E7CE98 48%, rgba(164,132,76,0.25) 100%)'
-        : 'linear-gradient(90deg, rgba(96,124,146,0.18) 0%, #C8DCEB 50%, rgba(96,124,146,0.22) 100%)',
-      boxShadow: gold
-        ? '0 1px 6px rgba(212, 175, 55, 0.4)'
-        : '0 1px 6px rgba(148, 197, 232, 0.35)',
-    }}
-  />
-);
+const SteelCornerAccent: React.FC<{ gold?: boolean }> = () => null;
 
 interface ActiveDragState {
   cardId: HomeMenuCardId;
