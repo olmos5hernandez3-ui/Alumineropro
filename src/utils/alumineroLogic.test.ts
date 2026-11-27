@@ -3582,14 +3582,14 @@ test('98. SKIN_VARIANTS_BY_SKIN define acabados descansados para Ejecutiva (4) e
   }
 });
 
-test('99. Versión centralizada APP_VERSION=1.0.8 sincronizada con public/sw.js sin skipWaiting automático en install', async () => {
+test('99. Versión centralizada APP_VERSION=1.0.9 sincronizada con public/sw.js sin skipWaiting automático en install', async () => {
   const { readFileSync } = await import('node:fs');
   const { APP_VERSION, APP_VERSION_LABEL } = await import('./alumineroLogic.ts');
-  assert.equal(APP_VERSION, '1.0.8');
-  assert.equal(APP_VERSION_LABEL, 'v1.0.8');
+  assert.equal(APP_VERSION, '1.0.9');
+  assert.equal(APP_VERSION_LABEL, 'v1.0.9');
 
   const swSource = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSource, /const APP_VERSION\s*=\s*['"]1\.0\.8['"]/);
+  assert.match(swSource, /const APP_VERSION\s*=\s*['"]1\.0\.9['"]/);
   assert.match(swSource, /const CACHE_NAME\s*=\s*`aluminero-pro-v\$\{APP_VERSION\}`/);
 
   // Verificar que el bloque install NO llama self.skipWaiting() automáticamente
@@ -3823,11 +3823,11 @@ test('103. Historial de sesiones y detección de dispositivo/navegador para cole
   assert.equal(list.length, 30);
 });
 
-test('104. public/sw.js usa CACHE_NAME unificado aluminero-pro-v1.0.8, limpia cachés en activate y solo ejecuta skipWaiting en SKIP_WAITING', async () => {
+test('104. public/sw.js usa CACHE_NAME unificado aluminero-pro-v1.0.9, limpia cachés en activate y solo ejecuta skipWaiting en SKIP_WAITING', async () => {
   const { readFileSync } = await import('node:fs');
   const swSrc = readFileSync('public/sw.js', 'utf8');
 
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.8';/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.9';/);
   assert.match(swSrc, /const CACHE_NAME = `aluminero-pro-v\$\{APP_VERSION\}`;/);
   assert.doesNotMatch(swSrc, /CACHE_VERSION/, 'No deben quedar referencias sueltas a CACHE_VERSION');
   assert.match(swSrc, /keys\.filter\(\(key\) => key !== CACHE_NAME\)\.map\(\(key\) => caches\.delete\(key\)\)/);
@@ -4098,9 +4098,9 @@ test('108. Top 3 materiales frecuentes en inicio, texto/subtítulo de Google y p
   assert.match(giftModalSrc, /Ver planes y desbloquear recompensas/);
   assert.match(giftModalSrc, /Usar mis 3 días gratis ahora/);
 
-  // 5. Verificar que Admin Login y SW v1.0.8 permanecen completamente intactos
+  // 5. Verificar que Admin Login y SW v1.0.9 permanecen completamente intactos
   const swSrc = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.8'/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.9'/);
   assert.match(swSrc, /aluminero-pro-v\$\{APP_VERSION\}/);
   const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
   assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
@@ -4219,9 +4219,9 @@ test('109. Prompt 1: Escáner IA de croquis (1024px JPEG 0.8 + mm JSON), Tramos 
   const modSrc = readFileSync('src/components/ModulacionCortesView.tsx', 'utf8');
   assert.match(modSrc, /Tramos610AcomodadosSection/);
 
-  // 6. Reglas de oro intactas: SW v1.0.8 y Admin Login sin tocar
+  // 6. Reglas de oro intactas: SW v1.0.9 y Admin Login sin tocar
   const swSrc = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.8'/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.9'/);
   const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
   assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
 });
@@ -4441,9 +4441,9 @@ test('111. Botón de tema en TopBar, Acordeones desplegables y Dibujo digitaliza
   assert.match(trabajoSrc, /CollapsibleAccordion/);
   assert.match(trabajoSrc, /id="acc-trabajo-tramos-610"/);
 
-  // 6. Reglas de oro: SW sincronizado en 1.0.8 y Admin Login intacto
+  // 6. Reglas de oro: SW sincronizado en 1.0.9 y Admin Login intacto
   const swSrc = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.8'/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.9'/);
   const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
   assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
 });
@@ -4616,12 +4616,12 @@ test('113. Prompt 2: Ajuste de precios de un golpe (%) con filtro por acabado, c
     assert.ok(ads.whatsappShareUrlStatus.startsWith('https://wa.me/?text='));
   }
 
-  // 5. Verificación UI y versión v1.0.8 + TopBar toggle + Admin Login intacto
-  assert.equal(APP_VERSION, '1.0.8');
-  assert.equal(APP_VERSION_LABEL, 'v1.0.8');
+  // 5. Verificación UI y versión v1.0.9 + TopBar toggle + Admin Login intacto
+  assert.equal(APP_VERSION, '1.0.9');
+  assert.equal(APP_VERSION_LABEL, 'v1.0.9');
 
   const swSrc = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.8'/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.9'/);
 
   const tallerSrc = readFileSync('src/components/TallerView.tsx', 'utf8');
   assert.match(tallerSrc, /⚡ Ajuste de precios de un golpe \(%\)/);
@@ -4736,15 +4736,15 @@ test('114. Rediseño visual descansado de carátulas + 3 acabados de aluminio + 
   assert.match(catSrc, /cat-mat-chip-/);
   assert.match(catSrc, /filterOfficialCatalogAdvanced/);
 
-  // 5. Versión v1.0.8 y Admin Login completamente intacto
-  assert.equal(APP_VERSION, '1.0.8');
+  // 5. Versión v1.0.9 y Admin Login completamente intacto
+  assert.equal(APP_VERSION, '1.0.9');
   const swSrc = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.8'/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.9'/);
   const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
   assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
 });
 
-test('115. Personajes 3D PNG transparentes (/avatars/*.png), tamaños agrandados (96x96 flotante y 64x64 menú), globo inteligente sin recorte, interruptor aluminero-avatar-tips, acordeón Hoja 2 líneas y SW v1.0.8', async () => {
+test('115. Personajes 3D PNG transparentes (/avatars/*.png), Robot SVG parpadeante 84x84, globo inteligente sin recorte, interruptor aluminero-avatar-tips, acordeón Hoja 2 líneas y SW v1.0.9', async () => {
   const { existsSync, readFileSync } = await import('node:fs');
   const {
     AVATAR_TIPS_KEY,
@@ -4850,19 +4850,84 @@ test('115. Personajes 3D PNG transparentes (/avatars/*.png), tamaños agrandados
   assert.match(charSrc, /object-contain/);
   assert.match(charSrc, /drop-shadow\(0 8px 12px rgba\(0,0,0,0\.45\)\)/);
 
-  // 4b. Tamaños agrandados: flotante w-24 h-24 (96px) con p-0 y miniaturas menú w-16 h-16 (64px)
-  assert.match(floatSrc, /w-24 h-24 p-0/);
-  assert.match(floatSrc, /size=\{96\}/);
-  assert.match(floatSrc, /avatarWidth:\s*96/);
-  assert.match(floatSrc, /avatarHeight:\s*96/);
+  // 4b. Robot SVG parpadeante 84x84 + 6 personajes PNG con zoom scale-[1.45] en 84x84 overflow-visible
+  assert.match(floatSrc, /w-\[84px\] h-\[84px\] overflow-visible/);
+  assert.match(floatSrc, /size=\{84\}/);
+  assert.match(floatSrc, /avatarWidth:\s*84/);
+  assert.match(floatSrc, /avatarHeight:\s*84/);
   assert.match(drawerSrc, /w-16 h-16 p-0/);
   assert.match(drawerSrc, /size=\{64\}/);
+  assert.match(charSrc, /BlinkingRobotSvg/);
+  assert.match(charSrc, /assistant-eye-blink/);
+  assert.match(charSrc, /scale-\[1\.45\]/);
+  assert.match(charSrc, /w-\[84px\] h-\[84px\]/);
 
-  // 5. SW v1.0.8 y Admin Login intacto
-  assert.equal(APP_VERSION, '1.0.8');
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.8'/);
+  // 5. SW v1.0.9 y Admin Login intacto
+  assert.equal(APP_VERSION, '1.0.9');
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.9'/);
   const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
   assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
+});
+
+test('116. Validación en tiempo real de límites estándar por línea en Levantamiento + títulos visibles (#F8FAFC / #CBD5E1) + Robot parpadeante 84px', async () => {
+  const { readFileSync } = await import('node:fs');
+  const {
+    evaluateLevantamientoLineLimits,
+    getAluminumLineStandardLimits,
+  } = await import('./levantamientoLogic.ts');
+
+  // 1. Límites estándar por línea de aluminio
+  const lim2 = getAluminumLineStandardLimits('Línea 2"', 'Ventana Corrediza');
+  assert.equal(lim2.maxAnchoCm, 200);
+  assert.equal(lim2.maxAltoCm, 160);
+
+  const ok2 = evaluateLevantamientoLineLimits(150, 120, 'Línea 2"', 'Ventana Corrediza');
+  assert.equal(ok2.hasWarning, false);
+  assert.equal(ok2.message, null);
+
+  const over2 = evaluateLevantamientoLineLimits(240, 180, 'Línea 2"', 'Ventana Corrediza');
+  assert.equal(over2.hasWarning, true);
+  assert.equal(over2.anchoExceeded, true);
+  assert.equal(over2.altoExceeded, true);
+  assert.match(over2.message || '', /200 cm/);
+  assert.match(over2.message || '', /160 cm/);
+
+  // Misma medida 240x180 sí entra en Línea 3" estándar (300x240)
+  const ok3 = evaluateLevantamientoLineLimits(240, 180, 'Línea 3"', 'Ventana Corrediza');
+  assert.equal(ok3.hasWarning, false);
+
+  // Pero 340x250 sí advierte en Línea 3" y se resuelve en Europea (360x260)
+  const over3 = evaluateLevantamientoLineLimits(340, 250, 'Línea 3"', 'Ventana Corrediza');
+  assert.equal(over3.hasWarning, true);
+  assert.equal(over3.anchoExceeded, true);
+  assert.equal(over3.altoExceeded, true);
+
+  const okEuro = evaluateLevantamientoLineLimits(340, 250, 'Línea Europea', 'Ventana Corrediza');
+  assert.equal(okEuro.hasWarning, false);
+
+  // Batiente Alumer / Puerta (min 65x180, max 240x250)
+  const lowDoor = evaluateLevantamientoLineLimits(55, 210, 'Batiente Alumer', 'Puerta');
+  assert.equal(lowDoor.hasWarning, true);
+  assert.equal(lowDoor.anchoBelowMin, true);
+
+  const overDoor = evaluateLevantamientoLineLimits(260, 270, 'Batiente Alumer', 'Puerta');
+  assert.equal(overDoor.hasWarning, true);
+  assert.equal(overDoor.anchoExceeded, true);
+  assert.equal(overDoor.altoExceeded, true);
+
+  // 2. Conexión en tiempo real en LevantamientoRapido.tsx
+  const levSrc = readFileSync('src/components/LevantamientoRapido.tsx', 'utf8');
+  assert.match(levSrc, /evaluateLevantamientoLineLimits/);
+  assert.match(levSrc, /id="lv-line-limit-warning"/);
+
+  // 3. Títulos superiores nítidos (#F8FAFC / text-slate-50 y #CBD5E1 / text-slate-300)
+  const topSrc = readFileSync('src/components/TopBarAndDrawer.tsx', 'utf8');
+  assert.match(topSrc, /id="title-ap"[\s\S]*text-slate-50/);
+  const menuSrc = readFileSync('src/components/MainMenuView.tsx', 'utf8');
+  assert.match(menuSrc, /id="menu-welcome-heading"[\s\S]*dark:text-slate-300/);
+  const cssSrc = readFileSync('src/index.css', 'utf8');
+  assert.match(cssSrc, /html\[data-theme="dark"\] header #title-ap[\s\S]*#F8FAFC !important/);
+  assert.match(cssSrc, /html\[data-theme="dark"\] #view-menu #menu-welcome-heading[\s\S]*#CBD5E1 !important/);
 });
 
 

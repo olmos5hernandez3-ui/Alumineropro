@@ -1158,7 +1158,10 @@ export const MainMenuView: React.FC<Props> = ({
 
       {/* Título principal centrado con brillo/contraste máximo */}
       <div className="mb-3 sm:mb-4 flex flex-col items-center justify-center text-center gap-1.5">
-        <h1 className="m-0 text-[clamp(1.55rem,5vw,2.2rem)] font-extrabold text-slate-900 dark:text-white leading-[1.1] tracking-[-0.02em] dark:drop-shadow-[0_2px_14px_rgba(255,255,255,0.18)] [text-wrap:balance]">
+        <h1
+          id="menu-welcome-heading"
+          className="m-0 text-[clamp(1.55rem,5vw,2.2rem)] font-extrabold text-slate-900 dark:text-slate-300 leading-[1.1] tracking-[-0.02em] dark:drop-shadow-[0_2px_14px_rgba(255,255,255,0.16)] [text-wrap:balance]"
+        >
           ¿Qué vamos a trabajar?
         </h1>
         {hasReferral && (

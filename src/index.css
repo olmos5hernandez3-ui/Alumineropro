@@ -2531,9 +2531,18 @@ html[data-theme="dark"] #drawer-panel-surface {
   color: #f8fafc !important;
 }
 
+html[data-theme="dark"] header #title-ap {
+  color: #F8FAFC !important;
+  text-shadow: 0 1px 6px rgba(15, 23, 42, 0.35) !important;
+}
+
 html[data-theme="dark"] #view-menu h1,
+html[data-theme="dark"] #view-menu #menu-welcome-heading {
+  color: #CBD5E1 !important;
+}
+
 html[data-theme="dark"] #view-menu h2 {
-  color: #ffffff !important;
+  color: #F8FAFC !important;
 }
 
 /* Tarjeta principal: Hoja de Cotización (relleno sólido satinado + alto contraste blanco) */
@@ -2605,7 +2614,7 @@ html[data-skin="navidena"][data-theme="dark"] #lev-root .card {
 html[data-skin="ejecutiva"][data-theme="light"] header #title-ap,
 html[data-skin="industrial"][data-theme="light"] header #title-ap,
 html[data-skin="navidena"][data-theme="light"] header #title-ap {
-  color: #FFFFFF !important;
+  color: #F8FAFC !important;
   text-shadow: none !important;
 }
 html[data-skin="ejecutiva"][data-theme="light"] header #btn-top-back,
@@ -3668,6 +3677,8 @@ html #floating-assistant-shell {
 }
 
 .assistant-eye-blink {
+  transform-box: fill-box;
+  transform-origin: center;
   animation: assistantEyeBlink 4.2s ease-in-out infinite;
 }
 
@@ -3680,6 +3691,8 @@ html #floating-assistant-shell {
 }
 
 .assistant-part-wiggle {
+  transform-box: fill-box;
+  transform-origin: bottom center;
   animation: assistantPartWiggle 3.8s ease-in-out infinite;
 }
 

@@ -5,6 +5,7 @@ import {
   buildLevantamientoWhatsappText,
   cmFromUnit,
   createEmptyLevantamiento,
+  evaluateLevantamientoLineLimits,
   formatMedida,
   formatMedidaText,
   getDefaultLineaPerfilForTipo,
@@ -1618,48 +1619,105 @@ export const LevantamientoRapido: React.FC<Props> = ({
               />
 
               <label>Medidas y unidad</label>
-              <div className="row">
-                <input
-                  ref={anchoInputRef}
-                  id="lv-an"
-                  type="text"
-                  inputMode="decimal"
-                  value={form.ancho}
-                  onChange={(e) => {
-                    setForm((prev) => ({ ...prev, ancho: e.target.value }));
-                    if (localError) setLocalError(null);
-                  }}
-                  placeholder={form.u === 'm' ? 'Ancho (m)' : 'Ancho (cm)'}
-                />
-                <input
-                  ref={altoInputRef}
-                  id="lv-al"
-                  type="text"
-                  inputMode="decimal"
-                  value={form.alto}
-                  onChange={(e) => {
-                    setForm((prev) => ({ ...prev, alto: e.target.value }));
-                    if (localError) setLocalError(null);
-                  }}
-                  placeholder={form.u === 'm' ? 'Alto (m)' : 'Alto (cm)'}
-                />
-                <div className="seg">
-                  <button
-                    type="button"
-                    className={form.u === 'cm' ? 'on' : ''}
-                    onClick={() => setForm((prev) => ({ ...prev, u: 'cm' }))}
-                  >
-                    cm
-                  </button>
-                  <button
-                    type="button"
-                    className={form.u === 'm' ? 'on' : ''}
-                    onClick={() => setForm((prev) => ({ ...prev, u: 'm' }))}
-                  >
-                    m
-                  </button>
-                </div>
-              </div>
+              {(() => {
+                const aCmNow = cmFromUnit(form.ancho, form.u);
+                const hCmNow = cmFromUnit(form.alto, form.u);
+                const aHardOut = aCmNow > 0 && (aCmNow < LEV_MIN_CM || aCmNow > LEV_MAX_CM);
+                const hHardOut = hCmNow > 0 && (hCmNow < LEV_MIN_CM || hCmNow > LEV_MAX_CM);
+                const activeLinea =
+                  form.lineaPerfil === 'Otra' && customLineaText.trim()
+                    ? customLineaText.trim()
+                    : form.lineaPerfil;
+                const lineWarn = evaluateLevantamientoLineLimits(
+                  aCmNow,
+                  hCmNow,
+                  activeLinea,
+                  form.tipo
+                );
+                const anchoWarnStyle: React.CSSProperties | undefined = aHardOut
+                  ? { borderColor: 'rgba(248, 113, 113, 0.9)', boxShadow: '0 0 0 1px rgba(248, 113, 113, 0.35)' }
+                  : lineWarn.anchoExceeded || lineWarn.anchoBelowMin
+                    ? { borderColor: 'rgba(251, 191, 36, 0.85)', boxShadow: '0 0 0 1px rgba(251, 191, 36, 0.28)' }
+                    : undefined;
+                const altoWarnStyle: React.CSSProperties | undefined = hHardOut
+                  ? { borderColor: 'rgba(248, 113, 113, 0.9)', boxShadow: '0 0 0 1px rgba(248, 113, 113, 0.35)' }
+                  : lineWarn.altoExceeded || lineWarn.altoBelowMin
+                    ? { borderColor: 'rgba(251, 191, 36, 0.85)', boxShadow: '0 0 0 1px rgba(251, 191, 36, 0.28)' }
+                    : undefined;
+
+                return (
+                  <>
+                    <div className="row">
+                      <input
+                        ref={anchoInputRef}
+                        id="lv-an"
+                        type="text"
+                        inputMode="decimal"
+                        aria-invalid={aHardOut || lineWarn.anchoExceeded || lineWarn.anchoBelowMin}
+                        aria-describedby={lineWarn.hasWarning && !aHardOut && !hHardOut ? 'lv-line-limit-warning' : undefined}
+                        style={anchoWarnStyle}
+                        value={form.ancho}
+                        onChange={(e) => {
+                          setForm((prev) => ({ ...prev, ancho: e.target.value }));
+                          if (localError) setLocalError(null);
+                        }}
+                        placeholder={form.u === 'm' ? 'Ancho (m)' : 'Ancho (cm)'}
+                      />
+                      <input
+                        ref={altoInputRef}
+                        id="lv-al"
+                        type="text"
+                        inputMode="decimal"
+                        aria-invalid={hHardOut || lineWarn.altoExceeded || lineWarn.altoBelowMin}
+                        aria-describedby={lineWarn.hasWarning && !aHardOut && !hHardOut ? 'lv-line-limit-warning' : undefined}
+                        style={altoWarnStyle}
+                        value={form.alto}
+                        onChange={(e) => {
+                          setForm((prev) => ({ ...prev, alto: e.target.value }));
+                          if (localError) setLocalError(null);
+                        }}
+                        placeholder={form.u === 'm' ? 'Alto (m)' : 'Alto (cm)'}
+                      />
+                      <div className="seg">
+                        <button
+                          type="button"
+                          className={form.u === 'cm' ? 'on' : ''}
+                          onClick={() => setForm((prev) => ({ ...prev, u: 'cm' }))}
+                        >
+                          cm
+                        </button>
+                        <button
+                          type="button"
+                          className={form.u === 'm' ? 'on' : ''}
+                          onClick={() => setForm((prev) => ({ ...prev, u: 'm' }))}
+                        >
+                          m
+                        </button>
+                      </div>
+                    </div>
+                    {!aHardOut && !hHardOut && lineWarn.hasWarning && lineWarn.message && (
+                      <div
+                        id="lv-line-limit-warning"
+                        role="status"
+                        aria-live="polite"
+                        style={{
+                          marginTop: '6px',
+                          padding: '8px 11px',
+                          borderRadius: '10px',
+                          background: 'rgba(217, 119, 6, 0.14)',
+                          border: '1px solid rgba(251, 191, 36, 0.55)',
+                          color: '#fde68a',
+                          fontSize: '11.5px',
+                          fontWeight: 700,
+                          lineHeight: 1.38,
+                        }}
+                      >
+                        ⚠️ Aviso de línea estándar · {lineWarn.message}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
 
               <label htmlFor="lv-hojas">Hojas / Distribución (X corrediza · O fija)</label>
               <input

@@ -839,3 +839,197 @@ export function normalizeScannedSketchResult(
   };
 }
 
+export interface AluminumLineDimensionLimits {
+  lineaLabel: string;
+  minAnchoCm: number;
+  maxAnchoCm: number;
+  minAltoCm: number;
+  maxAltoCm: number;
+  recommendation: string;
+}
+
+export interface AluminumLineDimensionWarning {
+  hasWarning: boolean;
+  anchoExceeded: boolean;
+  altoExceeded: boolean;
+  anchoBelowMin: boolean;
+  altoBelowMin: boolean;
+  limits: AluminumLineDimensionLimits;
+  message: string | null;
+}
+
+export function getAluminumLineStandardLimits(
+  lineaPerfil: string,
+  tipo?: string
+): AluminumLineDimensionLimits {
+  const lp = String(lineaPerfil || '').trim().toLowerCase();
+  const tp = String(tipo || '').trim().toLowerCase();
+
+  if (
+    lp.includes('línea 2') ||
+    lp.includes('linea 2') ||
+    lp.includes('2"') ||
+    lp.includes('nacional 2') ||
+    lp.includes('serie 2')
+  ) {
+    return {
+      lineaLabel: lineaPerfil.trim() || 'Línea 2"',
+      minAnchoCm: 35,
+      maxAnchoCm: 200,
+      minAltoCm: 35,
+      maxAltoCm: 160,
+      recommendation:
+        'Para claros mayores a 200 × 160 cm se recomienda Línea 3" o dividir en módulos con refuerzo.',
+    };
+  }
+
+  if (
+    lp.includes('europea') ||
+    lp.includes('española') ||
+    lp.includes('espanola') ||
+    lp.includes('eurovent') ||
+    lp.includes('euroalum') ||
+    lp.includes('serie 70') ||
+    lp.includes('serie 1400') ||
+    lp.includes('1400') ||
+    lp.includes('2500') ||
+    lp.includes('2800') ||
+    lp.includes('3800')
+  ) {
+    return {
+      lineaLabel: lineaPerfil.trim() || 'Línea Europea',
+      minAnchoCm: 45,
+      maxAnchoCm: 360,
+      minAltoCm: 45,
+      maxAltoCm: 260,
+      recommendation:
+        'Supera el límite estándar de hoja Europea (360 × 260 cm); verifica refuerzo o divide en módulos.',
+    };
+  }
+
+  if (
+    lp.includes('batiente') ||
+    lp.includes('puerta') ||
+    lp.includes('1750') ||
+    lp.includes('4000') ||
+    tp === 'puerta'
+  ) {
+    return {
+      lineaLabel: lineaPerfil.trim() || 'Batiente Alumer',
+      minAnchoCm: 65,
+      maxAnchoCm: 240,
+      minAltoCm: 180,
+      maxAltoCm: 250,
+      recommendation:
+        'Revisa peso de hoja, bisagras reforzadas o fijo lateral/superior arriba de 240 × 250 cm.',
+    };
+  }
+
+  if (lp.includes('mosq') && !lp.includes('cancel')) {
+    return {
+      lineaLabel: lineaPerfil.trim() || 'Mosquitero',
+      minAnchoCm: 30,
+      maxAnchoCm: 160,
+      minAltoCm: 35,
+      maxAltoCm: 220,
+      recommendation:
+        'Arriba de 160 × 220 cm considera travesaño intermedio para evitar pandeo en la malla.',
+    };
+  }
+
+  if (lp.includes('cancel') || tp.includes('cancel') || tp.includes('mosquitero')) {
+    return {
+      lineaLabel: lineaPerfil.trim() || 'Cancel / Mosq.',
+      minAnchoCm: 40,
+      maxAnchoCm: 220,
+      minAltoCm: 40,
+      maxAltoCm: 215,
+      recommendation:
+        'Excede el rango estándar de cancel/mosquitero (220 × 215 cm); valida rieles o fijo adicional.',
+    };
+  }
+
+  if (
+    lp.includes('línea 3') ||
+    lp.includes('linea 3') ||
+    lp.includes('3"') ||
+    lp.includes('panorámica') ||
+    lp.includes('panoramica')
+  ) {
+    return {
+      lineaLabel: lineaPerfil.trim() || 'Línea 3"',
+      minAnchoCm: 40,
+      maxAnchoCm: 300,
+      minAltoCm: 40,
+      maxAltoCm: 240,
+      recommendation:
+        'Para claros mayores a 300 × 240 cm considera Línea Europea/Serie 70 o incluir fijo superior.',
+    };
+  }
+
+  return {
+    lineaLabel: lineaPerfil.trim() || 'Línea estándar',
+    minAnchoCm: 35,
+    maxAnchoCm: 300,
+    minAltoCm: 35,
+    maxAltoCm: 240,
+    recommendation:
+      'Verifica resistencia de perfiles y longitud de tramo (610 cm) antes de cortar.',
+  };
+}
+
+export function evaluateLevantamientoLineLimits(
+  anchoCm: number,
+  altoCm: number,
+  lineaPerfil: string,
+  tipo?: string
+): AluminumLineDimensionWarning {
+  const limits = getAluminumLineStandardLimits(lineaPerfil, tipo);
+  const validAncho = Number.isFinite(anchoCm) && anchoCm > 0;
+  const validAlto = Number.isFinite(altoCm) && altoCm > 0;
+
+  const anchoExceeded = validAncho && anchoCm > limits.maxAnchoCm;
+  const altoExceeded = validAlto && altoCm > limits.maxAltoCm;
+  const anchoBelowMin = validAncho && anchoCm < limits.minAnchoCm;
+  const altoBelowMin = validAlto && altoCm < limits.minAltoCm;
+  const hasWarning = anchoExceeded || altoExceeded || anchoBelowMin || altoBelowMin;
+
+  if (!hasWarning) {
+    return {
+      hasWarning: false,
+      anchoExceeded: false,
+      altoExceeded: false,
+      anchoBelowMin: false,
+      altoBelowMin: false,
+      limits,
+      message: null,
+    };
+  }
+
+  const issues: string[] = [];
+  if (anchoExceeded) {
+    issues.push(`ancho ${formatMedida(anchoCm)} cm supera el máx. estándar (${limits.maxAnchoCm} cm)`);
+  } else if (anchoBelowMin) {
+    issues.push(`ancho ${formatMedida(anchoCm)} cm es menor al mín. recomendado (${limits.minAnchoCm} cm)`);
+  }
+
+  if (altoExceeded) {
+    issues.push(`alto ${formatMedida(altoCm)} cm supera el máx. estándar (${limits.maxAltoCm} cm)`);
+  } else if (altoBelowMin) {
+    issues.push(`alto ${formatMedida(altoCm)} cm es menor al mín. recomendado (${limits.minAltoCm} cm)`);
+  }
+
+  const message = `${limits.lineaLabel}: ${issues.join(' y ')}. ${limits.recommendation}`;
+
+  return {
+    hasWarning: true,
+    anchoExceeded,
+    altoExceeded,
+    anchoBelowMin,
+    altoBelowMin,
+    limits,
+    message,
+  };
+}
+
+

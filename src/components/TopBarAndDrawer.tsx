@@ -198,7 +198,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             <span
               id="title-ap"
               className={`min-w-0 block truncate p-0 font-extrabold text-[14.5px] sm:text-[18px] tracking-tight text-left whitespace-nowrap select-none ${
-                isDark ? 'text-white drop-shadow-[0_1px_6px_rgba(56,189,248,0.28)]' : 'text-slate-900'
+                isDark ? 'text-slate-50 drop-shadow-[0_1px_6px_rgba(56,189,248,0.28)]' : 'text-slate-900'
               }`}
             >
               Aluminero Pro
@@ -1374,7 +1374,7 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
                           playAssistantSound(char.id, 'tap', true);
                         }
                       }}
-                      className={`p-2.5 rounded-xl border text-center cursor-pointer flex flex-col items-center justify-center gap-1.5 transition-colors relative ${
+                      className={`pt-3.5 pb-2.5 px-2.5 rounded-xl border text-center cursor-pointer flex flex-col items-center justify-center gap-2 transition-colors relative overflow-hidden ${
                         isActiveChar
                           ? isDark
                             ? 'border-sky-400 bg-sky-500/20 text-white'
@@ -1386,11 +1386,11 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
                     >
                       {isActiveChar && (
                         <Check
-                          className="w-3.5 h-3.5 text-emerald-400 absolute top-2 right-2"
+                          className="w-3.5 h-3.5 text-emerald-400 absolute top-2 right-2 z-10"
                           aria-hidden="true"
                         />
                       )}
-                      <span className="w-16 h-16 p-0 shrink-0 flex items-center justify-center bg-transparent" aria-hidden="true">
+                      <span className="w-16 h-16 p-0 shrink-0 flex items-center justify-center overflow-visible bg-transparent" aria-hidden="true">
                         <AssistantCharacterSvg
                           avatarId={char.id}
                           size={64}
@@ -1399,7 +1399,7 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
                           santaHat={skin === 'navidena'}
                         />
                       </span>
-                      <div className="min-w-0 w-full">
+                      <div className="min-w-0 w-full relative z-10">
                         <span className="block text-[11.5px] font-extrabold leading-tight truncate">
                           {char.label}
                         </span>
