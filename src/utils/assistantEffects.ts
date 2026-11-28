@@ -290,8 +290,25 @@ function ensureAudioContext(): AudioContext | null {
   }
 }
 
+let audioUnlockedOnce = false;
+
+function primeSilentMobileAudio(ctx: AudioContext): void {
+  if (audioUnlockedOnce) return;
+  try {
+    const silentBuffer = ctx.createBuffer(1, 1, 22050);
+    const src = ctx.createBufferSource();
+    src.buffer = silentBuffer;
+    src.connect(ctx.destination);
+    src.start(0);
+    audioUnlockedOnce = true;
+  } catch {
+    // ignore on restricted environments
+  }
+}
+
 /**
- * Desbloquea de forma síncrona el AudioContext global en el gesto táctil/clic del usuario.
+ * Desbloquea de forma síncrona el AudioContext global en el gesto táctil/clic del usuario
+ * ejecutando resume() automático para celular (Android/iOS) y PC.
  */
 export function unlockAssistantAudio(): Promise<AudioContext | null> {
   const ctx = ensureAudioContext();
@@ -300,13 +317,45 @@ export function unlockAssistantAudio(): Promise<AudioContext | null> {
     try {
       return ctx
         .resume()
-        .then(() => ctx)
+        .then(() => {
+          primeSilentMobileAudio(ctx);
+          return ctx;
+        })
         .catch(() => ctx);
     } catch {
       return Promise.resolve(ctx);
     }
   }
+  primeSilentMobileAudio(ctx);
   return Promise.resolve(ctx);
+}
+
+/**
+ * Registra listeners globales en la primera interacción del usuario (pointerdown, touchstart,
+ * click, keydown) para ejecutar AudioContext.resume() automáticamente en Android, iOS y PC.
+ */
+export function initAssistantAudioAutoUnlock(): () => void {
+  if (typeof window === 'undefined') return () => {};
+  const events: Array<keyof WindowEventMap> = ['pointerdown', 'touchstart', 'click', 'keydown'];
+  let active = true;
+  const detach = () => {
+    if (!active) return;
+    active = false;
+    for (const ev of events) {
+      window.removeEventListener(ev, onFirstGesture, true);
+    }
+  };
+  const onFirstGesture = () => {
+    void unlockAssistantAudio().then((ctx) => {
+      if (ctx && ctx.state === 'running') {
+        detach();
+      }
+    });
+  };
+  for (const ev of events) {
+    window.addEventListener(ev, onFirstGesture, { capture: true, passive: true });
+  }
+  return detach;
 }
 
 function scheduleCatMeow(ctx: AudioContext, now: number, master: GainNode) {

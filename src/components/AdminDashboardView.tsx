@@ -94,6 +94,7 @@ import {
   generateActivationKey,
   generatePermanentTestKey,
   generateRandomMxPhonePlaceholder,
+  identifyTestDevicesToClean,
   isColleaguePromoPlan,
   isFreeTestProRecord,
   isProActive,
@@ -129,6 +130,7 @@ import {
 } from '../utils/storageHelpers';
 import { computeActiveDevicesMetrics } from '../utils/marginTrafficLight';
 import {
+  cleanupTestDevicesCloud,
   CloudSessionFeedItem,
   CloudUsuarioRecord,
   deleteAdminMessageCloud,
@@ -342,6 +344,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     }
   });
   const [confirmResetCounters, setConfirmResetCounters] = useState(false);
+  const [confirmCleanupTestDevicesOpen, setConfirmCleanupTestDevicesOpen] = useState(false);
+  const [cleanupTestDevicesBusy, setCleanupTestDevicesBusy] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [planFilter, setPlanFilter] = useState<PlanFilterId>('todos');
   const [chartGranularity, setChartGranularity] = useState<ChartGranularity>('week');
@@ -2634,20 +2638,34 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 </p>
               </div>
 
-              {/* Buscador rápido */}
-              <div className="relative w-full md:w-[320px]">
-                <Search
-                  className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
-                  aria-hidden="true"
-                />
-                <input
-                  type="text"
-                  id="inp-admin-audit-search"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Buscar por ID, nombre o correo..."
-                  className="w-full min-h-[42px] pl-9 pr-3 py-2 rounded-xl border border-slate-700 bg-slate-950 text-white placeholder-slate-400 text-[13px] focus:outline-none focus:border-sky-400"
-                />
+              {/* Buscador rápido + Limpiar equipos de prueba */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full md:w-auto">
+                <button
+                  type="button"
+                  id="btn-admin-cleanup-test-devices"
+                  disabled={cleanupTestDevicesBusy}
+                  onClick={() => setConfirmCleanupTestDevicesOpen(true)}
+                  className="min-h-[42px] px-3.5 py-2 rounded-xl border border-amber-400/50 bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 font-extrabold text-[12px] inline-flex items-center justify-center gap-1.5 shrink-0 cursor-pointer transition-colors disabled:opacity-50"
+                >
+                  <Eraser className="w-4 h-4 shrink-0" aria-hidden="true" />
+                  <span>
+                    {cleanupTestDevicesBusy ? 'Limpiando...' : 'Limpiar equipos de prueba'}
+                  </span>
+                </button>
+                <div className="relative w-full md:w-[290px]">
+                  <Search
+                    className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                    aria-hidden="true"
+                  />
+                  <input
+                    type="text"
+                    id="inp-admin-audit-search"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Buscar por ID, nombre o correo..."
+                    className="w-full min-h-[42px] pl-9 pr-3 py-2 rounded-xl border border-slate-700 bg-slate-950 text-white placeholder-slate-400 text-[13px] focus:outline-none focus:border-sky-400"
+                  />
+                </div>
               </div>
             </div>
 
@@ -5233,6 +5251,131 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           </div>
         </div>
       )}
+      {/* Diálogo in-app de confirmación: Limpiar equipos de prueba */}
+      {confirmCleanupTestDevicesOpen && (() => {
+        const plan = identifyTestDevicesToClean({
+          devices: serverDevicesList !== null ? serverDevicesList : cloudDevices,
+          adminKeys,
+          currentDeviceId: deviceId,
+          currentUserUid: firebaseUser?.uid || null,
+        });
+        const totalTargets = plan.removableDeviceIds.length + plan.removableAdminKeyIds.length;
+        return (
+          <div
+            id="modal-confirm-cleanup-test-devices"
+            className="fixed inset-0 z-50 bg-slate-950/80 flex items-center justify-center p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Confirmar limpieza de equipos de prueba"
+            onClick={(e) => {
+              if (e.target === e.currentTarget && !cleanupTestDevicesBusy) {
+                setConfirmCleanupTestDevicesOpen(false);
+              }
+            }}
+          >
+            <div className="w-full max-w-md rounded-2xl border border-amber-500/50 bg-slate-900 p-5 text-white shadow-2xl">
+              <div className="flex items-start gap-3">
+                <Eraser className="w-6 h-6 text-amber-400 shrink-0 mt-0.5" aria-hidden="true" />
+                <div>
+                  <h3 className="m-0 text-[16px] font-extrabold">
+                    ¿Limpiar equipos de prueba y duplicados?
+                  </h3>
+                  <p className="m-0 mt-1.5 text-[12.5px] text-slate-300 leading-relaxed">
+                    {totalTargets > 0 ? (
+                      <>
+                        Se detectaron{' '}
+                        <strong className="text-amber-300">
+                          {plan.removableDeviceIds.length} equipo(s) de prueba/duplicados
+                        </strong>
+                        {plan.removableAdminKeyIds.length > 0
+                          ? ` y ${plan.removableAdminKeyIds.length} registro(s) de claves de prueba`
+                          : ''}
+                        . Se eliminarán únicamente los registros antiguos o de prueba, conservando
+                        intacto tu equipo actual (<span className="mono text-sky-300">{deviceId}</span>)
+                        y los clientes PRO pagados activos.
+                      </>
+                    ) : (
+                      <>
+                        No se encontraron registros antiguos ni duplicados de prueba para eliminar. Tu
+                        equipo actual (<span className="mono text-sky-300">{deviceId}</span>) es el
+                        único activo limpio.
+                      </>
+                    )}
+                  </p>
+                </div>
+              </div>
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  type="button"
+                  id="btn-cancel-cleanup-test-devices"
+                  disabled={cleanupTestDevicesBusy}
+                  onClick={() => setConfirmCleanupTestDevicesOpen(false)}
+                  className="min-h-[40px] px-4 py-2 rounded-xl border border-slate-700 bg-slate-800 text-slate-200 font-bold text-[12.5px] cursor-pointer disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  id="btn-confirm-cleanup-test-devices"
+                  disabled={cleanupTestDevicesBusy || totalTargets === 0}
+                  onClick={async () => {
+                    setCleanupTestDevicesBusy(true);
+                    try {
+                      const res = await cleanupTestDevicesCloud({
+                        deviceIds: plan.removableDeviceIds,
+                        adminKeyIds: plan.removableAdminKeyIds,
+                        keepDeviceId: deviceId,
+                        keepUid: firebaseUser?.uid || null,
+                      });
+                      const removeDevSet = new Set(plan.removableDeviceIds);
+                      const removeKeySet = new Set(plan.removableAdminKeyIds);
+                      // Limpiar registros locales de adminKeys coincidentes
+                      for (const rec of adminKeys) {
+                        if (removeKeySet.has(rec.id)) {
+                          onDeleteAdminKey(rec);
+                        }
+                      }
+                      // Actualizar estado local en vivo
+                      setServerDevicesList((prev) =>
+                        prev
+                          ? prev.filter(
+                              (d) => !removeDevSet.has(normalizeDeviceIdInput(d.deviceId || ''))
+                            )
+                          : prev
+                      );
+                      setServerUsuariosList((prev) =>
+                        prev
+                          ? prev.filter(
+                              (u) =>
+                                u.uid === (firebaseUser?.uid || '') ||
+                                !removeDevSet.has(normalizeDeviceIdInput(u.deviceId || u.uid || ''))
+                            )
+                          : prev
+                      );
+                      setConfirmCleanupTestDevicesOpen(false);
+                      onShowToast(
+                        res.cloudSynced
+                          ? `Limpieza completada: ${plan.removableDeviceIds.length} equipo(s) de prueba eliminados. Se conservó ${deviceId}.`
+                          : `Limpieza local aplicada (${plan.removableDeviceIds.length} equipo(s)). Conecta Google Admin para sincronizar la eliminación en Firebase.`,
+                        true
+                      );
+                      await onRefreshCloud();
+                    } catch (err) {
+                      const msg = err instanceof Error ? err.message : 'Error al limpiar equipos de prueba';
+                      onShowToast(msg);
+                    } finally {
+                      setCleanupTestDevicesBusy(false);
+                    }
+                  }}
+                  className="min-h-[40px] px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-[12.5px] cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed"
+                >
+                  {cleanupTestDevicesBusy ? 'Eliminando...' : 'Confirmar limpieza'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </section>
   );
 };

@@ -3702,7 +3702,7 @@ html #btn-floating-assistant, html #floating-assistant-shell {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .assistant-idle-float, .assistant-drop-bounce, .assistant-celebrate-jump, .assistant-eye-blink, .assistant-ear-left, .assistant-ear-right, .assistant-part-wiggle, .assistant-sparkles, .alumibot-eye-blink, .alumibot-wave-hand, .alumibot-thruster, .alumibot-laser-flash {
+  .assistant-idle-float, .assistant-drop-bounce, .assistant-celebrate-jump, .assistant-eye-blink, .assistant-ear-left, .assistant-ear-right, .assistant-part-wiggle, .assistant-sparkles, .alumibot-eye-blink, .alumibot-wave-hand, .alumibot-thruster, .alumibot-laser-flash, .assistant-hand-sway, .assistant-tail-wag, .assistant-animal-alive, .assistant-animal-wave, .assistant-animal-blink {
     animation: none !important;
   }
 }
@@ -3805,4 +3805,39 @@ html #btn-floating-assistant, html #floating-assistant-shell {
 .assistant-animal-blink {
   animation: assistantAnimalBlink 3.6s ease-in-out infinite;
   will-change: transform, opacity;
+}
+
+@keyframes assistantHandSway {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  30% {
+    transform: translate3d(0, -1.6px, 0) rotate(-6deg);
+  }
+  70% {
+    transform: translate3d(0, 0.8px, 0) rotate(5deg);
+  }
+}
+
+@keyframes assistantTailWag {
+  0%, 100% {
+    transform: rotate(-10deg);
+  }
+  50% {
+    transform: rotate(12deg);
+  }
+}
+
+.assistant-hand-sway {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: assistantHandSway 2.9s ease-in-out infinite;
+  will-change: transform;
+}
+
+.assistant-tail-wag {
+  transform-box: fill-box;
+  transform-origin: 15% 85%;
+  animation: assistantTailWag 1.75s ease-in-out infinite;
+  will-change: transform;
 }

@@ -18,6 +18,7 @@ import {
   sanitizeWhatsappNumber,
 } from '../utils/storageHelpers';
 import { PhotoPickerButtons } from './PhotoPickerButtons';
+import { CollapsibleAccordion } from './CollapsibleAccordion';
 import {
   ASSISTANT_CHARACTERS,
   AssistantAvatarId,
@@ -28,7 +29,12 @@ import {
   AVATAR_VISIBLE_EVENT_NAME,
   loadAvatarVisible,
   loadSelectedAvatar,
+  loadSelectedRobotVariant,
+  ROBOT_VARIANT_EVENT_NAME,
+  ROBOT_VARIANT_OPTIONS,
+  RobotVariantChoice,
   saveSelectedAvatar,
+  saveSelectedRobotVariant,
 } from './AssistantCharacters';
 import {
   ASSISTANT_CELEBRATE_EVENT_NAME,
@@ -41,6 +47,7 @@ import {
   getCharacterCelebrationText,
   getCharacterQuickGreeting,
   GHOST_CLICK_SHIELD_MS,
+  initAssistantAudioAutoUnlock,
   isGhostClickShieldActive,
   loadAvatarSoundEnabled,
   loadAvatarTipsEnabled,
@@ -185,6 +192,10 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
   const [quotaRec, setQuotaRec] = useState(() => loadAssistantDailyQuota());
 
   const [avatarId, setAvatarId] = useState<AssistantAvatarId>(() => loadSelectedAvatar());
+  const [robotVariant, setRobotVariant] = useState<RobotVariantChoice>(() =>
+    loadSelectedRobotVariant()
+  );
+  const [avatarPickerOpen, setAvatarPickerOpen] = useState<boolean>(false);
   const [avatarVisible, setAvatarVisible] = useState<boolean>(() => loadAvatarVisible());
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => loadAvatarSoundEnabled());
   const [tipsEnabled, setTipsEnabled] = useState<boolean>(() => loadAvatarTipsEnabled());
@@ -264,6 +275,21 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
       setGestureBanner(null);
     }, 2400);
   };
+
+  useEffect(() => {
+    return initAssistantAudioAutoUnlock();
+  }, []);
+
+  useEffect(() => {
+    const onRobotVariantEv = (ev: Event) => {
+      const next = (ev as CustomEvent<RobotVariantChoice>).detail;
+      if (next === 'classic' || next === 'waving' || next === 'technical') {
+        setRobotVariant(next);
+      }
+    };
+    window.addEventListener(ROBOT_VARIANT_EVENT_NAME, onRobotVariantEv);
+    return () => window.removeEventListener(ROBOT_VARIANT_EVENT_NAME, onRobotVariantEv);
+  }, []);
 
   useEffect(() => {
     const onAvatarEv = (ev: Event) => {
@@ -721,6 +747,15 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
     playAssistantSound(nextId, 'tap', soundEnabled);
   };
 
+  const handleQuickSelectRobotVariant = (nextVariant: RobotVariantChoice) => {
+    unlockAssistantAudio();
+    setAvatarId('robot');
+    saveSelectedAvatar('robot');
+    setRobotVariant(nextVariant);
+    saveSelectedRobotVariant(nextVariant);
+    playAssistantSound('robot', 'tap', soundEnabled);
+  };
+
   const handleToggleModalSound = () => {
     const next = !soundEnabled;
     setSoundEnabled(next);
@@ -759,17 +794,18 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
     else if (guide.target === 'hoja') onNavigateView?.('hoja');
   };
 
-  const robotPose = useMemo(
-    () =>
-      resolveRobotPose({
-        currentView,
-        open,
-        hopActive,
-        celebrating,
-        gestureActive,
-      }),
-    [currentView, open, hopActive, celebrating, gestureActive]
-  );
+  const robotPose = useMemo(() => {
+    if (gestureActive) return 'technical';
+    if (celebrating || hopActive) return 'waving';
+    if (robotVariant !== 'classic') return robotVariant;
+    return resolveRobotPose({
+      currentView,
+      open,
+      hopActive,
+      celebrating,
+      gestureActive,
+    });
+  }, [currentView, open, hopActive, celebrating, gestureActive, robotVariant]);
 
   const [sugerenciaTexto, setSugerenciaTexto] = useState('');
   const [errorA, setErrorA] = useState('');
@@ -1154,64 +1190,139 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
 
           <div
             id="assistant-quick-avatar-bar"
-            className="mb-3 p-2 rounded-2xl border border-[#4A6072]/45 bg-[#0b1520]/55"
+            className="mb-3"
+            onPointerDown={stopEventBubble}
+            onPointerUp={stopEventBubble}
+            onTouchStart={stopEventBubble}
+            onTouchEnd={stopEventBubble}
           >
-            <div className="flex items-center justify-between mb-1.5 px-0.5">
-              <span className="text-[10.5px] font-extrabold uppercase tracking-wide assistant-subtext">
-                Cambiar asistente (1 toque)
-              </span>
-              <span className="text-[10.5px] font-bold text-sky-300">{avatarMeta.label}</span>
-            </div>
-            <div className="grid grid-cols-4 sm:grid-cols-5 gap-1.5 max-h-[228px] overflow-y-auto pr-0.5">
-              {ASSISTANT_CHARACTERS.map((char) => {
-                const isSelected = char.id === avatarId;
-                const shortName = char.id === 'robot' ? 'Robot' : char.label.split(' ')[0];
-                return (
-                  <button
-                    key={char.id}
-                    type="button"
-                    id={`btn-quick-avatar-${char.id}`}
-                    data-quick-avatar={char.id}
-                    aria-pressed={isSelected}
-                    title={`Cambiar a ${char.label}`}
-                    onPointerDown={(e) => {
-                      e.stopPropagation();
-                      unlockAssistantAudio();
-                    }}
-                    onPointerUp={stopEventBubble}
-                    onTouchStart={(e) => {
-                      e.stopPropagation();
-                      unlockAssistantAudio();
-                    }}
-                    onTouchEnd={stopEventBubble}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleQuickSelectAvatar(char.id);
-                    }}
-                    className={`flex flex-col items-center justify-center min-w-0 px-1 py-1.5 rounded-xl border transition-all cursor-pointer ${
-                      isSelected
-                        ? 'border-sky-400 bg-sky-500/22 ring-1 ring-sky-400/70'
-                        : 'border-[#4A6072]/40 bg-slate-900/50 hover:border-sky-400/60'
-                    }`}
-                  >
-                    <span className="w-8 h-8 flex items-center justify-center overflow-hidden">
-                      <AssistantCharacterSvg
-                        avatarId={char.id}
-                        size={30}
-                        skin={skin}
-                        skinVariant={skinVariant}
-                        santaHat={skin === 'navidena'}
-                        robotPose={char.id === 'robot' ? 'classic' : undefined}
-                        withHalo={false}
-                      />
-                    </span>
-                    <span className="text-[9.5px] font-extrabold leading-tight mt-0.5 truncate max-w-full">
-                      {shortName}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
+            <CollapsibleAccordion
+              id="acc-assistant-character-picker"
+              title="Cambiar asistente (1 toque)"
+              summary={
+                avatarId === 'robot'
+                  ? `Seleccionado: ${ROBOT_VARIANT_OPTIONS.find((v) => v.id === robotVariant)?.label || 'Alumi-Bot 3D'}`
+                  : `Seleccionado: ${avatarMeta.label}`
+              }
+              open={avatarPickerOpen}
+              onToggle={() => {
+                unlockAssistantAudio();
+                setAvatarPickerOpen((prev) => !prev);
+              }}
+              tone="dark"
+              className="!rounded-2xl !border-[#4A6072]/45 !bg-[#0b1520]/65"
+            >
+              {/* 3 variantes/vistas del Robot seleccionables */}
+              <div className="mb-2.5">
+                <div className="text-[10px] font-extrabold uppercase tracking-wide text-sky-300 mb-1.5">
+                  3 Vistas de Alumi-Bot 3D
+                </div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {ROBOT_VARIANT_OPTIONS.map((variant) => {
+                    const isSelectedVariant = avatarId === 'robot' && robotVariant === variant.id;
+                    return (
+                      <button
+                        key={variant.id}
+                        type="button"
+                        id={`btn-quick-robot-${variant.id}`}
+                        data-robot-variant={variant.id}
+                        aria-pressed={isSelectedVariant}
+                        title={variant.label}
+                        onPointerDown={(e) => {
+                          e.stopPropagation();
+                          unlockAssistantAudio();
+                        }}
+                        onPointerUp={stopEventBubble}
+                        onTouchStart={(e) => {
+                          e.stopPropagation();
+                          unlockAssistantAudio();
+                        }}
+                        onTouchEnd={stopEventBubble}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleQuickSelectRobotVariant(variant.id);
+                        }}
+                        className={`flex flex-col items-center justify-center min-w-0 px-1.5 py-1.5 rounded-xl border transition-all cursor-pointer ${
+                          isSelectedVariant
+                            ? 'border-sky-400 bg-sky-500/25 ring-1 ring-sky-400/75 text-white'
+                            : 'border-[#4A6072]/40 bg-slate-900/55 hover:border-sky-400/60 text-slate-200'
+                        }`}
+                      >
+                        <span className="w-8 h-8 flex items-center justify-center overflow-visible">
+                          <AssistantCharacterSvg
+                            avatarId="robot"
+                            size={32}
+                            skin={skin}
+                            skinVariant={skinVariant}
+                            santaHat={skin === 'navidena'}
+                            robotPose={variant.id}
+                            withHalo={false}
+                          />
+                        </span>
+                        <span className="text-[9.5px] font-extrabold leading-tight mt-0.5 truncate max-w-full">
+                          {variant.shortLabel}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Galería completa de personajes */}
+              <div className="text-[10px] font-extrabold uppercase tracking-wide assistant-subtext mb-1.5">
+                Todos los personajes ({ASSISTANT_CHARACTERS.length})
+              </div>
+              <div className="grid grid-cols-4 sm:grid-cols-5 gap-1.5 max-h-[210px] overflow-y-auto pr-0.5">
+                {ASSISTANT_CHARACTERS.map((char) => {
+                  const isSelected = char.id === avatarId;
+                  const shortName = char.id === 'robot' ? 'Robot' : char.label.split(' ')[0];
+                  return (
+                    <button
+                      key={char.id}
+                      type="button"
+                      id={`btn-quick-avatar-${char.id}`}
+                      data-quick-avatar={char.id}
+                      aria-pressed={isSelected}
+                      title={`Cambiar a ${char.label}`}
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                        unlockAssistantAudio();
+                      }}
+                      onPointerUp={stopEventBubble}
+                      onTouchStart={(e) => {
+                        e.stopPropagation();
+                        unlockAssistantAudio();
+                      }}
+                      onTouchEnd={stopEventBubble}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleQuickSelectAvatar(char.id);
+                      }}
+                      className={`flex flex-col items-center justify-center min-w-0 px-1 py-1.5 rounded-xl border transition-all cursor-pointer ${
+                        isSelected
+                          ? 'border-sky-400 bg-sky-500/22 ring-1 ring-sky-400/70'
+                          : 'border-[#4A6072]/40 bg-slate-900/50 hover:border-sky-400/60'
+                      }`}
+                    >
+                      <span className="w-8 h-8 flex items-center justify-center overflow-hidden">
+                        <AssistantCharacterSvg
+                          avatarId={char.id}
+                          size={30}
+                          skin={skin}
+                          skinVariant={skinVariant}
+                          santaHat={skin === 'navidena'}
+                          robotPose={char.id === 'robot' ? robotVariant : undefined}
+                          withHalo={false}
+                        />
+                      </span>
+                      <span className="text-[9.5px] font-extrabold leading-tight mt-0.5 truncate max-w-full">
+                        {shortName}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </CollapsibleAccordion>
           </div>
 
           {!googleConnected && (

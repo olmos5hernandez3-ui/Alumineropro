@@ -53,8 +53,13 @@ import {
   AVATAR_VISIBLE_EVENT_NAME,
   loadAvatarVisible,
   loadSelectedAvatar,
+  loadSelectedRobotVariant,
+  ROBOT_VARIANT_EVENT_NAME,
+  ROBOT_VARIANT_OPTIONS,
+  RobotVariantChoice,
   saveAvatarVisible,
   saveSelectedAvatar,
+  saveSelectedRobotVariant,
 } from './AssistantCharacters';
 import {
   AVATAR_SOUND_EVENT_NAME,
@@ -64,6 +69,7 @@ import {
   playAssistantSound,
   saveAvatarSoundEnabled,
   saveAvatarTipsEnabled,
+  unlockAssistantAudio,
 } from '../utils/assistantEffects';
 
 export type ScreenId =
@@ -570,6 +576,9 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
   const [skinsExpanded, setSkinsExpanded] = useState(false);
   const [avatarExpanded, setAvatarExpanded] = useState(false);
   const [selectedAvatar, setSelectedAvatar] = useState<AssistantAvatarId>(() => loadSelectedAvatar());
+  const [selectedRobotVariant, setSelectedRobotVariant] = useState<RobotVariantChoice>(() =>
+    loadSelectedRobotVariant()
+  );
   const [avatarVisible, setAvatarVisible] = useState<boolean>(() => loadAvatarVisible());
   const [avatarSoundEnabled, setAvatarSoundEnabled] = useState<boolean>(() => loadAvatarSoundEnabled());
   const [avatarTipsEnabled, setAvatarTipsEnabled] = useState<boolean>(() => loadAvatarTipsEnabled());
@@ -583,6 +592,14 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
       const detail = (ev as CustomEvent<AssistantAvatarId>).detail;
       if (detail) setSelectedAvatar(detail);
       else setSelectedAvatar(loadSelectedAvatar());
+    };
+    const onRobotVariantChange = (ev: Event) => {
+      const detail = (ev as CustomEvent<RobotVariantChoice>).detail;
+      if (detail === 'classic' || detail === 'waving' || detail === 'technical') {
+        setSelectedRobotVariant(detail);
+      } else {
+        setSelectedRobotVariant(loadSelectedRobotVariant());
+      }
     };
     const onVisChange = (ev: Event) => {
       const detail = (ev as CustomEvent<boolean>).detail;
@@ -600,11 +617,13 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
       else setAvatarTipsEnabled(loadAvatarTipsEnabled());
     };
     window.addEventListener(AVATAR_EVENT_NAME, onAvatarChange);
+    window.addEventListener(ROBOT_VARIANT_EVENT_NAME, onRobotVariantChange);
     window.addEventListener(AVATAR_VISIBLE_EVENT_NAME, onVisChange);
     window.addEventListener(AVATAR_SOUND_EVENT_NAME, onSoundChange);
     window.addEventListener(AVATAR_TIPS_EVENT_NAME, onTipsChange);
     return () => {
       window.removeEventListener(AVATAR_EVENT_NAME, onAvatarChange);
+      window.removeEventListener(ROBOT_VARIANT_EVENT_NAME, onRobotVariantChange);
       window.removeEventListener(AVATAR_VISIBLE_EVENT_NAME, onVisChange);
       window.removeEventListener(AVATAR_SOUND_EVENT_NAME, onSoundChange);
       window.removeEventListener(AVATAR_TIPS_EVENT_NAME, onTipsChange);
@@ -1355,6 +1374,62 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
                 </button>
               </div>
 
+              {/* 3 variantes del Robot */}
+              <div className={`text-[10px] font-extrabold uppercase tracking-wider pt-0.5 ${subTextClass}`}>
+                3 Vistas de Alumi-Bot 3D:
+              </div>
+              <div id="drawer-robot-variants-grid" className="grid grid-cols-3 gap-1.5 mb-2">
+                {ROBOT_VARIANT_OPTIONS.map((variant) => {
+                  const isActiveRobotVar =
+                    selectedAvatar === 'robot' && selectedRobotVariant === variant.id;
+                  return (
+                    <button
+                      key={variant.id}
+                      type="button"
+                      id={`btn-drawer-robot-${variant.id}`}
+                      aria-pressed={isActiveRobotVar}
+                      onClick={() => {
+                        unlockAssistantAudio();
+                        setSelectedAvatar('robot');
+                        saveSelectedAvatar('robot');
+                        setSelectedRobotVariant(variant.id);
+                        saveSelectedRobotVariant(variant.id);
+                        if (!avatarVisible) {
+                          setAvatarVisible(true);
+                          saveAvatarVisible(true);
+                        }
+                        if (avatarSoundEnabled) {
+                          playAssistantSound('robot', 'tap', true);
+                        }
+                      }}
+                      className={`p-2 rounded-xl border text-center cursor-pointer flex flex-col items-center justify-center gap-1 transition-colors ${
+                        isActiveRobotVar
+                          ? isDark
+                            ? 'border-sky-400 bg-sky-500/20 text-white'
+                            : 'border-blue-600 bg-blue-100 text-slate-900'
+                          : isDark
+                            ? 'border-white/15 bg-white/5 hover:bg-white/10 text-slate-200'
+                            : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-800'
+                      }`}
+                    >
+                      <span className="w-10 h-10 shrink-0 flex items-center justify-center overflow-visible">
+                        <AssistantCharacterSvg
+                          avatarId="robot"
+                          size={40}
+                          skin={skin}
+                          skinVariant={skinVariant}
+                          santaHat={skin === 'navidena'}
+                          robotPose={variant.id}
+                        />
+                      </span>
+                      <span className="block text-[10px] font-extrabold leading-tight truncate max-w-full">
+                        {variant.shortLabel}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
               {/* Cuadrícula de los personajes 3D transparentes */}
               <div className={`text-[10px] font-extrabold uppercase tracking-wider pt-0.5 ${subTextClass}`}>
                 Elige tu personaje ({ASSISTANT_CHARACTERS.length}):
@@ -1372,6 +1447,7 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
                       id={`btn-drawer-avatar-${char.id}`}
                       aria-pressed={isActiveChar}
                       onClick={() => {
+                        unlockAssistantAudio();
                         setSelectedAvatar(char.id);
                         saveSelectedAvatar(char.id);
                         if (!avatarVisible) {

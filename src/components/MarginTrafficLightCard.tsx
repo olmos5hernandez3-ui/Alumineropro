@@ -1,5 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { computeMarginTrafficLight } from '../utils/marginTrafficLight';
+import {
+  computeMarginTrafficLight,
+  MARGIN_TRAFFIC_LIGHT_LEGEND,
+} from '../utils/marginTrafficLight';
 import { formatMXN } from '../utils/storageHelpers';
 
 interface MarginTrafficLightCardProps {
@@ -93,34 +96,53 @@ const MarginTrafficLightCardInner: React.FC<MarginTrafficLightCardProps> = ({
   const renderLights = (small = false) => {
     const dotSize = small ? 'w-3.5 h-3.5' : 'w-4 h-4';
     return (
-      <div
-        className={`flex items-center gap-1.5 px-2 py-1 rounded-full bg-slate-950 border border-slate-700 shrink-0`}
-        aria-label={`Semáforo: ${result.label}`}
-      >
-        <span
-          className={`${dotSize} rounded-full transition-opacity ${
-            hasValues && result.status === 'rojo'
-              ? 'bg-red-500 opacity-100 ring-2 ring-red-400/50'
-              : 'bg-red-950 opacity-35'
-          }`}
-          title="Rojo (< 15%)"
-        />
-        <span
-          className={`${dotSize} rounded-full transition-opacity ${
-            hasValues && result.status === 'amarillo'
-              ? 'bg-amber-400 opacity-100 ring-2 ring-amber-300/50'
-              : 'bg-amber-950 opacity-35'
-          }`}
-          title="Amarillo (15% - 29%)"
-        />
-        <span
-          className={`${dotSize} rounded-full transition-opacity ${
-            hasValues && result.status === 'verde'
-              ? 'bg-emerald-400 opacity-100 ring-2 ring-emerald-300/50'
-              : 'bg-emerald-950 opacity-35'
-          }`}
-          title="Verde (30%+)"
-        />
+      <div className="flex flex-col items-end gap-1 shrink-0">
+        <div
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-950 border border-slate-700 shrink-0"
+          aria-label={`Semáforo: ${result.label}`}
+        >
+          <span
+            data-light="rojo"
+            data-active={hasValues && result.status === 'rojo' ? 'true' : 'false'}
+            className={`${dotSize} rounded-full transition-all ${
+              hasValues && result.status === 'rojo'
+                ? 'bg-red-500 opacity-100 ring-2 ring-red-400/70 shadow-[0_0_12px_rgba(239,68,68,0.85)]'
+                : 'bg-red-950 opacity-35'
+            }`}
+            title="Rojo (<18% Bajo)"
+          />
+          <span
+            data-light="amarillo"
+            data-active={hasValues && result.status === 'amarillo' ? 'true' : 'false'}
+            className={`${dotSize} rounded-full transition-all ${
+              hasValues && result.status === 'amarillo'
+                ? 'bg-amber-400 opacity-100 ring-2 ring-amber-300/75 shadow-[0_0_12px_rgba(251,191,36,0.92)]'
+                : 'bg-amber-950 opacity-35'
+            }`}
+            title="Amarillo (18% a 29.9% Justo)"
+          />
+          <span
+            data-light="verde"
+            data-active={hasValues && result.status === 'verde' ? 'true' : 'false'}
+            className={`${dotSize} rounded-full transition-all ${
+              hasValues && result.status === 'verde'
+                ? 'bg-emerald-400 opacity-100 ring-2 ring-emerald-300/70 shadow-[0_0_12px_rgba(52,211,153,0.85)]'
+                : 'bg-emerald-950 opacity-35'
+            }`}
+            title="Verde (≥30% Óptimo)"
+          />
+        </div>
+        <div
+          data-testid="semaforo-legend"
+          className="text-[10px] font-bold text-slate-300 text-right leading-tight"
+        >
+          <span>{MARGIN_TRAFFIC_LIGHT_LEGEND}</span>
+          {hasValues && (
+            <span className={`block mono font-extrabold mt-0.5 ${statusStyles.text}`}>
+              {result.margenPct.toFixed(1)}% · {formatMXN(result.gananciaNeta)}
+            </span>
+          )}
+        </div>
       </div>
     );
   };

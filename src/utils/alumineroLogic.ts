@@ -161,7 +161,7 @@ export const PLANS: PlanDefinicion[] = [
   },
 ];
 
-export const APP_VERSION = '1.0.15';
+export const APP_VERSION = '1.0.16';
 export const APP_VERSION_LABEL = `v${APP_VERSION}`;
 
 export const TRAMO_STD_CM = 610;
@@ -7149,5 +7149,217 @@ export function buildHojaShoppingListWhatsAppText(
   lines.push('_Generado con Aluminero Pro_');
   return lines.join('\n');
 }
+
+// =========================================================================
+// INVENTARIO DE PERFILES — UMBRAL MÍNIMO CONFIGURABLE Y BADGE VERDE/ROJO
+// =========================================================================
+export const INVENTARIO_MIN_THRESHOLD_KEY = 'aluminero_inv_min_threshold_v1';
+export const DEFAULT_INVENTARIO_MIN_THRESHOLD = 3;
+
+export type PerfilStockLevel = 'ok' | 'low';
+
+export interface PerfilStockBadgeStatus {
+  level: PerfilStockLevel;
+  isLow: boolean;
+  label: string;
+  threshold: number;
+}
+
+export function sanitizeInventoryMinThreshold(raw: unknown): number {
+  const num = Number(raw);
+  if (!Number.isFinite(num) || num < 1) return DEFAULT_INVENTARIO_MIN_THRESHOLD;
+  return Math.min(999, Math.max(1, Math.round(num)));
+}
+
+export function loadInventoryMinThreshold(): number {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) {
+      return DEFAULT_INVENTARIO_MIN_THRESHOLD;
+    }
+    const raw = window.localStorage.getItem(INVENTARIO_MIN_THRESHOLD_KEY);
+    if (raw === null || raw.trim() === '') return DEFAULT_INVENTARIO_MIN_THRESHOLD;
+    return sanitizeInventoryMinThreshold(Number(raw));
+  } catch {
+    return DEFAULT_INVENTARIO_MIN_THRESHOLD;
+  }
+}
+
+export function saveInventoryMinThreshold(threshold: number): number {
+  const clean = sanitizeInventoryMinThreshold(threshold);
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.setItem(INVENTARIO_MIN_THRESHOLD_KEY, String(clean));
+    }
+  } catch {
+    // ignore storage errors
+  }
+  return clean;
+}
+
+export function getPerfilStockBadgeStatus(
+  cantidad: number,
+  minThreshold: number
+): PerfilStockBadgeStatus {
+  const safeThreshold = sanitizeInventoryMinThreshold(minThreshold);
+  const safeQty = Number.isFinite(Number(cantidad)) ? Math.max(0, Number(cantidad)) : 0;
+  const isLow = safeQty < safeThreshold;
+  return {
+    level: isLow ? 'low' : 'ok',
+    isLow,
+    label: isLow ? `Bajo (< ${safeThreshold})` : 'Stock OK',
+    threshold: safeThreshold,
+  };
+}
+
+// =========================================================================
+// LIMPIEZA SEGURA DE EQUIPOS DE PRUEBA / DUPLICADOS EN PANEL ADMIN
+// =========================================================================
+export interface CleanupTestDevicesInput {
+  devices: CloudDeviceRecord[];
+  adminKeys?: Array<{
+    id: string;
+    deviceId: string;
+    cliente?: string;
+    planLabel?: string;
+    key?: string;
+    tipo?: string;
+    createdAt?: number;
+  }>;
+  currentDeviceId: string;
+  currentUserUid?: string | null;
+  nowMs?: number;
+}
+
+export interface CleanupTestDevicesResult {
+  removableDeviceIds: string[];
+  keptDeviceIds: string[];
+  removableAdminKeyIds: string[];
+}
+
+const TEST_NAME_REGEX = /\b(prueba|pruebas|test|testing|demo|simulaci[oó]n|local|localhost|qa|sandbox)\b/i;
+
+export function identifyTestDevicesToClean(
+  input: CleanupTestDevicesInput
+): CleanupTestDevicesResult {
+  const currentNorm = normalizeDeviceIdInput(input.currentDeviceId || '');
+  const nowMs = typeof input.nowMs === 'number' && Number.isFinite(input.nowMs) ? input.nowMs : Date.now();
+  const STALE_FREE_MS = 7 * 24 * 60 * 60 * 1000;
+
+  const removableSet = new Set<string>();
+  const keptSet = new Set<string>();
+  const normalizedList: Array<{ normId: string; rec: CloudDeviceRecord; ts: number }> = [];
+
+  for (const rec of input.devices || []) {
+    const normId = normalizeDeviceIdInput(rec.deviceId || '');
+    if (!normId) continue;
+    const ts = Math.max(
+      Number(rec.lastSeenAt) || 0,
+      Number(rec.updatedAt) || 0,
+      Number(rec.firstSeenAt) || 0
+    );
+    normalizedList.push({ normId, rec, ts });
+  }
+
+  // Agrupar posibles duplicados por correo/dueño/nombre para conservar el más reciente o el actual
+  const groupLatestMap = new Map<string, { normId: string; ts: number }>();
+  for (const entry of normalizedList) {
+    const email = String(entry.rec.linkedEmail || '').trim().toLowerCase();
+    const ownerUid = String(entry.rec.ownerUid || '').trim();
+    const isAdminOwnGroup = Boolean(input.currentUserUid && ownerUid && ownerUid === input.currentUserUid);
+    const groupKey = email
+      ? `email:${email}`
+      : isAdminOwnGroup
+        ? `uid:${ownerUid}`
+        : '';
+    if (!groupKey) continue;
+    const prev = groupLatestMap.get(groupKey);
+    if (entry.normId === currentNorm) {
+      groupLatestMap.set(groupKey, { normId: entry.normId, ts: Number.MAX_SAFE_INTEGER });
+    } else if (!prev || entry.ts > prev.ts) {
+      groupLatestMap.set(groupKey, { normId: entry.normId, ts: entry.ts });
+    }
+  }
+
+  for (const entry of normalizedList) {
+    const { normId, rec, ts } = entry;
+    if (normId === currentNorm) {
+      keptSet.add(normId);
+      continue;
+    }
+
+    const isTestRecord = isFreeTestProRecord({
+      tipo: (rec as unknown as { tipo?: string }).tipo,
+      planCode: rec.planCode,
+      planLabel: rec.planLabel,
+      keyCode: rec.lastKey,
+    });
+    const textBlob = [
+      rec.cliente,
+      rec.tallerNombre,
+      rec.tallerResponsable,
+      rec.deviceLabel,
+      rec.planLabel,
+    ]
+      .filter(Boolean)
+      .join(' ');
+    const looksLikeTestName = TEST_NAME_REGEX.test(textBlob);
+
+    const isActivePaidPro =
+      Boolean(rec.proActive) &&
+      !isTestRecord &&
+      !looksLikeTestName &&
+      (!rec.expiresAt || rec.expiresAt > nowMs);
+
+    const email = String(rec.linkedEmail || '').trim().toLowerCase();
+    const ownerUid = String(rec.ownerUid || '').trim();
+    const isAdminOwnDuplicate = Boolean(
+      input.currentUserUid && ownerUid && ownerUid === input.currentUserUid && normId !== currentNorm
+    );
+    const emailGroupWinner = email ? groupLatestMap.get(`email:${email}`)?.normId : undefined;
+    const isOlderEmailDuplicate = Boolean(emailGroupWinner && emailGroupWinner !== normId && !isActivePaidPro);
+    const isAutoTrialAnon = isUnassignedAutoTrialDevice(rec);
+    const isStaleFreeSingleSession =
+      !rec.proActive &&
+      !rec.linkedEmail &&
+      (Number(rec.totalSessions) || 0) <= 1 &&
+      ts > 0 &&
+      nowMs - ts > STALE_FREE_MS;
+
+    if (
+      isTestRecord ||
+      looksLikeTestName ||
+      isAdminOwnDuplicate ||
+      isOlderEmailDuplicate ||
+      isAutoTrialAnon ||
+      isStaleFreeSingleSession
+    ) {
+      removableSet.add(normId);
+    } else {
+      keptSet.add(normId);
+    }
+  }
+
+  const removableAdminKeyIds: string[] = [];
+  for (const k of input.adminKeys || []) {
+    const kDev = normalizeDeviceIdInput(k.deviceId || '');
+    if (kDev && kDev === currentNorm) continue;
+    const keyIsTest = isFreeTestProRecord({
+      tipo: k.tipo,
+      planLabel: k.planLabel,
+      keyCode: k.key,
+    });
+    const keyMatchesTestName = TEST_NAME_REGEX.test(String(k.cliente || ''));
+    if ((kDev && removableSet.has(kDev)) || keyIsTest || keyMatchesTestName) {
+      removableAdminKeyIds.push(k.id);
+    }
+  }
+
+  return {
+    removableDeviceIds: Array.from(removableSet),
+    keptDeviceIds: Array.from(keptSet),
+    removableAdminKeyIds: Array.from(new Set(removableAdminKeyIds)),
+  };
+}
+
 
 

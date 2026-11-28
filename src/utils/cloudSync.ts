@@ -3933,5 +3933,94 @@ export async function fetchLiveCloudUsuariosFromServer(): Promise<LiveCloudUsuar
   }
 }
 
+export interface CleanupTestDevicesCloudResult {
+  deletedDevices: number;
+  deletedKeys: number;
+  deletedUsuarios: number;
+  cloudSynced: boolean;
+}
+
+/**
+ * Elimina de Firestore los registros antiguos o duplicados de equipos de prueba
+ * conservando estrictamente el equipo y sesión actual activos.
+ */
+export async function cleanupTestDevicesCloud(params: {
+  deviceIds: string[];
+  adminKeyIds?: string[];
+  keepDeviceId: string;
+  keepUid?: string | null;
+}): Promise<CleanupTestDevicesCloudResult> {
+  const keepDevNorm = normalizeDeviceIdInput(params.keepDeviceId || '');
+  const keepUidClean = String(params.keepUid || '').trim();
+  const safeDeviceIds = Array.from(
+    new Set(
+      (params.deviceIds || [])
+        .map((id) => normalizeDeviceIdInput(id))
+        .filter((id) => Boolean(id) && id !== keepDevNorm)
+    )
+  );
+  const safeKeyIds = Array.from(
+    new Set((params.adminKeyIds || []).map((id) => String(id || '').trim()).filter(Boolean))
+  );
+
+  if (safeDeviceIds.length === 0 && safeKeyIds.length === 0) {
+    return { deletedDevices: 0, deletedKeys: 0, deletedUsuarios: 0, cloudSynced: true };
+  }
+
+  if (!isFirebaseAdminUser()) {
+    return { deletedDevices: 0, deletedKeys: 0, deletedUsuarios: 0, cloudSynced: false };
+  }
+
+  let deletedDevices = 0;
+  let deletedKeys = 0;
+  let deletedUsuarios = 0;
+
+  for (const rawDevId of safeDeviceIds) {
+    const docId = toSafeDocId(rawDevId);
+    if (!docId || docId === toSafeDocId(keepDevNorm)) continue;
+    try {
+      await deleteDoc(doc(db, 'devices', docId));
+      deletedDevices += 1;
+    } catch (err) {
+      if (!isFirestoreOfflineError(err) && !isFirestorePermissionDeniedError(err)) {
+        handleFirestoreError(err, OperationType.DELETE, `devices/${docId}`);
+      }
+    }
+    try {
+      await deleteDoc(doc(db, 'blockedDevices', docId));
+    } catch {
+      // ignore if doc does not exist
+    }
+    // Eliminar también posible documento espejo en `usuarios` si corresponde a un equipo de prueba
+    if (docId !== keepUidClean) {
+      try {
+        await deleteDoc(doc(db, 'usuarios', docId));
+        deletedUsuarios += 1;
+      } catch {
+        // ignore if doc does not exist
+      }
+    }
+  }
+
+  for (const keyId of safeKeyIds) {
+    try {
+      await deleteDoc(doc(db, 'adminKeys', keyId));
+      deletedKeys += 1;
+    } catch (err) {
+      if (!isFirestoreOfflineError(err) && !isFirestorePermissionDeniedError(err)) {
+        handleFirestoreError(err, OperationType.DELETE, `adminKeys/${keyId}`);
+      }
+    }
+  }
+
+  return {
+    deletedDevices,
+    deletedKeys,
+    deletedUsuarios,
+    cloudSynced: true,
+  };
+}
+
+
 
 

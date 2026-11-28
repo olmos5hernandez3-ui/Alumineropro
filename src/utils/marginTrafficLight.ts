@@ -28,11 +28,13 @@ function sanitizeMoney(n: number | undefined): number {
   return Math.max(0, Math.round(n * 100) / 100);
 }
 
+export const MARGIN_TRAFFIC_LIGHT_LEGEND = '<18% Bajo · 18–29% Justo · ≥30% Óptimo';
+
 /**
  * Calcula el Semáforo de Margen PRO de una cotización o precio rápido.
- * Umbrales estrictos:
- *  - Rojo (< 15% o pérdida): "Muy por debajo del margen"
- *  - Amarillo (15% a 29.99%): "Un poco por debajo"
+ * Umbrales estrictos sin huecos:
+ *  - Rojo (< 18% o pérdida): "Muy por debajo del margen"
+ *  - Amarillo (18% a 29.9%): "Un poco por debajo" (foco amber-400)
  *  - Verde (>= 30%): "Cumples tu margen"
  */
 export function computeMarginTrafficLight(
@@ -57,23 +59,23 @@ export function computeMarginTrafficLight(
   let shortHint: string;
   let colorHex: string;
 
-  if (gananciaNeta <= 0 || margenPct < 15) {
+  if (gananciaNeta <= 0 || margenPct < 18) {
     status = 'rojo';
     label = 'Muy por debajo del margen';
     shortHint =
       gananciaNeta < 0
         ? 'Estás perdiendo dinero en este presupuesto. Revisa tus costos antes de enviar.'
-        : 'Margen menor a 15%. Considera ajustar el precio o revisar flete y herrajes.';
+        : 'Margen menor a 18%. Considera ajustar el precio o revisar flete y herrajes.';
     colorHex = '#ef4444';
   } else if (margenPct < 30) {
     status = 'amarillo';
     label = 'Un poco por debajo';
-    shortHint = 'Margen entre 15% y 29%. Aceptable en volumen, pero debajo del objetivo PRO (30%+).';
-    colorHex = '#f59e0b';
+    shortHint = 'Margen justo (18% a 29.9%). Aceptable en volumen, pero debajo del objetivo óptimo (≥30%).';
+    colorHex = '#fbbf24';
   } else {
     status = 'verde';
     label = 'Cumples tu margen';
-    shortHint = 'Margen saludable (30% o más) cubriendo material, flete y herrajes extra.';
+    shortHint = 'Margen óptimo (≥30%) cubriendo material, flete y herrajes extra.';
     colorHex = '#10b981';
   }
 

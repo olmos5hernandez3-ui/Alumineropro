@@ -7,17 +7,21 @@ import {
   COLORES_CONFIG,
   ColorId,
   ExistenciasPriceContext,
+  getPerfilStockBadgeStatus,
   HERRAJES_INVENTARIO_CATALOGO,
   HerrajeCategoria,
   INVENTARIO_DEFAULT_MARCA,
   LINEAS_CONFIG,
   LineaId,
+  loadInventoryMinThreshold,
   makeInventarioKey,
   parseInventarioKey,
   PerfilCatalogoId,
   resolveExistenciaUnitPrice,
   resumirObrasAprobadas,
   round2,
+  sanitizeInventoryMinThreshold,
+  saveInventoryMinThreshold,
   TRAMO_COMPROMETIDO_M,
   TRAMO_STD_M,
 } from '../utils/alumineroLogic';
@@ -215,6 +219,14 @@ export const InventarioView: React.FC<Props> = ({
   } | null>(null);
   const [accResumenBodegaOpen, setAccResumenBodegaOpen] = useState(true);
   const [accObrasAprobadasOpen, setAccObrasAprobadasOpen] = useState(true);
+  const [minStockThreshold, setMinStockThreshold] = useState<number>(() =>
+    loadInventoryMinThreshold()
+  );
+
+  const handleUpdateMinStockThreshold = (rawVal: number) => {
+    const clean = saveInventoryMinThreshold(sanitizeInventoryMinThreshold(rawVal));
+    setMinStockThreshold(clean);
+  };
 
   const effectivePriceCtx: ExistenciasPriceContext = existenciasPriceCtx ?? {
     inventarioPreciosUnitarios: {},
@@ -618,6 +630,21 @@ export const InventarioView: React.FC<Props> = ({
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
+              <div className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 border border-slate-300 text-[11px] font-bold text-slate-800">
+                <span>Umbral mín.:</span>
+                <input
+                  id="inp-existencias-min-threshold"
+                  type="number"
+                  min={1}
+                  max={999}
+                  step={1}
+                  aria-label="Umbral mínimo de piezas para alerta de inventario"
+                  value={minStockThreshold}
+                  onChange={(e) => handleUpdateMinStockThreshold(Number(e.target.value) || 1)}
+                  className="w-12 h-6 rounded border border-slate-300 bg-white text-center mono text-[11.5px] font-extrabold text-slate-900"
+                />
+                <span>pzas</span>
+              </div>
               <span className="mono px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-800 text-[11.5px] font-extrabold">
                 {compactExistencias.length} con existencia
               </span>
@@ -896,9 +923,41 @@ export const InventarioView: React.FC<Props> = ({
                             </span>
                           )}
                         </span>
-                        <span className="mono px-2 py-0.5 rounded-md bg-emerald-50 border border-emerald-300 text-emerald-800 text-[12px] font-extrabold tabular-nums">
-                          {item.cantidad} {item.unidad}
-                        </span>
+                        {item.tipo === 'perfil' ? (() => {
+                          const stockBadge = getPerfilStockBadgeStatus(item.cantidad, minStockThreshold);
+                          return (
+                            <span
+                              data-stock-badge={stockBadge.level}
+                              title={
+                                stockBadge.isLow
+                                  ? `Stock bajo: ${item.cantidad} < mínimo (${minStockThreshold})`
+                                  : `Stock óptimo: ${item.cantidad} ≥ mínimo (${minStockThreshold})`
+                              }
+                              className={`mono inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[12px] font-extrabold tabular-nums ${
+                                stockBadge.isLow
+                                  ? 'bg-red-500/15 border-red-400/70 text-red-700'
+                                  : 'bg-emerald-500/15 border-emerald-400/70 text-emerald-800'
+                              }`}
+                            >
+                              <span
+                                className={`w-2 h-2 rounded-full shrink-0 ${
+                                  stockBadge.isLow ? 'bg-red-500' : 'bg-emerald-500'
+                                }`}
+                                aria-hidden="true"
+                              />
+                              <span>
+                                {item.cantidad} {item.unidad}
+                              </span>
+                              <span className="text-[10px] font-extrabold">
+                                · {stockBadge.isLow ? 'Bajo' : 'OK'}
+                              </span>
+                            </span>
+                          );
+                        })() : (
+                          <span className="mono px-2 py-0.5 rounded-md bg-emerald-50 border border-emerald-300 text-emerald-800 text-[12px] font-extrabold tabular-nums">
+                            {item.cantidad} {item.unidad}
+                          </span>
+                        )}
                         <button
                           type="button"
                           onClick={() => handleQuickDeductExistencia(item, 1)}
@@ -1621,9 +1680,29 @@ export const InventarioView: React.FC<Props> = ({
                             </span>
                           </div>
                         </div>
-                        <span className="mono font-extrabold text-emerald-700 shrink-0">
-                          {val} {val === 1 ? 'tramo' : 'tramos'} · {round2(val * TRAMO_STD_M).toFixed(2)} m ({Math.round(val * TRAMO_STD_M * 100)} cm)
-                        </span>
+                        {(() => {
+                          const bodegaBadge = getPerfilStockBadgeStatus(val, minStockThreshold);
+                          return (
+                            <span
+                              data-stock-badge={bodegaBadge.level}
+                              className={`mono inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border font-extrabold shrink-0 text-[11.5px] ${
+                                bodegaBadge.isLow
+                                  ? 'bg-red-500/15 border-red-400/60 text-red-700'
+                                  : 'bg-emerald-500/15 border-emerald-400/60 text-emerald-800'
+                              }`}
+                            >
+                              <span
+                                className={`w-2 h-2 rounded-full shrink-0 ${
+                                  bodegaBadge.isLow ? 'bg-red-500' : 'bg-emerald-500'
+                                }`}
+                                aria-hidden="true"
+                              />
+                              <span>
+                                {val} {val === 1 ? 'tramo' : 'tramos'} · {round2(val * TRAMO_STD_M).toFixed(2)} m ({Math.round(val * TRAMO_STD_M * 100)} cm)
+                              </span>
+                            </span>
+                          );
+                        })()}
                       </div>
                     );
                   })}
@@ -1840,6 +1919,61 @@ export const InventarioView: React.FC<Props> = ({
               </div>
             </div>
 
+            {/* Barra de umbral mínimo configurable para alerta verde/rojo de stock */}
+            <div
+              id="inv-min-threshold-bar"
+              className="flex flex-wrap items-center justify-between gap-2 p-2.5 mb-3 rounded-xl bg-slate-50 border border-slate-200"
+            >
+              <div className="flex items-center gap-2 flex-wrap">
+                <label
+                  htmlFor="inp-inv-min-threshold"
+                  className="text-[11.5px] font-extrabold text-slate-700"
+                >
+                  Umbral mínimo de stock (piezas/tramos):
+                </label>
+                <div className="inline-flex items-center gap-1">
+                  <button
+                    type="button"
+                    id="btn-inv-threshold-dec"
+                    aria-label="Disminuir umbral mínimo de stock"
+                    onClick={() => handleUpdateMinStockThreshold(Math.max(1, minStockThreshold - 1))}
+                    className="w-7 h-7 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-[14px] font-extrabold cursor-pointer"
+                  >
+                    −
+                  </button>
+                  <input
+                    id="inp-inv-min-threshold"
+                    type="number"
+                    min={1}
+                    max={999}
+                    step={1}
+                    value={minStockThreshold}
+                    onChange={(e) => handleUpdateMinStockThreshold(Number(e.target.value) || 1)}
+                    className="w-14 h-7 rounded-lg border border-slate-300 bg-white text-center mono text-[12.5px] font-extrabold text-slate-900"
+                  />
+                  <button
+                    type="button"
+                    id="btn-inv-threshold-inc"
+                    aria-label="Aumentar umbral mínimo de stock"
+                    onClick={() => handleUpdateMinStockThreshold(minStockThreshold + 1)}
+                    className="w-7 h-7 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-[14px] font-extrabold cursor-pointer"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 text-[10.5px] font-extrabold">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-400/60 text-emerald-700">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500" aria-hidden="true" />
+                  ≥ {minStockThreshold} Verde (OK)
+                </span>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-red-500/15 border border-red-400/60 text-red-700">
+                  <span className="w-2 h-2 rounded-full bg-red-500" aria-hidden="true" />
+                  &lt; {minStockThreshold} Rojo (Bajo)
+                </span>
+              </div>
+            </div>
+
             <div className="flex flex-col max-h-[680px] overflow-y-auto pr-1">
               {CATALOGO_PERFILES.map((perfil) => {
                 const brandedKey = makeInventarioKey(invLinea, perfil.id, invColor, activeMarcaFinal);
@@ -1924,9 +2058,38 @@ export const InventarioView: React.FC<Props> = ({
                         />
                       </button>
                       <div className="min-w-0 flex-1">
-                        <strong className="block text-[13.5px] text-[#1E293B] break-words">{perfil.nombre}</strong>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <strong className="text-[13.5px] text-[#1E293B] break-words">{perfil.nombre}</strong>
+                          {(() => {
+                            const stockBadge = getPerfilStockBadgeStatus(tramos, minStockThreshold);
+                            return (
+                              <span
+                                data-stock-badge={stockBadge.level}
+                                data-perfil-stock-badge={perfil.id}
+                                title={
+                                  stockBadge.isLow
+                                    ? `Stock bajo: ${round2(tramos)} piezas/tramos (mínimo configurado: ${minStockThreshold})`
+                                    : `Stock óptimo: ${round2(tramos)} piezas/tramos (mínimo configurado: ${minStockThreshold})`
+                                }
+                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10.5px] font-extrabold shrink-0 ${
+                                  stockBadge.isLow
+                                    ? 'bg-red-500/15 border-red-400/70 text-red-700'
+                                    : 'bg-emerald-500/15 border-emerald-400/70 text-emerald-700'
+                                }`}
+                              >
+                                <span
+                                  className={`w-2 h-2 rounded-full shrink-0 ${
+                                    stockBadge.isLow ? 'bg-red-500' : 'bg-emerald-500'
+                                  }`}
+                                  aria-hidden="true"
+                                />
+                                <span>{stockBadge.label}</span>
+                              </span>
+                            );
+                          })()}
+                        </div>
                         <span className="block text-[11.5px] text-slate-600 break-words">{perfil.uso}</span>
-                        <div className={`mono text-[11.5px] font-bold mt-0.5 ${tramos > 0 ? 'text-emerald-700' : 'text-slate-600'}`}>
+                        <div className={`mono text-[11.5px] font-bold mt-0.5 ${tramos >= minStockThreshold ? 'text-emerald-700' : 'text-red-600'}`}>
                           {tramos > 0
                             ? `Disponible: ${metros.toFixed(2)} m (${cmTotales} cm) · ${round2(tramos)} tr.`
                             : 'Sin existencia (0.00 m · 0 cm)'}

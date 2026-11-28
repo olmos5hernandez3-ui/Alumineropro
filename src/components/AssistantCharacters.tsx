@@ -29,6 +29,38 @@ export const AVATAR_VISIBLE_KEY = 'aluminero-avatar-visible';
 export const AVATAR_POS_KEY = 'aluminero-avatar-pos';
 export const AVATAR_EVENT_NAME = 'aluminero-avatar';
 export const AVATAR_VISIBLE_EVENT_NAME = 'aluminero-avatar-visible';
+export const ROBOT_VARIANT_STORAGE_KEY = 'aluminero-robot-variant';
+export const ROBOT_VARIANT_EVENT_NAME = 'aluminero-robot-variant';
+
+export type RobotVariantChoice = RobotPoseMode;
+
+export interface RobotVariantMeta {
+  id: RobotVariantChoice;
+  label: string;
+  shortLabel: string;
+  tagline: string;
+}
+
+export const ROBOT_VARIANT_OPTIONS: RobotVariantMeta[] = [
+  {
+    id: 'classic',
+    label: 'Alumi-Bot Clásico',
+    shortLabel: 'Robot Clásico',
+    tagline: 'Visor cian metálico',
+  },
+  {
+    id: 'waving',
+    label: 'Alumi-Bot Saludo',
+    shortLabel: 'Robot Saludo',
+    tagline: 'Mano saludando y chispa',
+  },
+  {
+    id: 'technical',
+    label: 'Alumi-Bot Técnico',
+    shortLabel: 'Robot Técnico',
+    tagline: 'Casco LED y láser',
+  },
+];
 
 export const AVATAR_IMAGE_PATHS: Record<AssistantAvatarId, string> = {
   robot: '/avatars/robot.png',
@@ -64,7 +96,7 @@ export const ASSISTANT_CHARACTERS: AssistantCharacterMeta[] = [
   },
   {
     id: 'castor',
-    label: 'Castor Maestro',
+    label: 'Castor Ingeniero',
     tagline: 'Casco y flexómetro',
     gestureText: '¡Casco puesto y flexómetro listo!',
     imageSrc: AVATAR_IMAGE_PATHS.castor,
@@ -169,6 +201,27 @@ export function saveSelectedAvatar(id: AssistantAvatarId): void {
   }
 }
 
+export function loadSelectedRobotVariant(): RobotVariantChoice {
+  try {
+    const raw = window.localStorage.getItem(ROBOT_VARIANT_STORAGE_KEY);
+    if (raw === 'classic' || raw === 'waving' || raw === 'technical') {
+      return raw;
+    }
+  } catch {
+    // ignore
+  }
+  return 'classic';
+}
+
+export function saveSelectedRobotVariant(variant: RobotVariantChoice): void {
+  try {
+    window.localStorage.setItem(ROBOT_VARIANT_STORAGE_KEY, variant);
+    window.dispatchEvent(new CustomEvent(ROBOT_VARIANT_EVENT_NAME, { detail: variant }));
+  } catch {
+    // ignore
+  }
+}
+
 export function loadAvatarVisible(): boolean {
   try {
     const raw = window.localStorage.getItem(AVATAR_VISIBLE_KEY);
@@ -242,6 +295,8 @@ const AlumiBot3DSvg: React.FC<{
   const blinkClass = animated && !isHappy && !isSurprised ? 'alumibot-eye-blink' : '';
   const antennaClass = animated ? 'assistant-part-wiggle' : '';
   const waveClass = animated ? 'alumibot-wave-hand' : '';
+  const handSwayClass = animated ? 'assistant-hand-sway' : '';
+  const tailClass = animated ? 'assistant-tail-wag' : '';
   const thrusterClass = animated ? 'alumibot-thruster' : '';
   const laserActive = isTechnicalPose && (laserFlash || isHappy);
 
@@ -489,7 +544,7 @@ const AlumiBot3DSvg: React.FC<{
       )}
 
       {isTechnicalPose ? (
-        <g data-robot-part="laser-meter">
+        <g data-robot-part="laser-meter" className={handSwayClass}>
           <path
             d={laserActive ? 'M14.5 72.5 L11.5 92 L17.5 92 Z' : 'M14.5 72.5 L13.4 89 L15.6 89 Z'}
             fill={`url(#ab-laser-beam-${uid})`}
@@ -528,7 +583,7 @@ const AlumiBot3DSvg: React.FC<{
           <ellipse cx="20.2" cy="61.8" rx="1.5" ry="1.8" fill="#ffffff" opacity="0.65" />
         </g>
       ) : (
-        <g data-robot-part="idle-left-hand">
+        <g data-robot-part="idle-left-hand" className={handSwayClass}>
           <ellipse
             cx="21.5"
             cy="63.5"
@@ -570,7 +625,7 @@ const AlumiBot3DSvg: React.FC<{
           />
         </g>
       ) : (
-        <g data-robot-part="rest-right-hand">
+        <g data-robot-part="rest-right-hand" className={handSwayClass}>
           <ellipse
             cx="74.5"
             cy="63.5"
@@ -582,6 +637,15 @@ const AlumiBot3DSvg: React.FC<{
           <ellipse cx="73.6" cy="61.8" rx="1.5" ry="1.8" fill="#ffffff" opacity="0.68" />
         </g>
       )}
+
+      {/* Aleta estabilizadora trasera sutil con movimiento continuo */}
+      <g data-robot-part="tail-stabilizer" className={tailClass} opacity="0.75">
+        <path
+          d="M66.5 66 Q76 63 79 57 Q74.5 68 65.5 70.5 Z"
+          fill={`url(#ab-drone-${uid})`}
+        />
+        <circle cx="77.5" cy="58.5" r="1.4" fill={accent} />
+      </g>
     </svg>
   );
 };
@@ -646,19 +710,83 @@ export const AssistantCharacterSvg: React.FC<CharacterSvgProps> = ({
           laserFlash={laserFlash}
         />
       ) : (
-        <img
-          src={imageSrc}
-          alt={`Personaje asistente ${meta.label}`}
-          width={size}
-          height={size}
-          draggable={false}
-          decoding="async"
-          className={`w-full h-full bg-transparent object-contain scale-[1.45] select-none pointer-events-none ${animalAnimClass}`}
-          style={{
-            background: 'transparent',
-            filter: 'drop-shadow(0 8px 12px rgba(0,0,0,0.45))',
-          }}
-        />
+        <>
+          {animated && (
+            <svg
+              width={size}
+              height={size}
+              viewBox="0 0 96 96"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              data-character-motion-svg="tail-layer"
+              className="absolute inset-0 w-full h-full pointer-events-none overflow-visible"
+              aria-hidden="true"
+            >
+              {/* Movimiento continuo de cola detrás del personaje */}
+              <g className="assistant-tail-wag" data-svg-anim="tail">
+                <path
+                  d="M66 69 C77 67 84 58 82 48 C80 43 74 45 74 52 C74 58 70 63 64 65 Z"
+                  fill={
+                    avatarId === 'zorro'
+                      ? '#ea580c'
+                      : avatarId === 'gatito'
+                        ? '#94a3b8'
+                        : avatarId === 'perrito'
+                          ? '#d97706'
+                          : avatarId === 'puerquito'
+                            ? '#f472b6'
+                            : avatarId === 'castor'
+                              ? '#78350f'
+                              : avatarId === 'lobo'
+                                ? '#64748b'
+                                : avatarId === 'conejita'
+                                  ? '#e2e8f0'
+                                  : avatarId === 'changuito'
+                                    ? '#92400e'
+                                    : accent
+                  }
+                  opacity="0.72"
+                />
+              </g>
+            </svg>
+          )}
+          <img
+            src={imageSrc}
+            alt={`Personaje asistente ${meta.label}`}
+            width={size}
+            height={size}
+            draggable={false}
+            decoding="async"
+            className={`relative z-[1] w-full h-full bg-transparent object-contain scale-[1.45] select-none pointer-events-none ${animalAnimClass}`}
+            style={{
+              background: 'transparent',
+              filter: 'drop-shadow(0 8px 12px rgba(0,0,0,0.45))',
+            }}
+          />
+          {animated && (
+            <svg
+              width={size}
+              height={size}
+              viewBox="0 0 96 96"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              data-character-motion-svg="eye-hand-layer"
+              className="absolute inset-0 z-[2] w-full h-full pointer-events-none overflow-visible"
+              aria-hidden="true"
+            >
+              {/* Parpadeo sutil continuo en ojos */}
+              <g className="assistant-animal-blink" data-svg-anim="eyes">
+                <path d="M35 37 Q39.5 40 44 37" stroke="#0f172a" strokeWidth="2.4" strokeLinecap="round" />
+                <path d="M52 37 Q56.5 40 61 37" stroke="#0f172a" strokeWidth="2.4" strokeLinecap="round" />
+              </g>
+              {/* Movimiento sutil de manos / brazos */}
+              <g className="assistant-hand-sway" data-svg-anim="hands" opacity="0.55">
+                <path d="M18 57 Q15 62 18 66" stroke={accent} strokeWidth="1.6" strokeLinecap="round" />
+                <path d="M78 57 Q81 62 78 66" stroke={accent} strokeWidth="1.6" strokeLinecap="round" />
+              </g>
+            </svg>
+          )}
+        </>
       )}
 
       {santaHat && (
