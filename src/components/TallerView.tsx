@@ -1,20 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   AlertTriangle,
-  BarChart3,
-  Check,
-  ChevronDown,
-  ChevronUp,
   Download,
   FileDown,
   Lock,
+  Moon,
   Palette,
   Pencil,
   RotateCcw,
-  SlidersHorizontal,
   Sparkles,
   Sun,
-  Moon,
   TrendingUp,
   Undo2,
   Upload,
@@ -42,7 +38,6 @@ import {
   AlumineroBackupPayload,
   AppSkin,
   AppSkinVariant,
-  ResolvedAppTheme,
   CotizacionGuardada,
   formatMXN,
   FormulaPersonalizada,
@@ -50,6 +45,7 @@ import {
   loadCotizacionesGuardadas,
   normalizeSkinVariantForSkin,
   parseBackupPayload,
+  ResolvedAppTheme,
   SKIN_VARIANTS_BY_SKIN,
   TallerConfig,
 } from '../utils/storageHelpers';
@@ -65,6 +61,7 @@ import {
   restoreUndoSnapshot,
   SPECIFIC_ACABADO_IDS,
 } from '../utils/tallerTools';
+import { CollapsibleAccordion } from './CollapsibleAccordion';
 import { PdfHeaderCustomizer } from './PdfHeaderCustomizer';
 import { PublicidadTallerCard } from './PublicidadTallerCard';
 
@@ -80,8 +77,8 @@ interface Props {
   onOpenPro: () => void;
   onEntrarInventario: () => void;
   onOpenFormulaModal: () => void;
+  onEditarFormula?: (formula: FormulaPersonalizada) => void;
   onEliminarFormula: (id: string) => void;
-  onEditarFormula?: (updated: FormulaPersonalizada) => void;
   onEliminarHistorial: (id: string) => void;
   onLimpiarHistorial: () => void;
   onScheduleHistorialReminder?: (item: HistorialItem) => void;
@@ -135,8 +132,8 @@ export const TallerView: React.FC<Props> = ({
   onOpenPro,
   onEntrarInventario,
   onOpenFormulaModal,
-  onEliminarFormula,
   onEditarFormula,
+  onEliminarFormula,
   onEliminarHistorial,
   onLimpiarHistorial,
   onScheduleHistorialReminder,
@@ -162,73 +159,13 @@ export const TallerView: React.FC<Props> = ({
   const [bulkPct, setBulkPct] = useState<string>('10');
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
   const [lastBulkUndo, setLastBulkUndo] = useState<BulkAdjustmentUndoSnapshot | null>(null);
-  const [ajusteFinoOpen, setAjusteFinoOpen] = useState(false);
-
-  // Estado local para editar cualquier fórmula guardada de Mi Taller
-  const [localFormulasOverride, setLocalFormulasOverride] = useState<Record<string, FormulaPersonalizada>>({});
-  const [editingFormulaId, setEditingFormulaId] = useState<string | null>(null);
-  const [editFormulaNombre, setEditFormulaNombre] = useState('');
-  const [editFormulaLinea, setEditFormulaLinea] = useState<LineaId>('3');
-  const [editMarcoH, setEditMarcoH] = useState('0');
-  const [editHojaV, setEditHojaV] = useState('0');
-  const [editHojaH, setEditHojaH] = useState('0');
-
-  const displayedFormulas = useMemo(
-    () => formulas.map((f) => localFormulasOverride[f.id] || f),
-    [formulas, localFormulasOverride]
-  );
-
-  const handleStartEditFormula = (f: FormulaPersonalizada) => {
-    setEditingFormulaId(f.id);
-    setEditFormulaNombre(f.nombre);
-    setEditFormulaLinea(f.linea);
-    setEditMarcoH(String(f.tolerancias.marcoH));
-    setEditHojaV(String(f.tolerancias.hojaV));
-    setEditHojaH(String(f.tolerancias.hojaH));
-  };
-
-  const handleSaveEditFormula = (original: FormulaPersonalizada) => {
-    const cleanName = editFormulaNombre.trim();
-    if (!cleanName) {
-      onShowToast('Escribe un nombre para la fórmula.');
-      return;
-    }
-    const updated: FormulaPersonalizada = {
-      ...original,
-      nombre: cleanName,
-      linea: editFormulaLinea,
-      tolerancias: {
-        ...original.tolerancias,
-        marcoH: Math.max(0, Number(editMarcoH) || 0),
-        hojaV: Math.max(0, Number(editHojaV) || 0),
-        hojaH: Math.max(0, Number(editHojaH) || 0),
-      },
-    };
-    setLocalFormulasOverride((prev) => ({ ...prev, [updated.id]: updated }));
-    if (onEditarFormula) {
-      onEditarFormula(updated);
-    } else if (backupData && onImportBackup) {
-      const nextList = formulas.map((item) => (item.id === updated.id ? updated : item));
-      onImportBackup({ ...backupData, formulas: nextList });
-    } else {
-      try {
-        const raw = window.localStorage.getItem('aluminero_formulas_v1');
-        if (raw) {
-          const parsed = JSON.parse(raw) as FormulaPersonalizada[];
-          if (Array.isArray(parsed)) {
-            window.localStorage.setItem(
-              'aluminero_formulas_v1',
-              JSON.stringify(parsed.map((item) => (item.id === updated.id ? updated : item)))
-            );
-          }
-        }
-      } catch {
-        // ignore
-      }
-    }
-    setEditingFormulaId(null);
-    onShowToast(`Fórmula "${cleanName}" actualizada`, true);
-  };
+  const [metricasOpen, setMetricasOpen] = useState(true);
+  const [identidadOpen, setIdentidadOpen] = useState(true);
+  const [tarifasOpen, setTarifasOpen] = useState(true);
+  const [descuentosOpen, setDescuentosOpen] = useState(false);
+  const [formulasOpen, setFormulasOpen] = useState(true);
+  const [historialOpen, setHistorialOpen] = useState(true);
+  const [respaldoOpen, setRespaldoOpen] = useState(false);
 
   useEffect(() => {
     const refresh = () => setCotizacionesList(loadCotizacionesGuardadas());
@@ -250,6 +187,8 @@ export const TallerView: React.FC<Props> = ({
     [cotizacionesList, backupData?.obrasAprobadas, historial]
   );
 
+  const maxConsumo = Math.max(1, ...salesAnalytics.topMaterials.map((m) => m.cantidad));
+
   const activeRefPrices: ReferencePricesDoc = useMemo(() => {
     if (referencePrices && Array.isArray(referencePrices.items) && referencePrices.items.length > 0) {
       return referencePrices;
@@ -269,11 +208,12 @@ export const TallerView: React.FC<Props> = ({
 
   const ejecutivaUnlocked = unlockedSkins.includes('ejecutiva');
   const industrialUnlocked = unlockedSkins.includes('industrial');
+  const isDark = colorMode === 'dark';
+  const accordionTone = isDark ? 'dark' : 'light';
 
   const getCurrentPriceForRefItem = (item: ReferencePriceItem): number => {
     if (item.id === 'ref-alu-tramo') return taller.precioListaTramo;
     if (item.lineaId) {
-  const maxConsumo = Math.max(1, ...salesAnalytics.topMaterials.map((m) => m.cantidad));
       return taller.tarifasBase[item.lineaId] ?? LINEAS_CONFIG[item.lineaId]?.tarifaBaseDefault ?? 0;
     }
     if (item.rellenoKey) {
@@ -418,6 +358,13 @@ export const TallerView: React.FC<Props> = ({
     }
   };
 
+  const subCardCls = isDark
+    ? 'bg-[#0f172a] text-slate-100 border border-slate-700/80 rounded-xl'
+    : 'bg-slate-50 text-slate-900 border border-slate-200 rounded-xl';
+  const inputCls = isDark
+    ? 'rounded-xl border border-slate-700 bg-[#161e31] text-slate-100'
+    : 'rounded-xl border border-slate-300 bg-white text-slate-900';
+
   return (
     <section id="view-taller" className="screen-animate pb-28 sm:pb-14">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-2">
@@ -434,14 +381,18 @@ export const TallerView: React.FC<Props> = ({
       {(onSelectSkin || onToggleColorMode) && (
         <div
           id="card-taller-apariencia"
-          className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] p-4 sm:p-5 shadow-xl mb-4"
+          className={`border-[1.5px] rounded-[18px] p-4 sm:p-5 shadow-xl mb-4 ${
+            isDark
+              ? 'bg-[#121a2e] text-slate-100 border-[#263554]'
+              : 'bg-white text-[#1E293B] border-slate-300'
+          }`}
         >
           <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
             <div className="flex items-center gap-2">
-              <Palette className="w-4.5 h-4.5 text-blue-600 shrink-0" aria-hidden="true" />
+              <Palette className="w-4.5 h-4.5 text-sky-500 shrink-0" aria-hidden="true" />
               <div>
                 <h2 className="m-0 text-[16px] font-extrabold">Apariencia y Carátula</h2>
-                <p className="m-0 text-[12px] text-slate-500">
+                <p className={`m-0 text-[12px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
                   Elige entre Básica, Navideña, Ejecutiva (PRO) o Industrial PRO y Modo Claro / Oscuro
                 </p>
               </div>
@@ -451,11 +402,15 @@ export const TallerView: React.FC<Props> = ({
                 type="button"
                 id="btn-taller-color-mode"
                 onClick={onToggleColorMode}
-                className="min-h-[38px] px-3 rounded-xl border border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-800 text-[12px] font-extrabold inline-flex items-center gap-1.5 cursor-pointer"
+                className={`min-h-[38px] px-3 rounded-xl border text-[12px] font-extrabold inline-flex items-center gap-1.5 cursor-pointer ${
+                  isDark
+                    ? 'border-slate-700 bg-[#1a243b] hover:bg-[#23304d] text-slate-100'
+                    : 'border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-800'
+                }`}
               >
-                {colorMode === 'dark' ? (
+                {isDark ? (
                   <>
-                    <Sun className="w-4 h-4 text-amber-500" aria-hidden="true" />
+                    <Sun className="w-4 h-4 text-amber-400" aria-hidden="true" />
                     <span>Modo Claro</span>
                   </>
                 ) : (
@@ -478,15 +433,21 @@ export const TallerView: React.FC<Props> = ({
                   aria-pressed={skin === 'basica'}
                   className={`min-h-[54px] px-3 py-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between gap-2 ${
                     skin === 'basica'
-                      ? 'border-blue-600 bg-blue-50 text-blue-900 ring-1 ring-blue-500'
-                      : 'border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700'
+                      ? isDark
+                        ? 'border-sky-400 bg-sky-500/20 text-sky-100 ring-1 ring-sky-400'
+                        : 'border-blue-600 bg-blue-50 text-blue-900 ring-1 ring-blue-500'
+                      : isDark
+                        ? 'border-slate-700 bg-[#0f172a] hover:bg-[#1a243b] text-slate-200'
+                        : 'border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700'
                   }`}
                 >
                   <div className="min-w-0">
                     <span className="block text-[13px] font-extrabold">Básica</span>
-                    <span className="block text-[10.5px] text-slate-500">Gratis y PRO · Limpia</span>
+                    <span className={`block text-[10.5px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                      Gratis y PRO · Limpia
+                    </span>
                   </div>
-                  <span className="w-3.5 h-3.5 rounded-full bg-blue-600 shrink-0" aria-hidden="true" />
+                  <span className="w-3.5 h-3.5 rounded-full bg-blue-500 shrink-0" aria-hidden="true" />
                 </button>
 
                 <button
@@ -496,15 +457,24 @@ export const TallerView: React.FC<Props> = ({
                   aria-pressed={skin === 'navidena'}
                   className={`min-h-[54px] px-3 py-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between gap-2 ${
                     skin === 'navidena'
-                      ? 'border-red-600 bg-red-50 text-red-950 ring-1 ring-red-500'
-                      : 'border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700'
+                      ? isDark
+                        ? 'border-rose-400 bg-rose-500/20 text-rose-100 ring-1 ring-rose-400'
+                        : 'border-red-600 bg-red-50 text-red-950 ring-1 ring-red-500'
+                      : isDark
+                        ? 'border-slate-700 bg-[#0f172a] hover:bg-[#1a243b] text-slate-200'
+                        : 'border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700'
                   }`}
                 >
                   <div className="min-w-0">
                     <span className="block text-[13px] font-extrabold">Navideña ❄️</span>
-                    <span className="block text-[10.5px] text-slate-500">Gratis y PRO · Invierno</span>
+                    <span className={`block text-[10.5px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                      Gratis y PRO · Invierno
+                    </span>
                   </div>
-                  <span className="w-3.5 h-3.5 rounded-full bg-red-600 ring-2 ring-amber-400 shrink-0" aria-hidden="true" />
+                  <span
+                    className="w-3.5 h-3.5 rounded-full bg-red-600 ring-2 ring-amber-400 shrink-0"
+                    aria-hidden="true"
+                  />
                 </button>
 
                 <button
@@ -520,22 +490,30 @@ export const TallerView: React.FC<Props> = ({
                   aria-pressed={skin === 'ejecutiva'}
                   className={`min-h-[54px] px-3 py-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between gap-2 ${
                     skin === 'ejecutiva'
-                      ? 'border-sky-600 bg-sky-50 text-sky-950 ring-1 ring-sky-500'
-                      : 'border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700'
+                      ? isDark
+                        ? 'border-sky-400 bg-sky-500/20 text-sky-100 ring-1 ring-sky-400'
+                        : 'border-sky-600 bg-sky-50 text-sky-950 ring-1 ring-sky-500'
+                      : isDark
+                        ? 'border-slate-700 bg-[#0f172a] hover:bg-[#1a243b] text-slate-200'
+                        : 'border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700'
                   }`}
                 >
                   <div className="min-w-0">
                     <span className="block text-[13px] font-extrabold">
                       Ejecutiva {!ejecutivaUnlocked && '🔒'}
                     </span>
-                    <span className="block text-[10.5px] text-slate-500">
+                    <span className={`block text-[10.5px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
                       {ejecutivaUnlocked ? '4 acabados · Negro Anodizado' : 'Planes PRO (30d/90d/1A)'}
                     </span>
                   </div>
                   {ejecutivaUnlocked ? (
-                    <span className="w-3.5 h-3.5 rounded-full shrink-0" style={{ backgroundColor: '#3b6ef5' }} aria-hidden="true" />
+                    <span
+                      className="w-3.5 h-3.5 rounded-full shrink-0"
+                      style={{ backgroundColor: '#3b6ef5' }}
+                      aria-hidden="true"
+                    />
                   ) : (
-                    <Lock className="w-4 h-4 text-amber-600 shrink-0" aria-hidden="true" />
+                    <Lock className="w-4 h-4 text-amber-500 shrink-0" aria-hidden="true" />
                   )}
                 </button>
 
@@ -552,29 +530,45 @@ export const TallerView: React.FC<Props> = ({
                   aria-pressed={skin === 'industrial'}
                   className={`min-h-[54px] px-3 py-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between gap-2 ${
                     skin === 'industrial'
-                      ? 'border-emerald-600 bg-emerald-50 text-emerald-950 ring-1 ring-emerald-500'
-                      : 'border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700'
+                      ? isDark
+                        ? 'border-emerald-400 bg-emerald-500/20 text-emerald-100 ring-1 ring-emerald-400'
+                        : 'border-emerald-600 bg-emerald-50 text-emerald-950 ring-1 ring-emerald-500'
+                      : isDark
+                        ? 'border-slate-700 bg-[#0f172a] hover:bg-[#1a243b] text-slate-200'
+                        : 'border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700'
                   }`}
                 >
                   <div className="min-w-0">
                     <span className="block text-[13px] font-extrabold">
                       Industrial PRO {!industrialUnlocked && '🔒'}
                     </span>
-                    <span className="block text-[10.5px] text-slate-500">
+                    <span className={`block text-[10.5px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
                       {industrialUnlocked ? '6 acabados · Champagne / Tintex' : 'Planes PRO (30d/90d/1A)'}
                     </span>
                   </div>
                   {industrialUnlocked ? (
-                    <span className="w-3.5 h-3.5 rounded-full shrink-0" style={{ backgroundColor: '#3d8b5e' }} aria-hidden="true" />
+                    <span
+                      className="w-3.5 h-3.5 rounded-full shrink-0"
+                      style={{ backgroundColor: '#3d8b5e' }}
+                      aria-hidden="true"
+                    />
                   ) : (
-                    <Lock className="w-4 h-4 text-amber-600 shrink-0" aria-hidden="true" />
+                    <Lock className="w-4 h-4 text-amber-500 shrink-0" aria-hidden="true" />
                   )}
                 </button>
               </div>
 
               {onSelectSkinVariant && SKIN_VARIANTS_BY_SKIN[skin]?.length > 0 && (
-                <div className="pt-2 border-t border-slate-200 flex flex-wrap items-center gap-2">
-                  <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
+                <div
+                  className={`pt-2 border-t flex flex-wrap items-center gap-2 ${
+                    isDark ? 'border-slate-700/80' : 'border-slate-200'
+                  }`}
+                >
+                  <span
+                    className={`text-[11px] font-extrabold uppercase tracking-wider ${
+                      isDark ? 'text-slate-400' : 'text-slate-500'
+                    }`}
+                  >
                     Acabado:
                   </span>
                   {SKIN_VARIANTS_BY_SKIN[skin].map((variant) => {
@@ -587,8 +581,12 @@ export const TallerView: React.FC<Props> = ({
                         aria-pressed={activeVar}
                         className={`min-h-[34px] px-2.5 py-1 rounded-lg border text-[11.5px] font-extrabold inline-flex items-center gap-1.5 cursor-pointer transition-colors ${
                           activeVar
-                            ? 'border-blue-600 bg-blue-50 text-blue-900 ring-1 ring-blue-500'
-                            : 'border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700'
+                            ? isDark
+                              ? 'border-sky-400 bg-sky-500/20 text-sky-100 ring-1 ring-sky-400'
+                              : 'border-blue-600 bg-blue-50 text-blue-900 ring-1 ring-blue-500'
+                            : isDark
+                              ? 'border-slate-700 bg-[#0f172a] hover:bg-[#1a243b] text-slate-300'
+                              : 'border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700'
                         }`}
                       >
                         <span
@@ -606,94 +604,162 @@ export const TallerView: React.FC<Props> = ({
           )}
         </div>
       )}
-      
-            {/* Métricas del Taller */}
-      <CollapsibleAccordion
-        id="card-taller-metricas"
-        title="📊 Métricas de Ventas y Materiales"
-        summary={`Cotizado: ${formatMXN(salesAnalytics.totalCotizado)} · ${salesAnalytics.totalCotizaciones} cotización(es)`}
-        open={metricasOpen}
-        onToggle={() => setMetricasOpen((p) => !p)}
-        tone="light"
-        className="mb-4 shadow-xl"
-      >
-        <p className="m-0 text-[12px] text-slate-500 mb-3">
-          Resumen acumulado de cotizaciones guardadas, obras aprobadas y materiales más utilizados
-        </p>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-3">
-          <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-            <span className="block text-[10.5px] font-bold text-slate-500 uppercase">
-              Total Cotizado
-            </span>
-            <strong className="mono text-[16px] font-extrabold text-blue-700">
-              {formatMXN(salesAnalytics.totalCotizado)}
-            </strong>
+      {/* 1. Métricas de Ventas y Materiales */}
+      <CollapsibleAccordion
+        id="acc-taller-metricas"
+        title="📊 Métricas de Ventas y Materiales"
+        summary="Ticket promedio, tasa de aprobación y perfiles más consumidos en tu taller"
+        open={metricasOpen}
+        onToggle={() => setMetricasOpen((v) => !v)}
+        tone={accordionTone}
+        className="mb-4 shadow-xl"
+        rightAction={
+          <span
+            className={`px-2.5 py-1 rounded-lg border text-[11px] font-extrabold mono ${
+              isDark
+                ? 'bg-sky-500/15 border-sky-400/40 text-sky-200'
+                : 'bg-blue-50 border-blue-200 text-blue-800'
+            }`}
+          >
+            {salesAnalytics.totalQuotesCount} cotización(es)
+          </span>
+        }
+      >
+        <div id="card-taller-metricas">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-3.5">
+            <div className={`p-3 ${subCardCls}`}>
+              <span
+                className={`block text-[11px] font-bold uppercase ${
+                  isDark ? 'text-slate-400' : 'text-slate-500'
+                }`}
+              >
+                Ticket Promedio
+              </span>
+              <strong
+                className={`block text-[17px] font-extrabold mono mt-0.5 ${
+                  isDark ? 'text-sky-400' : 'text-blue-700'
+                }`}
+              >
+                {formatMXN(salesAnalytics.averageTicket)}
+              </strong>
+            </div>
+
+            <div className={`p-3 ${subCardCls}`}>
+              <span
+                className={`block text-[11px] font-bold uppercase ${
+                  isDark ? 'text-slate-400' : 'text-slate-500'
+                }`}
+              >
+                Total Aprobado
+              </span>
+              <strong
+                className={`block text-[17px] font-extrabold mono mt-0.5 ${
+                  isDark ? 'text-emerald-400' : 'text-emerald-700'
+                }`}
+              >
+                {formatMXN(salesAnalytics.totalApprovedRevenue)}
+              </strong>
+            </div>
+
+            <div className={`p-3 ${subCardCls}`}>
+              <span
+                className={`block text-[11px] font-bold uppercase ${
+                  isDark ? 'text-slate-400' : 'text-slate-500'
+                }`}
+              >
+                Aprobación
+              </span>
+              <strong
+                className={`block text-[17px] font-extrabold mono mt-0.5 ${
+                  isDark ? 'text-white' : 'text-slate-900'
+                }`}
+              >
+                {salesAnalytics.approvalRatePct.toFixed(0)}%
+              </strong>
+            </div>
+
+            <div className={`p-3 ${subCardCls}`}>
+              <span
+                className={`block text-[11px] font-bold uppercase ${
+                  isDark ? 'text-slate-400' : 'text-slate-500'
+                }`}
+              >
+                Obras Aprobadas
+              </span>
+              <strong
+                className={`block text-[17px] font-extrabold mono mt-0.5 ${
+                  isDark ? 'text-indigo-300' : 'text-indigo-700'
+                }`}
+              >
+                {salesAnalytics.approvedCount}
+              </strong>
+            </div>
           </div>
-          <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200">
-            <span className="block text-[10.5px] font-bold text-emerald-800 uppercase">
-              Obras Aprobadas
-            </span>
-            <strong className="mono text-[16px] font-extrabold text-emerald-900">
-              {formatMXN(salesAnalytics.totalAprobado)}
-            </strong>
-          </div>
-          <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-            <span className="block text-[10.5px] font-bold text-slate-500 uppercase">
-              Cotizaciones
-            </span>
-            <strong className="mono text-[16px] font-extrabold text-slate-900">
-              {salesAnalytics.totalCotizaciones}
-            </strong>
-          </div>
-          <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-            <span className="block text-[10.5px] font-bold text-slate-500 uppercase">
-              Ticket Promedio
-            </span>
-            <strong className="mono text-[16px] font-extrabold text-slate-900">
-              {formatMXN(salesAnalytics.ticketPromedio)}
-            </strong>
+
+          <div>
+            <div
+              className={`flex items-center gap-1.5 text-[12px] font-extrabold mb-2 ${
+                isDark ? 'text-slate-200' : 'text-slate-700'
+              }`}
+            >
+              <TrendingUp className="w-3.5 h-3.5 text-emerald-500" aria-hidden="true" />
+              <span>Perfiles y Materiales Más Consumidos</span>
+            </div>
+
+            {salesAnalytics.topMaterials.length === 0 ? (
+              <p
+                className={`m-0 text-[12px] p-3 rounded-xl border border-dashed text-center ${
+                  isDark
+                    ? 'text-slate-400 bg-[#0f172a] border-slate-700'
+                    : 'text-slate-500 bg-slate-50 border-slate-200'
+                }`}
+              >
+                Aprueba o descarga cotizaciones en PDF para ver tus perfiles más consumidos.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {salesAnalytics.topMaterials.slice(0, 6).map((mat) => {
+                  const pct = Math.max(8, Math.round((mat.cantidad / maxConsumo) * 100));
+                  return (
+                    <div key={mat.id} className={`p-2.5 ${subCardCls}`}>
+                      <div className="flex items-center justify-between gap-2 text-[12px] mb-1">
+                        <span className="font-bold truncate">{mat.nombre}</span>
+                        <span
+                          className={`mono font-extrabold shrink-0 ${
+                            isDark ? 'text-sky-400' : 'text-blue-700'
+                          }`}
+                        >
+                          {mat.cantidad} {mat.unidad}
+                        </span>
+                      </div>
+                      <div
+                        className={`w-full h-2 rounded-full overflow-hidden ${
+                          isDark ? 'bg-slate-800' : 'bg-slate-200'
+                        }`}
+                      >
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-blue-600 to-emerald-500"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
-
-        {salesAnalytics.topMaterials.length > 0 && (
-          <div className="border-t border-slate-200 pt-3">
-            <div className="text-[11.5px] font-extrabold text-slate-700 mb-2">
-              Perfiles y materiales con mayor consumo:
-            </div>
-            <div className="flex flex-col gap-2">
-              {salesAnalytics.topMaterials.slice(0, 5).map((mat) => {
-                const pct = Math.min(100, Math.round((mat.cantidad / maxConsumo) * 100));
-                return (
-                  <div key={mat.nombre} className="text-[12px]">
-                    <div className="flex justify-between font-semibold text-slate-800 mb-0.5">
-                      <span className="truncate pr-2">{mat.nombre}</span>
-                      <span className="mono font-bold text-blue-700 shrink-0">
-                        {mat.cantidad} {mat.unidad || 'tr.'}
-                      </span>
-                    </div>
-                    <div className="w-full h-2 rounded-full bg-slate-100 overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-blue-600"
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
       </CollapsibleAccordion>
 
-      {/* Identidad del Taller y Encabezado PDF */}
+      {/* 2. Datos del Taller y Encabezado PDF */}
       <CollapsibleAccordion
-        id="card-taller-identidad"
-        title="🏢 Datos del Taller y Encabezado PDF"
-        summary={taller.nombre || 'Configura el nombre, teléfono y logo de tu taller'}
+        id="acc-taller-identidad"
+        title={`🏢 Datos del Taller y Encabezado PDF${!proActive ? ' 🔒 PRO' : ''}`}
+        summary="Se aplica en cotizaciones para cliente, órdenes técnicas de taller y contratos PDF"
         open={identidadOpen}
-        onToggle={() => setIdentidadOpen((p) => !p)}
-        tone="light"
+        onToggle={() => setIdentidadOpen((v) => !v)}
+        tone={accordionTone}
         className="mb-4 shadow-xl"
       >
         <PdfHeaderCustomizer
@@ -702,448 +768,711 @@ export const TallerView: React.FC<Props> = ({
           onShowToast={onShowToast}
         />
       </CollapsibleAccordion>
-      
-                    {/* Tarifas Base y Ajuste Masivo */}
+
+      {/* 3. Tarifas Base y Ajuste Masivo */}
       <CollapsibleAccordion
-        id="card-taller-tarifas"
-        title="💲 Tarifas Base, Acabados y Ajuste Masivo"
-        summary={`Tramo base: ${formatMXN(taller.precioListaTramo)} · Ajuste rápido por %`}
+        id="acc-taller-tarifas"
+        title="💲 Tarifas Base y Ajuste Masivo"
+        summary="Ajuste masivo (%), descuento del distribuidor, tarifas por m² y acceso a bodega"
         open={tarifasOpen}
-        onToggle={() => setTarifasOpen((p) => !p)}
-        tone="light"
+        onToggle={() => setTarifasOpen((v) => !v)}
+        tone={accordionTone}
         className="mb-4 shadow-xl"
-        rightAction={
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onRestablecerTarifas();
-            }}
-            className="min-h-[30px] px-2.5 rounded-lg border border-slate-200 bg-white text-[11px] font-bold text-slate-600 hover:text-blue-700 inline-flex items-center gap-1 cursor-pointer"
-          >
-            <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />
-            <span>Restablecer</span>
-          </button>
-        }
       >
         <div className="flex flex-col gap-4">
-          {/* Ajuste masivo en un solo paso */}
-          <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
-            <div className="flex items-center justify-between gap-2 mb-2">
-              <div className="flex items-center gap-1.5">
-                <Zap className="w-4 h-4 text-amber-600 shrink-0" aria-hidden="true" />
-                <strong className="text-[13.5px] font-extrabold text-slate-900">
-                  Ajuste Masivo de Precios (%)
-                </strong>
+          <div id="card-taller-bulk-adjust" className={`p-3.5 sm:p-4 ${subCardCls}`}>
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+              <div>
+                <h2 className="m-0 text-[16px] font-extrabold">
+                  ⚡ Ajuste de precios de un golpe (%)
+                </h2>
+                <p className={`m-0 text-[12px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                  Actualiza tus tarifas en segundos cuando suba o baje el aluminio sin editar perfil por perfil
+                </p>
               </div>
-              {lastBulkUndo && (
-                <button
-                  type="button"
-                  onClick={handleUndoLastBulkAdjustment}
-                  className="px-2.5 py-1 rounded-lg bg-amber-100 border border-amber-300 text-amber-900 text-[11px] font-extrabold inline-flex items-center gap-1 cursor-pointer"
-                >
-                  <Undo2 className="w-3.5 h-3.5" aria-hidden="true" />
-                  <span>Deshacer</span>
-                </button>
-              )}
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
-              <select
-                value={bulkCat}
-                onChange={(e) => setBulkCat(e.target.value as BulkCategoryId)}
-                className="min-h-[40px] rounded-xl border border-slate-300 bg-white px-2.5 text-[12.5px] font-bold"
-              >
-                <option value="aluminio">Aluminio y Líneas</option>
-                <option value="vidrio">Vidrios / Rellenos</option>
-                <option value="herrajes">Herrajes</option>
-                <option value="todo">Todo el Taller</option>
-              </select>
-
-              <select
-                value={bulkAcabado}
-                onChange={(e) => setBulkAcabado(e.target.value as AcabadoFiltroId)}
-                className="min-h-[40px] rounded-xl border border-slate-300 bg-white px-2.5 text-[12.5px] font-bold"
-              >
-                {ACABADOS_AJUSTE_OPTIONS.map((opt) => (
-                  <option key={opt.id} value={opt.id}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-
-              <input
-                type="number"
-                step={1}
-                value={bulkPct}
-                onChange={(e) => setBulkPct(e.target.value)}
-                placeholder="+10 o -5"
-                className="min-h-[40px] rounded-xl border border-slate-300 bg-white px-3 mono text-[13.5px] font-bold"
-              />
-
               <button
                 type="button"
-                onClick={handleRequestBulkAdjustment}
-                className="min-h-[40px] px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-[12.5px] cursor-pointer"
+                id="btn-taller-ref-prices"
+                onClick={() => {
+                  if (!proActive) {
+                    onOpenPro();
+                    return;
+                  }
+                  setRefPricesOpen(true);
+                }}
+                className="min-h-[38px] px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-extrabold inline-flex items-center gap-1.5 cursor-pointer shadow-xs"
               >
-                Aplicar %
+                <Sparkles className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                <span>Consultar Precios de Referencia</span>
+                {!proActive && <span className="text-amber-200 text-[11px]">🔒 PRO</span>}
               </button>
             </div>
 
-            {bulkConfirmOpen && (
-              <div className="mt-2.5 p-3 rounded-xl bg-amber-50 border border-amber-300 text-[12px] text-amber-950">
-                <p className="m-0 font-bold mb-2">
-                  {buildBulkAdjustmentConfirmMessage({
-                    pct: bulkPctNum,
-                    acabadoFilter: bulkAcabado,
-                    category: bulkCat,
-                  })}
-                </p>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={handleConfirmBulkAdjustment}
-                    className="px-3 py-1.5 rounded-lg bg-amber-600 text-white font-extrabold text-[12px] cursor-pointer"
-                  >
-                    Sí, aplicar ajuste
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setBulkConfirmOpen(false)}
-                    className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 font-bold text-[12px] cursor-pointer"
-                  >
-                    Cancelar
-                  </button>
-                </div>
+            <div className="flex flex-col gap-3">
+              <div>
+                <label
+                  htmlFor="sel-bulk-acabado"
+                  className={`flex items-center gap-1.5 text-[12px] font-extrabold mb-1 ${
+                    isDark ? 'text-slate-200' : 'text-slate-700'
+                  }`}
+                >
+                  <Zap className="w-3.5 h-3.5 text-amber-500" aria-hidden="true" />
+                  <span>Aplicar a:</span>
+                </label>
+                <select
+                  id="sel-bulk-acabado"
+                  value={bulkAcabado}
+                  onChange={(e) => {
+                    setBulkAcabado(e.target.value as AcabadoFiltroId);
+                    setBulkConfirmOpen(false);
+                  }}
+                  className={`w-full min-h-[40px] px-3 text-[13px] font-bold ${inputCls}`}
+                >
+                  {ACABADOS_AJUSTE_OPTIONS.map((opt) => (
+                    <option key={opt.id} value={opt.id}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
               </div>
-            )}
-          </div>
 
-          {/* Precio base tramo 6.10m y por acabado */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-            <div className="p-2.5 rounded-xl border border-slate-200 bg-slate-50/70">
-              <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                Tramo 6.10 m Base ($)
-              </label>
-              <input
-                type="number"
-                min={50}
-                value={taller.precioListaTramo}
-                onChange={(e) =>
-                  onUpdateTaller({ precioListaTramo: Math.max(50, Number(e.target.value) || 0) })
-                }
-                className="w-full min-h-[38px] rounded-lg border border-slate-300 bg-white px-2.5 mono text-[13.5px] font-bold"
-              />
-            </div>
-
-            {SPECIFIC_ACABADO_IDS.map((acabadoId) => {
-              const cfg = COLORES_CONFIG[acabadoId];
-              const val = getAcabadoCurrentPrice(taller, acabadoId);
-              return (
-                <div key={acabadoId} className="p-2.5 rounded-xl border border-slate-200 bg-slate-50/70">
-                  <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                    Tramo {cfg?.corto || acabadoId} ($)
-                  </label>
-                  <input
-                    type="number"
-                    min={50}
-                    value={val}
-                    onChange={(e) =>
-                      onUpdateTaller({
-                        preciosPorAcabado: {
-                          ...(taller.preciosPorAcabado || {}),
-                          [acabadoId]: Math.max(50, Number(e.target.value) || 0),
-                        },
-                      })
-                    }
-                    className="w-full min-h-[38px] rounded-lg border border-slate-300 bg-white px-2.5 mono text-[13.5px] font-bold"
-                  />
+              {bulkAcabado === 'todos' ? (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                  {(
+                    [
+                      { id: 'aluminio', label: 'Solo Aluminio' },
+                      { id: 'vidrio', label: 'Solo Vidrio' },
+                      { id: 'herrajes', label: 'Solo Herrajes' },
+                      { id: 'todo', label: 'Todo' },
+                    ] as Array<{ id: BulkCategoryId; label: string }>
+                  ).map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => {
+                        setBulkCat(c.id);
+                        setBulkConfirmOpen(false);
+                      }}
+                      aria-pressed={bulkCat === c.id}
+                      className={`min-h-[34px] px-2 rounded-lg text-[11.5px] font-extrabold border cursor-pointer transition-colors ${
+                        bulkCat === c.id
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : isDark
+                            ? 'bg-[#161e31] text-slate-300 border-slate-700 hover:bg-[#1e2942]'
+                            : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      {c.label}
+                    </button>
+                  ))}
                 </div>
-              );
-            })}
-          </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                  {SPECIFIC_ACABADO_IDS.map((fid) => {
+                    const opt = ACABADOS_AJUSTE_OPTIONS.find((o) => o.id === fid);
+                    if (!opt) return null;
+                    const price = getAcabadoCurrentPrice(
+                      fid,
+                      taller.precioListaTramo,
+                      taller.preciosPorAcabado
+                    );
+                    const isSelected = bulkAcabado === fid;
+                    return (
+                      <button
+                        key={fid}
+                        type="button"
+                        onClick={() => {
+                          setBulkAcabado(fid);
+                          setBulkConfirmOpen(false);
+                        }}
+                        data-testid={`acabado-price-${fid}`}
+                        className={`flex items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-lg border text-left cursor-pointer transition-colors ${
+                          isSelected
+                            ? isDark
+                              ? 'bg-sky-500/20 border-sky-400 text-sky-100'
+                              : 'bg-blue-50 border-blue-500 text-blue-900'
+                            : isDark
+                              ? 'bg-[#161e31] border-slate-700 text-slate-200 hover:bg-[#1e2942]'
+                              : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
+                        }`}
+                      >
+                        <span className="inline-flex items-center gap-1.5 text-[11.5px] font-bold truncate">
+                          <span
+                            className="w-2.5 h-2.5 rounded-full border border-slate-400 shrink-0"
+                            style={{ backgroundColor: opt.swatch }}
+                            aria-hidden="true"
+                          />
+                          {opt.shortLabel}
+                        </span>
+                        <span className="mono text-[11.5px] font-extrabold shrink-0">
+                          {formatMXN(price)}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
 
-          {/* Precios sugeridos de referencia */}
-          <div className="border-t border-slate-200 pt-2.5">
-            <button
-              type="button"
-              onClick={() => setRefPricesOpen((p) => !p)}
-              className="w-full min-h-[38px] px-3 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-800 font-extrabold text-[12px] flex items-center justify-between cursor-pointer"
-            >
-              <span>Ver tabla de precios sugeridos de referencia</span>
-              {refPricesOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-            </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-1">
+                  <input
+                    id="inp-bulk-pct"
+                    type="number"
+                    min={-80}
+                    max={200}
+                    step={1}
+                    value={bulkPct}
+                    onChange={(e) => {
+                      setBulkPct(e.target.value);
+                      setBulkConfirmOpen(false);
+                    }}
+                    aria-label="Porcentaje de ajuste masivo"
+                    className={`w-[88px] min-h-[40px] px-2.5 text-center mono text-[14px] font-extrabold ${inputCls}`}
+                  />
+                  <span
+                    className={`text-[13px] font-extrabold ${
+                      isDark ? 'text-slate-300' : 'text-slate-600'
+                    }`}
+                  >
+                    %
+                  </span>
+                </div>
 
-            {refPricesOpen && (
-              <div className="mt-2.5 p-3 rounded-xl border border-slate-200 bg-slate-50">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-[11.5px] font-bold text-slate-600">
-                    Valores de referencia actuales del mercado
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {['5', '10', '-5'].map((v) => {
+                    const num = Number(v);
+                    const active = bulkPct === v;
+                    return (
+                      <button
+                        key={v}
+                        type="button"
+                        id={`btn-quick-pct-${v}`}
+                        onClick={() => {
+                          setBulkPct(v);
+                          setBulkConfirmOpen(false);
+                        }}
+                        className={`min-h-[34px] px-2.5 py-1 rounded-lg border mono text-[12px] font-extrabold cursor-pointer transition-colors ${
+                          active
+                            ? 'bg-blue-600 text-white border-blue-600'
+                            : isDark
+                              ? 'bg-[#161e31] border-slate-700 hover:bg-[#1e2942] text-slate-200'
+                              : 'bg-white border-slate-200 hover:bg-blue-50 text-slate-700'
+                        }`}
+                      >
+                        {num > 0 ? `+${v}%` : `${v}%`}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <button
+                  type="button"
+                  id="btn-apply-bulk-pct"
+                  onClick={handleRequestBulkAdjustment}
+                  className="ml-auto min-h-[40px] px-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[12.5px] font-extrabold cursor-pointer"
+                >
+                  Aplicar ajuste
+                </button>
+              </div>
+
+              {bulkConfirmOpen && bulkPctValid && (
+                <div
+                  id="bulk-adjust-confirm-box"
+                  role="alertdialog"
+                  aria-label="Confirmar ajuste masivo de precios"
+                  className={`p-3 rounded-xl border-[1.5px] flex flex-col gap-2.5 ${
+                    isDark
+                      ? 'bg-amber-950/40 border-amber-500/60 text-amber-100'
+                      : 'bg-amber-50 border-amber-300 text-amber-950'
+                  }`}
+                >
+                  <div className="flex items-start gap-2 text-[12.5px] font-bold">
+                    <AlertTriangle
+                      className="w-4 h-4 text-amber-500 shrink-0 mt-0.5"
+                      aria-hidden="true"
+                    />
+                    <span>
+                      {buildBulkAdjustmentConfirmMessage(bulkPctNum, bulkAcabado, bulkCat)}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      id="btn-cancel-bulk-pct"
+                      onClick={() => setBulkConfirmOpen(false)}
+                      className={`min-h-[36px] px-3 rounded-lg border text-[12px] font-bold cursor-pointer ${
+                        isDark
+                          ? 'border-slate-600 bg-slate-800 hover:bg-slate-700 text-slate-200'
+                          : 'border-slate-300 bg-white hover:bg-slate-100 text-slate-700'
+                      }`}
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      id="btn-confirm-bulk-pct"
+                      onClick={handleConfirmBulkAdjustment}
+                      className="min-h-[36px] px-3.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[12px] font-extrabold cursor-pointer"
+                    >
+                      Sí, aplicar {formatSignedPct(bulkPctNum)}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {lastBulkUndo && (
+                <div
+                  className={`flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl border ${
+                    isDark
+                      ? 'bg-emerald-950/35 border-emerald-500/40 text-emerald-200'
+                      : 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                  }`}
+                >
+                  <span className="text-[12px] font-bold">
+                    Último ajuste guardado:{' '}
+                    <strong>{formatSignedPct(lastBulkUndo.appliedPct)}</strong> (
+                    {lastBulkUndo.scopeLabel})
                   </span>
                   <button
                     type="button"
-                    onClick={handleApplyAllRefPrices}
-                    className="px-2.5 py-1 rounded-lg bg-emerald-600 text-white text-[11px] font-extrabold cursor-pointer"
+                    id="btn-undo-bulk-pct"
+                    onClick={handleUndoLastBulkAdjustment}
+                    className={`min-h-[34px] px-3 rounded-lg border text-[12px] font-extrabold inline-flex items-center gap-1.5 cursor-pointer ${
+                      isDark
+                        ? 'bg-rose-950/40 hover:bg-rose-950/60 border-rose-500/50 text-rose-200'
+                        : 'bg-white hover:bg-rose-50 border-rose-300 text-rose-700'
+                    }`}
                   >
-                    Aplicar todos
+                    <Undo2 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                    <span>Deshacer último ajuste</span>
                   </button>
                 </div>
-                <div className="flex flex-col gap-1.5 max-h-[240px] overflow-y-auto">
-                  {activeRefPrices.items.map((item) => (
-                    <div
-                      key={item.id}
-                      className="flex items-center justify-between text-[12px] py-1 border-b border-slate-200/70 last:border-b-0"
-                    >
-                      <span className="font-semibold text-slate-800">{item.label}</span>
-                      <span className="mono text-[11.5px]">
-                        Actual: <strong>{formatMXN(getCurrentPriceForRefItem(item))}</strong> · Ref:{' '}
-                        <strong className="text-emerald-700">{formatMXN(item.precioSugerido)}</strong>
+              )}
+            </div>
+          </div>
+
+          <div className={`p-3.5 sm:p-4 ${subCardCls}`}>
+            <h3 className="m-0 text-[15.5px] font-extrabold">Descuento del Distribuidor y Costos</h3>
+            <p className={`m-0 text-[12px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+              Calcula el costo real de material y tu ganancia aproximada
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+              <div>
+                <label
+                  htmlFor="inp-desc-dist"
+                  className={`block text-[12px] font-bold mb-1 ${
+                    isDark ? 'text-slate-300' : 'text-slate-500'
+                  }`}
+                >
+                  % Descuento Distribuidor
+                </label>
+                <input
+                  id="inp-desc-dist"
+                  type="number"
+                  min={0}
+                  max={80}
+                  value={taller.descDistribuidorPct}
+                  onChange={(e) =>
+                    onUpdateTaller({
+                      descDistribuidorPct: Math.max(0, Math.min(80, Number(e.target.value) || 0)),
+                    })
+                  }
+                  className={`w-full min-h-[44px] px-3 mono text-[14px] font-semibold ${inputCls}`}
+                />
+              </div>
+              <div>
+                <label
+                  htmlFor="inp-precio-tramo"
+                  className={`block text-[12px] font-bold mb-1 ${
+                    isDark ? 'text-slate-300' : 'text-slate-500'
+                  }`}
+                >
+                  Precio lista tramo 6.10 m ($ MXN)
+                </label>
+                <input
+                  id="inp-precio-tramo"
+                  type="number"
+                  min={100}
+                  step={50}
+                  value={taller.precioListaTramo}
+                  onChange={(e) =>
+                    onUpdateTaller({
+                      precioListaTramo: Math.max(100, Number(e.target.value) || 100),
+                    })
+                  }
+                  className={`w-full min-h-[44px] px-3 mono text-[14px] font-semibold ${inputCls}`}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className={`p-3.5 sm:p-4 ${subCardCls}`}>
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <div>
+                <h3 className="m-0 text-[15.5px] font-extrabold">Tarifas Base por m² ($ MXN)</h3>
+                <p className={`m-0 text-[12px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                  Se aplican automáticamente al elegir cada línea
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={onRestablecerTarifas}
+                className={`px-2.5 py-1.5 rounded-lg border text-[12px] font-bold cursor-pointer ${
+                  isDark
+                    ? 'border-sky-500/40 bg-sky-500/15 text-sky-300 hover:bg-sky-500/25'
+                    : 'border-slate-200 text-blue-600 bg-white'
+                }`}
+              >
+                Restablecer
+              </button>
+            </div>
+            <div className="flex flex-col gap-2.5">
+              {Object.values(LINEAS_CONFIG).map((l) => {
+                const locked = l.pro && !proActive;
+                const val = taller.tarifasBase[l.id] ?? l.tarifaBaseDefault;
+                return (
+                  <div key={l.id} className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <strong className="block text-[13px]">
+                        {l.nombre}{' '}
+                        {locked && <span className="text-amber-500 text-[11px]">🔒 PRO</span>}
+                      </strong>
+                      <span className={`text-[11.5px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                        {l.desc}
                       </span>
                     </div>
-                  ))}
-                </div>
-              </div>
-            )}
+                    <input
+                      type="number"
+                      min={0}
+                      step={50}
+                      value={val}
+                      readOnly={locked}
+                      onFocus={(e) => {
+                        if (locked) {
+                          e.target.blur();
+                          onOpenPro();
+                        }
+                      }}
+                      onChange={(e) =>
+                        onUpdateTaller({
+                          tarifasBase: {
+                            ...taller.tarifasBase,
+                            [l.id]: Math.max(0, Number(e.target.value) || 0),
+                          },
+                        })
+                      }
+                      className={`w-[120px] min-h-[40px] px-2.5 text-right mono text-[14px] font-bold ${inputCls}`}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className={`p-3.5 sm:p-4 flex flex-wrap items-center justify-between gap-3 ${subCardCls}`}>
+            <div>
+              <h3 className="m-0 text-[15px] font-extrabold">
+                Mi Inventario de Taller{' '}
+                {!proActive && <span className="text-amber-500 text-[12px]">🔒 PRO</span>}
+              </h3>
+              <p className={`m-0 text-[12px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                Registra tus tramos de 6.10 m en bodega para saber qué pedir
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onEntrarInventario}
+              className="min-h-[42px] px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-[13px] cursor-pointer"
+            >
+              Abrir Mi Inventario de Taller
+            </button>
           </div>
         </div>
       </CollapsibleAccordion>
 
-      {/* Descuentos de Corte y Optimizador */}
+      {/* 4. Descuentos de Corte y Optimizador 6.10 m */}
       <CollapsibleAccordion
-        id="card-taller-descuentos"
-        title="📐 Descuentos de Corte y Optimizador 6.10 m"
-        summary={`Sierra: ${optResolved.kerfMm} mm · Despunte: ${optResolved.despunteCm} cm`}
+        id="acc-taller-descuentos"
+        title="🎛️ Descuentos de Corte y Optimizador 6.10 m"
+        summary="Calibra descuentos por extrusor, despunte (2.5 cm), disco (0.4 cm) y sobrante usable (60 cm)"
         open={descuentosOpen}
-        onToggle={() => setDescuentosOpen((p) => !p)}
-        tone="light"
+        onToggle={() => setDescuentosOpen((v) => !v)}
+        tone={accordionTone}
         className="mb-4 shadow-xl"
       >
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 mb-3">
-          <div className="p-2.5 rounded-xl border border-slate-200 bg-slate-50">
-            <label className="block text-[11px] font-bold text-slate-600 mb-1">
+        <div id="card-taller-ajuste-fino" className="flex flex-col gap-4">
+          <div
+            className={`p-3.5 rounded-xl border ${
+              isDark ? 'bg-sky-950/30 border-sky-500/35' : 'bg-blue-50/70 border-blue-200'
+            }`}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+              <strong
+                className={`text-[13.5px] font-extrabold ${
+                  isDark ? 'text-sky-200' : 'text-blue-950'
+                }`}
+              >
+                Parámetros de optimización de barra 6.10 m
+              </strong>
+              <button
+                type="button"
+                onClick={() => {
+                  onUpdateTaller({ optimizador: { ...DEFAULT_OPTIMIZADOR_CONFIG } });
+                  onShowToast('Parámetros del optimizador 6.10 m restablecidos', true);
+                }}
+                className={`px-2.5 py-1 rounded-lg border text-[11.5px] font-bold inline-flex items-center gap-1 cursor-pointer ${
+                  isDark
+                    ? 'border-sky-400/40 bg-sky-500/15 text-sky-200 hover:bg-sky-500/25'
+                    : 'border-blue-300 bg-white text-blue-700'
+                }`}
+              >
+                <RotateCcw className="w-3 h-3" aria-hidden="true" />
+                Restablecer 6.10 m
+              </button>
+            </div>
 
-                    {/* Fórmulas Personalizadas (con botón Editar lápiz — Pendiente B) */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              <div>
+                <label
+                  htmlFor="inp-opt-largo"
+                  className={`block text-[11px] font-bold mb-1 ${
+                    isDark ? 'text-slate-300' : 'text-slate-600'
+                  }`}
+                >
+                  Largo barra (cm)
+                </label>
+                <input
+                  id="inp-opt-largo"
+                  type="number"
+                  min={100}
+                  max={800}
+                  step={1}
+                  value={optResolved.largoBarraCm}
+                  onChange={(e) => handleUpdateOptField('largoBarraCm', e.target.value)}
+                  className={`w-full min-h-[38px] px-2.5 mono text-[13px] font-bold ${inputCls}`}
+                />
+              </div>
+              <div>
+                <label
+                  htmlFor="inp-opt-despunte"
+                  className={`block text-[11px] font-bold mb-1 ${
+                    isDark ? 'text-slate-300' : 'text-slate-600'
+                  }`}
+                >
+                  Despunte x punta (cm)
+                </label>
+                <input
+                  id="inp-opt-despunte"
+                  type="number"
+                  min={0}
+                  max={20}
+                  step={0.5}
+                  value={optResolved.despuntePorExtremoCm}
+                  onChange={(e) => handleUpdateOptField('despuntePorExtremoCm', e.target.value)}
+                  className={`w-full min-h-[38px] px-2.5 mono text-[13px] font-bold ${inputCls}`}
+                />
+              </div>
+              <div>
+                <label
+                  htmlFor="inp-opt-kerf"
+                  className={`block text-[11px] font-bold mb-1 ${
+                    isDark ? 'text-slate-300' : 'text-slate-600'
+                  }`}
+                >
+                  Grosor disco / kerf (cm)
+                </label>
+                <input
+                  id="inp-opt-kerf"
+                  type="number"
+                  min={0}
+                  max={2}
+                  step={0.1}
+                  value={optResolved.kerfCm}
+                  onChange={(e) => handleUpdateOptField('kerfCm', e.target.value)}
+                  className={`w-full min-h-[38px] px-2.5 mono text-[13px] font-bold ${inputCls}`}
+                />
+              </div>
+              <div>
+                <label
+                  htmlFor="inp-opt-umbral"
+                  className={`block text-[11px] font-bold mb-1 ${
+                    isDark ? 'text-slate-300' : 'text-slate-600'
+                  }`}
+                >
+                  Sobrante usable (cm)
+                </label>
+                <input
+                  id="inp-opt-umbral"
+                  type="number"
+                  min={10}
+                  max={250}
+                  step={5}
+                  value={optResolved.umbralSobranteUsableCm}
+                  onChange={(e) => handleUpdateOptField('umbralSobranteUsableCm', e.target.value)}
+                  className={`w-full min-h-[38px] px-2.5 mono text-[13px] font-bold ${inputCls}`}
+                />
+              </div>
+            </div>
+
+            <div
+              className={`mt-2.5 flex flex-wrap items-center justify-between gap-2 text-[11.5px] ${
+                isDark ? 'text-slate-300' : 'text-slate-700'
+              }`}
+            >
+              <span className={`mono font-bold ${isDark ? 'text-sky-300' : 'text-blue-900'}`}>
+                Largo útil por barra:{' '}
+                {(optResolved.largoBarraCm - 2 * optResolved.despuntePorExtremoCm).toFixed(1)} cm
+              </span>
+              <label className="inline-flex items-center gap-2 cursor-pointer font-bold">
+                <input
+                  type="checkbox"
+                  checked={Boolean(taller.ivaPorDefecto)}
+                  onChange={(e) => onUpdateTaller({ ivaPorDefecto: e.target.checked })}
+                />
+                Incluir IVA (16%) por defecto en nuevas cotizaciones
+              </label>
+            </div>
+          </div>
+
+          <div>
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+              <strong className="text-[13.5px] font-extrabold">
+                Descuentos estándar de corte en taller (cm)
+              </strong>
+              <button
+                type="button"
+                id="btn-reset-ajuste-fino"
+                onClick={() => {
+                  onUpdateTaller({ ajusteDescuentos: { ...DEFAULT_AJUSTE_DESCUENTOS } });
+                  onShowToast('Descuentos de taller restablecidos a valores de fábrica', true);
+                }}
+                className={`px-2.5 py-1 rounded-lg border text-[11.5px] font-bold inline-flex items-center gap-1 cursor-pointer ${
+                  isDark
+                    ? 'border-slate-700 bg-[#161e31] hover:bg-[#1e2942] text-slate-200'
+                    : 'border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700'
+                }`}
+              >
+                <RotateCcw className="w-3 h-3" aria-hidden="true" />
+                Restablecer valores de fábrica
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+              {AJUSTE_FIELDS.map((f) => (
+                <div
+                  key={f.key}
+                  className={`p-2.5 flex items-center justify-between gap-2 ${subCardCls}`}
+                >
+                  <div className="min-w-0">
+                    <span
+                      className={`block text-[10px] font-extrabold uppercase tracking-wide ${
+                        isDark ? 'text-sky-400' : 'text-blue-700'
+                      }`}
+                    >
+                      {f.group}
+                    </span>
+                    <span className="block text-[12px] font-bold truncate">{f.label}</span>
+                    <span
+                      className={`block text-[10.5px] mono ${
+                        isDark ? 'text-slate-400' : 'text-slate-500'
+                      }`}
+                    >
+                      {f.hint}
+                    </span>
+                  </div>
+                  <input
+                    type="number"
+                    min={0}
+                    max={80}
+                    step={0.1}
+                    aria-label={`${f.group} ${f.label}`}
+                    value={ajusteResolved[f.key]}
+                    onChange={(e) => handleUpdateAjusteField(f.key, e.target.value)}
+                    className={`w-[74px] min-h-[36px] px-2 text-right mono text-[13px] font-bold shrink-0 ${inputCls}`}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </CollapsibleAccordion>
+
+      {/* 5. Mis Fórmulas de Corte */}
       <CollapsibleAccordion
-        id="card-taller-formulas"
-        title={`🧮 Mis Fórmulas de Corte (${displayedFormulas.length})`}
-        summary="Crea, edita o elimina tus fórmulas personalizadas de descuento"
+        id="acc-taller-formulas"
+        title="📐 Mis Fórmulas de Corte"
+        summary={
+          formulas.length > 0
+            ? `${formulas.length} fórmula(s) guardada(s) · Edita nombre, línea y tolerancias sin borrarlas`
+            : 'Guarda tus propios descuentos de corte por marca o sistema'
+        }
         open={formulasOpen}
-        
+        onToggle={() => setFormulasOpen((v) => !v)}
+        tone={accordionTone}
+        className="mb-4 shadow-xl"
         rightAction={
           <button
             type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpenFormulaModal();
-            }}
-            className="min-h-[30px] px-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11.5px] font-extrabold cursor-pointer"
+            id="btn-taller-nueva-formula"
+            onClick={onOpenFormulaModal}
+            className="min-h-[34px] px-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[12px] font-bold cursor-pointer"
           >
-            + Nueva
+            + Nueva Fórmula
           </button>
         }
       >
-        {displayedFormulas.length === 0 ? (
-          <p className="text-[12.5px] text-slate-500 p-4 text-center border border-dashed border-slate-200 rounded-xl">
-            Aún no tienes fórmulas personalizadas guardadas. Presiona <strong>+ Nueva</strong> para agregar una.
+        {formulas.length === 0 ? (
+          <p
+            className={`text-[12.5px] p-3.5 text-center border border-dashed rounded-xl m-0 ${
+              isDark ? 'text-slate-400 border-slate-600/50' : 'text-slate-500 border-slate-300'
+            }`}
+          >
+            Aún no guardas fórmulas personalizadas. Modifica los descuentos en Ventanas o Puertas o
+            usa <strong>+ Nueva Fórmula</strong>.
           </p>
         ) : (
-          <div className="flex flex-col gap-2.5">
-            {displayedFormulas.map((f) => {
-              const isEditing = editingFormulaId === f.id;
-              return (
-                <div
-                  key={f.id}
-                  className="p-3 rounded-xl border border-slate-200 bg-slate-50/80"
-                >
-                  {isEditing ? (
-                    <div className="flex flex-col gap-2.5">
-                      <div className="text-[11.5px] font-extrabold text-blue-700 uppercase">
-                        Editando fórmula
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        <div>
-                          <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                            Nombre de la fórmula
-                          </label>
-                          <input
-                            type="text"
-                            value={editFormulaNombre}
-                            onChange={(e) => setEditFormulaNombre(e.target.value)}
-                            className="w-full min-h-[38px] rounded-lg border border-slate-300 bg-white px-2.5 text-[13px] font-bold"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                            Línea base
-                          </label>
-                          <select
-                            value={editFormulaLinea}
-                            onChange={(e) => setEditFormulaLinea(e.target.value as LineaId)}
-                            className="w-full min-h-[38px] rounded-lg border border-slate-300 bg-white px-2.5 text-[13px] font-bold"
-                          >
-                            {Object.entries(LINEAS_CONFIG).map(([id, cfg]) => (
-                              <option key={id} value={id}>
-                                {cfg.nombre}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-3 gap-2">
-                        <div>
-                          <label className="block text-[10.5px] font-bold text-slate-600 mb-0.5">
-                            Marco H (cm)
-                          </label>
-                          <input
-                            type="number"
-                            step={0.1}
-                            value={editMarcoH}
-                            onChange={(e) => setEditMarcoH(e.target.value)}
-                            className="w-full min-h-[36px] rounded-lg border border-slate-300 bg-white px-2 mono text-[12.5px] font-bold"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[10.5px] font-bold text-slate-600 mb-0.5">
-                            Hoja V (cm)
-                          </label>
-                          <input
-                            type="number"
-                            step={0.1}
-                            value={editHojaV}
-                            onChange={(e) => setEditHojaV(e.target.value)}
-                            className="w-full min-h-[36px] rounded-lg border border-slate-300 bg-white px-2 mono text-[12.5px] font-bold"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[10.5px] font-bold text-slate-600 mb-0.5">
-                            Hoja H (cm)
-                          </label>
-                          <input
-                            type="number"
-                            step={0.1}
-                            value={editHojaH}
-                            onChange={(e) => setEditHojaH(e.target.value)}
-                            className="w-full min-h-[36px] rounded-lg border border-slate-300 bg-white px-2 mono text-[12.5px] font-bold"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="flex justify-end gap-2 pt-1">
-                        <button
-                          type="button"
-                          onClick={() => setEditingFormulaId(null)}
-                          className="min-h-[36px] px-3 rounded-lg border border-slate-300 bg-white text-slate-700 text-[12px] font-bold cursor-pointer"
-                        >
-                          Cancelar
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleSaveEditFormula(f)}
-                          className="min-h-[36px] px-3.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-extrabold inline-flex items-center gap-1 cursor-pointer"
-                        >
-                          <Check className="w-3.5 h-3.5" aria-hidden="true" />
-                          <span>Guardar cambios</span>
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-between gap-2.5">
-                      <div className="min-w-0">
-                        <strong className="block text-[13.5px] text-slate-900 truncate">
-                          {f.nombre}
-                        </strong>
-                        <span className="block text-[11.5px] text-slate-500">
-                          {LINEAS_CONFIG[f.linea]?.nombre || f.linea} · Marco H: -{f.tolerancias.marcoH} cm · Hoja V: -{f.tolerancias.hojaV} cm · Hoja H: -{f.tolerancias.hojaH} cm
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => handleStartEditFormula(f)}
-                          aria-label={`Editar fórmula ${f.nombre}`}
-                          title="Editar fórmula"
-                          className="w-9 h-9 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 flex items-center justify-center cursor-pointer"
-                        >
-                          <Pencil className="w-4 h-4" aria-hidden="true" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onEliminarFormula(f.id)}
-                          aria-label={`Eliminar fórmula ${f.nombre}`}
-                          title="Eliminar fórmula"
-                          className="w-9 h-9 rounded-lg border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 flex items-center justify-center cursor-pointer"
-                        >
-                          <X className="w-4 h-4" aria-hidden="true" />
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </CollapsibleAccordion>
-
-      {/* Historial Rápido de Cálculos */}
-      <CollapsibleAccordion
-        id="card-taller-historial"
-        title={`🕒 Historial de Cálculos Recientes (${historial.length})`}
-        summary="Consulta o exporta a PDF tus cálculos recientes"
-        open={historialOpen}
-        onToggle={() => setHistorialOpen((p) => !p)}
-        tone="light"
-        className="mb-4 shadow-xl"
-        rightAction={
-          historial.length > 0 ? (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onLimpiarHistorial();
-              }}
-              className="min-h-[30px] px-2.5 rounded-lg border border-slate-200 bg-white text-[11px] font-bold text-slate-500 hover:text-red-600 cursor-pointer"
-            >
-              Limpiar
-            </button>
-          ) : undefined
-        }
-      >
-        {historial.length === 0 ? (
-          <p className="text-[12.5px] text-slate-500 p-4 text-center border border-dashed border-slate-200 rounded-xl">
-            No hay cálculos recientes en el historial.
-          </p>
-        ) : (
-          <div className="flex flex-col gap-2">
-            <div className="flex justify-end mb-1">
-              <button
-                type="button"
-                onClick={() => void generarPdfHistorialCotizaciones(cotizacionesList, taller)}
-                className="px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 text-blue-800 text-[11.5px] font-extrabold inline-flex items-center gap-1.5 cursor-pointer"
-              >
-
-                              >
-                <FileDown className="w-3.5 h-3.5" aria-hidden="true" />
-                <span>Exportar Historial PDF</span>
-              </button>
-            </div>
-            {historial.slice(0, 15).map((item) => (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+            {formulas.map((f) => (
               <div
-                key={item.id}
-                className="flex items-center justify-between gap-2 p-2.5 rounded-xl border border-slate-200 bg-slate-50/70 text-[12px]"
+                key={f.id}
+                className={`p-3 flex items-center justify-between gap-2 ${subCardCls}`}
               >
                 <div className="min-w-0">
-                  <strong className="block text-slate-900 truncate">{item.titulo}</strong>
-                  <span className="text-[11px] text-slate-500">{item.detalle}</span>
+                  <strong className="block text-[13.5px] truncate">{f.nombre}</strong>
+                  <span className={`text-[11.5px] mono ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                    {LINEAS_CONFIG[f.linea]?.nombre} · MH:-{f.tolerancias.marcoH} HV:-
+                    {f.tolerancias.hojaV} HH:-{f.tolerancias.hojaH}
+                  </span>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <span className="mono font-extrabold text-blue-700">{formatMXN(item.total)}</span>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {onEditarFormula && (
+                    <button
+                      type="button"
+                      id={`btn-editar-formula-${f.id}`}
+                      onClick={() => onEditarFormula(f)}
+                      title={`Editar fórmula ${f.nombre}`}
+                      aria-label={`Editar fórmula ${f.nombre}`}
+                      className={`px-2.5 py-1.5 rounded-lg border text-[12px] font-bold inline-flex items-center gap-1 cursor-pointer transition-colors ${
+                        isDark
+                          ? 'border-sky-500/40 bg-sky-500/15 hover:bg-sky-500/25 text-sky-300'
+                          : 'border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700'
+                      }`}
+                    >
+                      <Pencil className="w-3.5 h-3.5" aria-hidden="true" />
+                      <span>Editar</span>
+                    </button>
+                  )}
                   <button
                     type="button"
-                    onClick={() => onEliminarHistorial(item.id)}
-                    aria-label="Eliminar registro"
-                    className="p-1.5 rounded-lg border border-red-200 bg-red-50 text-red-700 cursor-pointer"
+                    id={`btn-eliminar-formula-${f.id}`}
+                    onClick={() => onEliminarFormula(f.id)}
+                    title={`Eliminar fórmula ${f.nombre}`}
+                    aria-label={`Eliminar fórmula ${f.nombre}`}
+                    className={`px-2 py-1.5 rounded-lg border text-[12px] font-bold inline-flex items-center justify-center cursor-pointer transition-colors ${
+                      isDark
+                        ? 'border-red-500/40 bg-red-950/40 hover:bg-red-950/60 text-red-300'
+                        : 'border-red-200 bg-white hover:bg-red-50 text-red-600'
+                    }`}
                   >
                     <X className="w-3.5 h-3.5" aria-hidden="true" />
                   </button>
@@ -1154,53 +1483,338 @@ export const TallerView: React.FC<Props> = ({
         )}
       </CollapsibleAccordion>
 
-      {/* Publicidad y Respaldo JSON */}
-      <PublicidadTallerCard
-        taller={taller}
-        proActive={proActive}
-        onOpenPro={onOpenPro}
-        onEntrarInventario={onEntrarInventario}
-        onShowToast={onShowToast}
-      />
-
-      {backupData && (
-        <CollapsibleAccordion
-          id="card-taller-respaldo"
-          title="💾 Respaldo y Restauración (JSON)"
-          summary="Exporta o importa toda la información de tu taller"
-          open={respaldoOpen}
-          onToggle={() => setRespaldoOpen((p) => !p)}
-          tone="light"
-          className="mt-4 shadow-xl"
-        >
-          <div className="flex flex-wrap gap-2.5">
+      {/* 6. Historial de Cálculos Recientes */}
+      <CollapsibleAccordion
+        id="acc-taller-historial"
+        title="🗂️ Historial de Cálculos Recientes"
+        summary={`Guardado en este equipo (${historial.length})`}
+        open={historialOpen}
+        onToggle={() => setHistorialOpen((v) => !v)}
+        tone={accordionTone}
+        className="mb-4 shadow-xl"
+        rightAction={
+          <div className="flex flex-wrap items-center gap-1.5">
             <button
               type="button"
-              onClick={handleExportTallerJson}
-              className="flex-1 min-h-[42px] px-3.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-[12.5px] inline-flex items-center justify-center gap-1.5 cursor-pointer"
+              id="btn-exportar-historial-pdf"
+              disabled={historial.length === 0}
+              onClick={() => {
+                generarPdfHistorialCotizaciones(historial, taller).then((ok) => {
+                  if (ok) onShowToast('Historial de cotizaciones exportado a PDF', true);
+                  else onShowToast('Aún no tienes cotizaciones guardadas para exportar');
+                });
+              }}
+              className={`px-2.5 py-1.5 rounded-lg text-[11.5px] font-bold inline-flex items-center gap-1 transition-colors ${
+                historial.length === 0
+                  ? 'border border-slate-500/40 bg-slate-700/40 text-slate-400 cursor-not-allowed'
+                  : 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer shadow-xs'
+              }`}
             >
-              <Download className="w-4 h-4" aria-hidden="true" />
-              <span>Exportar Respaldo JSON</span>
+              <FileDown className="w-3.5 h-3.5" aria-hidden="true" />
+              PDF
             </button>
-            {onImportBackup && (
-              <>
+            {onOpenReminders && (
+              <button
+                type="button"
+                id="btn-taller-open-reminders"
+                onClick={onOpenReminders}
+                className={`px-2.5 py-1.5 rounded-lg border text-[11.5px] font-extrabold cursor-pointer ${
+                  isDark
+                    ? 'border-blue-400/50 bg-blue-500/15 hover:bg-blue-500/25 text-blue-300'
+                    : 'border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700'
+                }`}
+              >
+                🔔{pendingRemindersCount > 0 ? ` (${pendingRemindersCount})` : ''}
+              </button>
+            )}
+            {historial.length > 0 && (
+              <button
+                type="button"
+                onClick={onLimpiarHistorial}
+                className={`px-2.5 py-1.5 rounded-lg border text-[11.5px] font-bold cursor-pointer ${
+                  isDark
+                    ? 'border-slate-600/60 text-slate-300 hover:bg-slate-800'
+                    : 'border-slate-300 text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                Limpiar
+              </button>
+            )}
+          </div>
+        }
+      >
+        {historial.length === 0 ? (
+          <p
+            className={`text-[12.5px] p-4 text-center border border-dashed rounded-xl m-0 ${
+              isDark ? 'text-slate-400 border-slate-600/50' : 'text-slate-500 border-slate-300'
+            }`}
+          >
+            Aún no tienes cálculos o cotizaciones guardadas.
+          </p>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {historial.map((h) => (
+              <div
+                key={h.id}
+                className={`p-3 flex flex-wrap items-center justify-between gap-2 ${subCardCls}`}
+              >
+                <div className="min-w-0 flex-1">
+                  <strong className="block text-[13.5px] truncate">{h.referencia}</strong>
+                  <span className={`text-[12px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                    {LINEAS_CONFIG[h.linea]?.nombre} · {h.anchoCm}×{h.altoCm} cm ·{' '}
+                    {COLORES_CONFIG[h.color]?.corto} · {h.fecha}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <strong className={`mono ${isDark ? 'text-sky-400' : 'text-blue-700'}`}>
+                    {formatMXN(h.total)}
+                  </strong>
+                  {onScheduleHistorialReminder && (
+                    <button
+                      type="button"
+                      onClick={() => onScheduleHistorialReminder(h)}
+                      className={`px-2.5 py-1 rounded-lg border text-[11.5px] font-bold cursor-pointer ${
+                        isDark
+                          ? 'border-amber-400/50 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300'
+                          : 'border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-800'
+                      }`}
+                      title="Programar recordatorio de seguimiento en 24 h"
+                    >
+                      🔔 Recordar
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => onEliminarHistorial(h.id)}
+                    aria-label={`Eliminar cálculo ${h.referencia}`}
+                    className={`px-2 py-1 rounded-lg border text-[12px] font-bold cursor-pointer ${
+                      isDark
+                        ? 'border-red-500/40 bg-red-950/30 text-red-400'
+                        : 'border-red-200 bg-white text-red-600'
+                    }`}
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CollapsibleAccordion>
+
+      {/* Modal Precios de Referencia */}
+      {refPricesOpen &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            id="modal-reference-prices"
+            className="fixed inset-0 z-[9990] bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 overflow-y-auto"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="ref-prices-title"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setRefPricesOpen(false);
+            }}
+          >
+            <div
+              className={`w-full max-w-2xl max-h-[90vh] flex flex-col border rounded-2xl shadow-2xl overflow-hidden my-auto ${
+                isDark
+                  ? 'bg-[#121722] text-slate-100 border-slate-700'
+                  : 'bg-white text-slate-900 border-slate-300'
+              }`}
+            >
+              <div
+                className={`px-4 sm:px-5 py-3.5 border-b flex items-start justify-between gap-3 ${
+                  isDark ? 'bg-[#181f2e] border-slate-700' : 'border-slate-200'
+                }`}
+              >
+                <div>
+                  <span
+                    className={`inline-block px-2 py-0.5 rounded-md border text-[10.5px] font-extrabold mb-1 ${
+                      isDark
+                        ? 'bg-emerald-500/15 border-emerald-400/40 text-emerald-300'
+                        : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                    }`}
+                  >
+                    {activeRefPrices.updatedLabel || 'Actualizado esta semana'}
+                  </span>
+                  <h2 id="ref-prices-title" className="m-0 text-[17px] font-extrabold">
+                    Precios de Referencia de Mercado (MXN)
+                  </h2>
+                  <p className={`m-0 text-[11.5px] mt-0.5 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                    {activeRefPrices.nota ||
+                      'Valores promedio orientativos en México. Verifica siempre con tu distribuidor local.'}
+                  </p>
+                </div>
                 <button
                   type="button"
-                  onClick={() => importBackupRef.current?.click()}
-                  className="flex-1 min-h-[42px] px-3.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 font-extrabold text-[12.5px] inline-flex items-center justify-center gap-1.5 cursor-pointer"
+                  onClick={() => setRefPricesOpen(false)}
+                  aria-label="Cerrar tabla de precios de referencia"
+                  className={`w-9 h-9 rounded-xl border flex items-center justify-center cursor-pointer shrink-0 ${
+                    isDark
+                      ? 'border-slate-600 bg-slate-800 hover:bg-slate-700 text-slate-200'
+                      : 'border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-600'
+                  }`}
                 >
-                  <Upload className="w-4 h-4" aria-hidden="true" />
-                  <span>Importar Respaldo JSON</span>
+                  <X className="w-4 h-4" aria-hidden="true" />
                 </button>
-                <input
-                  ref={importBackupRef}
-                  type="file"
-                  accept="application/json,.json"
-                  onChange={(e) => void handleImportTallerJson(e)}
-                  className="hidden"
-                />
-              </>
-            )}
+              </div>
+
+              <div className="p-4 overflow-y-auto flex-1">
+                <div
+                  className={`overflow-x-auto border rounded-xl ${
+                    isDark ? 'border-slate-700' : 'border-slate-200'
+                  }`}
+                >
+                  <table className="w-full border-collapse text-[12px] min-w-[440px]">
+                    <thead>
+                      <tr
+                        className={`border-b ${
+                          isDark
+                            ? 'bg-[#182030] border-slate-700 text-slate-300'
+                            : 'bg-slate-100 border-slate-200 text-slate-700'
+                        }`}
+                      >
+                        <th className="p-2.5 text-left">Material / Concepto</th>
+                        <th className="p-2.5 text-right">Tu Precio Actual</th>
+                        <th className="p-2.5 text-right">Referencia Sugerida</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {activeRefPrices.items.map((item) => {
+                        const currentVal = getCurrentPriceForRefItem(item);
+                        const diff = item.precioSugerido - currentVal;
+                        return (
+                          <tr
+                            key={item.id}
+                            className={`border-b last:border-b-0 ${
+                              isDark ? 'border-slate-800' : 'border-slate-100'
+                            }`}
+                          >
+                            <td className="p-2.5">
+                              <strong className="block">{item.nombre}</strong>
+                              <span
+                                className={`text-[10.5px] uppercase font-bold ${
+                                  isDark ? 'text-slate-400' : 'text-slate-500'
+                                }`}
+                              >
+                                {item.categoria} · por {item.unidad}
+                              </span>
+                            </td>
+                            <td className="p-2.5 text-right mono font-bold">
+                              {formatMXN(currentVal)}
+                            </td>
+                            <td className="p-2.5 text-right mono">
+                              <strong className={isDark ? 'text-emerald-400' : 'text-emerald-700'}>
+                                {formatMXN(item.precioSugerido)}
+                              </strong>
+                              {diff !== 0 && (
+                                <span
+                                  className={`block text-[10px] font-bold ${
+                                    diff > 0
+                                      ? isDark
+                                        ? 'text-amber-400'
+                                        : 'text-amber-700'
+                                      : isDark
+                                        ? 'text-sky-400'
+                                        : 'text-blue-700'
+                                  }`}
+                                >
+                                  {diff > 0 ? `+${formatMXN(diff)}` : formatMXN(diff)}
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <p
+                  className={`m-0 mt-3 text-[11px] border rounded-xl p-2.5 ${
+                    isDark
+                      ? 'text-amber-200 bg-amber-950/35 border-amber-500/40'
+                      : 'text-amber-800 bg-amber-50 border-amber-200'
+                  }`}
+                >
+                  ⚠️ Aviso: Estos precios son una referencia orientativa semanal y no representan una
+                  cotización oficial de proveedores.
+                </p>
+              </div>
+
+              <div
+                className={`px-4 sm:px-5 py-3 border-t flex flex-wrap items-center justify-end gap-2 ${
+                  isDark ? 'border-slate-700 bg-[#181f2e]' : 'border-slate-200 bg-slate-50'
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => setRefPricesOpen(false)}
+                  className={`min-h-[42px] px-4 rounded-xl border text-[13px] font-bold cursor-pointer ${
+                    isDark
+                      ? 'border-slate-600 bg-slate-800 hover:bg-slate-700 text-slate-200'
+                      : 'border-slate-300 bg-white hover:bg-slate-100 text-slate-700'
+                  }`}
+                >
+                  Mantener mis precios
+                </button>
+                <button
+                  type="button"
+                  id="btn-apply-all-ref-prices"
+                  onClick={handleApplyAllRefPrices}
+                  className="min-h-[42px] px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[13px] font-extrabold cursor-pointer"
+                >
+                  Aplicar todos los sugeridos
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      <PublicidadTallerCard taller={taller} onShowToast={onShowToast} />
+
+      {/* 7. Respaldo y Restauración (JSON) */}
+      {backupData && onImportBackup && (
+        <CollapsibleAccordion
+          id="acc-taller-respaldo"
+          title="💾 Respaldo y Restauración (JSON)"
+          summary="Exporta o restaura tus datos de Mi Taller, tarifas, clientes, inventario e historial"
+          open={respaldoOpen}
+          onToggle={() => setRespaldoOpen((v) => !v)}
+          tone={accordionTone}
+          className="mt-4 shadow-xl"
+        >
+          <div id="card-taller-backup-json" className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <button
+              type="button"
+              id="btn-taller-export-json"
+              onClick={handleExportTallerJson}
+              className="min-h-[44px] px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[13px] inline-flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <Download className="w-4 h-4 shrink-0" aria-hidden="true" />
+              <span>Exportar respaldo JSON</span>
+            </button>
+            <button
+              type="button"
+              id="btn-taller-import-json"
+              onClick={() => importBackupRef.current?.click()}
+              className={`min-h-[44px] px-3.5 rounded-xl border font-extrabold text-[13px] inline-flex items-center justify-center gap-2 cursor-pointer ${
+                isDark
+                  ? 'border-slate-700 bg-[#0f172a] hover:bg-[#1a243b] text-slate-100'
+                  : 'border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-800'
+              }`}
+            >
+              <Upload className="w-4 h-4 shrink-0" aria-hidden="true" />
+              <span>Importar respaldo JSON</span>
+            </button>
+            <input
+              ref={importBackupRef}
+              type="file"
+              accept="application/json"
+              onChange={handleImportTallerJson}
+              className="hidden"
+            />
           </div>
         </CollapsibleAccordion>
       )}

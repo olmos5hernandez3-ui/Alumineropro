@@ -13,6 +13,7 @@ import {
   EyeOff,
   Lock,
   LogOut,
+  Pencil,
   RefreshCw,
   ShieldCheck,
   Sparkles,
@@ -34,6 +35,7 @@ import {
   generateActivationKey,
   getOfficialShareUrl,
   getTrialCountdown,
+  GOOGLE_CLOUD_PERSUASIVE_TIP,
   isColleaguePromoPlan,
   isProActive,
   isShortPlanKeyPrefix,
@@ -4131,8 +4133,15 @@ interface FormulaModalProps {
   linea: LineaId;
   tolerancias: TrabajoParams['tolerancias'];
   formulas: FormulaPersonalizada[];
+  editingFormula?: FormulaPersonalizada | null;
   onClose: () => void;
   onSaveFormula: (nombre: string, linea: LineaId, tolerancias: TrabajoParams['tolerancias']) => void;
+  onUpdateFormula?: (
+    id: string,
+    nombre: string,
+    linea: LineaId,
+    tolerancias: TrabajoParams['tolerancias']
+  ) => void;
   onApplyFormula: (formula: FormulaPersonalizada) => void;
   onDeleteFormula: (id: string) => void;
 }
@@ -4142,30 +4151,93 @@ export const FormulaModal: React.FC<FormulaModalProps> = ({
   linea,
   tolerancias,
   formulas,
+  editingFormula = null,
   onClose,
   onSaveFormula,
+  onUpdateFormula,
   onApplyFormula,
   onDeleteFormula,
 }) => {
+  const normalizeFormulaTol = (
+    raw: Partial<TrabajoParams['tolerancias']> | undefined,
+    targetLinea: LineaId
+  ): TrabajoParams['tolerancias'] => {
+    const def =
+      LINEAS_CONFIG[targetLinea]?.toleranciasDefault || LINEAS_CONFIG['3'].toleranciasDefault;
+    const legacy = raw as Record<string, unknown> | undefined;
+    const pickNum = (val: unknown, alt: unknown, fallback: number): number => {
+      if (val !== undefined && val !== null && val !== '' && Number.isFinite(Number(val))) {
+        return Math.max(0, Number(val));
+      }
+      if (alt !== undefined && alt !== null && alt !== '' && Number.isFinite(Number(alt))) {
+        return Math.max(0, Number(alt));
+      }
+      return fallback;
+    };
+    return {
+      marcoH: pickNum(raw?.marcoH, undefined, def.marcoH),
+      hojaV: pickNum(raw?.hojaV, undefined, def.hojaV),
+      hojaH: pickNum(raw?.hojaH, undefined, def.hojaH),
+      vidAncho: pickNum(raw?.vidAncho, legacy?.vidrioH, def.vidAncho),
+      vidAlto: pickNum(raw?.vidAlto, legacy?.vidrioV, def.vidAlto),
+    };
+  };
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [selectedLinea, setSelectedLinea] = useState<LineaId>(linea);
   const [nombre, setNombre] = useState('');
-  const [tol, setTol] = useState(tolerancias);
+  const [tol, setTol] = useState<TrabajoParams['tolerancias']>(() =>
+    normalizeFormulaTol(tolerancias, linea)
+  );
   const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
-    if (open) {
-      setTol({ ...tolerancias });
-      setErrorMsg('');
+    if (!open) return;
+    if (editingFormula) {
+      setEditingId(editingFormula.id);
+      setSelectedLinea(editingFormula.linea);
+      setNombre(editingFormula.nombre || '');
+      setTol(normalizeFormulaTol(editingFormula.tolerancias, editingFormula.linea));
+    } else {
+      setEditingId(null);
+      setSelectedLinea(linea);
+      setNombre('');
+      setTol(normalizeFormulaTol(tolerancias, linea));
     }
-  }, [open, tolerancias]);
+    setErrorMsg('');
+  }, [open, editingFormula, linea, tolerancias]);
 
   if (!open) return null;
+
+  const isEditing = Boolean(editingId);
+
+  const handleLoadForEdit = (f: FormulaPersonalizada) => {
+    setEditingId(f.id);
+    setSelectedLinea(f.linea);
+    setNombre(f.nombre || '');
+    setTol(normalizeFormulaTol(f.tolerancias, f.linea));
+    setErrorMsg('');
+  };
+
+  const handleCancelEditMode = () => {
+    setEditingId(null);
+    setSelectedLinea(linea);
+    setNombre('');
+    setTol(normalizeFormulaTol(tolerancias, linea));
+    setErrorMsg('');
+  };
 
   const handleSave = () => {
     if (!nombre.trim()) {
       setErrorMsg('Escribe un nombre para identificar tu fórmula de corte.');
       return;
     }
-    onSaveFormula(nombre.trim(), linea, tol);
+    if (editingId && onUpdateFormula) {
+      onUpdateFormula(editingId, nombre.trim(), selectedLinea, tol);
+    } else {
+      onSaveFormula(nombre.trim(), selectedLinea, tol);
+    }
+    setEditingId(null);
     setNombre('');
     setErrorMsg('');
     onClose();
@@ -4177,14 +4249,16 @@ export const FormulaModal: React.FC<FormulaModalProps> = ({
       className="fixed inset-0 z-50 bg-slate-950/75 flex items-center justify-center p-4 overflow-y-auto"
       role="dialog"
       aria-modal="true"
-      aria-label="Crear mi propia fórmula de corte"
+      aria-label={isEditing ? 'Editar fórmula de corte' : 'Crear mi propia fórmula de corte'}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-[460px] bg-white text-slate-900 rounded-[20px] p-5 shadow-2xl my-auto">
+      <div className="w-full max-w-[480px] bg-white text-slate-900 rounded-[20px] p-5 shadow-2xl my-auto">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="m-0 text-[17px] font-extrabold">Crear mi propia fórmula de corte</h2>
+          <h2 className="m-0 text-[17px] font-extrabold">
+            {isEditing ? 'Editar fórmula de corte' : 'Crear mi propia fórmula de corte'}
+          </h2>
           <button
             type="button"
             onClick={onClose}
@@ -4195,23 +4269,47 @@ export const FormulaModal: React.FC<FormulaModalProps> = ({
           </button>
         </div>
         <p className="text-[12px] text-slate-500 mb-3">
-          Para <strong>{LINEAS_CONFIG[linea].nombre}</strong> · Define nombre y los 5 descuentos (en cm). Se guarda en este dispositivo:
+          {isEditing
+            ? 'Actualiza el nombre, línea o descuentos (en cm) sin perder ni eliminar tu fórmula guardada:'
+            : `Para ${LINEAS_CONFIG[selectedLinea]?.nombre || selectedLinea} · Define nombre y los 5 descuentos (en cm). Se guarda en este dispositivo:`}
         </p>
 
-        <label htmlFor="inp-formula-nombre" className="block text-[11.5px] font-bold text-slate-600 mb-1">
-          Nombre de la fórmula
-        </label>
-        <input
-          id="inp-formula-nombre"
-          type="text"
-          value={nombre}
-          onChange={(e) => {
-            setNombre(e.target.value);
-            if (errorMsg) setErrorMsg('');
-          }}
-          placeholder="Ej. Alumer 3 pulgadas mi ajuste"
-          className="w-full min-h-[44px] rounded-xl border border-slate-200 px-3 text-[13.5px] font-semibold mb-3"
-        />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-3">
+          <div className="sm:col-span-2">
+            <label htmlFor="inp-formula-nombre" className="block text-[11.5px] font-bold text-slate-600 mb-1">
+              Nombre de la fórmula
+            </label>
+            <input
+              id="inp-formula-nombre"
+              type="text"
+              value={nombre}
+              onChange={(e) => {
+                setNombre(e.target.value);
+                if (errorMsg) setErrorMsg('');
+              }}
+              placeholder="Ej. Alumer 3 pulgadas mi ajuste"
+              className="w-full min-h-[42px] rounded-xl border border-slate-200 px-3 text-[13.5px] font-semibold"
+            />
+          </div>
+
+          <div className="sm:col-span-2">
+            <label htmlFor="sel-formula-linea" className="block text-[11.5px] font-bold text-slate-600 mb-1">
+              Línea de aluminio
+            </label>
+            <select
+              id="sel-formula-linea"
+              value={selectedLinea}
+              onChange={(e) => setSelectedLinea(e.target.value as LineaId)}
+              className="w-full min-h-[40px] rounded-xl border border-slate-200 px-3 text-[13px] font-bold"
+            >
+              {(Object.keys(LINEAS_CONFIG) as LineaId[]).map((lid) => (
+                <option key={lid} value={lid}>
+                  {LINEAS_CONFIG[lid].nombre}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-3.5">
           {(
@@ -4232,7 +4330,7 @@ export const FormulaModal: React.FC<FormulaModalProps> = ({
                 type="number"
                 step="0.1"
                 min="0"
-                value={tol[k]}
+                value={Number.isFinite(Number(tol[k])) ? tol[k] : 0}
                 onChange={(e) => setTol((prev) => ({ ...prev, [k]: Math.max(0, Number(e.target.value) || 0) }))}
                 className="w-full min-h-[38px] px-2 rounded-lg border border-slate-200 mono text-[12.5px] font-bold"
               />
@@ -4246,14 +4344,26 @@ export const FormulaModal: React.FC<FormulaModalProps> = ({
           </p>
         )}
 
-        <button
-          type="button"
-          id="btn-guardar-formula-modal"
-          onClick={handleSave}
-          className="w-full min-h-[46px] rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-[13.5px] cursor-pointer"
-        >
-          Guardar Fórmula
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            id="btn-guardar-formula-modal"
+            onClick={handleSave}
+            className="flex-1 min-h-[46px] rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-[13.5px] cursor-pointer"
+          >
+            {isEditing ? 'Guardar Cambios' : 'Guardar Fórmula'}
+          </button>
+          {isEditing && (
+            <button
+              type="button"
+              id="btn-cancelar-edicion-formula-modal"
+              onClick={handleCancelEditMode}
+              className="min-h-[46px] px-3 rounded-xl border border-slate-300 bg-slate-100 text-slate-700 font-bold text-[12.5px] cursor-pointer"
+            >
+              Nueva
+            </button>
+          )}
+        </div>
 
         {formulas.length > 0 && (
           <div className="mt-4 pt-3 border-t border-slate-200">
@@ -4264,12 +4374,19 @@ export const FormulaModal: React.FC<FormulaModalProps> = ({
               {formulas.map((f) => (
                 <div
                   key={f.id}
-                  className="p-2 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between gap-2 text-[11.5px]"
+                  className={`p-2 rounded-xl border flex items-center justify-between gap-2 text-[11.5px] ${
+                    editingId === f.id
+                      ? 'border-blue-500 bg-blue-50/40'
+                      : 'border-slate-200 bg-slate-50'
+                  }`}
                 >
                   <div className="min-w-0">
                     <strong className="block text-slate-900 truncate">{f.nombre}</strong>
                     <span className="text-slate-500 mono">
-                      MH:{f.tolerancias.marcoH} · HV:{f.tolerancias.hojaV} · HH:{f.tolerancias.hojaH} · VA:{f.tolerancias.vidAncho} · VH:{f.tolerancias.vidAlto}
+                      {(() => {
+                        const nt = normalizeFormulaTol(f.tolerancias, f.linea);
+                        return `MH:${nt.marcoH} · HV:${nt.hojaV} · HH:${nt.hojaH} · VA:${nt.vidAncho} · VH:${nt.vidAlto}`;
+                      })()}
                     </span>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
@@ -4285,7 +4402,20 @@ export const FormulaModal: React.FC<FormulaModalProps> = ({
                     </button>
                     <button
                       type="button"
-                      onClick={() => onDeleteFormula(f.id)}
+                      id={`btn-modal-editar-formula-${f.id}`}
+                      aria-label={`Editar fórmula ${f.nombre}`}
+                      onClick={() => handleLoadForEdit(f)}
+                      className="px-2 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-300 font-bold text-[11px] inline-flex items-center gap-1 cursor-pointer"
+                    >
+                      <Pencil className="w-3 h-3" aria-hidden="true" />
+                      <span>Editar</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (editingId === f.id) handleCancelEditMode();
+                        onDeleteFormula(f.id);
+                      }}
                       className="px-2 py-1 rounded-lg bg-red-50 text-red-700 border border-red-200 font-bold text-[11px] cursor-pointer"
                     >
                       Eliminar
@@ -5031,6 +5161,12 @@ export const CloudBackupModal: React.FC<CloudBackupModalProps> = ({
               </button>
             )}
 
+            <p
+              id="cloud-backup-google-persuasive-tip"
+              className="m-0 p-2.5 rounded-xl border border-sky-400/35 bg-sky-500/10 text-[11.5px] leading-snug font-bold text-slate-700"
+            >
+              ☁️ {GOOGLE_CLOUD_PERSUASIVE_TIP}
+            </p>
             <p
               id="cloud-backup-google-benefit"
               className="m-0 text-[11px] text-slate-600 leading-snug font-semibold"

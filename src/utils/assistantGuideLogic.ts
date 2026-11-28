@@ -1,4 +1,4 @@
-import type { PerfilFamilia } from './alumineroLogic';
+import { GOOGLE_CLOUD_PERSUASIVE_TIP, type PerfilFamilia } from './alumineroLogic';
 
 export type RobotPoseMode = 'classic' | 'waving' | 'technical';
 
@@ -49,8 +49,7 @@ export interface AssistantGuideResponse {
   steps: [string, string, string];
 }
 
-export const CLOUD_BACKUP_PERSUASIVE_MSG =
-  '¡Que no se te pierdan tus cotizaciones! Así como alguna vez perdiste el lápiz, tu cuaderno o el último papelito donde anotaste las medidas del último cliente, conéctate con el botón de Google para que todos tus apuntes queden guardados seguros en la nube.';
+export const CLOUD_BACKUP_PERSUASIVE_MSG = GOOGLE_CLOUD_PERSUASIVE_TIP;
 
 export const ASSISTANT_QUICK_CHIPS: Array<{ id: string; label: string; query: string }> = [
   { id: 'cotizacion', label: '¿Cómo cotizar?', query: '¿Dónde y cómo hago una cotización?' },

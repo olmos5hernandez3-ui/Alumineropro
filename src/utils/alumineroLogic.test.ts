@@ -47,6 +47,9 @@ import {
   FREE_ASSISTANT_DAILY_LIMIT,
   computeAssistantDailyQuotaState,
   parseReferralFromSearch,
+  buildHojaShoppingList,
+  buildHojaShoppingListWhatsAppText,
+  GOOGLE_CLOUD_PERSUASIVE_TIP,
   type AperturaVentanaId,
 } from './alumineroLogic';
 import {
@@ -3582,14 +3585,14 @@ test('98. SKIN_VARIANTS_BY_SKIN define acabados descansados para Ejecutiva (4) e
   }
 });
 
-test('99. Versión centralizada APP_VERSION=1.0.13 sincronizada con public/sw.js sin skipWaiting automático en install', async () => {
+test('99. Versión centralizada APP_VERSION=1.0.15 sincronizada con public/sw.js sin skipWaiting automático en install', async () => {
   const { readFileSync } = await import('node:fs');
   const { APP_VERSION, APP_VERSION_LABEL } = await import('./alumineroLogic.ts');
-  assert.equal(APP_VERSION, '1.0.13');
-  assert.equal(APP_VERSION_LABEL, 'v1.0.13');
+  assert.equal(APP_VERSION, '1.0.15');
+  assert.equal(APP_VERSION_LABEL, 'v1.0.15');
 
   const swSource = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSource, /const APP_VERSION\s*=\s*['"]1\.0\.13['"]/);
+  assert.match(swSource, /const APP_VERSION\s*=\s*['"]1\.0\.15['"]/);
   assert.match(swSource, /const CACHE_NAME\s*=\s*`aluminero-pro-v\$\{APP_VERSION\}`/);
 
   // Verificar que el bloque install NO llama self.skipWaiting() automáticamente
@@ -3823,11 +3826,11 @@ test('103. Historial de sesiones y detección de dispositivo/navegador para cole
   assert.equal(list.length, 30);
 });
 
-test('104. public/sw.js usa CACHE_NAME unificado aluminero-pro-v1.0.13, limpia cachés en activate y solo ejecuta skipWaiting en SKIP_WAITING', async () => {
+test('104. public/sw.js usa CACHE_NAME unificado aluminero-pro-v1.0.15, limpia cachés en activate y solo ejecuta skipWaiting en SKIP_WAITING', async () => {
   const { readFileSync } = await import('node:fs');
   const swSrc = readFileSync('public/sw.js', 'utf8');
 
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.13';/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.15';/);
   assert.match(swSrc, /const CACHE_NAME = `aluminero-pro-v\$\{APP_VERSION\}`;/);
   assert.doesNotMatch(swSrc, /CACHE_VERSION/, 'No deben quedar referencias sueltas a CACHE_VERSION');
   assert.match(swSrc, /keys\.filter\(\(key\) => key !== CACHE_NAME\)\.map\(\(key\) => caches\.delete\(key\)\)/);
@@ -4098,9 +4101,9 @@ test('108. Top 3 materiales frecuentes en inicio, texto/subtítulo de Google y p
   assert.match(giftModalSrc, /Ver planes y desbloquear recompensas/);
   assert.match(giftModalSrc, /Usar mis 3 días gratis ahora/);
 
-  // 5. Verificar que Admin Login y SW v1.0.13 permanecen completamente intactos
+  // 5. Verificar que Admin Login y SW v1.0.15 permanecen completamente intactos
   const swSrc = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.13'/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.15'/);
   assert.match(swSrc, /aluminero-pro-v\$\{APP_VERSION\}/);
   const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
   assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
@@ -4219,9 +4222,9 @@ test('109. Prompt 1: Escáner IA de croquis (1024px JPEG 0.8 + mm JSON), Tramos 
   const modSrc = readFileSync('src/components/ModulacionCortesView.tsx', 'utf8');
   assert.match(modSrc, /Tramos610AcomodadosSection/);
 
-  // 6. Reglas de oro intactas: SW v1.0.13 y Admin Login sin tocar
+  // 6. Reglas de oro intactas: SW v1.0.15 y Admin Login sin tocar
   const swSrc = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.13'/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.15'/);
   const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
   assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
 });
@@ -4441,9 +4444,9 @@ test('111. Botón de tema en TopBar, Acordeones desplegables y Dibujo digitaliza
   assert.match(trabajoSrc, /CollapsibleAccordion/);
   assert.match(trabajoSrc, /id="acc-trabajo-tramos-610"/);
 
-  // 6. Reglas de oro: SW sincronizado en 1.0.13 y Admin Login intacto
+  // 6. Reglas de oro: SW sincronizado en 1.0.15 y Admin Login intacto
   const swSrc = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.13'/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.15'/);
   const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
   assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
 });
@@ -4616,12 +4619,12 @@ test('113. Prompt 2: Ajuste de precios de un golpe (%) con filtro por acabado, c
     assert.ok(ads.whatsappShareUrlStatus.startsWith('https://wa.me/?text='));
   }
 
-  // 5. Verificación UI y versión v1.0.13 + TopBar toggle + Admin Login intacto
-  assert.equal(APP_VERSION, '1.0.13');
-  assert.equal(APP_VERSION_LABEL, 'v1.0.13');
+  // 5. Verificación UI y versión v1.0.15 + TopBar toggle + Admin Login intacto
+  assert.equal(APP_VERSION, '1.0.15');
+  assert.equal(APP_VERSION_LABEL, 'v1.0.15');
 
   const swSrc = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.13'/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.15'/);
 
   const tallerSrc = readFileSync('src/components/TallerView.tsx', 'utf8');
   assert.match(tallerSrc, /⚡ Ajuste de precios de un golpe \(%\)/);
@@ -4736,15 +4739,15 @@ test('114. Rediseño visual descansado de carátulas + 3 acabados de aluminio + 
   assert.match(catSrc, /cat-mat-chip-/);
   assert.match(catSrc, /filterOfficialCatalogAdvanced/);
 
-  // 5. Versión v1.0.13 y Admin Login completamente intacto
-  assert.equal(APP_VERSION, '1.0.13');
+  // 5. Versión v1.0.15 y Admin Login completamente intacto
+  assert.equal(APP_VERSION, '1.0.15');
   const swSrc = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.13'/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.15'/);
   const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
   assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
 });
 
-test('115. Personajes 3D PNG transparentes (/avatars/*.png), Alumi-Bot 3D SVG parpadeante 92x92, globo inteligente sin recorte, interruptor aluminero-avatar-tips, acordeón Hoja 2 líneas y SW v1.0.13', async () => {
+test('115. Personajes 3D PNG transparentes (/avatars/*.png), Alumi-Bot 3D SVG parpadeante 92x92, globo inteligente sin recorte, interruptor aluminero-avatar-tips, acordeón Hoja 2 líneas y SW v1.0.15', async () => {
   const { existsSync, readFileSync } = await import('node:fs');
   const {
     AVATAR_TIPS_KEY,
@@ -4862,9 +4865,9 @@ test('115. Personajes 3D PNG transparentes (/avatars/*.png), Alumi-Bot 3D SVG pa
   assert.match(charSrc, /scale-\[1\.45\]/);
   assert.match(charSrc, /w-\[92px\] h-\[92px\]/);
 
-  // 5. SW v1.0.13 y Admin Login intacto
-  assert.equal(APP_VERSION, '1.0.13');
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.13'/);
+  // 5. SW v1.0.15 y Admin Login intacto
+  assert.equal(APP_VERSION, '1.0.15');
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.15'/);
   const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
   assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
 });
@@ -4978,15 +4981,15 @@ test('117. Alumi-Bot 3D SVG oficial (92px, casco LED, visor parpadeante 3.5s, me
   assert.match(floatSrc, /triggerLaserFlash/);
   assert.match(floatSrc, /laserFlash=\{/);
 
-  // Reglas de oro intactas: SW v1.0.13 y Admin Login sin tocar
-  assert.equal(APP_VERSION, '1.0.13');
+  // Reglas de oro intactas: SW v1.0.15 y Admin Login sin tocar
+  assert.equal(APP_VERSION, '1.0.15');
   const swSrc = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.13'/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.15'/);
   const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
   assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
 });
 
-test('118. Tour guiado paso a paso para usuarios nuevos (Levantamiento Rápido + Hoja de Cotización) y escudo anti-clic fantasma de 300 ms en FloatingAssistant + SW v1.0.13', async () => {
+test('118. Tour guiado paso a paso para usuarios nuevos (Levantamiento Rápido + Hoja de Cotización) y escudo anti-clic fantasma de 300 ms en FloatingAssistant + SW v1.0.15', async () => {
   const { readFileSync } = await import('node:fs');
   const {
     ONBOARDING_TOUR_KEY,
@@ -5097,17 +5100,17 @@ test('118. Tour guiado paso a paso para usuarios nuevos (Levantamiento Rápido +
   assert.match(floatSrc, /e\.preventDefault\(\)/);
   assert.match(floatSrc, /e\.stopPropagation\(\)/);
 
-  // 4. Montaje de OnboardingTour en App.tsx y reglas de oro intactas (SW v1.0.13 + Admin Login)
+  // 4. Montaje de OnboardingTour en App.tsx y reglas de oro intactas (SW v1.0.15 + Admin Login)
   const appSrc = readFileSync('src/App.tsx', 'utf8');
   assert.match(appSrc, /<OnboardingTour/);
-  assert.equal(APP_VERSION, '1.0.13');
+  assert.equal(APP_VERSION, '1.0.15');
   const swSrc = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.13'/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.15'/);
   const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
   assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
 });
 
-test('119. Robot 3 vistas integradas, Chat Guía offline, selector rápido 7 personajes, Web Audio API audible (0.35-0.55), marcadores Imagen en catálogo y SW v1.0.13', async () => {
+test('119. Robot 3 vistas integradas, Chat Guía offline, selector rápido 7 personajes, Web Audio API audible (0.35-0.55), marcadores Imagen en catálogo y SW v1.0.15', async () => {
   const { readFileSync, existsSync } = await import('node:fs');
   const {
     resolveRobotPose,
@@ -5215,15 +5218,15 @@ test('119. Robot 3 vistas integradas, Chat Guía offline, selector rápido 7 per
   assert.match(modalSrc, /getCatalogProfilePlaceholder/);
   assert.match(modalSrc, /data-perfil-modal-placeholder/);
 
-  // 7. Reglas de oro intactas: SW v1.0.13 y Admin Login sin tocar
-  assert.equal(APP_VERSION, '1.0.13');
+  // 7. Reglas de oro intactas: SW v1.0.15 y Admin Login sin tocar
+  assert.equal(APP_VERSION, '1.0.15');
   const swSrc = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.13'/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.15'/);
   const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
   assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
 });
 
-test('120. Validación naranja con LINEAS_CONFIG[linea].toleranciasDefault en Levantamiento, activación directa 3 días PRO, bono +5 días por 3 colegas y globo robot oculto en bienvenida/tutorial (SW v1.0.13)', async () => {
+test('120. Validación naranja con LINEAS_CONFIG[linea].toleranciasDefault en Levantamiento, activación directa 3 días PRO, bono +5 días por 3 colegas y globo robot oculto en bienvenida/tutorial (SW v1.0.15)', async () => {
   const { readFileSync } = await import('node:fs');
   const {
     APP_VERSION,
@@ -5357,13 +5360,327 @@ test('120. Validación naranja con LINEAS_CONFIG[linea].toleranciasDefault en Le
   assert.match(floatSrc, /suppressAutoBubble\?: boolean/);
   assert.match(floatSrc, /!suppressAutoBubble && \(gestureBanner \|\| \(tipsEnabled && activeTip\)\)/);
 
-  // 6. Reglas de oro intactas: SW v1.0.13 + Admin Login sin tocar
-  assert.equal(APP_VERSION, '1.0.13');
+  // 6. Reglas de oro intactas: SW v1.0.15 + Admin Login sin tocar
+  assert.equal(APP_VERSION, '1.0.15');
   const swSrc = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.13'/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.15'/);
   const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
   assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
 });
+
+test('121. Lista de compras simplificada WhatsApp, mensaje Google Nube, 6 personajes extra + partículas, Optimizador 6.10 m exacto/color, acordeones y edición de fórmulas en sitio (SW v1.0.15)', async () => {
+  const { readFileSync, existsSync } = await import('node:fs');
+  const { APP_VERSION, APP_VERSION_LABEL } = await import('./alumineroLogic');
+  const { ASSISTANT_CHARACTERS } = await import('../components/AssistantCharacters');
+  const { answerAssistantQuestion } = await import('./assistantGuideLogic');
+  const { ASSISTANT_TAP_PARTICLES } = await import('./assistantEffects');
+
+  // 1. Lista de compras simplificada basada en inventario de la cotización + texto WhatsApp
+  const partidaBase = calcularDespiece({
+    linea: '3',
+    color: 'natural',
+    vidrio: 'claro6',
+    anchoCm: 150,
+    altoCm: 120,
+    cantidad: 2,
+    hojas: 2,
+    apertura: 'corrediza',
+    sentidoPuerta: 'izq',
+    puertaIntermedio: false,
+    puertaEconomica: false,
+    invertido: false,
+    tolerancias: { ...LINEAS_CONFIG['3'].toleranciasDefault },
+  });
+  const partidasMock = [
+    {
+      id: 'p-shop-1',
+      referencia: 'Ventana Sala',
+      tipo: 'ventana' as const,
+      linea: '3' as const,
+      color: 'natural' as const,
+      vidrio: 'claro6' as const,
+      anchoCm: 150,
+      altoCm: 120,
+      cantidad: 2,
+      hojas: 2,
+      conMosquitero: true,
+      despiece: partidaBase,
+      total: 4200,
+      subtotal: 3620.69,
+      iva: 579.31,
+      areaM2: 3.6,
+      precioM2: 1166.67,
+    },
+  ];
+  const consolidated = consolidarMaterialesObra(partidasMock as any, {}, {});
+  const listAll = buildHojaShoppingList(
+    { proyecto: 'Casa López', cliente: 'Juan López', folio: 'COT-001', partidas: partidasMock as any },
+    consolidated
+  );
+  assert.ok(listAll.perfiles.length > 0, 'Debe listar perfiles requeridos');
+  assert.ok(listAll.totalTramosAComprar > 0, 'Debe calcular tramos 6.10m a comprar');
+  assert.ok(listAll.vidrios.length > 0, 'Debe incluir vidrio consolidado');
+  assert.ok(listAll.herrajes.length > 0, 'Debe incluir herrajes consolidados');
+
+  // Simular que todos los perfiles existen en bodega para verificar que tramosAComprar = 0
+  const fullInv: Record<string, number> = {};
+  for (const r of consolidated) {
+    fullInv[`3__${r.perfilId}__natural`] = r.tramosRequeridos + 2;
+  }
+  const consolidatedWithStock = consolidarMaterialesObra(partidasMock as any, fullInv, {});
+  const listWithStock = buildHojaShoppingList(
+    { proyecto: 'Casa López', cliente: 'Juan López', partidas: partidasMock as any },
+    consolidatedWithStock
+  );
+  assert.equal(listWithStock.totalTramosAComprar, 0, 'Si hay stock suficiente en bodega, no debe pedir perfiles faltantes');
+
+  const waText = buildHojaShoppingListWhatsAppText(listAll, {
+    onlyMissing: false,
+    tallerNombre: 'Aluminios del Norte',
+    includeVidrios: true,
+    includeHerrajes: true,
+  });
+  assert.match(waText, /LISTA DE COMPRAS/);
+  assert.match(waText, /ALUMINIOS DEL NORTE/);
+  assert.match(waText, /Casa López/);
+  assert.match(waText, /Juan López/);
+  assert.match(waText, /PERFILES DE ALUMINIO/);
+  assert.match(waText, /VIDRIOS \/ PANELES/);
+  assert.match(waText, /HERRAJES Y CONSUMIBLES/);
+
+  const hojaSrc = readFileSync('src/components/HojaCotizacionView.tsx', 'utf8');
+  assert.match(hojaSrc, /id="btn-hoja-lista-compras-wa"/);
+  assert.match(hojaSrc, /id="modal-hoja-lista-compras"/);
+  assert.match(hojaSrc, /id="btn-enviar-lista-compras-wa"/);
+  assert.match(hojaSrc, /buildWhatsAppDirectUrl/);
+
+  // 2. Mensaje persuasivo de Respaldo en la Nube (Google) con ortografía profesional
+  assert.equal(
+    GOOGLE_CLOUD_PERSUASIVE_TIP,
+    '¡Que no se te pierdan tus cotizaciones! Así como alguna vez perdiste el lápiz, tu cuaderno o el último papelito donde anotaste las medidas del cliente, conéctate con el botón de Google para que todos tus apuntes y proyectos queden guardados seguros en la nube.'
+  );
+  const floatSrc = readFileSync('src/components/FloatingAssistant.tsx', 'utf8');
+  const modalsSrc = readFileSync('src/components/Modals.tsx', 'utf8');
+  const gateSrc = readFileSync('src/components/UnifiedWorkshopGateModal.tsx', 'utf8');
+  const drawerSrc = readFileSync('src/components/TopBarAndDrawer.tsx', 'utf8');
+  assert.match(floatSrc, /GOOGLE_CLOUD_PERSUASIVE_TIP/);
+  assert.match(floatSrc, /id="assistant-cloud-backup-tip"/);
+  assert.match(modalsSrc, /id="cloud-backup-google-persuasive-tip"/);
+  assert.match(gateSrc, /id="unified-gate-google-persuasive-tip"/);
+  assert.match(drawerSrc, /id="drawer-google-persuasive-tip"/);
+  const guideCloud = answerAssistantQuestion('cómo guardar respaldo en google nube para no perder medidas');
+  assert.ok(guideCloud.answer.includes('¡Que no se te pierdan tus cotizaciones!'));
+
+  // 3. Personajes extra 3D (oso, perezoso, conejita, zorro, lobo, changuito) + sonidos + partículas de herramientas
+  const extraIds = ['oso', 'perezoso', 'conejita', 'zorro', 'lobo', 'changuito'] as const;
+  assert.ok(ASSISTANT_CHARACTERS.length >= 13, 'Debe tener al menos 13 personajes seleccionables');
+  for (const cid of extraIds) {
+    assert.ok(
+      ASSISTANT_CHARACTERS.some((c) => c.id === cid),
+      `Debe existir el personaje ${cid} en ASSISTANT_CHARACTERS`
+    );
+    assert.equal(existsSync(`public/avatars/${cid}.png`), true, `Debe existir /public/avatars/${cid}.png`);
+  }
+  assert.ok(ASSISTANT_TAP_PARTICLES.includes('🔩') && ASSISTANT_TAP_PARTICLES.includes('🔧'));
+  assert.match(floatSrc, /id="assistant-tool-particles"/);
+  assert.match(floatSrc, /activateGhostClickShield/);
+
+  // 4. Paso 5 Optimizador 6.10 m: matemáticas exactas con decimales + filtro estricto de color + ajusteDescuentos
+  const makeCorteRow = (
+    id: string,
+    seccion: 'contramarco' | 'hoja-movil',
+    perfilId: 'cerco' | 'jamba',
+    codigo: string,
+    nombre: string,
+    medidaCm: number,
+    cantidad: number,
+    color: 'natural' | 'negro'
+  ) => ({
+    id,
+    seccion,
+    perfilId,
+    codigo,
+    nombre,
+    rol: nombre,
+    orientacion: 'vertical' as const,
+    cantidad,
+    cantidadLabel: `${cantidad} pzas`,
+    formulaTexto: 'Exacto',
+    medidaCm,
+    medidaM: medidaCm / 100,
+    totalMetros: (medidaCm * cantidad) / 100,
+    angulo: '90°' as const,
+    color,
+  });
+
+  const optExact0 = optimizarTramos1D({
+    perfiles: [makeCorteRow('r-exact-1', 'hoja-movil', 'cerco', '3004', 'Cerco chapa', 144.7, 2, 'natural')],
+    sobrantesInventario: [
+      // Sobrante de otro color ('blanco') que NO debe mezclarse con 'natural'
+      {
+        id: 'sob-blanco-wrong',
+        linea: '3',
+        perfilId: 'cerco',
+        color: 'blanco',
+        largoM: 3.5,
+        cantidad: 3,
+        fecha: '2026-11-28',
+      },
+    ],
+    lineaCompatible: '3',
+    colorCompatible: 'natural',
+    largoBarraCm: 610,
+    despuntePorExtremoCm: 0,
+    kerfCm: 0,
+    minSobranteGuardableCm: 60,
+  });
+  assert.equal(optExact0.sobrantesInventarioUsados, 0, 'No debe usar sobrante blanco en proyecto natural');
+  assert.equal(optExact0.tramos610Totales, 1);
+  assert.equal(optExact0.grupos.length, 1);
+  assert.equal(optExact0.grupos[0].color, 'natural');
+  assert.equal(optExact0.grupos[0].barras[0].sobranteCm, 320.6, '610 - 2*144.7 debe dar sobrante exacto 320.6 cm');
+
+  // Con disco 3.5 mm (0.35 cm) en 2 cortes de sierra (2 * 0.35 = 0.70 cm): usado(289.4) + disco(0.70) + sobrante(319.9) = 610.0
+  const optExactKerf = optimizarTramos1D({
+    perfiles: [makeCorteRow('r-exact-2', 'hoja-movil', 'cerco', '3004', 'Cerco chapa', 144.7, 2, 'natural')],
+    sobrantesInventario: [],
+    lineaCompatible: '3',
+    colorCompatible: 'natural',
+    largoBarraCm: 610,
+    despuntePorExtremoCm: 0,
+    kerfCm: 0.35,
+    minSobranteGuardableCm: 60,
+  });
+  const bKerf = optExactKerf.grupos[0].barras[0];
+  assert.equal(bKerf.sobranteCm, 319.9, '610 - 289.4 - (2 * 0.35) = 319.9 cm exactos');
+  assert.equal(Math.round((bKerf.usadoCm + bKerf.desperdicioDiscoCm + bKerf.sobranteCm) * 10) / 10, 610);
+
+  // Separación estricta por color cuando hay perfiles iguales de distinto acabado
+  const optTwoColors = optimizarTramos1D({
+    perfiles: [
+      makeCorteRow('r-nat', 'contramarco', 'jamba', '3002', 'Jamba', 120, 2, 'natural'),
+      makeCorteRow('r-neg', 'contramarco', 'jamba', '3002', 'Jamba', 120, 2, 'negro'),
+    ],
+    sobrantesInventario: [],
+    lineaCompatible: '3',
+    largoBarraCm: 610,
+    despuntePorExtremoCm: 0,
+    kerfCm: 0,
+  });
+  assert.equal(optTwoColors.grupos.length, 2, 'Natural y Negro no deben mezclarse en la misma barra 6.10 m');
+
+  // aggregateModulacionJobs propaga ajusteDescuentos y color
+  const multiAgg = aggregateModulacionJobs(
+    [
+      {
+        id: 'job-1',
+        etiqueta: 'Ventana 1',
+        modeloId: 'win-corrediza',
+        conMosquitero: false,
+        serieId: 'linea-3',
+        sublineaId: 'comercial-hermetica',
+        anchoCm: 150,
+        altoCm: 120,
+        cantidad: 1,
+        color: 'negro',
+      },
+    ],
+    { l3JambaAlto: 5.5 }
+  );
+  const jambaRow = multiAgg.perfilesConsolidados.find((p) => p.perfilId === 'jamba');
+  assert.ok(jambaRow, 'Debe existir jamba en el consolidado');
+  assert.equal(jambaRow.medidaCm, 114.5, 'Debe aplicar ajusteDescuentos l3JambaAlto=5.5 (120 - 5.5 = 114.5)');
+  assert.equal(jambaRow.color, 'negro');
+
+  // 5. Edición de fórmulas en Mi Taller sin borrar + Acordeones en módulos
+  const tallerSrc = readFileSync('src/components/TallerView.tsx', 'utf8');
+  assert.match(tallerSrc, /id="acc-taller-formulas"/);
+  assert.match(tallerSrc, /id="acc-taller-historial"/);
+  assert.match(tallerSrc, /btn-editar-formula-/);
+  assert.match(modalsSrc, /editingFormula\?: FormulaPersonalizada \| null/);
+  assert.match(modalsSrc, /Guardar Cambios/);
+  assert.match(modalsSrc, /id="sel-formula-linea"/);
+  const levSrc = readFileSync('src/components/LevantamientoRapido.tsx', 'utf8');
+  assert.match(levSrc, /id="acc-lev-cliente"/);
+  const modSrc = readFileSync('src/components/ModulacionCortesView.tsx', 'utf8');
+  assert.match(modSrc, /id="acc-mod-cliente"/);
+  assert.match(modSrc, /id="acc-mod-trabajos"/);
+  assert.match(modSrc, /id="sel-mod-color"/);
+  const invSrc = readFileSync('src/components/InventarioView.tsx', 'utf8');
+  assert.match(invSrc, /id="acc-inv-resumen-bodega"/);
+  assert.match(invSrc, /id="acc-inv-obras-aprobadas"/);
+
+  // 6. Reglas de oro intactas: SW v1.0.15 + Admin Login sin tocar + precios $369 intactos
+  assert.equal(APP_VERSION, '1.0.15');
+  assert.equal(APP_VERSION_LABEL, 'v1.0.15');
+  const swSrc = readFileSync('public/sw.js', 'utf8');
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.15'/);
+  assert.match(swSrc, /\/avatars\/oso\.png/);
+  assert.match(swSrc, /\/avatars\/lobo\.png/);
+  const monthlyPlan = PLANS.find((p) => p.code === 'M');
+  assert.equal(monthlyPlan?.price, '$329 MXN');
+  assert.match(modalsSrc, /369/);
+  const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
+  assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
+});
+
+test('122. TallerView.tsx limpio con 7 CollapsibleAccordion, hooks en nivel superior, maxConsumo bajo salesAnalytics, Pencil+X en fórmulas, cierre con PublicidadTallerCard+Respaldo JSON y SW v1.0.15', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { APP_VERSION } = await import('./alumineroLogic');
+  const tallerSrc = readFileSync('src/components/TallerView.tsx', 'utf8');
+
+  // 1. Imports y Hooks limpios en nivel superior
+  assert.match(tallerSrc, /import \{ CollapsibleAccordion \} from '\.\/CollapsibleAccordion';/);
+  for (const stateName of [
+    'metricasOpen',
+    'identidadOpen',
+    'tarifasOpen',
+    'descuentosOpen',
+    'formulasOpen',
+    'historialOpen',
+    'respaldoOpen',
+  ]) {
+    assert.match(tallerSrc, new RegExp(`const \\[${stateName},`));
+  }
+  const salesIdx = tallerSrc.indexOf('const salesAnalytics = useMemo(');
+  const maxConsumoIdx = tallerSrc.indexOf(
+    'const maxConsumo = Math.max(1, ...salesAnalytics.topMaterials.map((m) => m.cantidad));'
+  );
+  assert.ok(salesIdx > 0 && maxConsumoIdx > salesIdx, 'maxConsumo debe declararse justo debajo de salesAnalytics');
+  assert.ok(maxConsumoIdx - salesIdx < 400, 'maxConsumo debe ubicarse inmediatamente después de salesAnalytics');
+
+  // 2. Los 7 acordiones colapsables presentes
+  for (const accId of [
+    'acc-taller-metricas',
+    'acc-taller-identidad',
+    'acc-taller-tarifas',
+    'acc-taller-descuentos',
+    'acc-taller-formulas',
+    'acc-taller-historial',
+    'acc-taller-respaldo',
+  ]) {
+    assert.match(tallerSrc, new RegExp(`id="${accId}"`));
+  }
+
+  // 3. Botón Editar (Pencil) junto al botón Eliminar (X) en Mis Fórmulas de Corte
+  assert.match(tallerSrc, /id=\{`btn-editar-formula-\$\{f\.id\}`\}/);
+  assert.match(tallerSrc, /<Pencil className="w-3\.5 h-3\.5"/);
+  assert.match(tallerSrc, /id=\{`btn-eliminar-formula-\$\{f\.id\}`\}/);
+  assert.match(tallerSrc, /<X className="w-3\.5 h-3\.5"/);
+
+  // 4. Cierre limpio con PublicidadTallerCard, acordeón de Respaldo JSON y };
+  const pubIdx = tallerSrc.lastIndexOf('<PublicidadTallerCard');
+  const backupIdx = tallerSrc.lastIndexOf('id="acc-taller-respaldo"');
+  assert.ok(pubIdx > 0 && backupIdx > pubIdx, 'PublicidadTallerCard debe preceder al acordeón de Respaldo JSON al cierre');
+  assert.match(tallerSrc.trimEnd(), /<\/CollapsibleAccordion>\s*\)\s*\}\s*<\/section>\s*\);\s*\};$/);
+
+  // 5. Versión SW 1.0.15 sincronizada y Admin Login intacto
+  assert.equal(APP_VERSION, '1.0.15');
+  const swSrc = readFileSync('public/sw.js', 'utf8');
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.15';/);
+});
+
+
 
 
 

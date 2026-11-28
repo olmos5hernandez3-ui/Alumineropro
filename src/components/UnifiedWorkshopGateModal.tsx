@@ -13,6 +13,7 @@ import {
   X,
 } from 'lucide-react';
 import {
+  GOOGLE_CLOUD_PERSUASIVE_TIP,
   GOOGLE_CONNECT_BENEFIT_SUBTITLE,
   GOOGLE_CONNECT_CTA_LABEL,
   LEGAL_DISCLAIMER_TEXT,
@@ -266,6 +267,12 @@ export const UnifiedWorkshopGateModal: React.FC<UnifiedWorkshopGateModalProps> =
               </svg>
               <span>{googleAuthLoading ? 'Conectando con Google...' : GOOGLE_CONNECT_CTA_LABEL}</span>
             </button>
+            <p
+              id="unified-gate-google-persuasive-tip"
+              className="m-0 p-2 rounded-lg border border-sky-400/35 bg-sky-900/40 text-[11.5px] text-sky-100 leading-snug font-bold"
+            >
+              ☁️ {GOOGLE_CLOUD_PERSUASIVE_TIP}
+            </p>
             <p
               id="unified-gate-google-benefit"
               className="m-0 text-[11.5px] text-sky-100/90 leading-snug font-semibold"

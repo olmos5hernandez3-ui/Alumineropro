@@ -179,6 +179,7 @@ export const LevantamientoRapido: React.FC<Props> = ({
     typeof window !== 'undefined' ? loadClientes() : []
   );
   const [showCliSuggestions, setShowCliSuggestions] = useState(false);
+  const [accClienteOpen, setAccClienteOpen] = useState(true);
   const [showMexicoLines, setShowMexicoLines] = useState(false);
   const [mexicoLineCat, setMexicoLineCat] = useState<MexicoAluminumCategoryId>('nacional');
   const [customLineaText, setCustomLineaText] = useState('');
@@ -1094,108 +1095,122 @@ export const LevantamientoRapido: React.FC<Props> = ({
               </div>
             )}
 
-            <div className="card" style={{ position: 'relative' }}>
-              <label htmlFor="lv-cli">Cliente *</label>
-              <input
-                ref={cliInputRef}
-                id="lv-cli"
-                type="text"
-                autoComplete="off"
-                value={draft.cliente}
-                onFocus={() => setShowCliSuggestions(true)}
-                onBlur={() => setTimeout(() => setShowCliSuggestions(false), 180)}
-                onChange={(e) => {
-                  setLocalError(null);
-                  setShowCliSuggestions(true);
-                  persistDraft({ ...draft, cliente: e.target.value });
-                }}
-                placeholder="Ejemplo Cliente"
-              />
-              {showCliSuggestions && clientesGuardados.length > 0 && (() => {
-                const q = draft.cliente.trim().toLowerCase();
-                const matches = clientesGuardados
-                  .filter((c) => !q || c.nombre.toLowerCase().includes(q))
-                  .slice(0, 5);
-                if (matches.length === 0) return null;
-                return (
-                  <div
-                    style={{
-                      marginTop: '4px',
-                      borderRadius: '10px',
-                      border: '1px solid rgba(96,165,250,0.45)',
-                      background: '#0f172a',
-                      overflow: 'hidden',
-                    }}
-                  >
-                    {matches.map((c) => (
-                      <button
-                        key={c.nombre}
-                        type="button"
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          persistDraft({
-                            ...draft,
-                            cliente: c.nombre,
-                            telefono: c.telefono || draft.telefono || '',
-                            direccion: c.direccion || draft.direccion || '',
-                            ref: c.direccion || draft.ref || '',
-                          });
-                          setShowCliSuggestions(false);
-                        }}
-                        style={{
-                          width: '100%',
-                          textAlign: 'left',
-                          padding: '8px 10px',
-                          background: 'transparent',
-                          border: 'none',
-                          borderBottom: '1px solid rgba(148,163,184,0.18)',
-                          color: '#e2e8f0',
-                          cursor: 'pointer',
-                          fontSize: '12.5px',
-                        }}
-                      >
-                        <strong style={{ display: 'block', color: '#fff' }}>{c.nombre}</strong>
-                        {(c.telefono || c.direccion) && (
-                          <small style={{ color: '#94a3b8' }}>
-                            {[c.telefono, c.direccion].filter(Boolean).join(' · ')}
-                          </small>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                );
-              })()}
+            <CollapsibleAccordion
+              id="acc-lev-cliente"
+              title="👤 Datos del Cliente / Obra"
+              summary={
+                draft.cliente
+                  ? [draft.cliente, draft.telefono, draft.direccion ?? draft.ref].filter(Boolean).join(' · ')
+                  : 'Toca para capturar cliente, teléfono y ubicación'
+              }
+              open={accClienteOpen}
+              onToggle={() => setAccClienteOpen((v) => !v)}
+              tone="dark"
+              className="card !p-0 mb-3"
+            >
+              <div style={{ position: 'relative' }}>
+                <label htmlFor="lv-cli" style={{ marginTop: 0 }}>Cliente *</label>
+                <input
+                  ref={cliInputRef}
+                  id="lv-cli"
+                  type="text"
+                  autoComplete="off"
+                  value={draft.cliente}
+                  onFocus={() => setShowCliSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowCliSuggestions(false), 180)}
+                  onChange={(e) => {
+                    setLocalError(null);
+                    setShowCliSuggestions(true);
+                    persistDraft({ ...draft, cliente: e.target.value });
+                  }}
+                  placeholder="Ejemplo Cliente"
+                />
+                {showCliSuggestions && clientesGuardados.length > 0 && (() => {
+                  const q = draft.cliente.trim().toLowerCase();
+                  const matches = clientesGuardados
+                    .filter((c) => !q || c.nombre.toLowerCase().includes(q))
+                    .slice(0, 5);
+                  if (matches.length === 0) return null;
+                  return (
+                    <div
+                      style={{
+                        marginTop: '4px',
+                        borderRadius: '10px',
+                        border: '1px solid rgba(96,165,250,0.45)',
+                        background: '#0f172a',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      {matches.map((c) => (
+                        <button
+                          key={c.nombre}
+                          type="button"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            persistDraft({
+                              ...draft,
+                              cliente: c.nombre,
+                              telefono: c.telefono || draft.telefono || '',
+                              direccion: c.direccion || draft.direccion || '',
+                              ref: c.direccion || draft.ref || '',
+                            });
+                            setShowCliSuggestions(false);
+                          }}
+                          style={{
+                            width: '100%',
+                            textAlign: 'left',
+                            padding: '8px 10px',
+                            background: 'transparent',
+                            border: 'none',
+                            borderBottom: '1px solid rgba(148,163,184,0.18)',
+                            color: '#e2e8f0',
+                            cursor: 'pointer',
+                            fontSize: '12.5px',
+                          }}
+                        >
+                          <strong style={{ display: 'block', color: '#fff' }}>{c.nombre}</strong>
+                          {(c.telefono || c.direccion) && (
+                            <small style={{ color: '#94a3b8' }}>
+                              {[c.telefono, c.direccion].filter(Boolean).join(' · ')}
+                            </small>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })()}
 
-              <label htmlFor="lv-tel">Teléfono (opcional)</label>
-              <input
-                id="lv-tel"
-                type="tel"
-                inputMode="tel"
-                value={draft.telefono || ''}
-                onChange={(e) =>
-                  persistDraft({
-                    ...draft,
-                    telefono: formatClientPhoneInput(e.target.value, draft.telefono ?? ''),
-                  })
-                }
-                placeholder="333-333-4444"
-              />
+                <label htmlFor="lv-tel">Teléfono (opcional)</label>
+                <input
+                  id="lv-tel"
+                  type="tel"
+                  inputMode="tel"
+                  value={draft.telefono || ''}
+                  onChange={(e) =>
+                    persistDraft({
+                      ...draft,
+                      telefono: formatClientPhoneInput(e.target.value, draft.telefono ?? ''),
+                    })
+                  }
+                  placeholder="333-333-4444"
+                />
 
-              <label htmlFor="lv-dir">Dirección / ubicación / referencia (opcional)</label>
-              <input
-                id="lv-dir"
-                type="text"
-                value={draft.direccion ?? draft.ref ?? ''}
-                onChange={(e) =>
-                  persistDraft({
-                    ...draft,
-                    direccion: e.target.value,
-                    ref: e.target.value,
-                  })
-                }
-                placeholder="Ej. Col. Centro #45, entre Hidalgo y Juárez"
-              />
-            </div>
+                <label htmlFor="lv-dir">Dirección / ubicación / referencia (opcional)</label>
+                <input
+                  id="lv-dir"
+                  type="text"
+                  value={draft.direccion ?? draft.ref ?? ''}
+                  onChange={(e) =>
+                    persistDraft({
+                      ...draft,
+                      direccion: e.target.value,
+                      ref: e.target.value,
+                    })
+                  }
+                  placeholder="Ej. Col. Centro #45, entre Hidalgo y Juárez"
+                />
+              </div>
+            </CollapsibleAccordion>
 
             {/* ACORDEÓN 1: Escáner de Croquis con IA (colapsado por defecto) */}
             <CollapsibleAccordion

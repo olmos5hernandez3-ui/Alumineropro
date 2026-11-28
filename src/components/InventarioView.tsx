@@ -31,6 +31,7 @@ import {
 } from '../utils/storageHelpers';
 import { PerfilSectionSvg } from './PerfilSectionSvg';
 import { PerfilZoomData, PerfilZoomModal } from './PerfilZoomModal';
+import { CollapsibleAccordion } from './CollapsibleAccordion';
 
 interface Props {
   inventario: Record<string, number>;
@@ -212,6 +213,8 @@ export const InventarioView: React.FC<Props> = ({
     herrajesPrecios: Record<string, number>;
     summary: string;
   } | null>(null);
+  const [accResumenBodegaOpen, setAccResumenBodegaOpen] = useState(true);
+  const [accObrasAprobadasOpen, setAccObrasAprobadasOpen] = useState(true);
 
   const effectivePriceCtx: ExistenciasPriceContext = existenciasPriceCtx ?? {
     inventarioPreciosUnitarios: {},
@@ -1544,13 +1547,16 @@ export const InventarioView: React.FC<Props> = ({
               </div>
             </div>
 
-            <div className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] p-4 sm:p-5 shadow-xl">
-              <div className="flex items-center justify-between gap-2 mb-2.5">
-                <div>
-                  <h2 className="m-0 text-[17px] font-extrabold">Resumen de Bodega (Con existencia)</h2>
-                  <p className="m-0 text-[12px] text-slate-500">Perfiles registrados mayores a 0 m</p>
-                </div>
-                {bodegaExistencias.length > 0 && (
+            <CollapsibleAccordion
+              id="acc-inv-resumen-bodega"
+              title="📦 Resumen de Bodega (Con existencia)"
+              summary={`${bodegaExistencias.length} perfil(es) registrados mayores a 0 m`}
+              open={accResumenBodegaOpen}
+              onToggle={() => setAccResumenBodegaOpen((v) => !v)}
+              tone="light"
+              className="shadow-xl"
+              rightAction={
+                bodegaExistencias.length > 0 ? (
                   <button
                     type="button"
                     onClick={onLimpiarInventario}
@@ -1558,8 +1564,9 @@ export const InventarioView: React.FC<Props> = ({
                   >
                     Poner en 0
                   </button>
-                )}
-              </div>
+                ) : undefined
+              }
+            >
               {bodegaExistencias.length === 0 ? (
                 <p className="text-[12.5px] text-slate-500 p-3.5 text-center border border-dashed border-slate-200 rounded-xl">
                   Aún no tienes tramos completos registrados en bodega.
@@ -1622,13 +1629,17 @@ export const InventarioView: React.FC<Props> = ({
                   })}
                 </div>
               )}
-            </div>
+            </CollapsibleAccordion>
 
-            <div className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] p-4 sm:p-5 shadow-xl">
-              <h2 className="m-0 text-[17px] font-extrabold">Obras Aprobadas (Stock Comprometido)</h2>
-              <p className="m-0 text-[12px] text-slate-500 mb-2.5">
-                Tramos apartados en proyectos aprobados para no contarlos dos veces (tramo de {TRAMO_COMPROMETIDO_M.toFixed(2)} m)
-              </p>
+            <CollapsibleAccordion
+              id="acc-inv-obras-aprobadas"
+              title="🏗️ Obras Aprobadas (Stock Comprometido)"
+              summary={`${obrasAprobadas.length} obra(s) con tramos apartados (tramo de ${TRAMO_COMPROMETIDO_M.toFixed(2)} m)`}
+              open={accObrasAprobadasOpen}
+              onToggle={() => setAccObrasAprobadasOpen((v) => !v)}
+              tone="light"
+              className="shadow-xl"
+            >
 
               {(() => {
                 const resumenObras = resumirObrasAprobadas(obrasAprobadas, TRAMO_COMPROMETIDO_M);
@@ -1755,7 +1766,7 @@ export const InventarioView: React.FC<Props> = ({
                   })
                 )}
               </div>
-            </div>
+            </CollapsibleAccordion>
           </div>
 
           <div className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] p-4 sm:p-5 shadow-xl">

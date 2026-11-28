@@ -653,6 +653,7 @@ export default function App() {
   const [historial, setHistorial] = useState<HistorialItem[]>(() => loadHistorial());
   const [formulas, setFormulas] = useState<FormulaPersonalizada[]>(() => loadFormulas());
   const [selectedFormulaId, setSelectedFormulaId] = useState<string>('std');
+  const [editingFormula, setEditingFormula] = useState<FormulaPersonalizada | null>(null);
   const [perfilFotos, setPerfilFotos] = useState<PerfilFotosMap>(() => loadPerfilFotos());
   const [adminKeys, setAdminKeys] = useState<AdminKeyRecord[]>(() => loadAdminKeys());
 
@@ -4469,7 +4470,14 @@ export default function App() {
             }}
             onOpenPro={() => openGlobalModal('pro')}
             onEntrarInventario={() => handleEntrarInventario()}
-            onOpenFormulaModal={() => openGlobalModal('formula')}
+            onOpenFormulaModal={() => {
+              setEditingFormula(null);
+              openGlobalModal('formula');
+            }}
+            onEditarFormula={(formula) => {
+              setEditingFormula(formula);
+              openGlobalModal('formula');
+            }}
             onEliminarFormula={(id) => setFormulas((prev) => prev.filter((f) => f.id !== id))}
             onEliminarHistorial={(id) => setHistorial((prev) => prev.filter((h) => h.id !== id))}
             onLimpiarHistorial={() => setHistorial([])}
@@ -6075,13 +6083,28 @@ export default function App() {
         linea={params.linea}
         tolerancias={params.tolerancias}
         formulas={formulas}
-        onClose={requestBack}
+        editingFormula={editingFormula}
+        onClose={() => {
+          setEditingFormula(null);
+          requestBack();
+        }}
         onSaveFormula={(nombre, linea, tolerancias) => {
           const newId = `f-${Date.now()}`;
           setFormulas((prev) => [...prev, { id: newId, nombre, linea, tolerancias }]);
           setSelectedFormulaId(newId);
           setParams((prev) => ({ ...prev, tolerancias: { ...tolerancias } }));
+          setEditingFormula(null);
           showToast('Fórmula personalizada guardada', true);
+        }}
+        onUpdateFormula={(id, nombre, linea, tolerancias) => {
+          setFormulas((prev) =>
+            prev.map((f) => (f.id === id ? { ...f, nombre, linea, tolerancias } : f))
+          );
+          if (selectedFormulaId === id) {
+            setParams((prev) => ({ ...prev, tolerancias: { ...tolerancias } }));
+          }
+          setEditingFormula(null);
+          showToast(`Fórmula "${nombre}" actualizada`, true);
         }}
         onApplyFormula={(f) => {
           setSelectedFormulaId(f.id);
@@ -6090,6 +6113,7 @@ export default function App() {
         }}
         onDeleteFormula={(id) => {
           setFormulas((prev) => prev.filter((f) => f.id !== id));
+          if (editingFormula?.id === id) setEditingFormula(null);
           if (selectedFormulaId === id) {
             setSelectedFormulaId('std');
             setParams((prev) => ({
@@ -6183,6 +6207,8 @@ export default function App() {
           onOpenLevantamiento={() => window.__alumLev?.open()}
           onOpenTutorial={() => openGlobalModal('tutorial')}
           onOpenPro={() => openGlobalModal('pro')}
+          googleConnected={Boolean(firebaseUser)}
+          onConnectGoogle={handleConnectGoogle}
           suppressAutoBubble={onboardingTourOpen || isInteractiveTutorialVisible}
           onShowToast={showToast}
         />

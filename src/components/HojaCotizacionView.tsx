@@ -1,5 +1,8 @@
 import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
+  buildHojaShoppingList,
+  buildHojaShoppingListWhatsAppText,
   buildWhatsAppDirectUrl,
   COLORES_CONFIG,
   consolidarMaterialesObra,
@@ -148,6 +151,10 @@ export const HojaCotizacionView: React.FC<Props> = ({
   const [contratoOpen, setContratoOpen] = useState(false);
   const [pdfHeaderModalOpen, setPdfHeaderModalOpen] = useState(false);
   const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
+  const [shoppingListOpen, setShoppingListOpen] = useState(false);
+  const [shoppingOnlyMissing, setShoppingOnlyMissing] = useState(true);
+  const [shoppingIncludeVidrios, setShoppingIncludeVidrios] = useState(true);
+  const [shoppingIncludeHerrajes, setShoppingIncludeHerrajes] = useState(true);
   const [currentFolio, setCurrentFolio] = useState<string>(() => peekNextCotizacionFolio());
   const [clientesGuardados, setClientesGuardados] = useState<ClienteGuardado[]>(() => loadClientes());
   const [showClientSuggestions, setShowClientSuggestions] = useState(false);
@@ -191,6 +198,45 @@ export const HojaCotizacionView: React.FC<Props> = ({
   }
 
   const consolidado = consolidarMaterialesObra(hoja.partidas, inventario, comprometidosMap, sobrantes);
+
+  const shoppingList = useMemo(
+    () =>
+      buildHojaShoppingList(
+        {
+          proyecto: hoja.proyecto,
+          cliente: hoja.proyecto,
+          folio: currentFolio,
+          partidas: hoja.partidas,
+        },
+        consolidado
+      ),
+    [hoja.proyecto, hoja.partidas, currentFolio, consolidado]
+  );
+
+  const shoppingWhatsAppText = useMemo(
+    () =>
+      buildHojaShoppingListWhatsAppText(shoppingList, {
+        onlyMissing: shoppingOnlyMissing,
+        tallerNombre: taller.nombre,
+        includeVidrios: shoppingIncludeVidrios,
+        includeHerrajes: shoppingIncludeHerrajes,
+      }),
+    [shoppingList, shoppingOnlyMissing, taller.nombre, shoppingIncludeVidrios, shoppingIncludeHerrajes]
+  );
+
+  const shoppingWhatsAppUrl = useMemo(
+    () => buildWhatsAppDirectUrl('', shoppingWhatsAppText),
+    [shoppingWhatsAppText]
+  );
+
+  const handleCopyShoppingList = async () => {
+    try {
+      await navigator.clipboard.writeText(shoppingWhatsAppText);
+      onShowToast('Lista de compras copiada al portapapeles', true);
+    } catch {
+      onShowToast('No se pudo copiar automáticamente; usa el botón de WhatsApp');
+    }
+  };
 
   const opt1D = useMemo(
     () => optimizarPartidasTramos1D(hoja.partidas, sobrantes, taller.optimizador),
@@ -815,6 +861,20 @@ export const HojaCotizacionView: React.FC<Props> = ({
               >
                 💬 Enviar resumen por WhatsApp
               </button>
+              <button
+                type="button"
+                id="btn-hoja-lista-compras-wa"
+                onClick={() => {
+                  if (hoja.partidas.length === 0) {
+                    onShowToast('Agrega al menos una pieza para generar la lista de compras');
+                    return;
+                  }
+                  setShoppingListOpen(true);
+                }}
+                className="w-full min-h-[46px] px-4 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white border border-emerald-400/50 font-extrabold text-[13.5px] cursor-pointer shadow-sm"
+              >
+                🛒 Lista de Compras simplificada (WhatsApp)
+              </button>
               {onOpenGlassOptimizer && (
                 <button
                   type="button"
@@ -1206,7 +1266,7 @@ export const HojaCotizacionView: React.FC<Props> = ({
                 piezasCount: hoja.partidas.length,
                 materiales: materialesResumen,
               });
-              const createdEntry = savedList.find((item) => item.folio === res.folio) || savedList;
+              const createdEntry = savedList.find((item) => item.folio === res.folio) || savedList[0];
               if (typeof navigator !== 'undefined' && !navigator.onLine) {
                 enqueueOfflineCotizacion({
                   key: `cotizacion:${res.folio}`,
@@ -1230,6 +1290,133 @@ export const HojaCotizacionView: React.FC<Props> = ({
           />
         </Suspense>
       )}
+
+      {shoppingListOpen &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            id="modal-hoja-lista-compras"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="modal-hoja-lista-compras-title"
+            className="fixed inset-0 z-[9995] bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setShoppingListOpen(false);
+            }}
+          >
+            <div className="w-full max-w-[560px] max-h-[90dvh] rounded-2xl border border-slate-700 bg-[#121722] text-slate-100 shadow-2xl flex flex-col overflow-hidden my-auto">
+              <div className="px-4 py-3.5 bg-[#181f2e] border-b border-slate-700 flex items-center justify-between gap-2 shrink-0">
+                <div className="min-w-0">
+                  <h2
+                    id="modal-hoja-lista-compras-title"
+                    className="m-0 text-[16px] font-black text-white leading-tight"
+                  >
+                    🛒 Lista de Compras Simplificada
+                  </h2>
+                  <p className="m-0 text-[11.5px] text-slate-300 mt-0.5 truncate">
+                    {shoppingList.proyecto} · {shoppingList.partidasCount} partida(s)
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  id="btn-close-lista-compras"
+                  onClick={() => setShoppingListOpen(false)}
+                  aria-label="Cerrar lista de compras"
+                  className="min-w-[34px] min-h-[34px] rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 font-extrabold cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {/* Modo de surtido */}
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    id="btn-shopping-mode-missing"
+                    onClick={() => setShoppingOnlyMissing(true)}
+                    className={`min-h-[38px] px-3 py-1.5 rounded-xl border text-[12px] font-extrabold cursor-pointer transition-colors ${
+                      shoppingOnlyMissing
+                        ? 'bg-emerald-600/25 border-emerald-400 text-emerald-200'
+                        : 'bg-[#1a2233] border-slate-700 text-slate-300 hover:bg-slate-800'
+                    }`}
+                  >
+                    Solo faltantes vs bodega ({shoppingList.totalTramosAComprar} tr.)
+                  </button>
+                  <button
+                    type="button"
+                    id="btn-shopping-mode-all"
+                    onClick={() => setShoppingOnlyMissing(false)}
+                    className={`min-h-[38px] px-3 py-1.5 rounded-xl border text-[12px] font-extrabold cursor-pointer transition-colors ${
+                      !shoppingOnlyMissing
+                        ? 'bg-sky-600/25 border-sky-400 text-sky-200'
+                        : 'bg-[#1a2233] border-slate-700 text-slate-300 hover:bg-slate-800'
+                    }`}
+                  >
+                    Todo el material ({shoppingList.totalTramosRequeridos} tr.)
+                  </button>
+                </div>
+
+                {/* Filtros opcionales */}
+                <div className="flex flex-wrap gap-2">
+                  <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-700 bg-[#182030] text-[11.5px] font-bold text-slate-200 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={shoppingIncludeVidrios}
+                      onChange={(e) => setShoppingIncludeVidrios(e.target.checked)}
+                      className="w-4 h-4 accent-emerald-500"
+                    />
+                    <span>Incluir Vidrios ({shoppingList.vidrios.length})</span>
+                  </label>
+                  <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-700 bg-[#182030] text-[11.5px] font-bold text-slate-200 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={shoppingIncludeHerrajes}
+                      onChange={(e) => setShoppingIncludeHerrajes(e.target.checked)}
+                      className="w-4 h-4 accent-emerald-500"
+                    />
+                    <span>Incluir Herrajes ({shoppingList.herrajes.length})</span>
+                  </label>
+                </div>
+
+                {/* Resumen visual rápido */}
+                <div className="rounded-xl border border-slate-700 bg-[#0d111a] p-3">
+                  <div className="text-[11px] font-extrabold uppercase tracking-wider text-emerald-300 mb-1.5">
+                    Vista previa lista para WhatsApp
+                  </div>
+                  <pre
+                    id="hoja-lista-compras-preview"
+                    className="m-0 whitespace-pre-wrap break-words font-sans text-[12px] leading-relaxed text-slate-200 max-h-[260px] overflow-y-auto"
+                  >
+                    {shoppingWhatsAppText}
+                  </pre>
+                </div>
+              </div>
+
+              <div className="px-4 py-3 bg-[#181f2e] border-t border-slate-700 flex flex-wrap items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  id="btn-copiar-lista-compras"
+                  onClick={() => void handleCopyShoppingList()}
+                  className="flex-1 min-w-[130px] min-h-[44px] px-3 rounded-xl border border-slate-600 bg-slate-800 hover:bg-slate-700 text-slate-100 font-extrabold text-[13px] cursor-pointer"
+                >
+                  📋 Copiar lista
+                </button>
+                <a
+                  id="btn-enviar-lista-compras-wa"
+                  href={shoppingWhatsAppUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => onShowToast('Abriendo WhatsApp con tu lista de compras', true)}
+                  className="flex-[1.5] min-w-[180px] min-h-[44px] px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[13.5px] inline-flex items-center justify-center gap-2 no-underline shadow-md"
+                >
+                  💬 Enviar por WhatsApp
+                </a>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
 
       {onUpdateTaller && (
         <PdfHeaderCustomizerModal

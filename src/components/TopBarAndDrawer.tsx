@@ -26,6 +26,7 @@ import {
 import {
   APP_VERSION,
   formatLicenseCountdownBadge,
+  GOOGLE_CLOUD_PERSUASIVE_TIP,
   GOOGLE_CONNECT_BENEFIT_SUBTITLE,
   GOOGLE_CONNECT_CTA_LABEL,
   HomePromoCardMode,
@@ -1354,9 +1355,9 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
                 </button>
               </div>
 
-              {/* Cuadrícula de los 7 personajes 3D transparentes */}
+              {/* Cuadrícula de los personajes 3D transparentes */}
               <div className={`text-[10px] font-extrabold uppercase tracking-wider pt-0.5 ${subTextClass}`}>
-                Elige tu personaje (7):
+                Elige tu personaje ({ASSISTANT_CHARACTERS.length}):
               </div>
               <div
                 id="drawer-avatar-grid"
@@ -1754,6 +1755,18 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
               )}
             </button>
 
+            {!googleUserEmail && (
+              <p
+                id="drawer-google-persuasive-tip"
+                className={`m-0 px-2 py-1.5 rounded-lg border text-[11px] leading-snug font-bold ${
+                  isDark
+                    ? 'border-sky-400/35 bg-sky-950/45 text-sky-100'
+                    : 'border-blue-200 bg-blue-50 text-slate-800'
+                }`}
+              >
+                ☁️ {GOOGLE_CLOUD_PERSUASIVE_TIP}
+              </p>
+            )}
             <p
               id="drawer-google-benefit"
               className={`m-0 px-1 text-[11px] leading-snug font-semibold ${subTextClass}`}

@@ -39,6 +39,7 @@ import {
   resolveLineaFromLevantamiento,
   resolveMosquiteroFromLevantamiento,
 } from '../utils/levantamientoLogic';
+import { CollapsibleAccordion } from './CollapsibleAccordion';
 import { PerfilSectionSvg } from './PerfilSectionSvg';
 import { PerfilZoomData, PerfilZoomModal } from './PerfilZoomModal';
 import { Tramos610AcomodadosSection } from './Tramos610AcomodadosSection';
@@ -179,7 +180,6 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
   tarifasBase,
   proActive,
   sobrantes,
-  onAddSobrante,
   onSendToHoja,
   onSendVidriosToOptimizer,
   step: controlledStep,
@@ -211,8 +211,8 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
   const [unidad, setUnidad] = useState<'cm' | 'm'>('cm');
   const [anchoInput, setAnchoInput] = useState<string>('120');
   const [altoInput, setAltoInput] = useState<string>('100');
-      const [clienteAccordionOpen, setClienteAccordionOpen] = useState<boolean>(false);
-  const [trabajosAccordionOpen, setTrabajosAccordionOpen] = useState<boolean>(true);
+  const [accClienteOpen, setAccClienteOpen] = useState<boolean>(false);
+  const [accTrabajosOpen, setAccTrabajosOpen] = useState<boolean>(true);
   const [localPaso5Tab, setLocalPaso5Tab] = useState<'cortes' | 'tramos'>('cortes');
   const [cortadosMap, setCortadosMap] = useState<Record<string, number>>({});
   const [discoKerfMm, setDiscoKerfMm] = useState<number>(() => round2(resolvedOptCfg.kerfCm * 10));
@@ -426,7 +426,9 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
     if (nextPiezas.length === 0) {
       try {
         window.localStorage.removeItem(LEV_KEYS.activo);
-      } catch {}
+      } catch {
+        // ignore
+      }
       setActivoLev(null);
       setActiveLevPiezaId(null);
       return;
@@ -436,7 +438,9 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
     if (activeLevPiezaId === id) setActiveLevPiezaId(null);
     try {
       window.localStorage.setItem(LEV_KEYS.activo, JSON.stringify(nextDraft));
-    } catch {}
+    } catch {
+      // ignore
+    }
     onShowToast('Trabajo quitado de la lista de modulación');
   };
 
@@ -463,7 +467,9 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
         }
       }
       window.dispatchEvent(new Event('aluminero:lev-activo-updated'));
-    } catch {}
+    } catch {
+      // ignore
+    }
     const updated = nextPiezas.find((x) => x.id === id);
     if (updated) {
       if (!selectedLevIds.includes(id)) setSelectedLevIds((prev) => [...prev, id]);
@@ -477,16 +483,349 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
     const ancho = Math.max(15, Number(p.anchoCm) || 100);
     const alto = Math.max(15, Number(p.altoCm) || 190);
     const cant = Math.max(1, Number(p.cant) || 1);
+    const areaM2 = round2((ancho / 100) * (alto / 100));
+    const tarifa = tarifasBase['cancel-bano'] ?? 2250;
+    const unit = round2(Math.max(0.5, areaM2) * tarifa);
+    const vRaw = String(p.colorVidrio || 'Vidrio claro').trim();
+    const vLow = vRaw.toLowerCase();
+    const sinVidrio = vLow === 'sin vidrio';
+    const vidrioLabel = vLow === 'claro' || vLow === 'vidrio claro' ? 'Vidrio claro 6 mm' : `${vRaw} 6 mm`;
+    const ok = onSendToHoja(
+      {
+        id: `p-dir-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        categoria: 'ventanas',
+        linea: 'cancel-bano',
+        area: p.area || 'Cancel / Otro',
+        etiqueta: `${p.tipo} · Cotización directa (${formatMedidaText(p)})`,
+        anchoCm: ancho,
+        altoCm: alto,
+        color: resolveColorAluminioFromLevantamiento(p.colorAluminio),
+        vidrio: 'claro6',
+        hojas: 1,
+        apertura: 'fija',
+        sentidoPuerta: 'izq',
+        puertaIntermedio: false,
+        puertaEconomica: false,
+        cancelEstilo: 'semilujo',
+        invertido: false,
+        cantidad: cant,
+        modoPrecio: 'm2',
+        precioInput: tarifa,
+        cobrarMinM2: true,
+        extraPct: 0,
+        totalLinea: round2(unit * cant),
+        despiece: {
+          perfiles: [],
+          herrajes: [],
+          vidrios: sinVidrio
+            ? []
+            : [
+                {
+                  nombre: `${p.area ? `${p.area} · ` : ''}${p.tipo}`,
+                  tipo: 'vidrio',
+                  anchoCm: ancho,
+                  altoCm: alto,
+                  pzas: cant,
+                  espesorLabel: vidrioLabel,
+                  areaM2,
+                },
+              ],
+          totalAluminioM: 0,
+          tramos610: 0,
+          escuadrasCount: 0,
+          telaMosquiteraM2: 0,
+          colaDeRataM: 0,
+          carretillasMosq: 0,
+        },
+      },
+      proActive
+    );
+    if (ok !== false) {
+      onShowToast(`"${p.tipo}" enviado directamente a Hoja de Cotización`, true);
+    }
+  };
+
+  const handleClearActivoLev = () => {
+    try {
+      window.localStorage.removeItem(LEV_KEYS.activo);
+    } catch {
+      // ignore
+    }
+    setActivoLev(null);
+    setActiveLevPiezaId(null);
+  };
+
+  const modelosVisibles = useMemo(
+    () => MODULACION_MODELOS.filter((m) => m.categoria === categoria),
+    [categoria]
+  );
+
+  const selectedModelo = useMemo(
+    () => MODULACION_MODELOS.find((m) => m.id === modeloId) || MODULACION_MODELOS[0],
+    [modeloId]
+  );
+
+  const selectedSerie = useMemo(
+    () => MODULACION_SERIES.find((s) => s.id === serieId) || MODULACION_SERIES[3],
+    [serieId]
+  );
+
+  const selectedSublinea = useMemo(
+    () => MODULACION_SUBLINEAS.find((sl) => sl.id === sublineaId) || MODULACION_SUBLINEAS[0],
+    [sublineaId]
+  );
+
+  const perfilesPaso4 = useMemo(
+    () => getPerfilesBaseModulacion(modeloId, conMosquitero),
+    [modeloId, conMosquitero]
+  );
+
+  const anchoCm = useMemo(() => {
+    const val = Number(anchoInput) || 0;
+    return unidad === 'm' ? Math.max(20, round2(val * 100)) : Math.max(20, val);
+  }, [anchoInput, unidad]);
+
+  const altoCm = useMemo(() => {
+    const val = Number(altoInput) || 0;
+    return unidad === 'm' ? Math.max(20, round2(val * 100)) : Math.max(20, val);
+  }, [altoInput, unidad]);
+
+  const calculoCortes = useMemo(() => {
+    const base = calcularModulacionCortes({
+      modeloId,
+      conMosquitero,
+      serieId,
+      sublineaId,
+      anchoCm,
+      altoCm,
+      ajusteDescuentos,
+    });
+    return {
+      ...base,
+      vidrios: base.vidrios.map((v) =>
+        v.tipo === 'vidrio' ? { ...v, espesorLabel: vidrioSeleccionado } : v
+      ),
+    };
+  }, [
+    modeloId,
+    conMosquitero,
+    serieId,
+    sublineaId,
+    anchoCm,
+    altoCm,
+    vidrioSeleccionado,
+    ajusteDescuentos,
+  ]);
+
+  const lineaCompatible: LineaId =
+    selectedModelo.categoria === 'puertas'
+      ? selectedSerie.mappedLineaPuerta
+      : selectedSerie.mappedLineaVentana;
+
+  const allLevPiezas = useMemo(() => (activoLev ? activoLev.piezas : []), [activoLev]);
+  const allLevSelected =
+    allLevPiezas.length > 0 && allLevPiezas.every((p) => selectedLevIds.includes(p.id));
+
+  const toggleSelectAllLev = () => {
+    if (allLevSelected) setSelectedLevIds([]);
+    else setSelectedLevIds(allLevPiezas.map((p) => p.id));
+  };
+
+  const toggleSelectOneLev = (id: string) => {
+    setSelectedLevIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  const directGlassFromSelected = useMemo<CorteVidrio[]>(() => {
+    if (!activoLev || selectedLevIds.length === 0) return [];
+    const out: CorteVidrio[] = [];
+    activoLev.piezas.forEach((p, idx) => {
+      if (!selectedLevIds.includes(p.id)) return;
+      const resolved = resolveLineaFromLevantamiento(p);
+      if (resolved.modelo && resolved.cat) return;
+      const vRaw = String(p.colorVidrio || 'Vidrio claro').trim();
+      const vLow = vRaw.toLowerCase();
+      if (vLow === 'sin vidrio') return;
+      const vidrioLabel =
+        vLow === 'claro' || vLow === 'vidrio claro' ? 'Vidrio claro 6 mm' : `${vRaw} 6 mm`;
+      const aCm = Math.max(15, Number(p.anchoCm) || 100);
+      const hCm = Math.max(15, Number(p.altoCm) || 100);
+      const pzas = Math.max(1, Number(p.cant) || 1);
+      out.push({
+        nombre: `#${idx + 1} ${p.area ? `${p.area} · ` : ''}${p.tipo} (Vidrio directo)`,
+        tipo: 'vidrio',
+        anchoCm: aCm,
+        altoCm: hCm,
+        pzas,
+        espesorLabel: vidrioLabel,
+        areaM2: round2((aCm / 100) * (hCm / 100) * pzas),
+      });
+    });
+    return out;
+  }, [activoLev, selectedLevIds]);
+
+  const multiJobResult = useMemo(() => {
+    if (!activoLev || selectedLevIds.length === 0) return null;
+    const selectedPiezas = activoLev.piezas.filter((p) => selectedLevIds.includes(p.id));
+    if (selectedPiezas.length === 0) return null;
+    const jobInputs: ModulacionMultiJobInput[] = [];
+    selectedPiezas.forEach((p, idx) => {
+      const resolved = resolveLineaFromLevantamiento(p);
+      if (!resolved.modelo || !resolved.cat) return;
+      const vRaw = String(p.colorVidrio || 'Vidrio claro').trim();
+      const vLow = vRaw.toLowerCase();
+      const sinVidrio = vLow === 'sin vidrio' || p.tipo.toLowerCase().includes('mosquitero');
+      const vidrioLabel =
+        vLow === 'claro' || vLow === 'vidrio claro' ? 'Vidrio claro 6 mm' : `${vRaw} 6 mm`;
+      jobInputs.push({
+        id: p.id,
+        etiqueta: `#${idx + 1} ${p.area ? `${p.area} · ` : ''}${p.tipo} (${p.anchoCm}×${p.altoCm})`,
+        modeloId: resolved.modelo,
+        conMosquitero:
+          resolveMosquiteroFromLevantamiento(p.mosquitero) || p.tipo === 'Mosquitero abatible',
+        serieId: resolved.serieMod,
+        sublineaId,
+        anchoCm: p.anchoCm,
+        altoCm: p.altoCm,
+        cantidad: Math.max(1, Number(p.cant) || 1),
+        vidrioLabel,
+        sinVidrio,
+        color: resolveColorAluminioFromLevantamiento(p.colorAluminio),
+      });
+    });
+    if (jobInputs.length === 0) return null;
+    return aggregateModulacionJobs(jobInputs, ajusteDescuentos);
+  }, [activoLev, selectedLevIds, sublineaId, ajusteDescuentos]);
+
+  const effectivePerfiles = useMemo(
+    () =>
+      multiJobResult && multiJobResult.totalTrabajos > 0
+        ? multiJobResult.perfilesConsolidados
+        : calculoCortes.perfiles,
+    [multiJobResult, calculoCortes.perfiles]
+  );
+
+  const effectiveVidrios = useMemo(() => {
+    if (activoLev && activoLev.piezas.length > 0) {
+      return [
+        ...(multiJobResult && multiJobResult.totalTrabajos > 0
+          ? multiJobResult.vidriosConsolidados
+          : []),
+        ...directGlassFromSelected,
+      ];
+    }
+    return calculoCortes.vidrios;
+  }, [activoLev, multiJobResult, directGlassFromSelected, calculoCortes.vidrios]);
+
+  const optimizacion1D = useMemo(
+    () =>
+      optimizarTramos1D({
+        perfiles: effectivePerfiles,
+        sobrantesInventario: sobrantes,
+        lineaCompatible,
+        colorCompatible: colorSeleccionado,
+        largoBarraCm: resolvedOptCfg.largoBarraCm,
+        despuntePorExtremoCm: resolvedOptCfg.despuntePorExtremoCm,
+        kerfCm: Math.max(0, round2(discoKerfMm / 10)),
+        minSobranteGuardableCm: Math.max(10, Math.round(umbralSobranteCm) || 60),
+      }),
+    [
+      effectivePerfiles,
+      sobrantes,
+      lineaCompatible,
+      colorSeleccionado,
+      discoKerfMm,
+      umbralSobranteCm,
+      resolvedOptCfg,
+    ]
+  );
+
+  const seccionesConFilas = useMemo(
+    () =>
+      MODULACION_SECCIONES_META.map((sec) => ({
+        ...sec,
+        rows: effectivePerfiles.filter((r) => r.seccion === sec.id),
+      })).filter((s) => s.rows.length > 0),
+    [effectivePerfiles]
+  );
+
+  const totalPiezasRequeridas = useMemo(
+    () => effectivePerfiles.reduce((acc, r) => acc + r.cantidad, 0),
+    [effectivePerfiles]
+  );
+
+  const totalPiezasCortadas = useMemo(
+    () =>
+      effectivePerfiles.reduce((acc, r) => acc + Math.min(r.cantidad, cortadosMap[r.id] || 0), 0),
+    [effectivePerfiles, cortadosMap]
+  );
+
+  const getCutCount = (rowId: string, max: number) =>
+    Math.max(0, Math.min(max, cortadosMap[rowId] || 0));
+
+  const handleStepCutCount = (rowId: string, max: number, delta: number) => {
+    setCortadosMap((prev) => {
+      const cur = Math.max(0, Math.min(max, prev[rowId] || 0));
+      const next = Math.max(0, Math.min(max, cur + delta));
+      return { ...prev, [rowId]: next };
+    });
+  };
+
+  const handleToggleCompleteRow = (rowId: string, max: number) => {
+    setCortadosMap((prev) => {
+      const cur = Math.max(0, Math.min(max, prev[rowId] || 0));
+      return { ...prev, [rowId]: cur >= max ? 0 : max };
+    });
+  };
+
+  const handleToggleUnidad = (nextUnit: 'cm' | 'm') => {
+    if (nextUnit === unidad) return;
+    const curAncho = Number(anchoInput) || 120;
+    const curAlto = Number(altoInput) || 100;
+    if (nextUnit === 'm') {
+      setAnchoInput(String(round2(curAncho / 100)));
+      setAltoInput(String(round2(curAlto / 100)));
+    } else {
+      setAnchoInput(String(Math.round(curAncho * 100)));
+      setAltoInput(String(Math.round(curAlto * 100)));
+    }
+    setUnidad(nextUnit);
+  };
+
+  const handlePickModelo = (id: ModulacionModeloId) => {
+    setModeloId(id);
+    setCortadosMap({});
+    openMosquiteroModal();
+  };
+
+  const handleChooseMosquitero = (value: boolean) => {
+    setConMosquitero(value);
+    setCortadosMap({});
+    if (onNavigateModState) {
+      onNavigateModState({ mosquiteroModalOpen: false, step: 3 });
+    } else {
+      setLocalMosqOpen(false);
+      setLocalStep(3);
+    }
+  };
+
+  const handleSendToHoja = () => {
+    if (onSendToHoja(buildPartidaFromModulacion(calculoCortes, tarifasBase), proActive) === false) {
+      return;
+    }
+    onShowToast(
+      proActive
+        ? 'Tramos enviados a Hoja de Cotización'
+        : 'Tramos guardados en tu Hoja de Cotización',
+      true
+    );
+  };
 
   return (
     <section id="view-modulacion" className="screen-animate pb-28 sm:pb-14">
-      {/* Encabezado y barra de pasos */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2.5">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="m-0 text-[21px] font-extrabold text-white">
-              Modulación y Cortes
-            </h1>
+            <h1 className="m-0 text-[21px] font-extrabold text-white">Modulación y Cortes</h1>
             <span className="px-2.5 py-0.5 rounded-lg bg-emerald-500/20 border border-emerald-400/50 text-emerald-200 text-[11px] font-extrabold">
               Gratis
             </span>
@@ -497,165 +836,639 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
         </div>
       </div>
 
-      {/* Lista activa de Levantamiento Rápido con Acordiones */}
       {activoLev && activoLev.piezas.length > 0 && (
         <div id="mod-lev-activo-panel" className="mb-4 flex flex-col gap-3">
-          {/* Acordeón 1: Datos del cliente */}
-          <div className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] shadow-md overflow-hidden">
-            <button
-              type="button"
-              onClick={() => setClienteAccordionOpen((prev) => !prev)}
-              className="w-full p-3.5 sm:p-4 bg-transparent border-0 text-left cursor-pointer flex items-center justify-between gap-2"
-            >
-              <div className="min-w-0">
-                <div className="text-[11px] font-extrabold uppercase tracking-wider text-blue-700">
-                  👤 Datos del cliente (Levantamiento activo)
-                </div>
-                <div className="text-[14.5px] font-extrabold text-slate-900 mt-0.5 truncate">
-                  {activoLev.cliente || 'Cliente General'}
-                  {!clienteAccordionOpen && activoLev.telefono ? ` · Tel: ${activoLev.telefono}` : ''}
-                </div>
+          <CollapsibleAccordion
+            id="acc-mod-cliente"
+            title="👤 Datos del cliente (Levantamiento activo)"
+            summary={[
+              activoLev.cliente || 'Cliente General',
+              activoLev.telefono ? `Tel: ${activoLev.telefono}` : '',
+              activoLev.fecha ? `Fecha: ${activoLev.fecha}` : '',
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+            open={accClienteOpen}
+            onToggle={() => setAccClienteOpen((v) => !v)}
+            tone="light"
+            className="shadow-md"
+            rightAction={
+              <button
+                type="button"
+                id="btn-mod-limpiar-lev"
+                onClick={handleClearActivoLev}
+                className="min-h-[32px] px-2.5 py-1 rounded-xl border border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700 text-[11.5px] font-bold cursor-pointer"
+              >
+                🧹 Limpiar
+              </button>
+            }
+          >
+            <div className="min-w-0">
+              <div className="text-[15px] font-extrabold text-slate-900">
+                {activoLev.cliente || 'Cliente General'}
               </div>
-              <span className="px-2.5 py-1 rounded-lg bg-slate-100 border border-slate-300 text-slate-700 text-[11px] font-extrabold shrink-0">
-                {clienteAccordionOpen ? '▲ Ocultar' : '▼ Ver datos'}
-              </span>
-            </button>
-            {clienteAccordionOpen && (
-              <div className="px-3.5 pb-3.5 sm:px-4 sm:pb-4 pt-2 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2.5">
-                <div className="text-[12px] text-slate-600">
+              {(activoLev.telefono || activoLev.direccion || activoLev.fecha) && (
+                <div className="text-[12px] text-slate-600 mt-0.5">
                   {[
                     activoLev.telefono ? `Tel: ${activoLev.telefono}` : '',
                     activoLev.direccion || '',
                     activoLev.fecha ? `Fecha: ${activoLev.fecha}` : '',
                   ]
                     .filter(Boolean)
-                    .join(' · ') || 'Sin datos adicionales registrados.'}
+                    .join(' · ')}
                 </div>
-                <button
-                  type="button"
-                  id="btn-mod-limpiar-lev"
-                  onClick={handleClearActivoLev}
-                  className="min-h-[34px] px-3 py-1 rounded-xl border border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700 text-[11.5px] font-bold cursor-pointer"
+              )}
+            </div>
+          </CollapsibleAccordion>
+
+          <CollapsibleAccordion
+            id="acc-mod-trabajos"
+            title={`🪟 Trabajos a modular / Lista de cortes (${activoLev.piezas.length})`}
+            summary={`${selectedLevIds.length}/${allLevPiezas.length} seleccionado(s) · Perfiles, tramos 6.10 m y vidrio 2D`}
+            open={accTrabajosOpen}
+            onToggle={() => setAccTrabajosOpen((v) => !v)}
+            tone="light"
+            className="shadow-md"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+              <div className="flex items-center gap-2 flex-wrap">
+                <label
+                  htmlFor="chk-mod-select-all"
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border border-blue-300 bg-blue-50 text-blue-900 text-[12px] font-extrabold cursor-pointer select-none"
                 >
-                  🧹 Limpiar lista
-                </button>
+                  <input
+                    id="chk-mod-select-all"
+                    type="checkbox"
+                    checked={allLevSelected}
+                    onChange={toggleSelectAllLev}
+                    className="w-4 h-4 accent-blue-600 cursor-pointer"
+                  />
+                  <span>
+                    Seleccionar todos los trabajos ({selectedLevIds.length}/{allLevPiezas.length})
+                  </span>
+                </label>
+
+                {onSendVidriosToOptimizer && (
+                  <button
+                    type="button"
+                    id="btn-mod-send-selected-vidrio"
+                    disabled={effectiveVidrios.length === 0}
+                    onClick={() => {
+                      if (effectiveVidrios.length === 0) {
+                        onShowToast(
+                          'Selecciona al menos un trabajo con vidrio para optimizar en 2D'
+                        );
+                        return;
+                      }
+                      onSendVidriosToOptimizer(effectiveVidrios);
+                    }}
+                    className="min-h-[36px] px-3.5 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white text-[12px] font-extrabold cursor-pointer shadow-sm"
+                  >
+                    ✂️ Enviar seleccionados a Vidrio 2D ({effectiveVidrios.length})
+                  </button>
+                )}
+
+                <div className="flex items-center gap-1.5">
+                  <label htmlFor="sel-mod-vidrio" className="text-[11px] font-bold text-slate-600">
+                    Vidrio:
+                  </label>
+                  <select
+                    id="sel-mod-vidrio"
+                    value={vidrioSeleccionado}
+                    onChange={(e) => setVidrioSeleccionado(e.target.value)}
+                    className="min-h-[32px] rounded-lg border border-slate-300 bg-white px-2 text-[11.5px] font-bold text-slate-800"
+                  >
+                    <option value="Vidrio claro 6 mm">Vidrio claro 6 mm</option>
+                    <option value="Vidrio claro 4 mm">Vidrio claro 4 mm</option>
+                    <option value="Filtrasol 6 mm">Filtrasol 6 mm</option>
+                    <option value="Tintex 6 mm">Tintex 6 mm</option>
+                    <option value="Esmerilado 6 mm">Esmerilado 6 mm</option>
+                    <option value="Reflecta 6 mm">Reflecta 6 mm</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {activoLev.piezas.map((p, idx) => {
+                const resolved = resolveLineaFromLevantamiento(p);
+                const supported = Boolean(resolved.modelo && resolved.cat);
+                const isChecked = selectedLevIds.includes(p.id);
+                const isActivePreview = activeLevPiezaId === p.id;
+                return (
+                  <div
+                    key={p.id}
+                    id={`mod-job-card-${p.id}`}
+                    data-selected={isChecked ? 'true' : 'false'}
+                    className={`rounded-2xl border p-3 flex flex-col gap-2 transition-all ${
+                      isChecked
+                        ? supported
+                          ? 'border-2 border-blue-600 bg-blue-50/90 shadow-md ring-1 ring-blue-400/40'
+                          : 'border-2 border-amber-500 bg-amber-50/85 shadow-md ring-1 ring-amber-400/35'
+                        : 'border-slate-300 bg-slate-50 hover:border-blue-400'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2.5">
+                      <div className="flex items-start gap-2.5 flex-1 min-w-0">
+                        <input
+                          type="checkbox"
+                          aria-label={`Seleccionar trabajo ${idx + 1}: ${p.tipo}`}
+                          checked={isChecked}
+                          onChange={() => toggleSelectOneLev(p.id)}
+                          className="mt-0.5 w-4 h-4 accent-blue-600 cursor-pointer shrink-0"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (supported) {
+                              handleSelectLevPieza(p);
+                            } else {
+                              onShowToast(
+                                'Puedes asignar un modelo o enviar este trabajo directo a Vidrio 2D / Cotización.'
+                              );
+                            }
+                            if (!selectedLevIds.includes(p.id)) {
+                              toggleSelectOneLev(p.id);
+                            }
+                          }}
+                          className="flex-1 min-w-0 text-left bg-transparent border-0 p-0 cursor-pointer"
+                        >
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <strong className="text-[13px] font-extrabold text-slate-900 truncate">
+                              {idx + 1}. {p.tipo}
+                            </strong>
+                            {isChecked && (
+                              <span
+                                className={`px-1.5 py-0.5 rounded text-white text-[10px] font-extrabold ${
+                                  supported ? 'bg-blue-600' : 'bg-amber-600'
+                                }`}
+                              >
+                                Incluido
+                              </span>
+                            )}
+                            {isActivePreview && (
+                              <span className="px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 text-[10px] font-extrabold">
+                                En vista
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11.5px] text-slate-600 mt-0.5 truncate">
+                            {p.area ? `${p.area} · ` : ''}
+                            <span className="mono font-bold text-slate-800">
+                              {formatMedidaText(p)}
+                            </span>
+                            {` · Cant: ${p.cant}`}
+                          </div>
+                          {!supported && (
+                            <span className="inline-block mt-1 px-2 py-0.5 rounded bg-amber-100 border border-amber-300 text-amber-900 text-[10px] font-extrabold">
+                              Cálculo de vidrio y cotización directa
+                            </span>
+                          )}
+                          {supported && formatPiezaSpecs(p) && (
+                            <div className="text-[10.5px] font-bold text-blue-700 mt-0.5 truncate">
+                              {formatPiezaSpecs(p)}
+                            </div>
+                          )}
+                          {p.notas && (
+                            <div className="text-[11px] text-slate-500 mt-0.5 truncate">
+                              {p.notas}
+                            </div>
+                          )}
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveLevPieza(p.id)}
+                        aria-label={`Quitar ${p.tipo}`}
+                        className="min-h-[32px] px-2.5 py-1 rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-[11px] font-extrabold cursor-pointer shrink-0"
+                      >
+                        Quitar
+                      </button>
+                    </div>
+
+                    {!supported && (
+                      <div className="pt-2 border-t border-amber-200/80 flex flex-wrap items-center gap-2">
+                        <label
+                          htmlFor={`sel-assign-model-${p.id}`}
+                          className="text-[11px] font-extrabold text-amber-950"
+                        >
+                          Asignar modelo:
+                        </label>
+                        <select
+                          id={`sel-assign-model-${p.id}`}
+                          defaultValue=""
+                          onChange={(e) => {
+                            if (e.target.value) handleReassignLevPiezaTipo(p.id, e.target.value);
+                          }}
+                          className="min-h-[32px] flex-1 min-w-[155px] rounded-lg border border-amber-300 bg-white px-2 text-[11.5px] font-bold text-slate-900 cursor-pointer"
+                        >
+                          <option value="">Elegir modelo de aluminio...</option>
+                          <option value="Ventana Corrediza">Ventana Corrediza</option>
+                          <option value="Ventana Fija">Ventana Fija</option>
+                          <option value="Puerta Abatible">Puerta Abatible</option>
+                          <option value="Cancel de Baño">Cancel de Baño</option>
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => handleSendDirectCancelToHoja(p)}
+                          className="min-h-[32px] px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-extrabold cursor-pointer shrink-0"
+                        >
+                          Cotizar directo
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {((multiJobResult && multiJobResult.totalTrabajos > 0) ||
+              directGlassFromSelected.length > 0) && (
+              <div
+                id="mod-multi-summary"
+                className="mt-3 p-3 rounded-xl border border-blue-200 bg-blue-50/60 flex flex-wrap items-center justify-between gap-2 text-[12px]"
+              >
+                <div className="font-extrabold text-blue-950">
+                  Cálculo completo activo: {selectedLevIds.length} trabajo(s) seleccionado(s)
+                  {multiJobResult && multiJobResult.totalTrabajos > 0 ? (
+                    <>
+                      {' '}
+                      · <span className="mono">{multiJobResult.totalAluminioM.toFixed(2)} m</span>{' '}
+                      aluminio ({optimizacion1D.tramos610Totales} tramo(s) 6.10 m)
+                    </>
+                  ) : (
+                    ' · Vidrio 2D y cotización directa'
+                  )}
+                </div>
+                <div className="text-[11.5px] font-bold text-blue-800">
+                  {effectiveVidrios.reduce((a, v) => a + v.pzas, 0)} cristal(es) listos para corte 2D
+                </div>
               </div>
             )}
+          </CollapsibleAccordion>
+        </div>
+      )}
+
+      {/* Barra de pasos */}
+      <div className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] p-2 sm:p-3 mb-4 shadow-md">
+        <div className="grid grid-cols-5 gap-1 sm:gap-1.5">
+          {STEP_ITEMS.map((item) => {
+            const active = step === item.num;
+            const completed = step > item.num;
+            return (
+              <button
+                key={item.num}
+                type="button"
+                onClick={() => {
+                  if (item.num === 2) openMosquiteroModal();
+                  else setStep(item.num);
+                }}
+                className={`min-w-0 min-h-[42px] px-0.5 sm:px-2 py-1.5 rounded-xl font-extrabold border cursor-pointer transition-all flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1 text-center leading-tight overflow-hidden ${
+                  active
+                    ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                    : completed
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                      : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                <span className="sm:hidden block text-[9.5px] font-black opacity-85 leading-none">
+                  {item.num}.
+                </span>
+                <span className="sm:hidden block w-full text-[9px] min-[390px]:text-[10px] tracking-tight leading-none truncate px-0.5">
+                  {item.short}
+                </span>
+                <span className="hidden sm:inline text-[12px] leading-tight truncate">
+                  {item.full}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mt-2.5 pt-2.5 border-t border-slate-200 flex flex-wrap items-center gap-2 text-[11.5px] font-bold text-slate-700">
+          <span className="px-2.5 py-1 rounded-lg bg-blue-50 border border-blue-200 text-blue-800">
+            {selectedModelo.categoria === 'puertas' ? 'Puerta' : 'Ventana'} {selectedModelo.nombre}
+          </span>
+          <button
+            type="button"
+            onClick={openMosquiteroModal}
+            className="px-2.5 py-1 rounded-lg bg-teal-50 border border-teal-200 text-teal-800 font-bold cursor-pointer hover:bg-teal-100"
+          >
+            {conMosquitero ? '✓ Con mosquitero' : 'Sin mosquitero'}
+          </button>
+          {step >= 3 && (
+            <span className="px-2.5 py-1 rounded-lg bg-slate-100 border border-slate-300 text-slate-800">
+              {selectedSerie.nombre} · {selectedSublinea.nombre}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* ==================== PASO 1: MODELO ==================== */}
+      {step === 1 && (
+        <div className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[20px] p-4 sm:p-5 shadow-xl">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3.5">
+            <div>
+              <h2 className="m-0 text-[18px] font-extrabold">
+                Paso 1: Elige el tipo de ventana o puerta
+              </h2>
+              <p className="m-0 text-[12.5px] text-slate-600 mt-0.5">
+                Toca el modelo que vas a modular para pasar al siguiente paso
+              </p>
+            </div>
           </div>
 
-          {/* Acordeón 2: Trabajos a modular */}
-          <div className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] shadow-md overflow-hidden">
+          <div className="inv-segmented-tabs grid grid-cols-2 gap-1.5 p-1.5 rounded-[14px] bg-[#13315C] border border-slate-400/30 mb-4">
             <button
               type="button"
-              onClick={() => setTrabajosAccordionOpen((prev) => !prev)}
-              className="w-full p-3.5 sm:p-4 bg-transparent border-0 text-left cursor-pointer flex items-center justify-between gap-2"
+              id="mod-tab-ventanas"
+              onClick={() => setCategoria('ventanas')}
+              className={`min-h-[42px] rounded-[10px] text-[13.5px] font-extrabold cursor-pointer transition-colors ${
+                categoria === 'ventanas'
+                  ? 'bg-white text-[#1E293B] shadow'
+                  : 'bg-transparent text-slate-300'
+              }`}
             >
-              <div className="min-w-0">
-                <h2 className="m-0 text-[14.5px] font-extrabold text-slate-900">
-                  🪟 Trabajos a modular / Lista de cortes ({activoLev.piezas.length})
-                </h2>
-                <p className="m-0 text-[11.5px] text-slate-500 mt-0.5 truncate">
-                  {selectedLevIds.length} de {allLevPiezas.length} seleccionado(s) · Toca para {trabajosAccordionOpen ? 'contraer' : 'desplegar'}
-                </p>
-              </div>
-              <span className="px-2.5 py-1 rounded-lg bg-blue-50 border border-blue-200 text-blue-800 text-[11px] font-extrabold shrink-0">
-                {trabajosAccordionOpen ? '▲ Contraer' : '▼ Desplegar'}
-              </span>
+              Ventanas (6)
             </button>
+            <button
+              type="button"
+              id="mod-tab-puertas"
+              onClick={() => setCategoria('puertas')}
+              className={`min-h-[42px] rounded-[10px] text-[13.5px] font-extrabold cursor-pointer transition-colors ${
+                categoria === 'puertas'
+                  ? 'bg-white text-[#1E293B] shadow'
+                  : 'bg-transparent text-slate-300'
+              }`}
+            >
+              Puertas (2)
+            </button>
+          </div>
 
-            {trabajosAccordionOpen && (
-              <div className="px-3.5 pb-3.5 sm:px-4 sm:pb-4 pt-2 border-t border-slate-200">
-                <div className="flex items-center gap-2 flex-wrap mb-3">
-                  <label
-                    htmlFor="chk-mod-select-all"
-                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border border-blue-300 bg-blue-50 text-blue-900 text-[12px] font-extrabold cursor-pointer select-none"
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {modelosVisibles.map((m) => {
+              const selected = modeloId === m.id;
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  id={`mod-modelo-${m.id}`}
+                  onClick={() => handlePickModelo(m.id)}
+                  className={`p-3 rounded-[16px] border-[1.5px] text-left cursor-pointer transition-all hover:-translate-y-0.5 active:scale-95 flex flex-col gap-2 ${
+                    selected
+                      ? 'border-blue-600 bg-blue-50 ring-1 ring-blue-600'
+                      : 'border-slate-300 bg-slate-50 hover:border-blue-400'
+                  }`}
+                >
+                  <div className="w-full rounded-xl bg-white border border-slate-200 p-2 flex items-center justify-center">
+                    <ModelSvgIllustration modeloId={m.id} />
+                  </div>
+                  <div>
+                    <strong className="block text-[14.5px] font-extrabold text-slate-900">
+                      {m.nombre}
+                    </strong>
+                    <span className="block text-[11.5px] text-slate-600 mt-0.5 leading-snug">
+                      {m.resumen}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ==================== PASO 3: LÍNEA / SERIE Y SUBLÍNEA ==================== */}
+      {step === 3 && (
+        <div className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[20px] p-4 sm:p-5 shadow-xl flex flex-col gap-5">
+          <div className="flex flex-wrap items-start justify-between gap-2.5">
+            <div>
+              <h2 className="m-0 text-[18px] font-extrabold">
+                Paso 3: Selecciona Línea / Serie y Sublínea
+              </h2>
+              <p className="m-0 text-[12.5px] text-slate-600 mt-0.5">
+                Define la serie del perfil y la categoría hermética para ajustar los descuentos estándar
+              </p>
+            </div>
+            <div
+              data-testid="modulacion-vigencia-badge"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-emerald-300 bg-emerald-50 text-emerald-900 text-[11.5px] font-extrabold"
+            >
+              <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
+              <span>
+                {catalogVigenciaLabel ||
+                  'Catálogos Oficiales Vigentes 2026 • Próxima Actualización Anual: 2027'}
+              </span>
+            </div>
+          </div>
+
+          <div>
+            <span className="block text-[12.5px] font-extrabold uppercase tracking-wide text-slate-600 mb-2">
+              1. Línea o Serie
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+              {MODULACION_SERIES.map((s) => {
+                const selected = serieId === s.id;
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    id={`mod-serie-${s.id}`}
+                    data-serie-active={selected ? 'true' : 'false'}
+                    aria-pressed={selected}
+                    onClick={() => setSerieId(s.id)}
+                    className={`p-3 rounded-xl text-left cursor-pointer transition-all active:scale-95 ${
+                      selected
+                        ? 'border-2 border-blue-600 bg-blue-50 ring-1 ring-blue-500 shadow-md'
+                        : 'border-[1.5px] border-slate-300 bg-slate-50 hover:border-blue-400'
+                    }`}
                   >
-                    <input
-                      id="chk-mod-select-all"
-                      type="checkbox"
-                      checked={allLevSelected}
-                      onChange={toggleSelectAllLev}
-                      className="w-4 h-4 accent-blue-600 cursor-pointer"
-                    />
-                    <span>Seleccionar todos ({selectedLevIds.length}/{allLevPiezas.length})</span>
-                  </label>
-                  {onSendVidriosToOptimizer && (
-                    <button
-                      type="button"
-                      id="btn-mod-send-selected-vidrio"
-                      disabled={effectiveVidrios.length === 0}
-                      onClick={() => {
-                        if (effectiveVidrios.length === 0) {
-                          onShowToast('Selecciona al menos un trabajo con vidrio para optimizar en 2D');
-                          return;
-                        }
-                        onSendVidriosToOptimizer(effectiveVidrios);
-                      }}
-                      className="min-h-[36px] px-3.5 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white text-[12px] font-extrabold cursor-pointer shadow-sm"
+                    <div className="flex items-center justify-between gap-2">
+                      <strong className="text-[14px] font-extrabold text-slate-900">
+                        {selected ? `✓ ${s.nombre}` : s.nombre}
+                      </strong>
+                      <span className="mono text-[10.5px] font-bold px-2 py-0.5 rounded-md bg-white border border-slate-300 text-blue-700 shrink-0">
+                        {s.espesorLabel}
+                      </span>
+                    </div>
+                    <span className="block text-[11.5px] text-slate-600 mt-1 leading-snug">
+                      {s.descripcion}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <span className="block text-[12.5px] font-extrabold uppercase tracking-wide text-slate-600 mb-2">
+              2. Sublínea
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              {MODULACION_SUBLINEAS.map((sl) => {
+                const selected = sublineaId === sl.id;
+                return (
+                  <button
+                    key={sl.id}
+                    type="button"
+                    id={`mod-sublinea-${sl.id}`}
+                    data-serie-active={selected ? 'true' : 'false'}
+                    aria-pressed={selected}
+                    onClick={() => setSublineaId(sl.id)}
+                    className={`p-3.5 rounded-xl text-left cursor-pointer transition-all active:scale-95 ${
+                      selected
+                        ? 'border-2 border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500 shadow-md'
+                        : 'border-[1.5px] border-slate-300 bg-slate-50 hover:border-emerald-400'
+                    }`}
+                  >
+                    <strong
+                      className={`block text-[13.5px] font-extrabold ${
+                        selected ? 'text-emerald-950 dark:text-white' : 'text-slate-900'
+                      }`}
                     >
-                      ✂️ Enviar a Vidrio 2D ({effectiveVidrios.length})
-                    </button>
-                  )}
-                  <div className="flex items-center gap-1.5">
-                    <label htmlFor="sel-mod-vidrio" className="text-[11px] font-bold text-slate-600">
-                      Vidrio:
-                    </label>
-                    <select
-                      id="sel-mod-vidrio"
-                      value={vidrioSeleccionado}
-                      onChange={(e) => setVidrioSeleccionado(e.target.value)}
-                      className="min-h-[32px] rounded-lg border border-slate-300 bg-white px-2 text-[11.5px] font-bold text-slate-800"
+                      {selected ? `✓ ${sl.nombre}` : sl.nombre}
+                    </strong>
+                    <span
+                      className={`block text-[11.5px] mt-1 leading-snug ${
+                        selected ? 'text-emerald-800 dark:text-emerald-50' : 'text-slate-600'
+                      }`}
                     >
-                      <option value="Vidrio claro 6 mm">Vidrio claro 6 mm</option>
-                      <option value="Vidrio claro 4 mm">Vidrio claro 4 mm</option>
-                      <option value="Filtrasol 6 mm">Filtrasol 6 mm</option>
-                      <option value="Tintex 6 mm">Tintex 6 mm</option>
-                      <option value="Esmerilado 6 mm">Esmerilado 6 mm</option>
-                      <option value="Reflecta 6 mm">Reflecta 6 mm</option>
-                    </select>
+                      {sl.descripcion}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200">
+            <button
+              type="button"
+              onClick={openMosquiteroModal}
+              className="min-h-[44px] px-4 rounded-xl border border-slate-300 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-[13px] cursor-pointer"
+            >
+              ← Cambiar mosquitero
+            </button>
+            <button
+              type="button"
+              id="btn-mod-go-step4"
+              onClick={() => setStep(4)}
+              className="min-h-[46px] px-5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-[13.5px] cursor-pointer shadow-md"
+            >
+              Ver perfiles requeridos (Paso 4) →
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== PASO 4: PERFILES ==================== */}
+      {step === 4 && (
+        <div className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[20px] p-4 sm:p-5 shadow-xl flex flex-col gap-4">
+          <div>
+            <h2 className="m-0 text-[18px] font-extrabold">
+              Paso 4: Perfiles requeridos y sección transversal
+            </h2>
+            <p className="m-0 text-[12.5px] text-slate-600 mt-0.5">
+              Organizados por sección para armar tu{' '}
+              {selectedModelo.categoria === 'puertas' ? 'puerta' : 'ventana'}{' '}
+              <strong>{selectedModelo.nombre}</strong> en <strong>{selectedSerie.nombre}</strong> (
+              {selectedSublinea.nombre})
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-4">
+            {MODULACION_SECCIONES_META.map((sec) => {
+              const items = perfilesPaso4.filter((item) => item.seccion === sec.id);
+              if (items.length === 0) return null;
+              return (
+                <div
+                  key={sec.id}
+                  className="rounded-2xl border border-slate-300 bg-slate-50/70 p-3.5"
+                >
+                  <div className="flex items-center justify-between gap-2 mb-2.5">
+                    <div>
+                      <h3 className="m-0 text-[14px] font-extrabold text-blue-700 uppercase tracking-wide">
+                        {sec.titulo}
+                      </h3>
+                      <p className="m-0 text-[11.5px] text-slate-500">{sec.subtitulo}</p>
+                    </div>
+                    <span className="mono text-[11px] font-bold text-slate-600">
+                      {items.length} perfiles
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                    {items.map((item) => (
+                      <div
+                        key={item.id}
+                        className="p-3 rounded-xl border border-slate-300 bg-white flex items-center gap-3 min-w-0 overflow-hidden"
+                      >
+                        <button
+                          type="button"
+                          data-preserve-light="true"
+                          onClick={() =>
+                            openZoomPerfil({
+                              perfilId: item.perfilId,
+                              codigo: item.codigo,
+                              nombre: item.nombre,
+                              subtitulo: `${item.cantidadLabel} · ${item.rol}`,
+                              orientacion: item.orientacion,
+                            })
+                          }
+                          title={`Ampliar dibujo técnico de ${item.nombre}`}
+                          aria-label={`Ampliar dibujo técnico de ${item.nombre}`}
+                          className="w-[64px] h-[64px] rounded-xl bg-white border border-slate-200 hover:border-blue-500 hover:ring-2 hover:ring-blue-400/40 flex items-center justify-center shrink-0 p-1 cursor-zoom-in transition-all active:scale-95"
+                        >
+                          <PerfilSectionSvg
+                            perfilId={item.perfilId}
+                            orientacion={item.orientacion}
+                            size={52}
+                          />
+                        </button>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 flex-wrap mb-1 min-w-0">
+                            <span className="px-2 py-0.5 rounded-md bg-blue-50 border border-blue-200 text-blue-900 mono text-[10.5px] font-extrabold">
+                              {item.cantidadLabel}
+                            </span>
+                            <span className="mono text-[10.5px] font-bold text-slate-500 break-all">
+                              {item.codigo}
+                            </span>
+                          </div>
+                          <strong className="block text-[13.5px] font-extrabold text-slate-900 leading-tight break-words">
+                            {item.nombre}
+                          </strong>
+                          <span className="block text-[11px] text-slate-600 mt-0.5 leading-snug break-words">
+                            {item.rol}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
+              );
+            })}
+          </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {activoLev.piezas.map((p, idx) => {
-                    const resolved = resolveLineaFromLevantamiento(p);
-                    const supported = Boolean(resolved.modelo && resolved.cat);
-                    const isChecked = selectedLevIds.includes(p.id);
-                    const isActivePreview = activeLevPiezaId === p.id;
-                    return (
-                      <div
-                        key={p.id}
-                        id={`mod-job-card-${p.id}`}
-                        data-selected={isChecked ? 'true' : 'false'}
-                        className={`rounded-2xl border p-3 flex flex-col gap-2 transition-all ${
-                          isChecked
-                            ? supported
-                              ? 'border-2 border-blue-600 bg-blue-50/90 shadow-md ring-1 ring-blue-400/40'
-                              : 'border-2 border-amber-500 bg-amber-50/85 shadow-md ring-1 ring-amber-400/35'
-                            : 'border-slate-300 bg-slate-50 hover:border-blue-400'
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-2.5">
-                          <div className="flex items-start gap-2.5 flex-1 min-w-0">
-                            <input
-                              type="checkbox"
-                              aria-label={`Seleccionar trabajo ${idx + 1}: ${p.tipo}`}
-                              checked={isChecked}
-                              onChange={() => toggleSelectOneLev(p.id)}
-                              className="mt-0.5 w-4 h-4 accent-blue-600 cursor-pointer shrink-0"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (supported) {
-                                  handleSelectLevPieza(p);
-                                } else {
-                                  onShowToast('Puedes asignar un modelo o enviar este trabajo directo a Vidrio 2D / Cotización.');
-                                }
-                                if (!selectedLevIds.includes(p.id)) {
-                                  toggleSelectOneLev(p.id);
-                                }
-                              }}
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200">
+            <button
+              type="button"
+              onClick={() => (onRequestBack ? onRequestBack() : setStep(3))}
+              className="min-h-[44px] px-4 rounded-xl border border-slate-300 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-[13px] cursor-pointer"
+            >
+              ← Cambiar serie
+            </button>
+            <button
+              type="button"
+              id="btn-mod-go-step5"
+              onClick={() => setStep(5)}
+              className="min-h-[46px] px-5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-[13.5px] cursor-pointer shadow-md"
+            >
+              Calcular cortes y tramos (Paso 5) →
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ==================== PASO 5: CORTES AGRUPADOS + CHECKLIST + OPTIMIZADOR 1D ==================== */}
       {step === 5 && (
         <div className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[20px] p-4 sm:p-5 shadow-xl flex flex-col gap-4">
@@ -737,7 +1550,6 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
             </div>
           </div>
 
-          {/* Pestañas Paso 5 */}
           <div className="inv-segmented-tabs grid grid-cols-2 gap-1.5 p-1.5 rounded-[14px] bg-[#13315C] border border-slate-400/30">
             <button
               type="button"
@@ -765,7 +1577,6 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
             </button>
           </div>
 
-          {/* SUB-PESTAÑA A: CHECKLIST DE CORTE POR SECCIÓN */}
           {paso5Tab === 'cortes' && (
             <div className="flex flex-col gap-3.5">
               {(() => {
@@ -779,9 +1590,7 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
                   <div
                     id="mod-cut-summary-card"
                     className={`p-3.5 rounded-2xl border-2 transition-colors ${
-                      allDone
-                        ? 'border-emerald-500 bg-emerald-50'
-                        : 'border-slate-300 bg-slate-50'
+                      allDone ? 'border-emerald-500 bg-emerald-50' : 'border-slate-300 bg-slate-50'
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2 mb-2">
@@ -838,12 +1647,12 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
 
               {seccionesConFilas.map((sec) => {
                 const secReq = sec.rows.reduce((a, r) => a + r.cantidad, 0);
-                const secDone = sec.rows.reduce(
-                  (a, r) => a + getCutCount(r.id, r.cantidad),
-                  0
-                );
+                const secDone = sec.rows.reduce((a, r) => a + getCutCount(r.id, r.cantidad), 0);
                 return (
-                  <div key={sec.id} className="rounded-2xl border-[1.5px] border-slate-300 overflow-hidden">
+                  <div
+                    key={sec.id}
+                    className="rounded-2xl border-[1.5px] border-slate-300 overflow-hidden"
+                  >
                     <div className="bg-[#0B2545] text-white px-3.5 py-2.5 flex items-center justify-between gap-2">
                       <div>
                         <strong className="block text-[13.5px] font-extrabold tracking-wide">
@@ -862,4 +1671,690 @@ export const ModulacionCortesView: React.FC<ModulacionCortesViewProps> = ({
                       </span>
                     </div>
 
+                    <div className="p-2 bg-slate-50/70 flex flex-col gap-1.5">
+                      {sec.rows.map((row) => {
+                        const cutDone = getCutCount(row.id, row.cantidad);
+                        const isComplete = cutDone >= row.cantidad;
+                        const rowPct =
+                          row.cantidad > 0
+                            ? Math.min(100, Math.round((cutDone / row.cantidad) * 100))
+                            : 0;
+                        const shortNombre = row.nombre
+                          .replace(/\s*\([^)]*\)\s*/g, ' ')
+                          .replace(/\s+/g, ' ')
+                          .trim();
+                        return (
+                          <div
+                            key={row.id}
+                            data-preserve-light="true"
+                            onClick={() => handleStepCutCount(row.id, row.cantidad, 1)}
+                            role="button"
+                            tabIndex={0}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                handleStepCutCount(row.id, row.cantidad, 1);
+                              }
+                            }}
+                            title={
+                              isComplete
+                                ? `${row.nombre} completado (${row.medidaCm.toFixed(1)} cm)`
+                                : `Toca para sumar +1 corte de ${row.nombre} (${row.medidaCm.toFixed(1)} cm · Corte ${row.angulo})`
+                            }
+                            aria-label={`${row.codigo} ${shortNombre}: ${cutDone} de ${row.cantidad}, ${row.medidaCm.toFixed(1)} cm`}
+                            className={`relative w-full rounded-xl border overflow-hidden cursor-pointer select-none transition-all active:scale-[0.995] ${
+                              isComplete
+                                ? 'border-emerald-600 shadow-sm'
+                                : 'border-slate-300 hover:border-emerald-500'
+                            }`}
+                            style={{ backgroundColor: '#FFFFFF' }}
+                          >
+                            <div
+                              className="absolute inset-y-0 left-0 transition-all duration-300 ease-out pointer-events-none"
+                              style={{
+                                width: `${rowPct}%`,
+                                backgroundColor: isComplete ? '#10B981' : '#34D399',
+                              }}
+                            />
+                            <div className="relative z-10 py-1.5 px-2 sm:py-2 sm:px-3 flex items-center gap-1.5 sm:gap-2 min-w-0">
+                              <button
+                                type="button"
+                                data-preserve-light="true"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openZoomPerfil({
+                                    perfilId: row.perfilId,
+                                    codigo: row.codigo,
+                                    nombre: row.nombre,
+                                    subtitulo: `${row.medidaCm.toFixed(1)} cm (${row.medidaM.toFixed(2)} m · ×${row.cantidad}) · Corte ${row.angulo}`,
+                                    orientacion: row.orientacion,
+                                  });
+                                }}
+                                title={`Ver plano técnico ampliado de ${row.nombre}`}
+                                aria-label={`Ampliar plano técnico de ${row.codigo} ${row.nombre}`}
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-lg border border-slate-300/90 hover:border-blue-600 hover:ring-2 hover:ring-blue-400/35 shrink-0 cursor-zoom-in transition-all active:scale-95"
+                                style={{ backgroundColor: '#FFFFFF' }}
+                              >
+                                <PerfilSectionSvg
+                                  perfilId={row.perfilId}
+                                  orientacion={row.orientacion}
+                                  size={20}
+                                />
+                                <span
+                                  className="mono text-[10px] sm:text-[11px] font-black leading-none whitespace-nowrap"
+                                  style={{ color: '#0F172A' }}
+                                >
+                                  {row.codigo}
+                                </span>
+                              </button>
 
+                              <span
+                                className="min-w-0 flex-1 truncate text-[12px] sm:text-[13px] font-extrabold leading-tight"
+                                style={{ color: isComplete ? '#FFFFFF' : '#0F172A' }}
+                              >
+                                {shortNombre}
+                              </span>
+
+                              <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap">
+                                <span
+                                  className="mono text-[11.5px] sm:text-[12.5px] font-black px-1.5 py-0.5 rounded-md"
+                                  style={{
+                                    backgroundColor: isComplete
+                                      ? 'rgba(255,255,255,0.22)'
+                                      : 'rgba(15,23,42,0.08)',
+                                    color: isComplete ? '#FFFFFF' : '#0F172A',
+                                  }}
+                                >
+                                  {cutDone}/{row.cantidad}
+                                </span>
+                                <span
+                                  className="mono text-[12px] sm:text-[13px] font-black"
+                                  style={{ color: isComplete ? '#FFFFFF' : '#1D4ED8' }}
+                                >
+                                  {row.medidaCm.toFixed(1)} cm
+                                </span>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleStepCutCount(row.id, row.cantidad, -1);
+                                }}
+                                disabled={cutDone <= 0}
+                                title="Restar 1 pieza (-1)"
+                                aria-label={`Restar 1 pieza cortada de ${row.nombre}`}
+                                className={`w-6 h-7 sm:w-7 sm:h-7 rounded-lg border text-[14px] font-extrabold shrink-0 flex items-center justify-center transition-all ${
+                                  cutDone > 0
+                                    ? 'cursor-pointer active:scale-90'
+                                    : 'opacity-35 cursor-not-allowed'
+                                }`}
+                                style={{
+                                  backgroundColor: isComplete
+                                    ? 'rgba(255,255,255,0.18)'
+                                    : '#F1F5F9',
+                                  borderColor: isComplete ? 'rgba(255,255,255,0.45)' : '#CBD5E1',
+                                  color: isComplete ? '#FFFFFF' : '#334155',
+                                }}
+                              >
+                                −
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (isComplete) handleToggleCompleteRow(row.id, row.cantidad);
+                                  else handleStepCutCount(row.id, row.cantidad, 1);
+                                }}
+                                title={
+                                  isComplete
+                                    ? 'Corte completado (tocar para reiniciar fila)'
+                                    : 'Registrar +1 corte'
+                                }
+                                aria-label={
+                                  isComplete
+                                    ? `${row.nombre} completado`
+                                    : `Sumar +1 corte de ${row.nombre}`
+                                }
+                                className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg border shrink-0 flex items-center justify-center cursor-pointer transition-all active:scale-90 shadow-sm"
+                                style={{
+                                  backgroundColor: isComplete ? '#047857' : '#2563EB',
+                                  borderColor: isComplete ? '#A7F3D0' : '#1D4ED8',
+                                  color: '#FFFFFF',
+                                }}
+                              >
+                                {isComplete ? (
+                                  <svg
+                                    width="16"
+                                    height="16"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="3.2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    aria-hidden="true"
+                                  >
+                                    <polyline points="20 6 9 17 4 12" />
+                                  </svg>
+                                ) : (
+                                  <svg
+                                    width="16"
+                                    height="16"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2.1"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    aria-hidden="true"
+                                  >
+                                    <path d="M12 2.5 L13.8 5.2 L17 4.2 L16.8 7.4 L19.8 8.2 L18 11 L20.5 13.4 L17.6 14.8 L18.4 18 L15.2 17.8 L14.4 20.8 L11.8 19 L9.4 21.3 L8.2 18.4 L5 19 L5.4 15.8 L2.6 14.8 L4.4 12.2 L2.3 9.6 L5.2 8.4 L4.8 5.2 L8 5.6 L9 2.8 L11.5 4.8 Z" />
+                                    <circle cx="11.5" cy="12" r="2.6" />
+                                  </svg>
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+
+              {effectiveVidrios.length > 0 && (
+                <div className="p-3.5 rounded-2xl border border-sky-300 bg-sky-50/70 flex flex-wrap items-center justify-between gap-2.5">
+                  <div>
+                    <div className="text-[12px] font-extrabold text-sky-900 uppercase tracking-wide">
+                      {multiJobResult && multiJobResult.totalTrabajos > 1
+                        ? `Cristales calculados (${multiJobResult.totalTrabajos} trabajos seleccionados)`
+                        : 'Cristal calculado para esta modulación'}
+                    </div>
+                    {effectiveVidrios.map((v, i) => (
+                      <div key={i} className="text-[12.5px] font-bold text-slate-800 mt-0.5 mono">
+                        • {v.nombre}: {v.pzas} pza(s) de {v.anchoCm} × {v.altoCm} cm (
+                        {v.areaM2.toFixed(2)} m²)
+                      </div>
+                    ))}
+                  </div>
+                  {onSendVidriosToOptimizer && (
+                    <button
+                      type="button"
+                      id="btn-mod-optimize-vidrio"
+                      onClick={() => onSendVidriosToOptimizer(effectiveVidrios)}
+                      className="min-h-[42px] px-4 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-[12.5px] font-extrabold cursor-pointer shrink-0 active:scale-95"
+                    >
+                      ✂️ Optimizar Vidrio en 2D ({effectiveVidrios.length})
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {paso5Tab === 'tramos' && (
+            <div className="flex flex-col gap-4">
+              <div className="p-3 rounded-xl border border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <strong className="block text-[12.5px] font-extrabold text-slate-900">
+                    Ajustes de corte 1D (Tramos 6.10 m)
+                  </strong>
+                  <span className="text-[11px] text-slate-600">
+                    El grosor del disco se descuenta en cada corte; los retazos menores al umbral pasan a Merma / Chatarra
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <label className="flex items-center gap-1.5 text-[11.5px] font-bold text-slate-700">
+                    <span>Acabado:</span>
+                    <select
+                      id="sel-mod-color"
+                      value={colorSeleccionado}
+                      onChange={(e) => setColorSeleccionado(e.target.value as ColorId)}
+                      className="min-h-[34px] rounded-lg border border-slate-300 bg-white px-2 text-[12px] font-extrabold text-slate-800 cursor-pointer"
+                    >
+                      {(Object.keys(COLORES_CONFIG) as ColorId[]).map((cid) => (
+                        <option key={cid} value={cid}>
+                          {COLORES_CONFIG[cid].corto}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex items-center gap-1.5 text-[11.5px] font-bold text-slate-700">
+                    <span>Disco (mm):</span>
+                    <input
+                      id="inp-mod-kerf-mm"
+                      type="number"
+                      min={0}
+                      max={10}
+                      step={0.5}
+                      value={discoKerfMm}
+                      onChange={(e) =>
+                        setDiscoKerfMm(Math.max(0, Math.min(10, Number(e.target.value) || 0)))
+                      }
+                      className="w-[70px] min-h-[34px] rounded-lg border border-slate-300 bg-white px-2 mono text-[12.5px] font-extrabold text-center"
+                    />
+                  </label>
+                  <label className="flex items-center gap-1.5 text-[11.5px] font-bold text-slate-700">
+                    <span>Umbral útil (cm):</span>
+                    <input
+                      id="inp-mod-umbral-cm"
+                      type="number"
+                      min={10}
+                      max={200}
+                      step={5}
+                      value={umbralSobranteCm}
+                      onChange={(e) =>
+                        setUmbralSobranteCm(
+                          Math.max(10, Math.min(200, Math.round(Number(e.target.value) || 45)))
+                        )
+                      }
+                      className="w-[74px] min-h-[34px] rounded-lg border border-slate-300 bg-white px-2 mono text-[12.5px] font-extrabold text-center"
+                    />
+                  </label>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                <div className="p-3 rounded-xl border border-blue-200 bg-blue-50">
+                  <span className="block text-[11px] font-bold text-blue-700 uppercase">
+                    Tramos 6.10 m nuevos
+                  </span>
+                  <strong className="mono text-[20px] font-extrabold text-blue-950">
+                    {optimizacion1D.tramos610Totales}
+                  </strong>
+                </div>
+                <div className="p-3 rounded-xl border border-amber-300 bg-amber-50">
+                  <span className="block text-[11px] font-bold text-amber-800 uppercase">
+                    Sobrantes taller usados
+                  </span>
+                  <strong className="mono text-[20px] font-extrabold text-amber-950">
+                    {optimizacion1D.sobrantesInventarioUsados}
+                  </strong>
+                </div>
+                <div className="p-3 rounded-xl border border-emerald-300 bg-emerald-50">
+                  <span className="block text-[11px] font-bold text-emerald-800 uppercase">
+                    Aprovechamiento
+                  </span>
+                  <strong className="mono text-[20px] font-extrabold text-emerald-950">
+                    {optimizacion1D.aprovechamientoGlobalPct}%
+                  </strong>
+                </div>
+                <div className="p-3 rounded-xl border border-rose-300 bg-rose-50">
+                  <span className="block text-[11px] font-bold text-rose-800 uppercase">
+                    Merma real (&lt; {umbralSobranteCm} cm)
+                  </span>
+                  <strong className="mono text-[20px] font-extrabold text-rose-950">
+                    {optimizacion1D.mermaRealPct}%
+                  </strong>
+                  <span className="block text-[10.5px] text-slate-600 mono">
+                    Merma: {(optimizacion1D.mermaTotalCm / 100).toFixed(2)} m · Usable:{' '}
+                    {(
+                      Math.max(0, optimizacion1D.sobranteTotalCm - optimizacion1D.mermaTotalCm) / 100
+                    ).toFixed(2)}{' '}
+                    m
+                  </span>
+                </div>
+              </div>
+
+              <Tramos610AcomodadosSection
+                id="mod-tramos-610-acomodados"
+                optimizacion={optimizacion1D}
+                defaultAcabado={COLORES_CONFIG[colorSeleccionado]?.nombre ?? 'Natural'}
+                onSelectPerfil={(card) =>
+                  openZoomPerfil({
+                    perfilId: card.perfilId,
+                    codigo: card.codigo,
+                    nombre: card.perfilNombre,
+                    subtitulo: `${card.headerRight} · ${card.subtitulo}`,
+                  })
+                }
+              />
+
+              <div className="flex flex-col gap-3">
+                {optimizacion1D.grupos.map((grupo) => {
+                  const grupoColorCfg =
+                    COLORES_CONFIG[grupo.color || colorSeleccionado] || COLORES_CONFIG.natural;
+                  return (
+                    <div
+                      key={`${grupo.perfilId}__${grupo.color || colorSeleccionado}`}
+                      className="rounded-2xl border-[1.5px] border-slate-300 bg-slate-50/70 p-3.5 min-w-0 overflow-hidden"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-3 min-w-0">
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          <button
+                            type="button"
+                            data-preserve-light="true"
+                            onClick={() =>
+                              openZoomPerfil({
+                                perfilId: grupo.perfilId,
+                                codigo: grupo.codigo,
+                                nombre: grupo.perfilNombre,
+                                subtitulo: `Cortes: ${grupo.metrosCortes.toFixed(2)} m · ${grupo.tramos610Requeridos} tramo(s) 6.10 m`,
+                              })
+                            }
+                            title={`Ampliar dibujo técnico de ${grupo.perfilNombre}`}
+                            aria-label={`Ampliar dibujo técnico de ${grupo.perfilNombre}`}
+                            className="w-10 h-10 rounded-xl bg-white border border-slate-200 hover:border-blue-500 hover:ring-2 hover:ring-blue-400/40 flex items-center justify-center p-1 shrink-0 cursor-zoom-in transition-all active:scale-95"
+                          >
+                            <PerfilSectionSvg perfilId={grupo.perfilId} size={32} />
+                          </button>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                              <span className="mono text-[10.5px] font-extrabold px-1.5 py-0.5 rounded bg-white border border-slate-200 text-slate-700">
+                                {grupo.codigo}
+                              </span>
+                              <strong className="text-[14px] font-extrabold text-slate-900 break-words">
+                                {grupo.perfilNombre}
+                              </strong>
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white border border-slate-300 text-[10px] font-extrabold text-slate-700">
+                                <span
+                                  className="w-2.5 h-2.5 rounded-full border border-slate-400 shrink-0"
+                                  style={{ background: grupoColorCfg.swatch }}
+                                />
+                                {grupoColorCfg.corto}
+                              </span>
+                            </div>
+                            <span className="block text-[11.5px] text-slate-600 mono break-words">
+                              Cortes: {grupo.metrosCortes.toFixed(2)} m · Aprovechamiento:{' '}
+                              {grupo.aprovechamientoPct}%
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 flex-wrap shrink-0">
+                          {grupo.sobrantesUsados > 0 && (
+                            <span className="px-2 py-0.5 rounded-lg bg-amber-100 border border-amber-300 text-amber-900 text-[11px] font-extrabold mono">
+                              {grupo.sobrantesUsados} sob.
+                            </span>
+                          )}
+                          <span className="px-2.5 py-0.5 rounded-lg bg-blue-100 border border-blue-300 text-blue-900 text-[11px] font-extrabold mono">
+                            {grupo.tramos610Requeridos} tramo(s) 6.10m
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col gap-2.5">
+                        {grupo.barras.map((barra, bIdx) => {
+                          const numCortes = barra.totalCortes ?? barra.cortes.length;
+                          return (
+                            <div
+                              key={barra.id}
+                              className="p-2.5 rounded-xl bg-white border border-slate-300"
+                            >
+                              <div className="flex flex-wrap items-center justify-between gap-1.5 text-[11.5px] font-bold mb-1.5">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span
+                                    className={`px-2 py-0.5 rounded text-[10px] font-extrabold uppercase ${
+                                      barra.origen === 'sobrante-inventario'
+                                        ? 'bg-amber-600 text-white'
+                                        : 'bg-[#0B2545] text-white'
+                                    }`}
+                                  >
+                                    {barra.origen === 'sobrante-inventario'
+                                      ? 'Sobrante Inventario'
+                                      : 'Tramo 6.10 m'}
+                                  </span>
+                                  <span className="text-slate-900 font-extrabold">
+                                    Tramo #{bIdx + 1} — {numCortes}{' '}
+                                    {numCortes === 1 ? 'corte' : 'cortes'}
+                                  </span>
+                                  {barra.marca && (
+                                    <span className="text-slate-500">({barra.marca})</span>
+                                  )}
+                                </div>
+                                <span className="mono text-slate-700">
+                                  Usado: <strong>{barra.usadoCm.toFixed(1)} cm</strong> ·{' '}
+                                  {barra.esMerma ? (
+                                    <strong className="text-rose-700">
+                                      Sobrante: {barra.sobranteCm.toFixed(1)} cm (merma)
+                                    </strong>
+                                  ) : (
+                                    <strong className="text-emerald-700">
+                                      Sobrante: {barra.sobranteCm.toFixed(1)} cm
+                                    </strong>
+                                  )}
+                                </span>
+                              </div>
+
+                              <div className="w-full h-8 rounded-lg border border-slate-300 bg-slate-100 overflow-hidden flex">
+                                {barra.cortes.map((c, cIdx) => {
+                                  const pct = Math.max(
+                                    4,
+                                    (c.medidaCm / Math.max(1, barra.largoTotalCm)) * 100
+                                  );
+                                  return (
+                                    <div
+                                      key={`${barra.id}-${cIdx}`}
+                                      title={`${c.nombre}: ${c.medidaCm.toFixed(1)} cm`}
+                                      style={{
+                                        width: `${pct}%`,
+                                        backgroundColor:
+                                          BAR_SEGMENT_COLORS[cIdx % BAR_SEGMENT_COLORS.length],
+                                      }}
+                                      className="h-full border-r border-white/80 flex items-center justify-center text-white text-[10px] font-extrabold mono px-1 truncate"
+                                    >
+                                      {c.medidaCm.toFixed(1)}
+                                    </div>
+                                  );
+                                })}
+                                {barra.sobranteCm > 0 && (
+                                  <div
+                                    title={`${barra.esMerma ? 'Merma' : 'Sobrante usable'}: ${barra.sobranteCm.toFixed(1)} cm`}
+                                    style={{
+                                      width: `${Math.max(
+                                        2,
+                                        (barra.sobranteCm / Math.max(1, barra.largoTotalCm)) * 100
+                                      )}%`,
+                                    }}
+                                    className={`h-full flex items-center justify-center text-[10px] font-extrabold mono px-1 truncate border-l border-dashed ${
+                                      barra.esMerma
+                                        ? 'bg-rose-100 text-rose-900 border-rose-400'
+                                        : 'bg-emerald-100 text-emerald-900 border-emerald-400'
+                                    }`}
+                                  >
+                                    {barra.sobranteCm >= 12
+                                      ? `${barra.esMerma ? 'Merma ' : 'Usable '}${barra.sobranteCm.toFixed(0)}cm`
+                                      : ''}
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                {barra.cortes.map((c, cIdx) => (
+                                  <span
+                                    key={`${barra.id}-lbl-${cIdx}`}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-[10.5px] font-bold text-slate-800"
+                                  >
+                                    <span
+                                      className="w-2 h-2 rounded-full shrink-0"
+                                      style={{
+                                        backgroundColor:
+                                          BAR_SEGMENT_COLORS[cIdx % BAR_SEGMENT_COLORS.length],
+                                      }}
+                                    />
+                                    {c.nombre}:{' '}
+                                    <strong className="mono">{c.medidaCm.toFixed(1)} cm</strong>
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <div className="p-4 rounded-2xl border-[1.5px] border-emerald-300 bg-emerald-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div className="text-[12px] font-extrabold uppercase tracking-wide text-emerald-800">
+                Resumen de aluminio calculado
+              </div>
+              <div className="text-[15px] font-extrabold text-emerald-950 mt-0.5">
+                Total lineal:{' '}
+                <span className="mono">{calculoCortes.totalAluminioM.toFixed(2)} m</span> · Tramos
+                optimizados:{' '}
+                <span className="mono">{optimizacion1D.tramos610Totales} de 6.10 m</span>
+                {optimizacion1D.sobrantesInventarioUsados > 0
+                  ? ` + ${optimizacion1D.sobrantesInventarioUsados} sobrante(s)`
+                  : ''}
+              </div>
+            </div>
+            <button
+              type="button"
+              id="btn-mod-send-hoja"
+              onClick={handleSendToHoja}
+              className="min-h-[46px] px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[13.5px] cursor-pointer shadow-md shrink-0 transition-transform active:scale-95"
+            >
+              📋 Mandar tramos a Hoja de Cotización
+            </button>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200">
+            <button
+              type="button"
+              onClick={() => (onRequestBack ? onRequestBack() : setStep(4))}
+              className="min-h-[44px] px-4 rounded-xl border border-slate-300 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-[13px] cursor-pointer"
+            >
+              ← Ver perfiles
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setCortadosMap({});
+                if (onNavigateModState) {
+                  onNavigateModState({ step: 1, paso5Tab: 'cortes', mosquiteroModalOpen: false });
+                } else {
+                  setLocalPaso5Tab('cortes');
+                  setLocalMosqOpen(false);
+                  setLocalStep(1);
+                }
+              }}
+              className="min-h-[44px] px-4 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-800 font-extrabold text-[13px] cursor-pointer"
+            >
+              Nueva modulación
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== MODAL PASO 2: MOSQUITERO ==================== */}
+      {mosquiteroModalOpen && (
+        <div
+          id="modal-mosquitero-paso2"
+          className="fixed inset-0 z-50 bg-slate-950/75 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="¿Tu modulación tendrá mosquitero?"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              if (onRequestBack) onRequestBack();
+              else setLocalMosqOpen(false);
+            }
+          }}
+        >
+          <div className="w-full max-w-[440px] bg-white text-slate-900 border-[1.5px] border-slate-300 rounded-[24px] p-5 sm:p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-2 mb-3">
+              <div>
+                <span className="inline-block px-2.5 py-0.5 rounded-lg bg-blue-50 border border-blue-200 text-blue-800 text-[11px] font-extrabold mb-1.5">
+                  Paso 2 de 5 · {selectedModelo.categoria === 'puertas' ? 'Puerta' : 'Ventana'}{' '}
+                  {selectedModelo.nombre}
+                </span>
+                <h2 className="m-0 text-[19px] font-extrabold text-slate-900">
+                  ¿Tu modulación tendrá mosquitero?
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (onRequestBack) onRequestBack();
+                  else setLocalMosqOpen(false);
+                }}
+                aria-label="Cerrar pregunta de mosquitero"
+                className="min-w-[36px] min-h-[36px] rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold cursor-pointer shrink-0"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="m-0 text-[12.5px] text-slate-600 mb-4">
+              Si eliges <strong>Con mosquitero</strong>, agregaremos automáticamente el Marco y Riel de mosquitero a tu despiece y cortes.
+            </p>
+
+            <div className="grid grid-cols-1 gap-3">
+              <button
+                type="button"
+                id="btn-mod-con-mosquitero"
+                onClick={() => handleChooseMosquitero(true)}
+                className="min-h-[76px] p-4 rounded-2xl border-2 border-emerald-500 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/60 dark:hover:bg-emerald-800/70 dark:border-emerald-400 text-emerald-950 dark:text-white text-left cursor-pointer flex items-center gap-3.5 transition-transform active:scale-95 shadow-sm"
+              >
+                <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                  <svg
+                    width="26"
+                    height="26"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.1"
+                    aria-hidden="true"
+                  >
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <path d="M3 9h18M3 15h18M9 3v18M15 3v18" />
+                  </svg>
+                </div>
+                <div>
+                  <strong className="block text-[16px] font-extrabold text-emerald-950 dark:text-white">
+                    Con mosquitero
+                  </strong>
+                  <span className="block text-[12px] text-emerald-800 dark:text-emerald-50">
+                    Incluye marco, riel y medidas de corte para malla
+                  </span>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                id="btn-mod-sin-mosquitero"
+                onClick={() => handleChooseMosquitero(false)}
+                className="min-h-[76px] p-4 rounded-2xl border-2 border-slate-300 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/80 dark:hover:bg-slate-700/80 dark:border-slate-500 text-slate-900 dark:text-white text-left cursor-pointer flex items-center gap-3.5 transition-transform active:scale-95 shadow-sm"
+              >
+                <div className="w-12 h-12 rounded-2xl bg-slate-700 text-white flex items-center justify-center shrink-0">
+                  <svg
+                    width="26"
+                    height="26"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.1"
+                    aria-hidden="true"
+                  >
+                    <rect x="4" y="4" width="16" height="16" rx="2" />
+                    <line x1="12" y1="4" x2="12" y2="20" />
+                  </svg>
+                </div>
+                <div>
+                  <strong className="block text-[16px] font-extrabold text-slate-900 dark:text-white">
+                    Sin mosquitero
+                  </strong>
+                  <span className="block text-[12px] text-slate-600 dark:text-slate-200">
+                    Solo perfiles de marco y hojas principales
+                  </span>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <PerfilZoomModal
+        data={zoomPerfil}
+        onClose={() => (onRequestBack ? onRequestBack() : setZoomPerfil(null))}
+      />
+    </section>
+  );
+};

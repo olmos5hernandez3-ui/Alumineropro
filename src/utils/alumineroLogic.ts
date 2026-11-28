@@ -161,7 +161,7 @@ export const PLANS: PlanDefinicion[] = [
   },
 ];
 
-export const APP_VERSION = '1.0.13';
+export const APP_VERSION = '1.0.15';
 export const APP_VERSION_LABEL = `v${APP_VERSION}`;
 
 export const TRAMO_STD_CM = 610;
@@ -6549,6 +6549,8 @@ export function buildTopMaterialsSeries(
 export const GOOGLE_CONNECT_CTA_LABEL = 'Conectar con Google (Recomendado)';
 export const GOOGLE_CONNECT_BENEFIT_SUBTITLE =
   'Respalda tus cotizaciones y protege tu licencia PRO en la nube para no perder tus datos si cambias de celular o borras el navegador.';
+export const GOOGLE_CLOUD_PERSUASIVE_TIP =
+  '¡Que no se te pierdan tus cotizaciones! Así como alguna vez perdiste el lápiz, tu cuaderno o el último papelito donde anotaste las medidas del cliente, conéctate con el botón de Google para que todos tus apuntes y proyectos queden guardados seguros en la nube.';
 
 // ==================== MATERIALES FRECUENTES EN HISTORIAL (INICIO) ====================
 export interface FrequentMaterialSuggestion {
@@ -6952,4 +6954,200 @@ export function applyReferral5DaysBonusToLicense<
     activatedKey: `AP-D5-REF3-${normId}`,
   };
 }
+
+// ==================== LISTA DE COMPRAS SIMPLIFICADA (HOJA DE COTIZACIÓN -> WHATSAPP) ====================
+export interface HojaShoppingPerfilItem {
+  key: string;
+  perfilId: PerfilCatalogoId;
+  nombre: string;
+  lineaNombre: string;
+  colorNombre: string;
+  tramosRequeridos: number;
+  tramosEnBodega: number;
+  tramosAComprar: number;
+  metrosTotales: number;
+}
+
+export interface HojaShoppingVidrioItem {
+  label: string;
+  piezas: number;
+  areaM2: number;
+}
+
+export interface HojaShoppingHerrajeItem {
+  nombre: string;
+  cantidad: number;
+  unidad: string;
+}
+
+export interface HojaShoppingList {
+  proyecto: string;
+  cliente: string;
+  folio: string;
+  partidasCount: number;
+  perfiles: HojaShoppingPerfilItem[];
+  vidrios: HojaShoppingVidrioItem[];
+  herrajes: HojaShoppingHerrajeItem[];
+  totalTramosRequeridos: number;
+  totalTramosAComprar: number;
+  totalTramosEnBodega: number;
+  totalVidrioM2: number;
+  totalHerrajesTipos: number;
+}
+
+export function buildHojaShoppingList(
+  hoja: {
+    proyecto?: string;
+    cliente?: string;
+    folio?: string;
+    partidas: PartidaObra[];
+  },
+  consolidado: MaterialConsolidadoRow[]
+): HojaShoppingList {
+  const perfiles: HojaShoppingPerfilItem[] = (consolidado || []).map((r) => ({
+    key: r.key,
+    perfilId: r.perfilId,
+    nombre: r.perfilNombre,
+    lineaNombre: LINEAS_CONFIG[r.linea]?.nombre ?? r.linea,
+    colorNombre: COLORES_CONFIG[r.color]?.nombre ?? r.color,
+    tramosRequeridos: Math.max(0, Math.round(Number(r.tramosRequeridos) || 0)),
+    tramosEnBodega: Math.max(0, round2(Number(r.tramosDisponibles) || 0)),
+    tramosAComprar: Math.max(0, Math.round(Number(r.tramosFaltantes) || 0)),
+    metrosTotales: round2(Number(r.metrosRequeridos) || 0),
+  }));
+
+  const vidriosMap = new Map<string, HojaShoppingVidrioItem>();
+  const herrajesMap = new Map<string, HojaShoppingHerrajeItem>();
+
+  for (const p of hoja.partidas || []) {
+    const vidrios = p.despiece?.vidrios || [];
+    for (const v of vidrios) {
+      const label = (v.espesorLabel || v.nombre || 'Vidrio / Panel').trim();
+      const key = label.toLowerCase();
+      const pzas = Math.max(1, Math.round(Number(v.pzas) || 1));
+      const area = round2(Number(v.areaM2) || ((Number(v.anchoCm) || 0) * (Number(v.altoCm) || 0) * pzas) / 10000);
+      const prev = vidriosMap.get(key);
+      if (prev) {
+        prev.piezas += pzas;
+        prev.areaM2 = round2(prev.areaM2 + area);
+      } else {
+        vidriosMap.set(key, { label, piezas: pzas, areaM2: area });
+      }
+    }
+
+    const herrajes = p.despiece?.herrajes || [];
+    for (const h of herrajes) {
+      const nombre = (h.nombre || '').trim();
+      if (!nombre) continue;
+      const unidad = (h.unidad || 'pzas').trim();
+      const qty = Math.max(0, round2(Number(h.cantidad) || 0));
+      if (qty <= 0) continue;
+      const key = `${nombre.toLowerCase()}__${unidad.toLowerCase()}`;
+      const prev = herrajesMap.get(key);
+      if (prev) {
+        prev.cantidad = round2(prev.cantidad + qty);
+      } else {
+        herrajesMap.set(key, { nombre, cantidad: qty, unidad });
+      }
+    }
+  }
+
+  const vidrios = Array.from(vidriosMap.values()).sort((a, b) => b.areaM2 - a.areaM2);
+  const herrajes = Array.from(herrajesMap.values()).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+
+  const totalTramosRequeridos = perfiles.reduce((acc, p) => acc + p.tramosRequeridos, 0);
+  const totalTramosAComprar = perfiles.reduce((acc, p) => acc + p.tramosAComprar, 0);
+  const totalTramosEnBodega = round2(
+    perfiles.reduce((acc, p) => acc + Math.min(p.tramosRequeridos, p.tramosEnBodega), 0)
+  );
+  const totalVidrioM2 = round2(vidrios.reduce((acc, v) => acc + v.areaM2, 0));
+
+  return {
+    proyecto: (hoja.proyecto || '').trim() || 'Obra sin nombre',
+    cliente: (hoja.cliente || '').trim(),
+    folio: (hoja.folio || '').trim(),
+    partidasCount: (hoja.partidas || []).length,
+    perfiles,
+    vidrios,
+    herrajes,
+    totalTramosRequeridos,
+    totalTramosAComprar,
+    totalTramosEnBodega,
+    totalVidrioM2,
+    totalHerrajesTipos: herrajes.length,
+  };
+}
+
+export function buildHojaShoppingListWhatsAppText(
+  list: HojaShoppingList,
+  options?: {
+    onlyMissing?: boolean;
+    tallerNombre?: string;
+    includeVidrios?: boolean;
+    includeHerrajes?: boolean;
+  }
+): string {
+  const onlyMissing = options?.onlyMissing ?? true;
+  const includeVidrios = options?.includeVidrios ?? true;
+  const includeHerrajes = options?.includeHerrajes ?? true;
+  const taller = (options?.tallerNombre || 'Aluminero Pro').trim();
+
+  const perfilesFiltrados = onlyMissing
+    ? list.perfiles.filter((p) => p.tramosAComprar > 0)
+    : list.perfiles.filter((p) => p.tramosRequeridos > 0);
+
+  const lines: string[] = [
+    `🛒 *LISTA DE COMPRAS — ${taller.toUpperCase()}*`,
+    `Proyecto: *${list.proyecto}*${list.folio ? ` (Folio: ${list.folio})` : ''}`,
+  ];
+  if (list.cliente) {
+    lines.push(`Cliente: ${list.cliente}`);
+  }
+  lines.push(
+    `Modo: ${onlyMissing ? 'Solo faltantes vs inventario en bodega' : 'Material total requerido'}`
+  );
+  lines.push('');
+
+  lines.push('📏 *PERFILES DE ALUMINIO (Tramos 6.10 m):*');
+  if (perfilesFiltrados.length === 0) {
+    lines.push(
+      onlyMissing
+        ? '✅ Todos los perfiles están cubiertos con tu inventario en bodega.'
+        : '— Sin perfiles requeridos en la cotización.'
+    );
+  } else {
+    for (const p of perfilesFiltrados) {
+      const qty = onlyMissing ? p.tramosAComprar : p.tramosRequeridos;
+      const unidad = qty === 1 ? 'tramo' : 'tramos';
+      const bodegaNote =
+        onlyMissing && p.tramosEnBodega > 0
+          ? ` (ya en bodega: ${p.tramosEnBodega})`
+          : '';
+      lines.push(`• *${qty} ${unidad}* — ${p.nombre} · ${p.lineaNombre} · ${p.colorNombre}${bodegaNote}`);
+    }
+    const sumTramos = onlyMissing ? list.totalTramosAComprar : list.totalTramosRequeridos;
+    lines.push(`_Total perfiles a surtir: ${sumTramos} ${sumTramos === 1 ? 'tramo' : 'tramos'} de 6.10 m_`);
+  }
+
+  if (includeVidrios && list.vidrios.length > 0) {
+    lines.push('');
+    lines.push('🪟 *VIDRIOS / PANELES:*');
+    for (const v of list.vidrios) {
+      lines.push(`• ${v.label}: *${v.areaM2.toFixed(2)} m²* (${v.piezas} ${v.piezas === 1 ? 'pieza' : 'piezas'})`);
+    }
+  }
+
+  if (includeHerrajes && list.herrajes.length > 0) {
+    lines.push('');
+    lines.push('🔩 *HERRAJES Y CONSUMIBLES:*');
+    for (const h of list.herrajes) {
+      lines.push(`• *${h.cantidad} ${h.unidad}* — ${h.nombre}`);
+    }
+  }
+
+  lines.push('');
+  lines.push('_Generado con Aluminero Pro_');
+  return lines.join('\n');
+}
+
 
