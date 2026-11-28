@@ -2,12 +2,14 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   BarChart3,
+  Check,
   ChevronDown,
   ChevronUp,
   Download,
   FileDown,
   Lock,
   Palette,
+  Pencil,
   RotateCcw,
   SlidersHorizontal,
   Sparkles,
@@ -79,6 +81,7 @@ interface Props {
   onEntrarInventario: () => void;
   onOpenFormulaModal: () => void;
   onEliminarFormula: (id: string) => void;
+  onEditarFormula?: (updated: FormulaPersonalizada) => void;
   onEliminarHistorial: (id: string) => void;
   onLimpiarHistorial: () => void;
   onScheduleHistorialReminder?: (item: HistorialItem) => void;
@@ -133,6 +136,7 @@ export const TallerView: React.FC<Props> = ({
   onEntrarInventario,
   onOpenFormulaModal,
   onEliminarFormula,
+  onEditarFormula,
   onEliminarHistorial,
   onLimpiarHistorial,
   onScheduleHistorialReminder,
@@ -159,6 +163,72 @@ export const TallerView: React.FC<Props> = ({
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
   const [lastBulkUndo, setLastBulkUndo] = useState<BulkAdjustmentUndoSnapshot | null>(null);
   const [ajusteFinoOpen, setAjusteFinoOpen] = useState(false);
+
+  // Estado local para editar cualquier fórmula guardada de Mi Taller
+  const [localFormulasOverride, setLocalFormulasOverride] = useState<Record<string, FormulaPersonalizada>>({});
+  const [editingFormulaId, setEditingFormulaId] = useState<string | null>(null);
+  const [editFormulaNombre, setEditFormulaNombre] = useState('');
+  const [editFormulaLinea, setEditFormulaLinea] = useState<LineaId>('3');
+  const [editMarcoH, setEditMarcoH] = useState('0');
+  const [editHojaV, setEditHojaV] = useState('0');
+  const [editHojaH, setEditHojaH] = useState('0');
+
+  const displayedFormulas = useMemo(
+    () => formulas.map((f) => localFormulasOverride[f.id] || f),
+    [formulas, localFormulasOverride]
+  );
+
+  const handleStartEditFormula = (f: FormulaPersonalizada) => {
+    setEditingFormulaId(f.id);
+    setEditFormulaNombre(f.nombre);
+    setEditFormulaLinea(f.linea);
+    setEditMarcoH(String(f.tolerancias.marcoH));
+    setEditHojaV(String(f.tolerancias.hojaV));
+    setEditHojaH(String(f.tolerancias.hojaH));
+  };
+
+  const handleSaveEditFormula = (original: FormulaPersonalizada) => {
+    const cleanName = editFormulaNombre.trim();
+    if (!cleanName) {
+      onShowToast('Escribe un nombre para la fórmula.');
+      return;
+    }
+    const updated: FormulaPersonalizada = {
+      ...original,
+      nombre: cleanName,
+      linea: editFormulaLinea,
+      tolerancias: {
+        ...original.tolerancias,
+        marcoH: Math.max(0, Number(editMarcoH) || 0),
+        hojaV: Math.max(0, Number(editHojaV) || 0),
+        hojaH: Math.max(0, Number(editHojaH) || 0),
+      },
+    };
+    setLocalFormulasOverride((prev) => ({ ...prev, [updated.id]: updated }));
+    if (onEditarFormula) {
+      onEditarFormula(updated);
+    } else if (backupData && onImportBackup) {
+      const nextList = formulas.map((item) => (item.id === updated.id ? updated : item));
+      onImportBackup({ ...backupData, formulas: nextList });
+    } else {
+      try {
+        const raw = window.localStorage.getItem('aluminero_formulas_v1');
+        if (raw) {
+          const parsed = JSON.parse(raw) as FormulaPersonalizada[];
+          if (Array.isArray(parsed)) {
+            window.localStorage.setItem(
+              'aluminero_formulas_v1',
+              JSON.stringify(parsed.map((item) => (item.id === updated.id ? updated : item)))
+            );
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+    setEditingFormulaId(null);
+    onShowToast(`Fórmula "${cleanName}" actualizada`, true);
+  };
 
   useEffect(() => {
     const refresh = () => setCotizacionesList(loadCotizacionesGuardadas());
@@ -203,6 +273,7 @@ export const TallerView: React.FC<Props> = ({
   const getCurrentPriceForRefItem = (item: ReferencePriceItem): number => {
     if (item.id === 'ref-alu-tramo') return taller.precioListaTramo;
     if (item.lineaId) {
+  const maxConsumo = Math.max(1, ...salesAnalytics.topMaterials.map((m) => m.cantidad));
       return taller.tarifasBase[item.lineaId] ?? LINEAS_CONFIG[item.lineaId]?.tarifaBaseDefault ?? 0;
     }
     if (item.rellenoKey) {
@@ -347,8 +418,6 @@ export const TallerView: React.FC<Props> = ({
     }
   };
 
-  const maxConsumo = Math.max(1, ...salesAnalytics.topMaterials.map((m) => m.cantidad));
-
   return (
     <section id="view-taller" className="screen-animate pb-28 sm:pb-14">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-2">
@@ -362,7 +431,6 @@ export const TallerView: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* Apariencia rápida: Azul Básico / Verde PRO + Modo Claro / Oscuro */}
       {(onSelectSkin || onToggleColorMode) && (
         <div
           id="card-taller-apariencia"
@@ -539,7 +607,7 @@ export const TallerView: React.FC<Props> = ({
         </div>
       )}
 
-      {/* Métricas del Taller (movido del Panel de Administrador) */}
+      {/* Métricas del Taller */}
       <div
         id="card-taller-metricas"
         className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] p-4 sm:p-5 shadow-xl mb-4"
@@ -549,922 +617,3 @@ export const TallerView: React.FC<Props> = ({
             <BarChart3 className="w-5 h-5 text-blue-600 shrink-0" aria-hidden="true" />
             <div>
               <h2 className="m-0 text-[17px] font-extrabold">Métricas de Ventas y Materiales</h2>
-              <p className="m-0 text-[12px] text-slate-500">
-                Ticket promedio, tasa de aprobación y perfiles más consumidos en tu taller
-              </p>
-            </div>
-          </div>
-          <span className="px-2.5 py-1 rounded-lg bg-blue-50 border border-blue-200 text-blue-800 text-[11px] font-extrabold mono">
-            {salesAnalytics.totalQuotesCount} cotización(es)
-          </span>
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-3.5">
-          <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-            <span className="block text-[11px] font-bold text-slate-500 uppercase">Ticket Promedio</span>
-            <strong className="block text-[17px] font-extrabold text-blue-700 mono mt-0.5">
-              {formatMXN(salesAnalytics.averageTicket)}
-            </strong>
-          </div>
-          <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-            <span className="block text-[11px] font-bold text-slate-500 uppercase">Total Aprobado</span>
-            <strong className="block text-[17px] font-extrabold text-emerald-700 mono mt-0.5">
-              {formatMXN(salesAnalytics.totalApprovedRevenue)}
-            </strong>
-          </div>
-          <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-            <span className="block text-[11px] font-bold text-slate-500 uppercase">Aprobación</span>
-            <strong className="block text-[17px] font-extrabold text-slate-900 mono mt-0.5">
-              {salesAnalytics.approvalRatePct.toFixed(0)}%
-            </strong>
-          </div>
-          <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-            <span className="block text-[11px] font-bold text-slate-500 uppercase">Obras Aprobadas</span>
-            <strong className="block text-[17px] font-extrabold text-indigo-700 mono mt-0.5">
-              {salesAnalytics.approvedCount}
-            </strong>
-          </div>
-        </div>
-
-        <div>
-          <div className="flex items-center gap-1.5 text-[12px] font-extrabold text-slate-700 mb-2">
-            <TrendingUp className="w-3.5 h-3.5 text-emerald-600" aria-hidden="true" />
-            <span>Perfiles y Materiales Más Consumidos</span>
-          </div>
-          {salesAnalytics.topMaterials.length === 0 ? (
-            <p className="m-0 text-[12px] text-slate-500 p-3 rounded-xl bg-slate-50 border border-dashed border-slate-200 text-center">
-              Aprueba o descarga cotizaciones en PDF para ver tus perfiles más consumidos.
-            </p>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {salesAnalytics.topMaterials.slice(0, 6).map((mat) => {
-                const pct = Math.max(8, Math.round((mat.cantidad / maxConsumo) * 100));
-                return (
-                  <div key={mat.id} className="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
-                    <div className="flex items-center justify-between gap-2 text-[12px] mb-1">
-                      <span className="font-bold text-slate-900 truncate">{mat.nombre}</span>
-                      <span className="mono font-extrabold text-blue-700 shrink-0">
-                        {mat.cantidad} {mat.unidad}
-                      </span>
-                    </div>
-                    <div className="w-full h-2 rounded-full bg-slate-200 overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-gradient-to-r from-blue-600 to-emerald-500"
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-5 items-start">
-        <div className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] p-4 sm:p-5 shadow-xl">
-          <div className="mb-3.5">
-            <h2 className="m-0 text-[17px] font-extrabold">
-              Encabezado PDF y Datos de mi Taller{' '}
-              {!proActive && <span className="text-amber-700 text-[12px]">🔒 PRO</span>}
-            </h2>
-            <p className="m-0 text-[12px] text-slate-500">
-              Se aplica en cotizaciones para cliente, órdenes técnicas de taller y contratos PDF
-            </p>
-          </div>
-
-          <PdfHeaderCustomizer
-            taller={taller}
-            onUpdateTaller={onUpdateTaller}
-            onShowToast={onShowToast}
-          />
-        </div>
-
-        <div className="flex flex-col gap-4">
-          {/* Ajuste de precios de un golpe (%) + Precios de Referencia (PRO) */}
-          <div
-            id="card-taller-bulk-adjust"
-            className="bg-white text-[#1E293B] border-[1.5px] border-blue-300 rounded-[18px] p-4 sm:p-5 shadow-xl"
-          >
-            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-              <div>
-                <h2 className="m-0 text-[17px] font-extrabold">
-                  ⚡ Ajuste de precios de un golpe (%)
-                </h2>
-                <p className="m-0 text-[12px] text-slate-500">
-                  Actualiza tus tarifas en segundos cuando suba o baje el aluminio sin editar perfil por perfil
-                </p>
-              </div>
-              <button
-                type="button"
-                id="btn-taller-ref-prices"
-                onClick={() => {
-                  if (!proActive) {
-                    onOpenPro();
-                    return;
-                  }
-                  setRefPricesOpen(true);
-                }}
-                className="min-h-[38px] px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-extrabold inline-flex items-center gap-1.5 cursor-pointer shadow-xs"
-              >
-                <Sparkles className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                <span>Consultar Precios de Referencia</span>
-                {!proActive && <span className="text-amber-200 text-[11px]">🔒 PRO</span>}
-              </button>
-            </div>
-
-            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex flex-col gap-3">
-              {/* Filtro: Todos los perfiles o por Acabado/Color */}
-              <div>
-                <label
-                  htmlFor="sel-bulk-acabado"
-                  className="flex items-center gap-1.5 text-[12px] font-extrabold text-slate-700 mb-1"
-                >
-                  <Zap className="w-3.5 h-3.5 text-amber-500" aria-hidden="true" />
-                  <span>Aplicar a:</span>
-                </label>
-                <select
-                  id="sel-bulk-acabado"
-                  value={bulkAcabado}
-                  onChange={(e) => {
-                    setBulkAcabado(e.target.value as AcabadoFiltroId);
-                    setBulkConfirmOpen(false);
-                  }}
-                  className="w-full min-h-[40px] rounded-xl border border-slate-300 bg-white px-3 text-[13px] font-bold text-slate-800"
-                >
-                  {ACABADOS_AJUSTE_OPTIONS.map((opt) => (
-                    <option key={opt.id} value={opt.id}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {bulkAcabado === 'todos' ? (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-                  {(
-                    [
-                      { id: 'aluminio', label: 'Solo Aluminio' },
-                      { id: 'vidrio', label: 'Solo Vidrio' },
-                      { id: 'herrajes', label: 'Solo Herrajes' },
-                      { id: 'todo', label: 'Todo' },
-                    ] as const
-                  ).map((c) => (
-                    <button
-                      key={c.id}
-                      type="button"
-                      onClick={() => {
-                        setBulkCat(c.id);
-                        setBulkConfirmOpen(false);
-                      }}
-                      aria-pressed={bulkCat === c.id}
-                      className={`min-h-[34px] px-2 rounded-lg text-[11.5px] font-extrabold border cursor-pointer transition-colors ${
-                        bulkCat === c.id
-                          ? 'bg-blue-600 text-white border-blue-600'
-                          : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
-                      }`}
-                    >
-                      {c.label}
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-                  {SPECIFIC_ACABADO_IDS.map((fid) => {
-                    const opt = ACABADOS_AJUSTE_OPTIONS.find((o) => o.id === fid)!;
-                    const price = getAcabadoCurrentPrice(
-                      fid,
-                      taller.precioListaTramo,
-                      taller.preciosPorAcabado
-                    );
-                    const isSelected = bulkAcabado === fid;
-                    return (
-                      <button
-                        key={fid}
-                        type="button"
-                        onClick={() => {
-                          setBulkAcabado(fid);
-                          setBulkConfirmOpen(false);
-                        }}
-                        data-testid={`acabado-price-${fid}`}
-                        className={`flex items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-lg border text-left cursor-pointer transition-colors ${
-                          isSelected
-                            ? 'bg-blue-50 border-blue-500 text-blue-900'
-                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
-                        }`}
-                      >
-                        <span className="inline-flex items-center gap-1.5 text-[11.5px] font-bold truncate">
-                          <span
-                            className="w-2.5 h-2.5 rounded-full border border-slate-300 shrink-0"
-                            style={{ backgroundColor: opt.swatch }}
-                            aria-hidden="true"
-                          />
-                          {opt.shortLabel}
-                        </span>
-                        <span className="mono text-[11.5px] font-extrabold shrink-0">
-                          {formatMXN(price)}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* Porcentaje + botones rápidos (+5%, +10%, -5%) + Aplicar ajuste */}
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center gap-1">
-                  <input
-                    id="inp-bulk-pct"
-                    type="number"
-                    min={-80}
-                    max={200}
-                    step={1}
-                    value={bulkPct}
-                    onChange={(e) => {
-                      setBulkPct(e.target.value);
-                      setBulkConfirmOpen(false);
-                    }}
-                    aria-label="Porcentaje de ajuste masivo"
-                    className="w-[88px] min-h-[40px] rounded-xl border border-slate-300 bg-white px-2.5 text-center mono text-[14px] font-extrabold"
-                  />
-                  <span className="text-[13px] font-extrabold text-slate-600">%</span>
-                </div>
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {(['5', '10', '-5'] as const).map((v) => {
-                    const num = Number(v);
-                    const active = bulkPct === v;
-                    return (
-                      <button
-                        key={v}
-                        type="button"
-                        id={`btn-quick-pct-${v}`}
-                        onClick={() => {
-                          setBulkPct(v);
-                          setBulkConfirmOpen(false);
-                        }}
-                        className={`min-h-[34px] px-2.5 py-1 rounded-lg border mono text-[12px] font-extrabold cursor-pointer transition-colors ${
-                          active
-                            ? 'bg-blue-600 text-white border-blue-600'
-                            : 'bg-white border-slate-200 hover:bg-blue-50 text-slate-700'
-                        }`}
-                      >
-                        {num > 0 ? `+${v}%` : `${v}%`}
-                      </button>
-                    );
-                  })}
-                </div>
-                <button
-                  type="button"
-                  id="btn-apply-bulk-pct"
-                  onClick={handleRequestBulkAdjustment}
-                  className="ml-auto min-h-[40px] px-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[12.5px] font-extrabold cursor-pointer"
-                >
-                  Aplicar ajuste
-                </button>
-              </div>
-
-              {/* Confirmación rápida inline (sin window.confirm) */}
-              {bulkConfirmOpen && bulkPctValid && (
-                <div
-                  id="bulk-adjust-confirm-box"
-                  role="alertdialog"
-                  aria-label="Confirmar ajuste masivo de precios"
-                  className="p-3 rounded-xl bg-amber-50 border-[1.5px] border-amber-300 flex flex-col gap-2.5"
-                >
-                  <div className="flex items-start gap-2 text-[12.5px] font-bold text-amber-950">
-                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" aria-hidden="true" />
-                    <span>
-                      {buildBulkAdjustmentConfirmMessage(bulkPctNum, bulkAcabado, bulkCat)}
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap items-center justify-end gap-2">
-                    <button
-                      type="button"
-                      id="btn-cancel-bulk-pct"
-                      onClick={() => setBulkConfirmOpen(false)}
-                      className="min-h-[36px] px-3 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-[12px] font-bold cursor-pointer"
-                    >
-                      Cancelar
-                    </button>
-                    <button
-                      type="button"
-                      id="btn-confirm-bulk-pct"
-                      onClick={handleConfirmBulkAdjustment}
-                      className="min-h-[36px] px-3.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[12px] font-extrabold cursor-pointer"
-                    >
-                      Sí, aplicar {formatSignedPct(bulkPctNum)}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Botón de Deshacer último ajuste */}
-              {lastBulkUndo && (
-                <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl bg-emerald-50 border border-emerald-200">
-                  <span className="text-[12px] font-bold text-emerald-900">
-                    Último ajuste guardado: <strong>{formatSignedPct(lastBulkUndo.appliedPct)}</strong> ({lastBulkUndo.scopeLabel})
-                  </span>
-                  <button
-                    type="button"
-                    id="btn-undo-bulk-pct"
-                    onClick={handleUndoLastBulkAdjustment}
-                    className="min-h-[34px] px-3 rounded-lg bg-white hover:bg-rose-50 border border-rose-300 text-rose-700 text-[12px] font-extrabold inline-flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Undo2 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                    <span>Deshacer último ajuste</span>
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] p-4 sm:p-5 shadow-xl">
-            <h2 className="m-0 text-[17px] font-extrabold">Descuento del Distribuidor y Costos</h2>
-            <p className="m-0 text-[12px] text-slate-500">
-              Calcula el costo real de material y tu ganancia aproximada
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
-              <div>
-                <label htmlFor="inp-desc-dist" className="block text-[12px] font-bold text-slate-500 mb-1">
-                  % Descuento Distribuidor
-                </label>
-                <input
-                  id="inp-desc-dist"
-                  type="number"
-                  min={0}
-                  max={80}
-                  value={taller.descDistribuidorPct}
-                  onChange={(e) =>
-                    onUpdateTaller({
-                      descDistribuidorPct: Math.max(0, Math.min(80, Number(e.target.value) || 0)),
-                    })
-                  }
-                  className="w-full min-h-[44px] rounded-xl border border-slate-200 px-3 mono text-[14px] font-semibold"
-                />
-              </div>
-              <div>
-                <label htmlFor="inp-precio-tramo" className="block text-[12px] font-bold text-slate-500 mb-1">
-                  Precio lista tramo 6.10 m ($ MXN)
-                </label>
-                <input
-                  id="inp-precio-tramo"
-                  type="number"
-                  min={100}
-                  step={50}
-                  value={taller.precioListaTramo}
-                  onChange={(e) =>
-                    onUpdateTaller({ precioListaTramo: Math.max(100, Number(e.target.value) || 100) })
-                  }
-                  className="w-full min-h-[44px] rounded-xl border border-slate-200 px-3 mono text-[14px] font-semibold"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] p-4 sm:p-5 shadow-xl">
-            <div className="flex items-center justify-between gap-2 mb-3">
-              <div>
-                <h2 className="m-0 text-[17px] font-extrabold">Tarifas Base por m² ($ MXN)</h2>
-                <p className="m-0 text-[12px] text-slate-500">Se aplican automáticamente al elegir cada línea</p>
-              </div>
-              <button
-                type="button"
-                onClick={onRestablecerTarifas}
-                className="px-2.5 py-1.5 rounded-lg border border-slate-200 text-blue-600 text-[12px] font-bold cursor-pointer"
-              >
-                Restablecer
-              </button>
-            </div>
-            <div className="flex flex-col gap-2.5">
-              {Object.values(LINEAS_CONFIG).map((l) => {
-                const locked = l.pro && !proActive;
-                const val = taller.tarifasBase[l.id] ?? l.tarifaBaseDefault;
-                return (
-                  <div key={l.id} className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <strong className="block text-[13px]">
-                        {l.nombre} {locked && <span className="text-amber-700 text-[11px]">🔒 PRO</span>}
-                      </strong>
-                      <span className="text-[11.5px] text-slate-500">{l.desc}</span>
-                    </div>
-                    <input
-                      type="number"
-                      min={0}
-                      step={50}
-                      value={val}
-                      readOnly={locked}
-                      onFocus={(e) => {
-                        if (locked) {
-                          e.target.blur();
-                          onOpenPro();
-                        }
-                      }}
-                      onChange={(e) =>
-                        onUpdateTaller({
-                          tarifasBase: {
-                            ...taller.tarifasBase,
-                            [l.id as LineaId]: Math.max(0, Number(e.target.value) || 0),
-                          },
-                        })
-                      }
-                      className="w-[120px] min-h-[40px] rounded-xl border border-slate-200 px-2.5 text-right mono text-[14px] font-bold"
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] p-4 sm:p-5 shadow-xl">
-            <h2 className="m-0 text-[17px] font-extrabold">
-              Mi Inventario de Taller {!proActive && <span className="text-amber-700 text-[12px]">🔒 PRO</span>}
-            </h2>
-            <p className="m-0 text-[12px] text-slate-500 mb-3">
-              Registra tus tramos de 6.10 m en bodega para saber qué pedir
-            </p>
-            <button
-              type="button"
-              onClick={onEntrarInventario}
-              className="w-full min-h-[46px] rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-[13.5px] cursor-pointer"
-            >
-              Abrir Mi Inventario de Taller
-            </button>
-          </div>
-
-          {backupData && onImportBackup && (
-            <div
-              id="card-taller-backup-json"
-              className="bg-white text-[#1E293B] border-[1.5px] border-emerald-300 rounded-[18px] p-4 sm:p-5 shadow-xl"
-            >
-              <h2 className="m-0 text-[17px] font-extrabold">Respaldo Local de Datos (JSON)</h2>
-              <p className="m-0 text-[12px] text-slate-500 mt-0.5 mb-3">
-                Exporta o restaura tus datos de Mi Taller, tarifas, clientes, inventario e historial en un archivo JSON.
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                <button
-                  type="button"
-                  id="btn-taller-export-json"
-                  onClick={handleExportTallerJson}
-                  className="min-h-[44px] px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[13px] inline-flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  <Download className="w-4 h-4 shrink-0" aria-hidden="true" />
-                  <span>Exportar respaldo JSON</span>
-                </button>
-                <button
-                  type="button"
-                  id="btn-taller-import-json"
-                  onClick={() => importBackupRef.current?.click()}
-                  className="min-h-[44px] px-3.5 rounded-xl border border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-800 font-extrabold text-[13px] inline-flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  <Upload className="w-4 h-4 shrink-0" aria-hidden="true" />
-                  <span>Importar respaldo JSON</span>
-                </button>
-                <input
-                  ref={importBackupRef}
-                  type="file"
-                  accept="application/json"
-                  onChange={handleImportTallerJson}
-                  className="hidden"
-                />
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Generador de Publicidad para el Taller del Usuario */}
-      <PublicidadTallerCard taller={taller} onShowToast={onShowToast} />
-
-      {/* Ajuste fino de descuentos (cm) y Parámetros de optimización 6.10 m */}
-      <div
-        id="card-taller-ajuste-fino"
-        className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] p-4 sm:p-5 shadow-xl mt-4"
-      >
-        <button
-          type="button"
-          id="btn-toggle-ajuste-fino"
-          onClick={() => setAjusteFinoOpen((v) => !v)}
-          aria-expanded={ajusteFinoOpen}
-          className="w-full flex items-center justify-between gap-3 bg-transparent border-0 p-0 text-left cursor-pointer"
-        >
-          <div className="flex items-center gap-2.5 min-w-0">
-            <SlidersHorizontal className="w-5 h-5 text-blue-600 shrink-0" aria-hidden="true" />
-            <div>
-              <h2 className="m-0 text-[16.5px] font-extrabold text-slate-900">
-                Ajuste fino de descuentos (cm) y Optimizador 6.10 m
-              </h2>
-              <p className="m-0 text-[12px] text-slate-500">
-                Calibra los descuentos de taller por extrusor, despunte (2.5 cm), disco (0.4 cm) y sobrante usable (60 cm)
-              </p>
-            </div>
-          </div>
-          {ajusteFinoOpen ? (
-            <ChevronUp className="w-5 h-5 text-slate-500 shrink-0" aria-hidden="true" />
-          ) : (
-            <ChevronDown className="w-5 h-5 text-slate-500 shrink-0" aria-hidden="true" />
-          )}
-        </button>
-
-        {ajusteFinoOpen && (
-          <div className="mt-4 pt-4 border-t border-slate-200 flex flex-col gap-4">
-            {/* Parámetros del optimizador 6.10 m */}
-            <div className="p-3.5 rounded-xl bg-blue-50/70 border border-blue-200">
-              <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
-                <strong className="text-[13.5px] font-extrabold text-blue-950">
-                  Parámetros de optimización de barra 6.10 m
-                </strong>
-                <button
-                  type="button"
-                  onClick={() => {
-                    onUpdateTaller({ optimizador: { ...DEFAULT_OPTIMIZADOR_CONFIG } });
-                    onShowToast('Parámetros del optimizador 6.10 m restablecidos', true);
-                  }}
-                  className="px-2.5 py-1 rounded-lg border border-blue-300 bg-white text-blue-700 text-[11.5px] font-bold inline-flex items-center gap-1 cursor-pointer"
-                >
-                  <RotateCcw className="w-3 h-3" aria-hidden="true" />
-                  Restablecer 6.10 m
-                </button>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                <div>
-                  <label htmlFor="inp-opt-largo" className="block text-[11px] font-bold text-slate-600 mb-1">
-                    Largo barra (cm)
-                  </label>
-                  <input
-                    id="inp-opt-largo"
-                    type="number"
-                    min={100}
-                    max={800}
-                    step={1}
-                    value={optResolved.largoBarraCm}
-                    onChange={(e) => handleUpdateOptField('largoBarraCm', e.target.value)}
-                    className="w-full min-h-[38px] rounded-lg border border-slate-300 bg-white px-2.5 mono text-[13px] font-bold"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="inp-opt-despunte" className="block text-[11px] font-bold text-slate-600 mb-1">
-                    Despunte x punta (cm)
-                  </label>
-                  <input
-                    id="inp-opt-despunte"
-                    type="number"
-                    min={0}
-                    max={20}
-                    step={0.5}
-                    value={optResolved.despuntePorExtremoCm}
-                    onChange={(e) => handleUpdateOptField('despuntePorExtremoCm', e.target.value)}
-                    className="w-full min-h-[38px] rounded-lg border border-slate-300 bg-white px-2.5 mono text-[13px] font-bold"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="inp-opt-kerf" className="block text-[11px] font-bold text-slate-600 mb-1">
-                    Grosor disco / kerf (cm)
-                  </label>
-                  <input
-                    id="inp-opt-kerf"
-                    type="number"
-                    min={0}
-                    max={2}
-                    step={0.1}
-                    value={optResolved.kerfCm}
-                    onChange={(e) => handleUpdateOptField('kerfCm', e.target.value)}
-                    className="w-full min-h-[38px] rounded-lg border border-slate-300 bg-white px-2.5 mono text-[13px] font-bold"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="inp-opt-umbral" className="block text-[11px] font-bold text-slate-600 mb-1">
-                    Sobrante usable (cm)
-                  </label>
-                  <input
-                    id="inp-opt-umbral"
-                    type="number"
-                    min={10}
-                    max={250}
-                    step={5}
-                    value={optResolved.umbralSobranteUsableCm}
-                    onChange={(e) => handleUpdateOptField('umbralSobranteUsableCm', e.target.value)}
-                    className="w-full min-h-[38px] rounded-lg border border-slate-300 bg-white px-2.5 mono text-[13px] font-bold"
-                  />
-                </div>
-              </div>
-              <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 text-[11.5px] text-slate-700">
-                <span className="mono font-bold text-blue-900">
-                  Largo útil por barra:{' '}
-                  {(optResolved.largoBarraCm - 2 * optResolved.despuntePorExtremoCm).toFixed(1)} cm
-                </span>
-                <label className="inline-flex items-center gap-2 cursor-pointer font-bold">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(taller.ivaPorDefecto)}
-                    onChange={(e) => onUpdateTaller({ ivaPorDefecto: e.target.checked })}
-                  />
-                  Incluir IVA (16%) por defecto en nuevas cotizaciones
-                </label>
-              </div>
-            </div>
-
-            {/* Descuentos exactos editables */}
-            <div>
-              <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
-                <strong className="text-[13.5px] font-extrabold text-slate-900">
-                  Descuentos estándar de corte en taller (cm)
-                </strong>
-                <button
-                  type="button"
-                  id="btn-reset-ajuste-fino"
-                  onClick={() => {
-                    onUpdateTaller({ ajusteDescuentos: { ...DEFAULT_AJUSTE_DESCUENTOS } });
-                    onShowToast('Descuentos de taller restablecidos a valores de fábrica', true);
-                  }}
-                  className="px-2.5 py-1 rounded-lg border border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700 text-[11.5px] font-bold inline-flex items-center gap-1 cursor-pointer"
-                >
-                  <RotateCcw className="w-3 h-3" aria-hidden="true" />
-                  Restablecer valores de fábrica
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                {AJUSTE_FIELDS.map((f) => (
-                  <div
-                    key={f.key}
-                    className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-2"
-                  >
-                    <div className="min-w-0">
-                      <span className="block text-[10px] font-extrabold uppercase tracking-wide text-blue-700">
-                        {f.group}
-                      </span>
-                      <span className="block text-[12px] font-bold text-slate-900 truncate">
-                        {f.label}
-                      </span>
-                      <span className="block text-[10.5px] text-slate-500 mono">{f.hint}</span>
-                    </div>
-                    <input
-                      type="number"
-                      min={0}
-                      max={80}
-                      step={0.1}
-                      aria-label={`${f.group} ${f.label}`}
-                      value={ajusteResolved[f.key]}
-                      onChange={(e) => handleUpdateAjusteField(f.key, e.target.value)}
-                      className="w-[74px] min-h-[36px] rounded-lg border border-slate-300 bg-white px-2 text-right mono text-[13px] font-bold shrink-0"
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Mis Fórmulas de Despiece */}
-      <div className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] p-4 sm:p-5 shadow-xl mt-4">
-        <div className="flex items-center justify-between gap-2 mb-3">
-          <div>
-            <h2 className="m-0 text-[17px] font-extrabold">Mis Fórmulas de Despiece</h2>
-            <p className="m-0 text-[12px] text-slate-500">
-              Guarda tus propios descuentos de corte por marca o sistema
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onOpenFormulaModal}
-            className="min-h-[36px] px-3 rounded-lg bg-blue-600 text-white text-[12px] font-bold cursor-pointer"
-          >
-            + Nueva Fórmula
-          </button>
-        </div>
-
-        {formulas.length === 0 ? (
-          <p className="text-[12.5px] text-slate-500 p-3.5 text-center border border-dashed border-slate-200 rounded-xl">
-            Aún no guardas fórmulas personalizadas. Modifica los descuentos en Ventanas o Puertas o usa{' '}
-            <strong>+ Nueva Fórmula</strong>.
-          </p>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-            {formulas.map((f) => (
-              <div
-                key={f.id}
-                className="p-3 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between gap-2"
-              >
-                <div>
-                  <strong className="block text-[13.5px]">{f.nombre}</strong>
-                  <span className="text-[11.5px] text-slate-500 mono">
-                    {LINEAS_CONFIG[f.linea]?.nombre} · MH:-{f.tolerancias.marcoH} HV:-{f.tolerancias.hojaV} HH:-
-                    {f.tolerancias.hojaH}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => onEliminarFormula(f.id)}
-                  className="px-2.5 py-1 rounded-lg border border-red-200 bg-white text-red-600 text-[12px] font-bold cursor-pointer"
-                >
-                  Eliminar
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Historial */}
-      <div className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] p-4 sm:p-5 shadow-xl mt-4">
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-          <div>
-            <h2 className="m-0 text-[17px] font-extrabold">Historial de Cotizaciones Guardadas</h2>
-            <p className="m-0 text-[12px] text-slate-500">Guardado en este equipo ({historial.length})</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              id="btn-exportar-historial-pdf"
-              disabled={historial.length === 0}
-              onClick={() => {
-                void generarPdfHistorialCotizaciones(historial, taller).then((ok) => {
-                  if (ok) {
-                    onShowToast('Historial de cotizaciones exportado a PDF', true);
-                  } else {
-                    onShowToast('Aún no tienes cotizaciones guardadas para exportar');
-                  }
-                });
-              }}
-              className={`px-3 py-1.5 rounded-lg text-[12px] font-bold inline-flex items-center gap-1.5 transition-colors ${
-                historial.length === 0
-                  ? 'border border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed'
-                  : 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer shadow-xs'
-              }`}
-            >
-              <FileDown className="w-3.5 h-3.5" aria-hidden="true" />
-              Exportar PDF
-            </button>
-            {onOpenReminders && (
-              <button
-                type="button"
-                id="btn-taller-open-reminders"
-                onClick={onOpenReminders}
-                className="px-3 py-1.5 rounded-lg border border-blue-300 bg-blue-50 hover:bg-blue-100 text-[12px] font-extrabold text-blue-800 cursor-pointer"
-              >
-                🔔 Seguimientos{pendingRemindersCount > 0 ? ` (${pendingRemindersCount})` : ''}
-              </button>
-            )}
-            {historial.length > 0 && (
-              <button
-                type="button"
-                onClick={onLimpiarHistorial}
-                className="px-3 py-1.5 rounded-lg border border-slate-200 text-[12px] font-bold text-slate-600 cursor-pointer"
-              >
-                Limpiar todo
-              </button>
-            )}
-          </div>
-        </div>
-        {historial.length === 0 ? (
-          <p className="text-[12.5px] text-slate-500 p-4 text-center border border-dashed border-slate-200 rounded-xl">
-            Aún no tienes cotizaciones guardadas.
-          </p>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {historial.map((h) => (
-              <div
-                key={h.id}
-                className="p-3 rounded-xl border border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-2"
-              >
-                <div className="min-w-0 flex-1">
-                  <strong className="block text-[13.5px] truncate">{h.referencia}</strong>
-                  <span className="text-[12px] text-slate-500">
-                    {LINEAS_CONFIG[h.linea]?.nombre} · {h.anchoCm}×{h.altoCm} cm · {COLORES_CONFIG[h.color]?.corto} ·{' '}
-                    {h.fecha}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <strong className="mono text-blue-600">{formatMXN(h.total)}</strong>
-                  {onScheduleHistorialReminder && (
-                    <button
-                      type="button"
-                      onClick={() => onScheduleHistorialReminder(h)}
-                      className="px-2.5 py-1 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 text-[11.5px] font-bold cursor-pointer"
-                      title="Programar recordatorio de seguimiento en 24 h"
-                    >
-                      🔔 Recordar
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => onEliminarHistorial(h.id)}
-                    className="px-2 py-1 rounded-lg border border-slate-200 bg-white text-red-600 text-[12px] font-bold cursor-pointer"
-                  >
-                    ✕
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Modal Comparativo de Precios de Referencia (PRO) */}
-      {refPricesOpen && (
-        <div
-          id="modal-reference-prices"
-          className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 overflow-y-auto"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="ref-prices-title"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setRefPricesOpen(false);
-          }}
-        >
-          <div className="w-full max-w-2xl max-h-[90vh] flex flex-col bg-white text-slate-900 border border-slate-300 rounded-2xl shadow-2xl overflow-hidden my-auto">
-            <div className="px-4 sm:px-5 py-3.5 border-b border-slate-200 flex items-start justify-between gap-3">
-              <div>
-                <span className="inline-block px-2 py-0.5 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-800 text-[10.5px] font-extrabold mb-1">
-                  {activeRefPrices.updatedLabel || 'Actualizado esta semana'}
-                </span>
-                <h2 id="ref-prices-title" className="m-0 text-[17px] font-extrabold text-slate-900">
-                  Precios de Referencia de Mercado (MXN)
-                </h2>
-                <p className="m-0 text-[11.5px] text-slate-500 mt-0.5">
-                  {activeRefPrices.nota ||
-                    'Valores promedio orientativos en México. Verifica siempre con tu distribuidor local.'}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setRefPricesOpen(false)}
-                aria-label="Cerrar tabla de precios de referencia"
-                className="w-9 h-9 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 flex items-center justify-center text-slate-600 cursor-pointer shrink-0"
-              >
-                <X className="w-4 h-4" aria-hidden="true" />
-              </button>
-            </div>
-
-            <div className="p-4 overflow-y-auto flex-1">
-              <div className="overflow-x-auto border border-slate-200 rounded-xl">
-                <table className="w-full border-collapse text-[12px] min-w-[440px]">
-                  <thead>
-                    <tr className="bg-slate-100 border-b border-slate-200 text-slate-700">
-                      <th className="p-2.5 text-left">Material / Concepto</th>
-                      <th className="p-2.5 text-right">Tu Precio Actual</th>
-                      <th className="p-2.5 text-right">Referencia Sugerida</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {activeRefPrices.items.map((item) => {
-                      const currentVal = getCurrentPriceForRefItem(item);
-                      const diff = item.precioSugerido - currentVal;
-                      return (
-                        <tr key={item.id} className="border-b border-slate-100 last:border-b-0">
-                          <td className="p-2.5">
-                            <strong className="block text-slate-900">{item.nombre}</strong>
-                            <span className="text-[10.5px] uppercase font-bold text-slate-500">
-                              {item.categoria} · por {item.unidad}
-                            </span>
-                          </td>
-                          <td className="p-2.5 text-right mono font-bold text-slate-700">
-                            {formatMXN(currentVal)}
-                          </td>
-                          <td className="p-2.5 text-right mono">
-                            <strong className="text-emerald-700">{formatMXN(item.precioSugerido)}</strong>
-                            {diff !== 0 && (
-                              <span
-                                className={`block text-[10px] font-bold ${
-                                  diff > 0 ? 'text-amber-700' : 'text-blue-700'
-                                }`}
-                              >
-                                {diff > 0 ? `+${formatMXN(diff)}` : formatMXN(diff)}
-                              </span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              <p className="m-0 mt-3 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-2.5">
-                ⚠️ Aviso: Estos precios son una referencia orientativa semanal y no representan una cotización oficial de proveedores.
-              </p>
-            </div>
-
-            <div className="px-4 sm:px-5 py-3 border-t border-slate-200 bg-slate-50 flex flex-wrap items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setRefPricesOpen(false)}
-                className="min-h-[42px] px-4 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-[13px] font-bold cursor-pointer"
-              >
-                Mantener mis precios
-              </button>
-              <button
-                type="button"
-                id="btn-apply-all-ref-prices"
-                onClick={handleApplyAllRefPrices}
-                className="min-h-[42px] px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[13px] font-extrabold cursor-pointer"
-              >
-                Aplicar todos los sugeridos
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </section>
-  );
-};
