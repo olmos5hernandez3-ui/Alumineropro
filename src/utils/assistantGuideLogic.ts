@@ -19,12 +19,6 @@ const TECHNICAL_MEASUREMENT_VIEWS = new Set([
   'levantamiento',
 ]);
 
-/**
- * Resuelve cuál de las 3 vistas integradas del Robot Alumi-Bot 3D debe mostrarse:
- * - 'waving': al tocarlo, abrir ayuda o celebrar (mano levantada saludando + pulso cian).
- * - 'technical': en pantallas de medición/cálculo o al mantener presionado (casco LED + medidor láser).
- * - 'classic': en reposo en pantallas generales (cuerpo metálico cian clásico parpadeante).
- */
 export function resolveRobotPose(input: RobotPoseInput): RobotPoseMode {
   if (input.isLongPressing || input.gestureActive) {
     return 'technical';
@@ -55,82 +49,112 @@ export interface AssistantGuideResponse {
   steps: [string, string, string];
 }
 
+export const CLOUD_BACKUP_PERSUASIVE_MSG =
+  '¡Que no se te pierdan tus cotizaciones! Así como alguna vez perdiste el lápiz, tu cuaderno o el último papelito donde anotaste las medidas del último cliente, conéctate con el botón de Google para que todos tus apuntes queden guardados seguros en la nube.';
+
 export const ASSISTANT_QUICK_CHIPS: Array<{ id: string; label: string; query: string }> = [
-  { id: 'cotizacion', label: 'Hacer una cotización', query: '¿Cómo hago una cotización?' },
-  { id: 'descuentos', label: 'Sacar descuentos de ventana', query: '¿Cómo saco descuentos de ventana?' },
-  { id: 'cortes610', label: 'Acomodar cortes 6.10 m', query: '¿Cómo acomodo cortes en tramos de 6.10 m?' },
-  { id: 'escanear', label: 'Escanear dibujo', query: '¿Cómo escaneo un dibujo o croquis de obra?' },
+  { id: 'cotizacion', label: '¿Cómo cotizar?', query: '¿Dónde y cómo hago una cotización?' },
+  { id: 'descuentos', label: 'Descuentos ventana', query: '¿Dónde saco descuentos de ventana?' },
+  { id: 'cortes610', label: 'Cortes 6.10 m', query: '¿Para qué sirve y cómo uso cortes 6.10 m?' },
+  { id: 'respaldo', label: 'Guardar en la nube', query: '¿Cómo guardo mis cotizaciones con Google?' },
 ];
 
 const GUIDE_CATALOG: Record<string, AssistantGuideResponse> = {
   cotizacion: {
     id: 'cotizacion',
     questionLabel: 'Hacer una cotización',
-    title: 'Cómo armar tu cotización paso a paso',
+    title: 'Hoja de Cotización · Ubicación y Guía',
     answer:
-      'En la Hoja de Cotización puedes concentrar todas tus ventanas y puertas, ajustar tu margen de ganancia y descargar el PDF profesional con el logo de tu taller listo para mandar por WhatsApp.',
+      'Está en el botón azul grande del Menú Principal ("Hoja de Cotización"). Sirve para juntar todas tus ventanas y puertas, ajustar tu margen de ganancia, agregar datos del cliente y descargar el PDF profesional listo para WhatsApp.',
     target: 'hoja',
-    targetLabel: 'Hoja de Cotización',
+    targetLabel: 'Ir a Hoja de Cotización',
     steps: [
-      'Agrega las piezas desde Ventanas, Puertas o desde Levantamiento Rápido.',
-      'Revisa los datos del cliente, el desglose de precios y tu margen de utilidad.',
-      'Toca "Generar PDF" o "Compartir WhatsApp" para enviar el presupuesto al instante.',
+      'Agrega piezas desde Ventanas, Puertas o Levantamiento Rápido.',
+      'Abre el acordeón de Datos del Cliente y verifica tus precios y margen.',
+      'Toca "Generar PDF" o "Compartir WhatsApp" para mandarlo al cliente.',
     ],
   },
   descuentos: {
     id: 'descuentos',
     questionLabel: 'Sacar descuentos de ventana',
-    title: 'Descuentos exactos de perfiles y vidrio',
+    title: 'Ventanas y Descuentos · Ubicación y Guía',
     answer:
-      'En el apartado de Ventanas eliges tu línea (3", 2", Europea o EuroAlum), capturas ancho y alto en cm y la app calcula al instante las medidas exactas de corte de cada perfil, vidrio y herrajes.',
+      'Lo encuentras en la tarjeta "Ventanas" del Menú Principal. Sirve para calcular al instante los cortes exactos de perfiles, vidrios y herrajes en líneas 3", 2", Española, Serie 1400 o con tus propias fórmulas de Mi Taller.',
     target: 'ventanas',
-    targetLabel: 'Ventanas y Descuentos',
+    targetLabel: 'Ir a Ventanas y Descuentos',
     steps: [
-      'Selecciona la línea de aluminio (Nacional 3", 2", Europea o EuroAlum) y tipo de apertura.',
-      'Captura el ancho y alto del vano en centímetros y elige el número de hojas.',
-      'Revisa la tabla de Perfiles, Vidrios y Herrajes o toca "Agregar a Hoja" para cotizar.',
+      'Elige la línea de aluminio, el acabado/color y el tipo de ventana.',
+      'Escribe ancho y alto en cm (y activa mosquitero si lleva).',
+      'Consulta tus cortes exactos o envíalos directo a Cotización o Cortes 6.10 m.',
     ],
   },
   puertas: {
     id: 'puertas',
     questionLabel: 'Calcular puertas de aluminio',
-    title: 'Despiece y cotización de Puertas',
+    title: 'Puertas y Canceles · Ubicación y Guía',
     answer:
-      'En Puertas puedes configurar Batiente Alumer, Línea 2" o Europea con duela, vidrio o panel, obteniendo las medidas de cerco, cabezal, zoclo, intermedio y herrajes de forma inmediata.',
+      'Entra a la tarjeta "Puertas" en el Menú Principal. Sirve para sacar el despiece completo de cerco, cabezal, zoclo, intermedio, duela o vidrio en Batiente Alumer, Línea 2", Española o Canceles de Baño.',
     target: 'puertas',
-    targetLabel: 'Puertas',
+    targetLabel: 'Ir a Puertas',
     steps: [
-      'Elige el sistema de puerta (Batiente Alumer, 2" o Europea) y el acabado.',
-      'Ingresa el ancho y alto en cm junto con el tipo de relleno (vidrio o duela).',
-      'Consulta la lista de cortes a 90°/45° y agrégala directo a tu Hoja de Cotización.',
+      'Elige el sistema de puerta o cancel y el color del perfil.',
+      'Captura ancho, alto en cm y elige el relleno (vidrio, duela o combinado).',
+      'Revisa la lista de cortes a 90°/45° y agrégala directo a tu cotización.',
     ],
   },
   cortes610: {
     id: 'cortes610',
     questionLabel: 'Acomodar cortes 6.10 m',
-    title: 'Optimización de tramos de 6.10 m',
+    title: 'Modulación y Cortes 6.10 m · Ubicación y Guía',
     answer:
-      'El módulo de Modulación y Cortes agrupa tus medidas por perfil y acomoda automáticamente los cortes en barras comerciales de 6.10 m (610 cm) para minimizar el desperdicio de aluminio.',
+      'Está en la tarjeta "Modulación y Cortes" del Menú Principal. Sirve para acomodar todos tus cortes en tramos comerciales de 6.10 m (610 cm), aprovechar sobrantes de tu inventario del mismo color y evitar desperdicio de material.',
     target: 'modulacion',
-    targetLabel: 'Modulación y Cortes 6.10 m',
+    targetLabel: 'Ir a Cortes 6.10 m',
     steps: [
-      'Selecciona la línea de aluminio y agrega las piezas con sus medidas en cm.',
-      'Avanza al paso de "Tramos de 6.10 m ya acomodados" para ver cada barra optimizada.',
-      'Revisa cuántos tramos comprar y el sobrante útil de cada barra antes de cortar.',
+      'Elige modelo, mosquitero, línea y captura las medidas de tus piezas.',
+      'Avanza al Paso 5 ("Checklist de cortes y tramos") para ver el acomodo.',
+      'Revisa cuántos tramos completos usarás y guarda los sobrantes útiles en inventario.',
     ],
   },
   escanear: {
     id: 'escanear',
-    questionLabel: 'Escanear dibujo',
-    title: 'Escáner de Croquis con IA en obra',
+    questionLabel: 'Escanear dibujo o medidas en obra',
+    title: 'Levantamiento Rápido y Escáner IA',
     answer:
-      'Dentro de Levantamiento Rápido abre "Escáner de Croquis con IA", toma foto a tu dibujo hecho a mano en libreta y la app detectará automáticamente medidas, distribución de hojas (O-X) y cantidad.',
+      'Está en el botón destacado naranja "Levantamiento Rápido" arriba del Menú Principal. Sirve para anotar medidas rápido en obra o tomarle foto a tu croquis hecho a mano para que la IA lo convierta en piezas listas para cotizar.',
     target: 'levantamiento',
-    targetLabel: 'Levantamiento Rápido',
+    targetLabel: 'Ir a Levantamiento Rápido',
     steps: [
-      'Toca el acordeón "Escáner de Croquis con IA" en la parte superior del levantamiento.',
-      'Toma una foto clara de tu croquis en papel o elige una imagen desde tu galería.',
+      'Toca "Levantamiento Rápido" y abre el acordeón "Escáner de Croquis con IA".',
+      'Toma una foto a tu dibujo en libreta o elige una imagen desde tu galería.',
       'Verifica las medidas detectadas y envíalas con un toque a Cotización o Cortes 6.10 m.',
+    ],
+  },
+  respaldo: {
+    id: 'respaldo',
+    questionLabel: 'Guardar cotizaciones en la nube',
+    title: 'Respaldo en la Nube con Google',
+    answer: `${CLOUD_BACKUP_PERSUASIVE_MSG} El botón de Google está en el Menú lateral (☰ arriba a la derecha) o en la barra superior de Inicio.`,
+    target: 'hoja',
+    targetLabel: 'Ir a Hoja de Cotización',
+    steps: [
+      'Abre el menú lateral (☰) arriba a la derecha en la pantalla principal.',
+      'Toca el botón "Conectar con Google" en la tarjeta de Respaldo en la Nube.',
+      'Tus cotizaciones, fórmulas de Mi Taller e inventario se sincronizarán solos.',
+    ],
+  },
+  taller: {
+    id: 'taller',
+    questionLabel: 'Fórmulas personalizadas e Inventario',
+    title: 'Mi Taller e Inventario · Ubicación y Guía',
+    answer:
+      'En el Menú Principal encontrarás "Mi Taller" (para guardar, editar o borrar tus propias fórmulas de descuento) e "Inventario" (para llevar el control de tus perfiles, sobrantes por color, vidrios y herrajes).',
+    target: 'ventanas',
+    targetLabel: 'Ir a Ventanas',
+    steps: [
+      'Entra a "Mi Taller" desde el Menú Principal para crear o editar tus fórmulas.',
+      'Usa el ícono de lápiz junto a cualquier fórmula guardada si quieres ajustarla.',
+      'En "Inventario" registra tus sobrantes con su color exacto para reutilizarlos.',
     ],
   },
 };
@@ -143,11 +167,21 @@ function normalizeSpanishText(raw: string): string {
     .trim();
 }
 
-/**
- * Motor 100% offline de guía paso a paso para el cuadro de diálogo del Asistente.
- */
 export function answerAssistantQuestion(rawQuery: string): AssistantGuideResponse {
   const q = normalizeSpanishText(rawQuery);
+
+  if (
+    /nube|google|respald|perder|lapiz|cuaderno|papelit|sincroniz|cuenta|guardar/.test(q) &&
+    !/pdf/.test(q)
+  ) {
+    return GUIDE_CATALOG.respaldo;
+  }
+
+  if (
+    /mi taller|formula|inventario|sobrante|perfil guardado|editar formula|herramienta/.test(q)
+  ) {
+    return GUIDE_CATALOG.taller;
+  }
 
   if (
     /escan|croquis|dibuj|foto|libreta|camara|ia\b|levantamiento|medir en obra|medidas en obra/.test(q)
@@ -156,13 +190,13 @@ export function answerAssistantQuestion(rawQuery: string): AssistantGuideRespons
   }
 
   if (
-    /6\.10|610|tramo|barra|acomod|optimiz|desperdicio|sobrante|modul|corte/.test(q) &&
+    /6\.10|610|tramo|barra|acomod|optimiz|desperdicio|modul|corte/.test(q) &&
     !/descuento|ventana/.test(q)
   ) {
     return GUIDE_CATALOG.cortes610;
   }
 
-  if (/puerta|batiente|duela|bisagra|chapa/.test(q)) {
+  if (/puerta|batiente|duela|bisagra|chapa|cancel|bano/.test(q)) {
     return GUIDE_CATALOG.puertas;
   }
 
@@ -178,22 +212,18 @@ export function answerAssistantQuestion(rawQuery: string): AssistantGuideRespons
     return GUIDE_CATALOG.cotizacion;
   }
 
-  if (/6\.10|610|tramo|barra|acomod|optimiz|corte/.test(q)) {
-    return GUIDE_CATALOG.cortes610;
-  }
-
   return {
-    id: 'general-cotizacion',
-    questionLabel: rawQuery.trim() || 'Guía rápida',
-    title: 'Empieza rápido en Aluminero Pro',
+    id: 'general-mapa',
+    questionLabel: rawQuery.trim() || 'Mapa de la app',
+    title: '¿Dónde está cada cosa en Aluminero Pro?',
     answer:
-      'Para trabajar más rápido en taller te recomiendo iniciar en Levantamiento Rápido para anotar o escanear medidas de obra, o entrar directo a Ventanas / Hoja de Cotización para sacar descuentos y PDF.',
+      'Arriba en el Menú tienes "Levantamiento Rápido" (anotar/escanear en obra) y "Hoja de Cotización" (armar presupuesto y PDF). Abajo están "Ventanas", "Puertas", "Modulación y Cortes 6.10 m", "Mi Taller" (tus fórmulas) e "Inventario".',
     target: 'hoja',
-    targetLabel: 'Hoja de Cotización',
+    targetLabel: 'Ir a Hoja de Cotización',
     steps: [
-      'Anota tus medidas en Levantamiento Rápido o configura cada pieza en Ventanas / Puertas.',
-      'Revisa los descuentos exactos y los tramos de 6.10 m ya acomodados.',
-      'Descarga o comparte el PDF final desde la Hoja de Cotización.',
+      'Anota medidas en Levantamiento Rápido o calcula en Ventanas / Puertas.',
+      'Optimiza tus barras en Modulación y Cortes 6.10 m sin mezclar colores.',
+      'Conecta tu cuenta de Google en el menú ☰ para respaldar todo en la nube.',
     ],
   };
 }
