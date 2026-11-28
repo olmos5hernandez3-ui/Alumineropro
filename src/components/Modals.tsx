@@ -87,6 +87,7 @@ import {
 } from '../utils/storageHelpers';
 import { PerfilSectionSvg } from './PerfilSectionSvg';
 import { PhotoPickerButtons } from './PhotoPickerButtons';
+import { getCatalogProfilePlaceholder } from './catalogProfilePlaceholders';
 
 /* ==================== MODAL PRO (Adquirir Licencia PRO + Activación por Clave) ==================== */
 export const PRO_PAYMENT_CONFIG = {
@@ -3990,6 +3991,7 @@ interface ColleagueReferralWelcomeModalProps {
   referredById?: string | null;
   deviceId: string;
   whatsappNumber?: string;
+  onActivateWelcome3Days?: () => void;
   onExploreFree: () => void;
   onShowToast: (msg: string, topSuccess?: boolean) => void;
 }
@@ -3999,6 +4001,7 @@ export const ColleagueReferralWelcomeModal: React.FC<ColleagueReferralWelcomeMod
   referral,
   referredById = null,
   deviceId,
+  onActivateWelcome3Days,
   onExploreFree,
 }) => {
   if (!open || !referral) return null;
@@ -4052,14 +4055,23 @@ export const ColleagueReferralWelcomeModal: React.FC<ColleagueReferralWelcomeMod
           </span>
         </div>
 
-        <div className="w-full flex flex-col gap-3">
+        <div className="w-full flex flex-col items-center gap-3">
+          <button
+            type="button"
+            id="btn-referral-activate-3d-now"
+            onClick={onActivateWelcome3Days || onExploreFree}
+            className="w-full min-h-[56px] px-5 rounded-2xl bg-emerald-400 hover:bg-emerald-300 active:scale-[0.98] text-slate-950 font-extrabold text-[15.5px] cursor-pointer shadow-[0_10px_30px_rgba(16,185,129,0.45)] transition-all"
+          >
+            🎁 Activar mis 3 Días PRO Gratis ahora
+          </button>
+
           <button
             type="button"
             id="btn-referral-explore-free"
             onClick={onExploreFree}
-            className="w-full min-h-[54px] px-5 rounded-2xl bg-emerald-400 hover:bg-emerald-300 active:scale-[0.98] text-slate-950 font-extrabold text-[15px] cursor-pointer shadow-[0_10px_30px_rgba(16,185,129,0.42)] transition-all"
+            className="px-3 py-1.5 bg-transparent border-0 text-slate-400 hover:text-slate-200 text-[12.5px] font-semibold underline underline-offset-4 cursor-pointer transition-colors"
           >
-            Explorar versión gratuita primero
+            Continuar en versión gratuita limitada
           </button>
         </div>
       </div>
@@ -4345,18 +4357,33 @@ export const PerfilModal: React.FC<PerfilModalProps> = ({
             <PerfilSectionSvg perfilId={perfil.id} size={114} />
           </div>
           <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex flex-col items-center justify-center">
-            <span className="text-[10.5px] font-bold text-slate-500 mb-1">FOTO REAL DE CATÁLOGO</span>
+            <span className="text-[10.5px] font-bold text-slate-500 mb-1">
+              {fotoRealUrl ? 'FOTO REAL DE CATÁLOGO' : 'VISTA REFERENCIAL DE LÍNEA'}
+            </span>
             {fotoRealUrl ? (
               <img
                 src={fotoRealUrl}
                 alt={`Foto real de ${perfil.nombre}`}
+                referrerPolicy="no-referrer"
                 className="w-[110px] h-[110px] object-contain rounded-lg border border-slate-200 bg-white"
               />
-            ) : (
-              <span className="text-[11.5px] text-slate-600 text-center py-6">
-                Sin foto real cargada
-              </span>
-            )}
+            ) : (() => {
+              const ph = getCatalogProfilePlaceholder(perfil.familia);
+              return (
+                <div className="flex flex-col items-center gap-1 w-full">
+                  <img
+                    src={ph.src}
+                    alt={ph.alt}
+                    referrerPolicy="no-referrer"
+                    data-perfil-modal-placeholder={perfil.familia}
+                    className="w-full max-w-[160px] h-[104px] object-cover rounded-lg border border-slate-200 bg-white"
+                  />
+                  <span className="text-[10px] font-semibold text-slate-500 text-center leading-tight">
+                    Referencia visual · Sube tu foto real abajo
+                  </span>
+                </div>
+              );
+            })()}
           </div>
         </div>
 

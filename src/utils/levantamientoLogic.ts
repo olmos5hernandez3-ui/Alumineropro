@@ -3,6 +3,7 @@ import {
   CategoriaTrabajo,
   ColorId,
   getDefaultRellenoFromVidrio,
+  LINEAS_CONFIG,
   LineaId,
   PanelRellenoSelection,
   VidrioId,
@@ -854,6 +855,15 @@ export interface AluminumLineDimensionWarning {
   altoExceeded: boolean;
   anchoBelowMin: boolean;
   altoBelowMin: boolean;
+  toleranceConflict: boolean;
+  lineaId: LineaId;
+  toleranciasDefault: {
+    marcoH: number;
+    hojaV: number;
+    hojaH: number;
+    vidAncho: number;
+    vidAlto: number;
+  };
   limits: AluminumLineDimensionLimits;
   message: string | null;
 }
@@ -985,13 +995,38 @@ export function evaluateLevantamientoLineLimits(
   tipo?: string
 ): AluminumLineDimensionWarning {
   const limits = getAluminumLineStandardLimits(lineaPerfil, tipo);
+  const resolved = resolveLineaFromLevantamiento({
+    id: 'preview',
+    tipo: tipo || 'Ventana Corrediza',
+    area: '',
+    anchoCm: Number.isFinite(anchoCm) ? anchoCm : 0,
+    altoCm: Number.isFinite(altoCm) ? altoCm : 0,
+    cant: 1,
+    lineaPerfil,
+    notas: '',
+    foto: '',
+  });
+  const lineaId: LineaId = resolved.linea;
+  const toleranciasDefault = LINEAS_CONFIG[lineaId].toleranciasDefault;
+
+  // Holgura mínima de descuento en cm derivada de LINEAS_CONFIG[linea].toleranciasDefault
+  const minCutWidthCm = Math.ceil(
+    toleranciasDefault.marcoH + toleranciasDefault.hojaH + toleranciasDefault.vidAncho
+  );
+  const minCutHeightCm = Math.ceil(
+    Math.max(toleranciasDefault.hojaV + toleranciasDefault.vidAlto, toleranciasDefault.vidAlto + 5)
+  );
+
   const validAncho = Number.isFinite(anchoCm) && anchoCm > 0;
   const validAlto = Number.isFinite(altoCm) && altoCm > 0;
 
   const anchoExceeded = validAncho && anchoCm > limits.maxAnchoCm;
   const altoExceeded = validAlto && altoCm > limits.maxAltoCm;
-  const anchoBelowMin = validAncho && anchoCm < limits.minAnchoCm;
-  const altoBelowMin = validAlto && altoCm < limits.minAltoCm;
+  const anchoBelowTolerance = validAncho && anchoCm <= minCutWidthCm;
+  const altoBelowTolerance = validAlto && altoCm <= minCutHeightCm;
+  const anchoBelowMin = validAncho && (anchoCm < limits.minAnchoCm || anchoBelowTolerance);
+  const altoBelowMin = validAlto && (altoCm < limits.minAltoCm || altoBelowTolerance);
+  const toleranceConflict = anchoBelowTolerance || altoBelowTolerance;
   const hasWarning = anchoExceeded || altoExceeded || anchoBelowMin || altoBelowMin;
 
   if (!hasWarning) {
@@ -1001,6 +1036,9 @@ export function evaluateLevantamientoLineLimits(
       altoExceeded: false,
       anchoBelowMin: false,
       altoBelowMin: false,
+      toleranceConflict: false,
+      lineaId,
+      toleranciasDefault,
       limits,
       message: null,
     };
@@ -1009,17 +1047,26 @@ export function evaluateLevantamientoLineLimits(
   const issues: string[] = [];
   if (anchoExceeded) {
     issues.push(`ancho ${formatMedida(anchoCm)} cm supera el máx. estándar (${limits.maxAnchoCm} cm)`);
+  } else if (anchoBelowTolerance) {
+    issues.push(
+      `ancho ${formatMedida(anchoCm)} cm no cubre los descuentos base de ${LINEAS_CONFIG[lineaId].nombre} (mín. > ${minCutWidthCm} cm según tolerancias)`
+    );
   } else if (anchoBelowMin) {
     issues.push(`ancho ${formatMedida(anchoCm)} cm es menor al mín. recomendado (${limits.minAnchoCm} cm)`);
   }
 
   if (altoExceeded) {
     issues.push(`alto ${formatMedida(altoCm)} cm supera el máx. estándar (${limits.maxAltoCm} cm)`);
+  } else if (altoBelowTolerance) {
+    issues.push(
+      `alto ${formatMedida(altoCm)} cm no cubre el descuento de vidrio/hoja de ${LINEAS_CONFIG[lineaId].nombre} (mín. > ${minCutHeightCm} cm según tolerancias)`
+    );
   } else if (altoBelowMin) {
     issues.push(`alto ${formatMedida(altoCm)} cm es menor al mín. recomendado (${limits.minAltoCm} cm)`);
   }
 
-  const message = `${limits.lineaLabel}: ${issues.join(' y ')}. ${limits.recommendation}`;
+  const tolNote = `Tolerancias base (${LINEAS_CONFIG[lineaId].nombre}): hoja H -${toleranciasDefault.hojaH} / V -${toleranciasDefault.hojaV}, vidrio -${toleranciasDefault.vidAncho}×-${toleranciasDefault.vidAlto} cm.`;
+  const message = `${limits.lineaLabel}: ${issues.join(' y ')}. ${limits.recommendation} ${tolNote}`;
 
   return {
     hasWarning: true,
@@ -1027,6 +1074,9 @@ export function evaluateLevantamientoLineLimits(
     altoExceeded,
     anchoBelowMin,
     altoBelowMin,
+    toleranceConflict,
+    lineaId,
+    toleranciasDefault,
     limits,
     message,
   };

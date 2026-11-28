@@ -3582,14 +3582,14 @@ test('98. SKIN_VARIANTS_BY_SKIN define acabados descansados para Ejecutiva (4) e
   }
 });
 
-test('99. Versión centralizada APP_VERSION=1.0.11 sincronizada con public/sw.js sin skipWaiting automático en install', async () => {
+test('99. Versión centralizada APP_VERSION=1.0.13 sincronizada con public/sw.js sin skipWaiting automático en install', async () => {
   const { readFileSync } = await import('node:fs');
   const { APP_VERSION, APP_VERSION_LABEL } = await import('./alumineroLogic.ts');
-  assert.equal(APP_VERSION, '1.0.11');
-  assert.equal(APP_VERSION_LABEL, 'v1.0.11');
+  assert.equal(APP_VERSION, '1.0.13');
+  assert.equal(APP_VERSION_LABEL, 'v1.0.13');
 
   const swSource = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSource, /const APP_VERSION\s*=\s*['"]1\.0\.11['"]/);
+  assert.match(swSource, /const APP_VERSION\s*=\s*['"]1\.0\.13['"]/);
   assert.match(swSource, /const CACHE_NAME\s*=\s*`aluminero-pro-v\$\{APP_VERSION\}`/);
 
   // Verificar que el bloque install NO llama self.skipWaiting() automáticamente
@@ -3823,11 +3823,11 @@ test('103. Historial de sesiones y detección de dispositivo/navegador para cole
   assert.equal(list.length, 30);
 });
 
-test('104. public/sw.js usa CACHE_NAME unificado aluminero-pro-v1.0.11, limpia cachés en activate y solo ejecuta skipWaiting en SKIP_WAITING', async () => {
+test('104. public/sw.js usa CACHE_NAME unificado aluminero-pro-v1.0.13, limpia cachés en activate y solo ejecuta skipWaiting en SKIP_WAITING', async () => {
   const { readFileSync } = await import('node:fs');
   const swSrc = readFileSync('public/sw.js', 'utf8');
 
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.11';/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.13';/);
   assert.match(swSrc, /const CACHE_NAME = `aluminero-pro-v\$\{APP_VERSION\}`;/);
   assert.doesNotMatch(swSrc, /CACHE_VERSION/, 'No deben quedar referencias sueltas a CACHE_VERSION');
   assert.match(swSrc, /keys\.filter\(\(key\) => key !== CACHE_NAME\)\.map\(\(key\) => caches\.delete\(key\)\)/);
@@ -4087,10 +4087,10 @@ test('108. Top 3 materiales frecuentes en inicio, texto/subtítulo de Google y p
   assert.match(mainMenuSrc, /section-home-frequent-materials/);
 
   const promoBannerSrc = readFileSync('src/components/ReferralPromoBanner.tsx', 'utf8');
-  assert.match(promoBannerSrc, /Obtén 3 días PRO gratis/);
-  assert.match(promoBannerSrc, /Invita a 3 colegas a registrarse en la app y desbloquea 3 días PRO gratis/);
+  assert.match(promoBannerSrc, /Activa tus 3 Días PRO Gratis de bienvenida \(Sin costo\)/);
+  assert.match(promoBannerSrc, /Invita a 3 colegas y gana \+5 días PRO extra/);
   assert.match(promoBannerSrc, /Compartir invitación por WhatsApp/);
-  assert.match(promoBannerSrc, /de \{REFERRAL_3D_GIFT_TARGET\} invitados registrados/);
+  assert.match(promoBannerSrc, /de \{target\} invitados registrados/);
 
   const giftModalSrc = readFileSync('src/components/ReferralGiftRewardModal.tsx', 'utf8');
   assert.match(giftModalSrc, /¡Felicidades! Acabas de obtener 3 días gratis para usar la Versión PRO\./);
@@ -4098,9 +4098,9 @@ test('108. Top 3 materiales frecuentes en inicio, texto/subtítulo de Google y p
   assert.match(giftModalSrc, /Ver planes y desbloquear recompensas/);
   assert.match(giftModalSrc, /Usar mis 3 días gratis ahora/);
 
-  // 5. Verificar que Admin Login y SW v1.0.11 permanecen completamente intactos
+  // 5. Verificar que Admin Login y SW v1.0.13 permanecen completamente intactos
   const swSrc = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.11'/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.13'/);
   assert.match(swSrc, /aluminero-pro-v\$\{APP_VERSION\}/);
   const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
   assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
@@ -4219,9 +4219,9 @@ test('109. Prompt 1: Escáner IA de croquis (1024px JPEG 0.8 + mm JSON), Tramos 
   const modSrc = readFileSync('src/components/ModulacionCortesView.tsx', 'utf8');
   assert.match(modSrc, /Tramos610AcomodadosSection/);
 
-  // 6. Reglas de oro intactas: SW v1.0.11 y Admin Login sin tocar
+  // 6. Reglas de oro intactas: SW v1.0.13 y Admin Login sin tocar
   const swSrc = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.11'/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.13'/);
   const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
   assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
 });
@@ -4441,9 +4441,9 @@ test('111. Botón de tema en TopBar, Acordeones desplegables y Dibujo digitaliza
   assert.match(trabajoSrc, /CollapsibleAccordion/);
   assert.match(trabajoSrc, /id="acc-trabajo-tramos-610"/);
 
-  // 6. Reglas de oro: SW sincronizado en 1.0.11 y Admin Login intacto
+  // 6. Reglas de oro: SW sincronizado en 1.0.13 y Admin Login intacto
   const swSrc = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.11'/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.13'/);
   const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
   assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
 });
@@ -4616,12 +4616,12 @@ test('113. Prompt 2: Ajuste de precios de un golpe (%) con filtro por acabado, c
     assert.ok(ads.whatsappShareUrlStatus.startsWith('https://wa.me/?text='));
   }
 
-  // 5. Verificación UI y versión v1.0.11 + TopBar toggle + Admin Login intacto
-  assert.equal(APP_VERSION, '1.0.11');
-  assert.equal(APP_VERSION_LABEL, 'v1.0.11');
+  // 5. Verificación UI y versión v1.0.13 + TopBar toggle + Admin Login intacto
+  assert.equal(APP_VERSION, '1.0.13');
+  assert.equal(APP_VERSION_LABEL, 'v1.0.13');
 
   const swSrc = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.11'/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.13'/);
 
   const tallerSrc = readFileSync('src/components/TallerView.tsx', 'utf8');
   assert.match(tallerSrc, /⚡ Ajuste de precios de un golpe \(%\)/);
@@ -4736,15 +4736,15 @@ test('114. Rediseño visual descansado de carátulas + 3 acabados de aluminio + 
   assert.match(catSrc, /cat-mat-chip-/);
   assert.match(catSrc, /filterOfficialCatalogAdvanced/);
 
-  // 5. Versión v1.0.11 y Admin Login completamente intacto
-  assert.equal(APP_VERSION, '1.0.11');
+  // 5. Versión v1.0.13 y Admin Login completamente intacto
+  assert.equal(APP_VERSION, '1.0.13');
   const swSrc = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.11'/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.13'/);
   const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
   assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
 });
 
-test('115. Personajes 3D PNG transparentes (/avatars/*.png), Alumi-Bot 3D SVG parpadeante 92x92, globo inteligente sin recorte, interruptor aluminero-avatar-tips, acordeón Hoja 2 líneas y SW v1.0.11', async () => {
+test('115. Personajes 3D PNG transparentes (/avatars/*.png), Alumi-Bot 3D SVG parpadeante 92x92, globo inteligente sin recorte, interruptor aluminero-avatar-tips, acordeón Hoja 2 líneas y SW v1.0.13', async () => {
   const { existsSync, readFileSync } = await import('node:fs');
   const {
     AVATAR_TIPS_KEY,
@@ -4862,9 +4862,9 @@ test('115. Personajes 3D PNG transparentes (/avatars/*.png), Alumi-Bot 3D SVG pa
   assert.match(charSrc, /scale-\[1\.45\]/);
   assert.match(charSrc, /w-\[92px\] h-\[92px\]/);
 
-  // 5. SW v1.0.11 y Admin Login intacto
-  assert.equal(APP_VERSION, '1.0.11');
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.11'/);
+  // 5. SW v1.0.13 y Admin Login intacto
+  assert.equal(APP_VERSION, '1.0.13');
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.13'/);
   const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
   assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
 });
@@ -4978,15 +4978,15 @@ test('117. Alumi-Bot 3D SVG oficial (92px, casco LED, visor parpadeante 3.5s, me
   assert.match(floatSrc, /triggerLaserFlash/);
   assert.match(floatSrc, /laserFlash=\{/);
 
-  // Reglas de oro intactas: SW v1.0.11 y Admin Login sin tocar
-  assert.equal(APP_VERSION, '1.0.11');
+  // Reglas de oro intactas: SW v1.0.13 y Admin Login sin tocar
+  assert.equal(APP_VERSION, '1.0.13');
   const swSrc = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.11'/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.13'/);
   const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
   assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
 });
 
-test('118. Tour guiado paso a paso para usuarios nuevos (Levantamiento Rápido + Hoja de Cotización) y escudo anti-clic fantasma de 300 ms en FloatingAssistant + SW v1.0.11', async () => {
+test('118. Tour guiado paso a paso para usuarios nuevos (Levantamiento Rápido + Hoja de Cotización) y escudo anti-clic fantasma de 300 ms en FloatingAssistant + SW v1.0.13', async () => {
   const { readFileSync } = await import('node:fs');
   const {
     ONBOARDING_TOUR_KEY,
@@ -5097,15 +5097,275 @@ test('118. Tour guiado paso a paso para usuarios nuevos (Levantamiento Rápido +
   assert.match(floatSrc, /e\.preventDefault\(\)/);
   assert.match(floatSrc, /e\.stopPropagation\(\)/);
 
-  // 4. Montaje de OnboardingTour en App.tsx y reglas de oro intactas (SW v1.0.11 + Admin Login)
+  // 4. Montaje de OnboardingTour en App.tsx y reglas de oro intactas (SW v1.0.13 + Admin Login)
   const appSrc = readFileSync('src/App.tsx', 'utf8');
   assert.match(appSrc, /<OnboardingTour/);
-  assert.equal(APP_VERSION, '1.0.11');
+  assert.equal(APP_VERSION, '1.0.13');
   const swSrc = readFileSync('public/sw.js', 'utf8');
-  assert.match(swSrc, /const APP_VERSION = '1\.0\.11'/);
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.13'/);
   const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
   assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
 });
+
+test('119. Robot 3 vistas integradas, Chat Guía offline, selector rápido 7 personajes, Web Audio API audible (0.35-0.55), marcadores Imagen en catálogo y SW v1.0.13', async () => {
+  const { readFileSync, existsSync } = await import('node:fs');
+  const {
+    resolveRobotPose,
+    ASSISTANT_QUICK_CHIPS,
+    answerAssistantQuestion,
+    CATALOG_PLACEHOLDER_KEY_BY_FAMILIA,
+  } = await import('./assistantGuideLogic.ts');
+  const {
+    ASSISTANT_AUDIO_GAIN_TAP,
+    ASSISTANT_AUDIO_GAIN_LONGPRESS,
+    ASSISTANT_AUDIO_GAIN_DROP,
+    ASSISTANT_AUDIO_GAIN_CELEBRATE,
+  } = await import('./assistantEffects.ts');
+  const { APP_VERSION, CATALOGO_PERFILES } = await import('./alumineroLogic.ts');
+
+  // 1. Robot 3 poses dinámicas (classic, waving, technical)
+  assert.equal(resolveRobotPose({ currentView: 'menu', open: false }), 'classic');
+  assert.equal(resolveRobotPose({ currentView: 'menu', open: true }), 'waving');
+  assert.equal(resolveRobotPose({ currentView: 'menu', hopActive: true }), 'waving');
+  assert.equal(resolveRobotPose({ currentView: 'menu', celebrating: true }), 'waving');
+  assert.equal(resolveRobotPose({ currentView: 'trabajo', open: false }), 'technical');
+  assert.equal(resolveRobotPose({ currentView: 'modulacion', open: false }), 'technical');
+  assert.equal(resolveRobotPose({ currentView: 'vidrio', open: false }), 'technical');
+  assert.equal(resolveRobotPose({ currentView: 'hoja', open: false }), 'technical');
+  assert.equal(resolveRobotPose({ currentView: 'levantamiento', open: false }), 'technical');
+  assert.equal(resolveRobotPose({ currentView: 'menu', gestureActive: true }), 'technical');
+
+  // 2. Chat Guía offline con 4 chips rápidos y respuestas de 3 pasos
+  assert.equal(ASSISTANT_QUICK_CHIPS.length, 4);
+  for (const chip of ASSISTANT_QUICK_CHIPS) {
+    const ans = answerAssistantQuestion(chip.query);
+    assert.equal(ans.steps.length, 3);
+    assert.ok(ans.answer.length > 20);
+    assert.ok(ans.target.length > 0);
+  }
+  assert.equal(answerAssistantQuestion('¿Cómo hago una cotización?').target, 'hoja');
+  assert.equal(answerAssistantQuestion('Sacar descuentos de ventana corrediza').target, 'ventanas');
+  assert.equal(answerAssistantQuestion('Acomodar cortes en barras de 6.10 m').target, 'modulacion');
+  assert.equal(answerAssistantQuestion('Escanear dibujo con cámara IA').target, 'levantamiento');
+  assert.equal(answerAssistantQuestion('Cómo cotizar puerta batiente').target, 'puertas');
+  assert.equal(answerAssistantQuestion('duda general sin palabras clave').steps.length, 3);
+
+  // 3. Motor Web Audio API con ganancia audible [0.35, 0.55] y sintetizadores reales por personaje
+  for (const g of [
+    ASSISTANT_AUDIO_GAIN_TAP,
+    ASSISTANT_AUDIO_GAIN_LONGPRESS,
+    ASSISTANT_AUDIO_GAIN_DROP,
+    ASSISTANT_AUDIO_GAIN_CELEBRATE,
+  ]) {
+    assert.ok(g >= 0.35 && g <= 0.55, `Gain ${g} debe estar entre 0.35 y 0.55`);
+  }
+  const fxSrc = readFileSync('src/utils/assistantEffects.ts', 'utf8');
+  assert.match(fxSrc, /export function unlockAssistantAudio/);
+  assert.match(fxSrc, /function scheduleCatPurr/);
+  assert.match(fxSrc, /setValueAtTime\(25,/);
+  assert.match(fxSrc, /setValueAtTime\(95,/);
+  assert.match(fxSrc, /filter\.type = 'lowpass'/);
+  assert.match(fxSrc, /setValueAtTime\(900,/);
+  assert.match(fxSrc, /exponentialRampToValueAtTime\(300,/);
+  assert.match(fxSrc, /function scheduleBeaverKnock/);
+  assert.match(fxSrc, /function scheduleOwlHoot/);
+  assert.match(fxSrc, /function scheduleRoosterCrow/);
+  assert.match(fxSrc, /function schedulePigOink/);
+  assert.match(fxSrc, /function scheduleRobotBipBop/);
+
+  // 4. FloatingAssistant.tsx: selector rápido, botón sonido, 2 pestañas, guía 3 pasos y escudo anti-clic fantasma intacto
+  const floatSrc = readFileSync('src/components/FloatingAssistant.tsx', 'utf8');
+  assert.match(floatSrc, /id="assistant-quick-avatar-bar"/);
+  assert.match(floatSrc, /id="btn-assistant-modal-sound-toggle"/);
+  assert.match(floatSrc, /💬 Pregúntale al Asistente/);
+  assert.match(floatSrc, /📩 Sugerir material al Admin/);
+  assert.match(floatSrc, /Ir al apartado y guiarme →/);
+  assert.match(floatSrc, /id="assistant-step-guide-card"/);
+  assert.match(floatSrc, /unlockAssistantAudio/);
+  assert.match(floatSrc, /robotPose=\{robotPose\}/);
+  assert.match(floatSrc, /z-\[9999\]/);
+  assert.match(floatSrc, /activateGhostClickShield/);
+
+  // 5. AssistantCharacters.tsx: 3 vistas integradas del Alumi-Bot 3D
+  const charSrc = readFileSync('src/components/AssistantCharacters.tsx', 'utf8');
+  assert.match(charSrc, /data-robot-pose=\{pose\}/);
+  assert.match(charSrc, /data-robot-part="safety-helmet"/);
+  assert.match(charSrc, /data-robot-part="laser-meter"/);
+  assert.match(charSrc, /data-robot-part="waving-hand"/);
+
+  // 6. Imágenes placeholder de alta calidad (Imagen) cubriendo todas las familias del catálogo
+  const familias = Array.from(new Set(CATALOGO_PERFILES.map((p) => p.familia)));
+  for (const fam of familias) {
+    assert.ok(CATALOG_PLACEHOLDER_KEY_BY_FAMILIA[fam], `Falta marcador Imagen para familia ${fam}`);
+  }
+  const placeholderFiles = [
+    'src/assets/images/perfil_corrediza_3_1795797438601.jpg',
+    'src/assets/images/perfil_europea_serie_1795797440901.jpg',
+    'src/assets/images/perfil_puerta_batiente_1795797441174.jpg',
+    'src/assets/images/perfil_cancel_bano_1795797441749.jpg',
+    'src/assets/images/perfil_mosquitero_marco_1795797442119.jpg',
+  ];
+  for (const fp of placeholderFiles) {
+    assert.equal(existsSync(fp), true, `Debe existir la imagen generada ${fp}`);
+  }
+  const catSrc = readFileSync('src/components/NotasAndCatalogoViews.tsx', 'utf8');
+  assert.match(catSrc, /getCatalogProfilePlaceholder/);
+  assert.match(catSrc, /referrerPolicy="no-referrer"/);
+  const modalSrc = readFileSync('src/components/Modals.tsx', 'utf8');
+  assert.match(modalSrc, /getCatalogProfilePlaceholder/);
+  assert.match(modalSrc, /data-perfil-modal-placeholder/);
+
+  // 7. Reglas de oro intactas: SW v1.0.13 y Admin Login sin tocar
+  assert.equal(APP_VERSION, '1.0.13');
+  const swSrc = readFileSync('public/sw.js', 'utf8');
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.13'/);
+  const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
+  assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
+});
+
+test('120. Validación naranja con LINEAS_CONFIG[linea].toleranciasDefault en Levantamiento, activación directa 3 días PRO, bono +5 días por 3 colegas y globo robot oculto en bienvenida/tutorial (SW v1.0.13)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const {
+    APP_VERSION,
+    LINEAS_CONFIG,
+    buildWelcome3DaysTrialLicense,
+    applyReferral5DaysBonusToLicense,
+    resolveHomePromoCardMode,
+    isReferral5DaysBonusReady,
+    formatLicenseCountdownBadge,
+    REFERRAL_BONUS_5D_TARGET,
+  } = await import('./alumineroLogic.ts');
+  const { evaluateLevantamientoLineLimits } = await import('./levantamientoLogic.ts');
+
+  // 1. Validación en tiempo real usando LINEAS_CONFIG[linea].toleranciasDefault
+  const warnOver3 = evaluateLevantamientoLineLimits(340, 220, 'Línea 3"', 'Ventana');
+  assert.equal(warnOver3.hasWarning, true);
+  assert.equal(warnOver3.anchoExceeded, true);
+  assert.equal(warnOver3.lineaId, '3');
+  assert.deepEqual(warnOver3.toleranciasDefault, LINEAS_CONFIG['3'].toleranciasDefault);
+  assert.ok(warnOver3.message && warnOver3.message.includes('Tolerancias base'));
+
+  const warnSmallTol = evaluateLevantamientoLineLimits(12, 14, 'Línea 2"', 'Ventana');
+  assert.equal(warnSmallTol.hasWarning, true);
+  assert.equal(warnSmallTol.toleranceConflict, true);
+  assert.equal(warnSmallTol.lineaId, '2');
+  assert.deepEqual(warnSmallTol.toleranciasDefault, LINEAS_CONFIG['2'].toleranciasDefault);
+
+  const okStd = evaluateLevantamientoLineLimits(150, 120, 'Línea 3"', 'Ventana');
+  assert.equal(okStd.hasWarning, false);
+  assert.equal(okStd.lineaId, '3');
+
+  const levSrc = readFileSync('src/components/LevantamientoRapido.tsx', 'utf8');
+  assert.match(levSrc, /id="lv-line-limit-warning"/);
+  assert.match(levSrc, /rgba\(234, 88, 12, 0\.14\)/);
+  assert.match(levSrc, /#fdba74/);
+  assert.match(levSrc, /data-linea-id=\{lineWarn\.lineaId\}/);
+
+  // 2. Activación directa 3 días PRO gratis de bienvenida (1 toque) + insignia 'PRO Prueba (3 días)'
+  const now = 1_750_000_000_000;
+  const welcomeLic = buildWelcome3DaysTrialLicense('ALU-TEST-120', now);
+  assert.equal(welcomeLic.active, true);
+  assert.equal(welcomeLic.planCode, 'G');
+  assert.equal(welcomeLic.planLabel, 'PRO Prueba (3 días)');
+  assert.equal(welcomeLic.expiresAt, now + 3 * 24 * 60 * 60 * 1000);
+
+  const badge = formatLicenseCountdownBadge(welcomeLic, null, now + 1000);
+  assert.equal(badge.isPro, true);
+  assert.equal(badge.isTrial, true);
+  assert.equal(badge.text, 'PRO Prueba (3 días)');
+
+  // 3. Transición Paso 1 -> Paso 2 -> Oculto en la tarjeta de inicio
+  assert.equal(
+    resolveHomePromoCardMode({
+      proActive: false,
+      welcomeTrialUsed: false,
+      referral5dBonusClaimed: false,
+      isLifetimePro: false,
+    }),
+    'welcome_3d'
+  );
+  assert.equal(
+    resolveHomePromoCardMode({
+      proActive: true,
+      welcomeTrialUsed: true,
+      referral5dBonusClaimed: false,
+      isLifetimePro: false,
+    }),
+    'referral_5d'
+  );
+  assert.equal(
+    resolveHomePromoCardMode({
+      proActive: true,
+      welcomeTrialUsed: true,
+      referral5dBonusClaimed: true,
+      isLifetimePro: false,
+    }),
+    'hidden'
+  );
+  assert.equal(
+    resolveHomePromoCardMode({
+      proActive: true,
+      welcomeTrialUsed: false,
+      referral5dBonusClaimed: false,
+      isLifetimePro: true,
+    }),
+    'hidden'
+  );
+
+  // 4. Bono automático de +5 días PRO extra al alcanzar 3 colegas registrados
+  assert.equal(REFERRAL_BONUS_5D_TARGET, 3);
+  assert.equal(isReferral5DaysBonusReady(2, true, false), false);
+  assert.equal(isReferral5DaysBonusReady(3, false, false), false);
+  assert.equal(isReferral5DaysBonusReady(3, true, false), true);
+  assert.equal(isReferral5DaysBonusReady(3, true, true), false);
+
+  const extendedFromTrial = applyReferral5DaysBonusToLicense(welcomeLic, 'ALU-TEST-120', now + 60_000);
+  assert.equal(extendedFromTrial.expiresAt, welcomeLic.expiresAt! + 5 * 24 * 60 * 60 * 1000);
+
+  const fromExpired = applyReferral5DaysBonusToLicense(null, 'ALU-TEST-120', now);
+  assert.equal(fromExpired.expiresAt, now + 5 * 24 * 60 * 60 * 1000);
+  assert.equal(fromExpired.planCode, 'D5');
+
+  const lifetimeLic = {
+    active: true,
+    planCode: 'V',
+    planLabel: 'Vitalicia',
+    expiresAt: null,
+    activatedAt: now,
+    activatedKey: 'V-LIFETIME',
+    deviceId: 'ALU-TEST-120',
+  };
+  const extendedLifetime = applyReferral5DaysBonusToLicense(lifetimeLic, 'ALU-TEST-120', now);
+  assert.equal(extendedLifetime.expiresAt, null);
+
+  // 5. Verificar textos exactos en ColleagueReferralWelcomeModal, ReferralPromoBanner y ocultamiento de Robot/globo
+  const modalsSrc = readFileSync('src/components/Modals.tsx', 'utf8');
+  assert.match(modalsSrc, /🎁 Activar mis 3 Días PRO Gratis ahora/);
+  assert.match(modalsSrc, /Continuar en versión gratuita limitada/);
+  assert.match(modalsSrc, /369 MXN|369/);
+
+  const bannerSrc = readFileSync('src/components/ReferralPromoBanner.tsx', 'utf8');
+  assert.match(bannerSrc, /🎁 Activa tus 3 Días PRO Gratis de bienvenida \(Sin costo\)/);
+  assert.match(bannerSrc, /Activar Prueba PRO Gratis \(3 días\)/);
+  assert.match(bannerSrc, /🚀 Invita a 3 colegas y gana \+5 días PRO extra/);
+
+  const appSrc = readFileSync('src/App.tsx', 'utf8');
+  assert.match(appSrc, /!isReferralWelcomeShowing && \(/);
+  assert.match(appSrc, /suppressAutoBubble=\{onboardingTourOpen \|\| isInteractiveTutorialVisible\}/);
+
+  const floatSrc = readFileSync('src/components/FloatingAssistant.tsx', 'utf8');
+  assert.match(floatSrc, /suppressAutoBubble\?: boolean/);
+  assert.match(floatSrc, /!suppressAutoBubble && \(gestureBanner \|\| \(tipsEnabled && activeTip\)\)/);
+
+  // 6. Reglas de oro intactas: SW v1.0.13 + Admin Login sin tocar
+  assert.equal(APP_VERSION, '1.0.13');
+  const swSrc = readFileSync('public/sw.js', 'utf8');
+  assert.match(swSrc, /const APP_VERSION = '1\.0\.13'/);
+  const adminGateSrc = readFileSync('src/components/AdminGateModal.tsx', 'utf8');
+  assert.match(adminGateSrc, /verifyAdminAccessCredential|Panel de Administrador/);
+});
+
+
 
 
 

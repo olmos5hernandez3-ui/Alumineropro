@@ -21,6 +21,7 @@ import {
   HomeMenuLayout,
   HomeMenuSectionId,
   HomeMenuTier,
+  HomePromoCardMode,
   isDefaultHomeMenuLayout,
   moveHomeMenuCard,
   normalizeHomeMenuLayout,
@@ -76,7 +77,9 @@ interface Props {
   deviceId?: string;
   tallerNombre?: string;
   showFreeReferral3DaysPromo?: boolean;
+  homePromoMode?: HomePromoCardMode;
   registeredReferralsCount?: number;
+  onActivateWelcome3Days?: () => void;
   onOpenReferralGift?: () => void;
   onReferralShareFeedback?: () => void;
 }
@@ -185,10 +188,14 @@ export const MainMenuView: React.FC<Props> = ({
   deviceId = '',
   tallerNombre,
   showFreeReferral3DaysPromo = false,
+  homePromoMode,
   registeredReferralsCount = 0,
+  onActivateWelcome3Days,
   onOpenReferralGift,
   onReferralShareFeedback,
 }) => {
+  const effectivePromoMode: HomePromoCardMode =
+    homePromoMode ?? (showFreeReferral3DaysPromo ? 'referral_5d' : 'hidden');
   const effectiveTier: HomeMenuTier = menuTier ?? (proActive ? 'pro_paged' : 'free');
   const isPaged = effectiveTier === 'pro_paged' || effectiveTier === 'pro_annual';
   const canReorder = Boolean(effectiveTier === 'pro_annual' && onChangeMenuLayout);
@@ -1359,14 +1366,16 @@ export const MainMenuView: React.FC<Props> = ({
         </div>
       )}
 
-      {/* Banner promocional: Obtén 3 días PRO gratis por 3 referidos (solo usuarios en Versión Gratuita sin canje previo) */}
-      {showFreeReferral3DaysPromo && deviceId && onOpenReferralGift && (
+      {/* Banner promocional de 2 pasos: Paso 1 (3 días PRO bienvenida) -> Paso 2 (+5 días PRO extra por 3 colegas) */}
+      {effectivePromoMode !== 'hidden' && deviceId && onOpenReferralGift && (
         <ReferralPromoBanner
           variant="home"
+          mode={effectivePromoMode}
           deviceId={deviceId}
           tallerNombre={tallerNombre}
           registeredCount={registeredReferralsCount}
           isDark
+          onActivateWelcome3Days={onActivateWelcome3Days}
           onOpenGift={onOpenReferralGift}
           onShareFeedback={onReferralShareFeedback}
         />

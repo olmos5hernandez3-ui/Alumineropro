@@ -28,6 +28,7 @@ import {
   formatLicenseCountdownBadge,
   GOOGLE_CONNECT_BENEFIT_SUBTITLE,
   GOOGLE_CONNECT_CTA_LABEL,
+  HomePromoCardMode,
   isProActive,
 } from '../utils/alumineroLogic';
 import {
@@ -446,7 +447,9 @@ interface SideDrawerProps {
   onToggleHomeReorderMode?: (enabled: boolean) => void;
   tallerNombre?: string;
   showFreeReferral3DaysPromo?: boolean;
+  homePromoMode?: HomePromoCardMode;
   registeredReferralsCount?: number;
+  onActivateWelcome3Days?: () => void;
   onOpenReferralGift?: () => void;
   onReferralShareFeedback?: () => void;
 }
@@ -555,10 +558,14 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
   onToggleHomeReorderMode,
   tallerNombre,
   showFreeReferral3DaysPromo = false,
+  homePromoMode,
   registeredReferralsCount = 0,
+  onActivateWelcome3Days,
   onOpenReferralGift,
   onReferralShareFeedback,
 }) => {
+  const effectivePromoMode: HomePromoCardMode =
+    homePromoMode ?? (showFreeReferral3DaysPromo ? 'referral_5d' : 'hidden');
   const [skinsExpanded, setSkinsExpanded] = useState(false);
   const [avatarExpanded, setAvatarExpanded] = useState(false);
   const [selectedAvatar, setSelectedAvatar] = useState<AssistantAvatarId>(() => loadSelectedAvatar());
@@ -1776,14 +1783,16 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
           </div>
         )}
 
-        {/* 3.6 Promoción 3 días PRO gratis por 3 referidos (solo usuarios Gratuitos sin canje previo) */}
-        {showFreeReferral3DaysPromo && onOpenReferralGift && (
+        {/* 3.6 Tarjeta de bienvenida (3 días PRO) -> Bono referidos (+5 días PRO extra por 3 colegas) */}
+        {effectivePromoMode !== 'hidden' && onOpenReferralGift && (
           <ReferralPromoBanner
             variant="drawer"
+            mode={effectivePromoMode}
             deviceId={deviceId}
             tallerNombre={tallerNombre}
             registeredCount={registeredReferralsCount}
             isDark={isDark}
+            onActivateWelcome3Days={onActivateWelcome3Days}
             onOpenGift={onOpenReferralGift}
             onShareFeedback={onReferralShareFeedback}
           />

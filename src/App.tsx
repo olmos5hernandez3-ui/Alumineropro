@@ -4,8 +4,9 @@ import {
   AdminMessageItem,
   analyzeFrequentHistorialMaterials,
   APP_VERSION,
+  applyReferral5DaysBonusToLicense,
   buildColleaguePromoWhatsappUrl,
-  buildReferral3DaysGiftLicense,
+  buildWelcome3DaysTrialLicense,
   calcularCotizacion,
   calcularDespiece,
   canShowFreeReferral3DaysPromo,
@@ -19,12 +20,13 @@ import {
   getRellenoLabel,
   getRellenoPrecioM2,
   getRellenoPriceKey,
+  HomePromoCardMode,
   isColleaguePromoPlan,
   isEligibleForCloudBackup,
   isFeatureProRequired,
   isOneYearProPlan,
   isProActive,
-  isReferralGiftReadyToOpen,
+  isReferral5DaysBonusReady,
   isTallerOnboardingComplete,
   isUnassignedAutoTrialDevice,
   LINEAS_CONFIG,
@@ -36,7 +38,9 @@ import {
   PartidaObra,
   PerfilCatalogoId,
   PROMO_COLEGA_ALREADY_USED_ERROR,
+  REFERRAL_BONUS_5D_TARGET,
   ReferencePricesDoc,
+  resolveHomePromoCardMode,
   round2,
   TrabajoParams,
   UsageStats30d,
@@ -146,6 +150,7 @@ import {
   loadAdminMessagesCache,
   loadLegalDisclaimerAccepted,
   loadPromoColegaUsage,
+  loadReferral5dBonus,
   loadReadAdminMessageIds,
   loadReferencePricesCache,
   loadSkin,
@@ -153,6 +158,7 @@ import {
   markAdminMessageIdRead,
   normalizeSkinVariantForSkin,
   PromoColegaUsageRecord,
+  Referral5dBonusRecord,
   saveAdminMessagesCache,
   saveFormulas,
   saveHistorial,
@@ -166,6 +172,7 @@ import {
   saveObrasAprobadas,
   savePerfilFotos,
   savePromoColegaUsage,
+  saveReferral5dBonus,
   saveReferencePricesCache,
   saveReferralHistory,
   saveRevokedDevicesMap,
@@ -688,6 +695,10 @@ export default function App() {
   const [promoColegaUsage, setPromoColegaUsage] = useState<PromoColegaUsageRecord>(() =>
     loadPromoColegaUsage(deviceId)
   );
+  const [referral5dBonus, setReferral5dBonus] = useState<Referral5dBonusRecord>(() =>
+    loadReferral5dBonus(deviceId)
+  );
+  const autoReferral5dAppliedRef = useRef(false);
   const [referencePrices, setReferencePrices] = useState<ReferencePricesDoc | null>(() =>
     loadReferencePricesCache()
   );
@@ -2373,6 +2384,17 @@ export default function App() {
     [proActive, promoColegaUsage.promo_colega_usada]
   );
 
+  const homePromoMode: HomePromoCardMode = useMemo(
+    () =>
+      resolveHomePromoCardMode({
+        proActive,
+        welcomeTrialUsed: promoColegaUsage.promo_colega_usada,
+        referral5dBonusClaimed: referral5dBonus.claimed,
+        isLifetimePro: Boolean(licencia?.active && licencia.expiresAt === null),
+      }),
+    [proActive, promoColegaUsage.promo_colega_usada, referral5dBonus.claimed, licencia]
+  );
+
   const handleQuickCreateFromFrequentMaterial = useCallback(
     (item: FrequentMaterialSuggestion) => {
       if (item.categoria === 'puertas' && !proActive) {
@@ -2422,26 +2444,115 @@ export default function App() {
     ]
   );
 
-  const handleOpenReferralGift = useCallback(() => {
+  const handleActivateWelcome3DaysTrial = useCallback(() => {
     if (promoColegaUsage.promo_colega_usada) {
+      if (isReferralWelcomeShowing) {
+        goHome();
+      }
       showToast(PROMO_COLEGA_ALREADY_USED_ERROR);
-      return;
-    }
-    if (!isReferralGiftReadyToOpen(registeredReferralsCount, proActive, promoColegaUsage.promo_colega_usada)) {
-      showToast('Invita a 3 colegas a registrarse para abrir tu regalo de 3 días PRO gratis.');
       return;
     }
 
     const now = Date.now();
-    const giftLic = buildReferral3DaysGiftLicense(deviceId, now);
+    const trialLic = buildWelcome3DaysTrialLicense(deviceId, now);
     const savedUsage = savePromoColegaUsage(deviceId, true, now);
     setPromoColegaUsage(savedUsage);
 
     saveTrialRevoked(false);
     setTrialRevoked(false);
-    licenciaRef.current = giftLic;
-    saveLicencia(giftLic);
-    setLicencia(giftLic);
+    licenciaRef.current = trialLic;
+    saveLicencia(trialLic);
+    setLicencia(trialLic);
+
+    if (
+      referredById &&
+      referredById.trim().toUpperCase() !== deviceId.trim().toUpperCase()
+    ) {
+      const updatedRefs = addReferralHistoryRecord({
+        referrerId: referredById,
+        referredDeviceId: deviceId,
+        referredName: taller.nombre || hoja.proyecto.trim() || '',
+        planCode: trialLic.planCode,
+        planLabel: trialLic.planLabel,
+        amountLabel: '$0 MXN',
+      });
+      setReferralHistory(updatedRefs);
+    }
+
+    if (drawerOpen) {
+      requestBack();
+    }
+
+    if (isReferralWelcomeShowing) {
+      goHome();
+      if (!isRunningInIframe() && typeof window !== 'undefined' && window.location.search.includes('ref=')) {
+        window.setTimeout(() => {
+          try {
+            const cleanUrl = `${window.location.pathname}${window.location.hash || ''}`;
+            window.history.replaceState(
+              window.history.state || { app: 'aluminero-pro', depth: 0, view: 'menu' },
+              document.title,
+              cleanUrl
+            );
+          } catch {
+            // ignorar si history.replaceState no está permitido
+          }
+        }, 80);
+      }
+    }
+
+    showToast('🎁 ¡PRO Prueba (3 días) activado en tu equipo!', true);
+
+    void syncDeviceToCloud({
+      deviceId,
+      cliente: taller.nombre || 'Mi Taller',
+      tallerNombre: taller.nombre || 'Mi Taller',
+      tallerResponsable: taller.responsable || taller.nombre || '',
+      tallerWhatsapp: taller.tel || '',
+      ubicacion: taller.ubicacion || '',
+      deviceLabel: detectDeviceLabel(),
+      eventType: 'license_sync',
+      minutesDelta: 0,
+      licencia: trialLic,
+    });
+  }, [
+    promoColegaUsage.promo_colega_usada,
+    isReferralWelcomeShowing,
+    goHome,
+    deviceId,
+    referredById,
+    taller.nombre,
+    taller.responsable,
+    taller.tel,
+    taller.ubicacion,
+    hoja.proyecto,
+    drawerOpen,
+    requestBack,
+  ]);
+
+  const handleOpenReferralGift = useCallback(() => {
+    if (referral5dBonus.claimed) {
+      showToast('Ya recibiste tu bono de +5 días PRO extra por invitar a 3 colegas.');
+      return;
+    }
+    if (registeredReferralsCount < REFERRAL_BONUS_5D_TARGET) {
+      showToast(
+        `Invita a ${REFERRAL_BONUS_5D_TARGET} colegas a registrarse para ganar +5 días PRO extra (${registeredReferralsCount}/${REFERRAL_BONUS_5D_TARGET}).`
+      );
+      return;
+    }
+
+    const now = Date.now();
+    const extendedLic = applyReferral5DaysBonusToLicense(licenciaRef.current, deviceId, now);
+    const savedBonus = saveReferral5dBonus(deviceId, true, now);
+    setReferral5dBonus(savedBonus);
+    autoReferral5dAppliedRef.current = true;
+
+    saveTrialRevoked(false);
+    setTrialRevoked(false);
+    licenciaRef.current = extendedLic;
+    saveLicencia(extendedLic);
+    setLicencia(extendedLic);
 
     if (drawerOpen) {
       requestBack();
@@ -2458,15 +2569,63 @@ export default function App() {
       deviceLabel: detectDeviceLabel(),
       eventType: 'license_sync',
       minutesDelta: 0,
-      licencia: giftLic,
+      licencia: extendedLic,
     });
   }, [
-    promoColegaUsage.promo_colega_usada,
+    referral5dBonus.claimed,
     registeredReferralsCount,
-    proActive,
     deviceId,
     drawerOpen,
     requestBack,
+    taller.nombre,
+    taller.responsable,
+    taller.tel,
+    taller.ubicacion,
+  ]);
+
+  // Bono automático: al alcanzar 3 colegas registrados tras activar/usar los 3 días de bienvenida, suma +5 días PRO extra
+  useEffect(() => {
+    if (autoReferral5dAppliedRef.current) return;
+    if (
+      !isReferral5DaysBonusReady(
+        registeredReferralsCount,
+        promoColegaUsage.promo_colega_usada,
+        referral5dBonus.claimed
+      )
+    ) {
+      return;
+    }
+    autoReferral5dAppliedRef.current = true;
+    const now = Date.now();
+    const extendedLic = applyReferral5DaysBonusToLicense(licenciaRef.current, deviceId, now);
+    const savedBonus = saveReferral5dBonus(deviceId, true, now);
+    setReferral5dBonus(savedBonus);
+
+    saveTrialRevoked(false);
+    setTrialRevoked(false);
+    licenciaRef.current = extendedLic;
+    saveLicencia(extendedLic);
+    setLicencia(extendedLic);
+    setReferralGiftModalOpen(true);
+    showToast('🚀 ¡3 colegas registrados! Sumamos +5 días PRO extra a tu vigencia.', true);
+
+    void syncDeviceToCloud({
+      deviceId,
+      cliente: taller.nombre || 'Mi Taller',
+      tallerNombre: taller.nombre || 'Mi Taller',
+      tallerResponsable: taller.responsable || taller.nombre || '',
+      tallerWhatsapp: taller.tel || '',
+      ubicacion: taller.ubicacion || '',
+      deviceLabel: detectDeviceLabel(),
+      eventType: 'license_sync',
+      minutesDelta: 0,
+      licencia: extendedLic,
+    });
+  }, [
+    registeredReferralsCount,
+    promoColegaUsage.promo_colega_usada,
+    referral5dBonus.claimed,
+    deviceId,
     taller.nombre,
     taller.responsable,
     taller.tel,
@@ -4054,7 +4213,9 @@ export default function App() {
             deviceId={deviceId}
             tallerNombre={taller.nombre}
             showFreeReferral3DaysPromo={showFreeReferral3DaysPromo}
+            homePromoMode={homePromoMode}
             registeredReferralsCount={registeredReferralsCount}
+            onActivateWelcome3Days={handleActivateWelcome3DaysTrial}
             onOpenReferralGift={handleOpenReferralGift}
             onReferralShareFeedback={() =>
               showToast('Abriendo WhatsApp para invitar a un colega...', true)
@@ -4939,7 +5100,9 @@ export default function App() {
         onToggleHomeReorderMode={handleToggleHomeReorderFromDrawer}
         tallerNombre={taller.nombre}
         showFreeReferral3DaysPromo={showFreeReferral3DaysPromo}
+        homePromoMode={homePromoMode}
         registeredReferralsCount={registeredReferralsCount}
+        onActivateWelcome3Days={handleActivateWelcome3DaysTrial}
         onOpenReferralGift={handleOpenReferralGift}
         onReferralShareFeedback={() =>
           showToast('Abriendo WhatsApp para invitar a un colega...', true)
@@ -5529,6 +5692,7 @@ export default function App() {
         referredById={referredById}
         deviceId={deviceId}
         whatsappNumber={sugerenciasWhatsapp}
+        onActivateWelcome3Days={handleActivateWelcome3DaysTrial}
         onExploreFree={() => {
           goHome();
           if (!isRunningInIframe() && typeof window !== 'undefined' && window.location.search.includes('ref=')) {
@@ -5978,7 +6142,7 @@ export default function App() {
         onDismiss={() => setInstallFabDismissed(true)}
       />
 
-      {!(currentView === 'menu' && homeReorderMode) && (
+      {!(currentView === 'menu' && homeReorderMode) && !isReferralWelcomeShowing && (
         <FloatingAssistant
           whatsappNumber={sugerenciasWhatsapp}
           deviceId={deviceId}
@@ -6003,9 +6167,23 @@ export default function App() {
             })()
           }
           onNavigateView={(v) => navigateTo(v)}
+          onNavigateGuideTarget={(target) => {
+            if (target === 'ventanas') {
+              handleEntrarTrabajo('ventanas');
+            } else if (target === 'puertas') {
+              handleEntrarTrabajo('puertas');
+            } else if (target === 'hoja') {
+              handleEntrarHoja();
+            } else if (target === 'levantamiento') {
+              requestActiveToolAccess('levantamiento', 'Levantamiento Rápido');
+            } else if (target === 'modulacion') {
+              requestActiveToolAccess('modulacion', 'Optimizar Cortes');
+            }
+          }}
           onOpenLevantamiento={() => window.__alumLev?.open()}
           onOpenTutorial={() => openGlobalModal('tutorial')}
           onOpenPro={() => openGlobalModal('pro')}
+          suppressAutoBubble={onboardingTourOpen || isInteractiveTutorialVisible}
           onShowToast={showToast}
         />
       )}
@@ -6022,13 +6200,14 @@ export default function App() {
 
       <ReferralGiftRewardModal
         open={referralGiftModalOpen}
+        bonusDays={5}
         onViewPlans={() => {
           setReferralGiftModalOpen(false);
           openGlobalModal('pro');
         }}
         onUseFreeDaysNow={() => {
           setReferralGiftModalOpen(false);
-          showToast('¡Disfruta tus 3 días PRO gratis activados en este equipo!', true);
+          showToast('¡Disfruta tus +5 días PRO extra sumados a tu vigencia!', true);
         }}
       />
 

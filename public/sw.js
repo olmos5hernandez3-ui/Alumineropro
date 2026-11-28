@@ -1,4 +1,4 @@
-const APP_VERSION = '1.0.11';
+const APP_VERSION = '1.0.13';
 const CACHE_NAME = `aluminero-pro-v${APP_VERSION}`;
 const APP_SHELL_ASSETS = [
   '/',

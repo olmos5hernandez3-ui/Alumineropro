@@ -69,6 +69,7 @@ export const KEYS = {
   ADMIN_MESSAGES_CACHE: 'aluminero_admin_messages_cache_v1',
   HOME_MENU_LAYOUT: 'aluminero_home_menu_layout_v1',
   CATALOG_VIGENCIA_LABEL: 'aluminero_catalog_vigencia_v1',
+  REFERRAL_5D_BONUS: 'aluminero_referral_5d_bonus_v1',
 };
 
 export const REFERRED_BY_ID_STORAGE_KEY = 'referred_by_id';
@@ -1960,6 +1961,69 @@ export function savePromoColegaUsage(
         : {};
     nextMap[normId] = nextRec;
     localStorage.setItem(KEYS.PROMO_COLEGA_USAGE, JSON.stringify(nextMap));
+  } catch {
+    // ignorar si localStorage no permite escritura
+  }
+  return nextRec;
+}
+
+// ==================== BONO +5 DÍAS PRO POR INVITAR A 3 COLEGAS ====================
+export interface Referral5dBonusRecord {
+  deviceId: string;
+  claimed: boolean;
+  claimedAt: number | null;
+}
+
+export function loadReferral5dBonus(deviceId: string): Referral5dBonusRecord {
+  const normId = normalizeDeviceIdInput(deviceId) || String(deviceId || '').trim().toUpperCase();
+  const fallback: Referral5dBonusRecord = {
+    deviceId: normId,
+    claimed: false,
+    claimedAt: null,
+  };
+  if (typeof localStorage === 'undefined') return fallback;
+  const raw = safeJsonParse<Record<string, Partial<Referral5dBonusRecord>> | null>(
+    localStorage.getItem(KEYS.REFERRAL_5D_BONUS),
+    null
+  );
+  if (!raw || typeof raw !== 'object') return fallback;
+  const rec = raw[normId];
+  if (!rec || typeof rec !== 'object') return fallback;
+  const claimed = Boolean(rec.claimed);
+  const ts =
+    typeof rec.claimedAt === 'number' && Number.isFinite(rec.claimedAt)
+      ? rec.claimedAt
+      : null;
+  return {
+    deviceId: normId,
+    claimed,
+    claimedAt: claimed ? ts : null,
+  };
+}
+
+export function saveReferral5dBonus(
+  deviceId: string,
+  claimed: boolean,
+  claimedAt: number | null
+): Referral5dBonusRecord {
+  const normId = normalizeDeviceIdInput(deviceId) || String(deviceId || '').trim().toUpperCase();
+  const nextRec: Referral5dBonusRecord = {
+    deviceId: normId,
+    claimed: Boolean(claimed),
+    claimedAt: claimed && typeof claimedAt === 'number' && Number.isFinite(claimedAt) ? claimedAt : null,
+  };
+  if (typeof localStorage === 'undefined') return nextRec;
+  try {
+    const existingRaw = safeJsonParse<Record<string, Referral5dBonusRecord>>(
+      localStorage.getItem(KEYS.REFERRAL_5D_BONUS),
+      {}
+    );
+    const nextMap: Record<string, Referral5dBonusRecord> =
+      existingRaw && typeof existingRaw === 'object' && !Array.isArray(existingRaw)
+        ? { ...existingRaw }
+        : {};
+    nextMap[normId] = nextRec;
+    localStorage.setItem(KEYS.REFERRAL_5D_BONUS, JSON.stringify(nextMap));
   } catch {
     // ignorar si localStorage no permite escritura
   }

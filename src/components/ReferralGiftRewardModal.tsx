@@ -3,6 +3,7 @@ import { Crown, Gift, Sparkles, X } from 'lucide-react';
 
 export interface ReferralGiftRewardModalProps {
   open: boolean;
+  bonusDays?: 3 | 5;
   onViewPlans: () => void;
   onUseFreeDaysNow: () => void;
 }
@@ -22,10 +23,12 @@ const CONFETTI_PIECES = [
 
 export const ReferralGiftRewardModal: React.FC<ReferralGiftRewardModalProps> = ({
   open,
+  bonusDays = 5,
   onViewPlans,
   onUseFreeDaysNow,
 }) => {
   if (!open) return null;
+  const isFiveDaysBonus = bonusDays === 5;
 
   return (
     <div
@@ -103,14 +106,16 @@ export const ReferralGiftRewardModal: React.FC<ReferralGiftRewardModalProps> = (
 
           <div className="mt-4 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/50 text-emerald-200 text-[11px] font-black uppercase tracking-wider">
             <Crown className="w-3.5 h-3.5 text-amber-300" aria-hidden="true" />
-            <span>3 Días PRO Activados</span>
+            <span>{isFiveDaysBonus ? '+5 Días PRO Extra Sumados' : '3 Días PRO Activados'}</span>
           </div>
 
           <h2
             id="referral-gift-reward-title"
             className="m-0 mt-3 text-[20px] sm:text-[22px] font-black text-amber-200 leading-snug"
           >
-            🎉 ¡Felicidades! Acabas de obtener 3 días gratis para usar la Versión PRO.
+            {isFiveDaysBonus
+              ? '🎉 ¡Felicidades! Ganaste +5 días PRO extra por invitar a 3 colegas.'
+              : '🎉 ¡Felicidades! Acabas de obtener 3 días gratis para usar la Versión PRO.'}
           </h2>
 
           <p className="m-0 mt-3 text-[13.5px] text-slate-200 leading-relaxed font-semibold bg-slate-900/70 border border-amber-400/30 rounded-xl p-3.5 text-left">
@@ -138,7 +143,7 @@ export const ReferralGiftRewardModal: React.FC<ReferralGiftRewardModalProps> = (
               onClick={onUseFreeDaysNow}
               className="w-full min-h-[44px] px-4 py-2.5 rounded-xl border border-slate-600 bg-slate-800/90 hover:bg-slate-700 text-slate-100 font-extrabold text-[13px] cursor-pointer transition-colors"
             >
-              Usar mis 3 días gratis ahora
+              {isFiveDaysBonus ? 'Usar mis +5 días PRO extra ahora' : 'Usar mis 3 días gratis ahora'}
             </button>
           </div>
         </div>

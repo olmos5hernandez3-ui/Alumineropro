@@ -248,7 +248,7 @@ export function getCharacterCelebrationText(
 
 let sharedAudioCtx: AudioContext | null = null;
 
-function getAudioContext(): AudioContext | null {
+function ensureAudioContext(): AudioContext | null {
   if (typeof window === 'undefined') return null;
   const AudioCtx =
     window.AudioContext ||
@@ -256,11 +256,8 @@ function getAudioContext(): AudioContext | null {
       .webkitAudioContext;
   if (!AudioCtx) return null;
   try {
-    if (!sharedAudioCtx) {
+    if (!sharedAudioCtx || sharedAudioCtx.state === 'closed') {
       sharedAudioCtx = new AudioCtx();
-    }
-    if (sharedAudioCtx.state === 'suspended') {
-      void sharedAudioCtx.resume().catch(() => {});
     }
     return sharedAudioCtx;
   } catch {
@@ -268,102 +265,176 @@ function getAudioContext(): AudioContext | null {
   }
 }
 
+/**
+ * Desbloquea y reanuda de forma síncrona el AudioContext único global dentro
+ * del primer gesto táctil/clic del usuario (imprescindible en Chrome/Safari móvil).
+ */
+export function unlockAssistantAudio(): Promise<AudioContext | null> {
+  const ctx = ensureAudioContext();
+  if (!ctx) return Promise.resolve(null);
+  if (ctx.state === 'suspended') {
+    try {
+      return ctx
+        .resume()
+        .then(() => ctx)
+        .catch(() => ctx);
+    } catch {
+      return Promise.resolve(ctx);
+    }
+  }
+  return Promise.resolve(ctx);
+}
+
 function scheduleCatMeow(ctx: AudioContext, now: number, master: GainNode): void {
+  // Maullido vocal "Miauuu" con formante bandpass (500Hz -> 820Hz -> 420Hz)
   const osc = ctx.createOscillator();
-  const osc2 = ctx.createOscillator();
+  const harmonic = ctx.createOscillator();
+  const harmonicGain = ctx.createGain();
   const filter = ctx.createBiquadFilter();
   const gain = ctx.createGain();
 
-  osc.type = 'triangle';
-  osc2.type = 'sine';
+  osc.type = 'sawtooth';
+  harmonic.type = 'triangle';
+
+  osc.frequency.setValueAtTime(500, now);
+  osc.frequency.exponentialRampToValueAtTime(820, now + 0.11);
+  osc.frequency.exponentialRampToValueAtTime(420, now + 0.34);
+
+  harmonic.frequency.setValueAtTime(1000, now);
+  harmonic.frequency.exponentialRampToValueAtTime(1640, now + 0.11);
+  harmonic.frequency.exponentialRampToValueAtTime(840, now + 0.34);
+
+  harmonicGain.gain.setValueAtTime(0.35, now);
+
   filter.type = 'bandpass';
-  filter.frequency.setValueAtTime(1150, now);
-  filter.Q.setValueAtTime(1.8, now);
-
-  // Curva dulce de maullido: sube y desciende suave
-  osc.frequency.setValueAtTime(540, now);
-  osc.frequency.exponentialRampToValueAtTime(920, now + 0.09);
-  osc.frequency.exponentialRampToValueAtTime(610, now + 0.27);
-
-  osc2.frequency.setValueAtTime(1080, now);
-  osc2.frequency.exponentialRampToValueAtTime(1840, now + 0.09);
-  osc2.frequency.exponentialRampToValueAtTime(1220, now + 0.27);
-
-  const subGain = ctx.createGain();
-  subGain.gain.setValueAtTime(0.28, now);
+  filter.frequency.setValueAtTime(980, now);
+  filter.frequency.exponentialRampToValueAtTime(1550, now + 0.11);
+  filter.frequency.exponentialRampToValueAtTime(860, now + 0.34);
+  filter.Q.setValueAtTime(2.6, now);
 
   gain.gain.setValueAtTime(0.0001, now);
-  gain.gain.linearRampToValueAtTime(0.95, now + 0.045);
-  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.28);
+  gain.gain.linearRampToValueAtTime(0.95, now + 0.04);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.36);
 
   osc.connect(filter);
-  osc2.connect(subGain);
-  subGain.connect(filter);
+  harmonic.connect(harmonicGain);
+  harmonicGain.connect(filter);
   filter.connect(gain);
   gain.connect(master);
 
   osc.start(now);
-  osc2.start(now);
-  osc.stop(now + 0.3);
-  osc2.stop(now + 0.3);
+  harmonic.start(now);
+  osc.stop(now + 0.38);
+  harmonic.stop(now + 0.38);
+}
+
+function scheduleCatPurr(ctx: AudioContext, now: number, master: GainNode): void {
+  // Ronroneo grave vibrante "Grrr-grrr" modulando 25Hz sobre portadora de 95Hz
+  const playPurrWave = (start: number, duration: number) => {
+    const carrier = ctx.createOscillator();
+    const lfo = ctx.createOscillator();
+    const lfoDepth = ctx.createGain();
+    const filter = ctx.createBiquadFilter();
+    const env = ctx.createGain();
+
+    carrier.type = 'sawtooth';
+    carrier.frequency.setValueAtTime(95, start);
+    carrier.frequency.linearRampToValueAtTime(102, start + duration * 0.5);
+    carrier.frequency.linearRampToValueAtTime(92, start + duration);
+
+    lfo.type = 'sine';
+    lfo.frequency.setValueAtTime(25, start);
+    lfoDepth.gain.setValueAtTime(0.42, start);
+
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(340, start);
+    filter.Q.setValueAtTime(2.2, start);
+
+    env.gain.setValueAtTime(0.0001, start);
+    env.gain.linearRampToValueAtTime(0.88, start + 0.06);
+    env.gain.setValueAtTime(0.82, start + duration - 0.07);
+    env.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+
+    const modGain = ctx.createGain();
+    modGain.gain.setValueAtTime(0.55, start);
+    lfo.connect(lfoDepth);
+    lfoDepth.connect(modGain.gain);
+
+    carrier.connect(filter);
+    filter.connect(modGain);
+    modGain.connect(env);
+    env.connect(master);
+
+    carrier.start(start);
+    lfo.start(start);
+    carrier.stop(start + duration + 0.02);
+    lfo.stop(start + duration + 0.02);
+  };
+
+  playPurrWave(now, 0.28);
+  playPurrWave(now + 0.32, 0.3);
 }
 
 function scheduleDogBark(ctx: AudioContext, now: number, master: GainNode): void {
-  const playYip = (start: number, peakHz: number, endHz: number) => {
+  // Ladrido doble "Guau-guau" con onda sawtooth + lowpass bajando 900Hz -> 300Hz
+  const playBark = (start: number, pitchScale: number) => {
     const osc = ctx.createOscillator();
     const filter = ctx.createBiquadFilter();
     const gain = ctx.createGain();
 
     osc.type = 'sawtooth';
-    filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(1250, start);
-    filter.Q.setValueAtTime(2.2, start);
+    osc.frequency.setValueAtTime(260 * pitchScale, start);
+    osc.frequency.exponentialRampToValueAtTime(410 * pitchScale, start + 0.025);
+    osc.frequency.exponentialRampToValueAtTime(155 * pitchScale, start + 0.13);
 
-    osc.frequency.setValueAtTime(peakHz * 0.72, start);
-    osc.frequency.exponentialRampToValueAtTime(peakHz, start + 0.025);
-    osc.frequency.exponentialRampToValueAtTime(endHz, start + 0.11);
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(900, start);
+    filter.frequency.exponentialRampToValueAtTime(300, start + 0.13);
+    filter.Q.setValueAtTime(2.8, start);
 
     gain.gain.setValueAtTime(0.0001, start);
-    gain.gain.linearRampToValueAtTime(0.9, start + 0.018);
-    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.12);
+    gain.gain.linearRampToValueAtTime(1.0, start + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.145);
 
     osc.connect(filter);
     filter.connect(gain);
     gain.connect(master);
 
     osc.start(start);
-    osc.stop(start + 0.13);
+    osc.stop(start + 0.16);
   };
 
-  playYip(now, 370, 175);
-  playYip(now + 0.135, 420, 195);
+  playBark(now, 1.0);
+  playBark(now + 0.175, 1.12);
 }
 
 function scheduleRoosterCrow(ctx: AudioContext, now: number, master: GainNode): void {
-  const notes: Array<{ t: number; d: number; f0: number; f1: number }> = [
-    { t: 0.0, d: 0.07, f0: 560, f1: 720 },
-    { t: 0.08, d: 0.08, f0: 820, f1: 960 },
-    { t: 0.17, d: 0.07, f0: 700, f1: 820 },
-    { t: 0.25, d: 0.18, f0: 980, f1: 1180 },
+  // Canto agudo de 4 notas ascendentes "Ki-ki-ri-kí"
+  const notes: Array<{ t: number; d: number; f0: number; f1: number; drop?: number }> = [
+    { t: 0.0, d: 0.085, f0: 620, f1: 780 },
+    { t: 0.095, d: 0.085, f0: 790, f1: 960 },
+    { t: 0.19, d: 0.08, f0: 940, f1: 1140 },
+    { t: 0.28, d: 0.24, f0: 1180, f1: 1480, drop: 1020 },
   ];
 
   for (const n of notes) {
     const osc = ctx.createOscillator();
     const filter = ctx.createBiquadFilter();
     const gain = ctx.createGain();
-    osc.type = 'triangle';
+
+    osc.type = 'sawtooth';
     filter.type = 'bandpass';
-    filter.frequency.setValueAtTime(1400, now + n.t);
-    filter.Q.setValueAtTime(1.4, now + n.t);
+    filter.frequency.setValueAtTime(1550, now + n.t);
+    filter.Q.setValueAtTime(1.9, now + n.t);
 
     osc.frequency.setValueAtTime(n.f0, now + n.t);
-    osc.frequency.exponentialRampToValueAtTime(n.f1, now + n.t + n.d * 0.7);
-    if (n.d > 0.12) {
-      osc.frequency.exponentialRampToValueAtTime(920, now + n.t + n.d);
+    osc.frequency.exponentialRampToValueAtTime(n.f1, now + n.t + n.d * 0.6);
+    if (n.drop) {
+      osc.frequency.exponentialRampToValueAtTime(n.drop, now + n.t + n.d);
     }
 
     gain.gain.setValueAtTime(0.0001, now + n.t);
-    gain.gain.linearRampToValueAtTime(0.9, now + n.t + 0.018);
+    gain.gain.linearRampToValueAtTime(0.95, now + n.t + 0.016);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + n.t + n.d);
 
     osc.connect(filter);
@@ -376,6 +447,7 @@ function scheduleRoosterCrow(ctx: AudioContext, now: number, master: GainNode): 
 }
 
 function schedulePigOink(ctx: AudioContext, now: number, master: GainNode): void {
+  // Doble gruñido grave nasal "Oink-oink"
   const playSnort = (start: number, baseHz: number) => {
     const osc = ctx.createOscillator();
     const lfo = ctx.createOscillator();
@@ -385,23 +457,22 @@ function schedulePigOink(ctx: AudioContext, now: number, master: GainNode): void
 
     osc.type = 'sawtooth';
     osc.frequency.setValueAtTime(baseHz, start);
-    osc.frequency.exponentialRampToValueAtTime(baseHz * 1.55, start + 0.055);
-    osc.frequency.exponentialRampToValueAtTime(baseHz * 0.85, start + 0.12);
+    osc.frequency.exponentialRampToValueAtTime(baseHz * 1.6, start + 0.06);
+    osc.frequency.exponentialRampToValueAtTime(baseHz * 0.82, start + 0.14);
 
-    // Modulación rápida nasal divertida
     lfo.type = 'sine';
-    lfo.frequency.setValueAtTime(42, start);
-    lfoGain.gain.setValueAtTime(28, start);
+    lfo.frequency.setValueAtTime(38, start);
+    lfoGain.gain.setValueAtTime(32, start);
     lfo.connect(lfoGain);
     lfoGain.connect(osc.frequency);
 
     filter.type = 'bandpass';
-    filter.frequency.setValueAtTime(640, start);
-    filter.Q.setValueAtTime(4.2, start);
+    filter.frequency.setValueAtTime(580, start);
+    filter.Q.setValueAtTime(4.0, start);
 
     gain.gain.setValueAtTime(0.0001, start);
     gain.gain.linearRampToValueAtTime(1.0, start + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.125);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.15);
 
     osc.connect(filter);
     filter.connect(gain);
@@ -409,85 +480,193 @@ function schedulePigOink(ctx: AudioContext, now: number, master: GainNode): void
 
     osc.start(start);
     lfo.start(start);
-    osc.stop(start + 0.135);
-    lfo.stop(start + 0.135);
+    osc.stop(start + 0.165);
+    lfo.stop(start + 0.165);
   };
 
-  playSnort(now, 180);
-  playSnort(now + 0.145, 205);
+  playSnort(now, 165);
+  playSnort(now + 0.17, 190);
 }
 
 function scheduleRobotBipBop(ctx: AudioContext, now: number, master: GainNode): void {
-  const tones = [
-    { t: 0.0, d: 0.085, f: 920, type: 'sine' as OscillatorType },
-    { t: 0.095, d: 0.09, f: 620, type: 'triangle' as OscillatorType },
-    { t: 0.19, d: 0.075, f: 1280, type: 'sine' as OscillatorType },
+  // 3 tonos modulados expresivos con barrido de frecuencia "Bip-bup-ziuuu" + breve zumbido láser
+  const tones: Array<{ t: number; d: number; f0: number; f1: number; type: OscillatorType }> = [
+    { t: 0.0, d: 0.085, f0: 840, f1: 1180, type: 'sine' },
+    { t: 0.095, d: 0.095, f0: 660, f1: 520, type: 'triangle' },
+    { t: 0.2, d: 0.14, f0: 980, f1: 1760, type: 'sine' },
   ];
 
   for (const tone of tones) {
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = tone.type;
-    osc.frequency.setValueAtTime(tone.f, now + tone.t);
+    osc.frequency.setValueAtTime(tone.f0, now + tone.t);
+    osc.frequency.exponentialRampToValueAtTime(tone.f1, now + tone.t + tone.d);
 
     gain.gain.setValueAtTime(0.0001, now + tone.t);
-    gain.gain.linearRampToValueAtTime(0.72, now + tone.t + 0.012);
+    gain.gain.linearRampToValueAtTime(0.92, now + tone.t + 0.012);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + tone.t + tone.d);
 
     osc.connect(gain);
     gain.connect(master);
 
     osc.start(now + tone.t);
-    osc.stop(now + tone.t + tone.d + 0.015);
+    osc.stop(now + tone.t + tone.d + 0.018);
   }
+
+  // Breve zumbido de medidor láser al cierre
+  const laser = ctx.createOscillator();
+  const laserGain = ctx.createGain();
+  laser.type = 'sawtooth';
+  laser.frequency.setValueAtTime(2150, now + 0.24);
+  laser.frequency.exponentialRampToValueAtTime(1420, now + 0.34);
+  laserGain.gain.setValueAtTime(0.0001, now + 0.24);
+  laserGain.gain.linearRampToValueAtTime(0.32, now + 0.255);
+  laserGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.345);
+  laser.connect(laserGain);
+  laserGain.connect(master);
+  laser.start(now + 0.24);
+  laser.stop(now + 0.36);
 }
 
-function scheduleOwlOrBeaverTone(
-  ctx: AudioContext,
-  now: number,
-  master: GainNode,
-  avatarId: 'castor' | 'buho'
-): void {
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  osc.type = 'sine';
-  if (avatarId === 'buho') {
-    osc.frequency.setValueAtTime(480, now);
-    osc.frequency.exponentialRampToValueAtTime(360, now + 0.18);
-  } else {
-    osc.frequency.setValueAtTime(520, now);
-    osc.frequency.exponentialRampToValueAtTime(760, now + 0.08);
-  }
-  gain.gain.setValueAtTime(0.0001, now);
-  gain.gain.linearRampToValueAtTime(0.65, now + 0.02);
-  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.2);
-  osc.connect(gain);
-  gain.connect(master);
-  osc.start(now);
-  osc.stop(now + 0.22);
+function scheduleBeaverKnock(ctx: AudioContext, now: number, master: GainNode): void {
+  // Doble golpe seco de madera/nivel de precisión "Toc-toc"
+  const playKnock = (start: number, freq: number) => {
+    const osc = ctx.createOscillator();
+    const filter = ctx.createBiquadFilter();
+    const gain = ctx.createGain();
+
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(freq, start);
+    osc.frequency.exponentialRampToValueAtTime(freq * 0.42, start + 0.055);
+
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(freq * 1.4, start);
+    filter.Q.setValueAtTime(3.2, start);
+
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.linearRampToValueAtTime(1.0, start + 0.006);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.068);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(master);
+
+    osc.start(start);
+    osc.stop(start + 0.08);
+  };
+
+  playKnock(now, 440);
+  playKnock(now + 0.13, 520);
+}
+
+function scheduleOwlHoot(ctx: AudioContext, now: number, master: GainNode): void {
+  // Doble ulular grave resonante "Uhuuu-uhuuu"
+  const playHoot = (start: number, startHz: number, endHz: number, dur: number) => {
+    const osc = ctx.createOscillator();
+    const filter = ctx.createBiquadFilter();
+    const gain = ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(startHz, start);
+    osc.frequency.exponentialRampToValueAtTime(endHz, start + dur);
+
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(680, start);
+
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.linearRampToValueAtTime(0.95, start + 0.035);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(master);
+
+    osc.start(start);
+    osc.stop(start + dur + 0.02);
+  };
+
+  playHoot(now, 460, 340, 0.17);
+  playHoot(now + 0.2, 430, 310, 0.24);
 }
 
 function scheduleCelebrationChime(ctx: AudioContext, now: number, master: GainNode): void {
   const chord = [784, 987.77, 1174.66, 1567.98]; // G5 - B5 - D6 - G6
   chord.forEach((freq, i) => {
-    const start = now + i * 0.06;
+    const start = now + i * 0.055;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = 'sine';
     osc.frequency.setValueAtTime(freq, start);
     gain.gain.setValueAtTime(0.0001, start);
-    gain.gain.linearRampToValueAtTime(0.5, start + 0.014);
-    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.16);
+    gain.gain.linearRampToValueAtTime(0.75, start + 0.014);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.18);
     osc.connect(gain);
     gain.connect(master);
     osc.start(start);
-    osc.stop(start + 0.18);
+    osc.stop(start + 0.2);
   });
 }
 
+function dispatchCharacterSound(
+  ctx: AudioContext,
+  avatarId: AssistantAvatarId,
+  kind: AssistantSoundKind
+): void {
+  const now = ctx.currentTime + 0.008;
+  const master = ctx.createGain();
+  const vol =
+    kind === 'drop'
+      ? ASSISTANT_AUDIO_GAIN_DROP
+      : kind === 'celebrate'
+        ? ASSISTANT_AUDIO_GAIN_CELEBRATE
+        : kind === 'longpress'
+          ? ASSISTANT_AUDIO_GAIN_LONGPRESS
+          : ASSISTANT_AUDIO_GAIN_TAP;
+  master.gain.setValueAtTime(vol, now);
+  master.connect(ctx.destination);
+
+  if (kind === 'celebrate') {
+    scheduleCelebrationChime(ctx, now, master);
+    return;
+  }
+
+  switch (avatarId) {
+    case 'gatito':
+      if (kind === 'longpress') {
+        scheduleCatPurr(ctx, now, master);
+      } else {
+        scheduleCatMeow(ctx, now, master);
+      }
+      break;
+    case 'perrito':
+      scheduleDogBark(ctx, now, master);
+      break;
+    case 'gallito':
+      scheduleRoosterCrow(ctx, now, master);
+      break;
+    case 'puerquito':
+      schedulePigOink(ctx, now, master);
+      break;
+    case 'robot':
+      scheduleRobotBipBop(ctx, now, master);
+      break;
+    case 'castor':
+      scheduleBeaverKnock(ctx, now, master);
+      break;
+    case 'buho':
+      scheduleOwlHoot(ctx, now, master);
+      break;
+    default:
+      scheduleRobotBipBop(ctx, now, master);
+      break;
+  }
+}
+
 /**
- * Reproduce un efecto de sonido corto y limpio mediante Web Audio API
- * (sin archivos externos) respetando el interruptor de silencio del usuario.
+ * Reproduce un efecto de sonido claro y audible en celular y escritorio mediante
+ * Web Audio API (sin archivos externos), desbloqueando el AudioContext en el gesto
+ * del usuario y respetando el interruptor de silencio.
  */
 export function playAssistantSound(
   avatarId: AssistantAvatarId,
@@ -500,45 +679,24 @@ export function playAssistantSound(
       : loadAvatarSoundEnabled();
   if (!enabled) return false;
 
-  const ctx = getAudioContext();
+  const ctx = ensureAudioContext();
   if (!ctx) return false;
 
   try {
-    const now = ctx.currentTime + 0.005;
-    const master = ctx.createGain();
-    const vol = kind === 'drop' ? 0.13 : kind === 'celebrate' ? 0.14 : 0.17;
-    master.gain.setValueAtTime(vol, now);
-    master.connect(ctx.destination);
-
-    if (kind === 'celebrate') {
-      scheduleCelebrationChime(ctx, now, master);
+    if (ctx.state === 'suspended') {
+      void ctx
+        .resume()
+        .then(() => {
+          try {
+            dispatchCharacterSound(ctx, avatarId, kind);
+          } catch {
+            // ignore
+          }
+        })
+        .catch(() => {});
       return true;
     }
-
-    switch (avatarId) {
-      case 'gatito':
-        scheduleCatMeow(ctx, now, master);
-        break;
-      case 'perrito':
-        scheduleDogBark(ctx, now, master);
-        break;
-      case 'gallito':
-        scheduleRoosterCrow(ctx, now, master);
-        break;
-      case 'puerquito':
-        schedulePigOink(ctx, now, master);
-        break;
-      case 'robot':
-        scheduleRobotBipBop(ctx, now, master);
-        break;
-      case 'castor':
-      case 'buho':
-        scheduleOwlOrBeaverTone(ctx, now, master, avatarId);
-        break;
-      default:
-        scheduleRobotBipBop(ctx, now, master);
-        break;
-    }
+    dispatchCharacterSound(ctx, avatarId, kind);
     return true;
   } catch {
     return false;

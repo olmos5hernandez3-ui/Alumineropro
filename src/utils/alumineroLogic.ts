@@ -161,7 +161,7 @@ export const PLANS: PlanDefinicion[] = [
   },
 ];
 
-export const APP_VERSION = '1.0.11';
+export const APP_VERSION = '1.0.13';
 export const APP_VERSION_LABEL = `v${APP_VERSION}`;
 
 export const TRAMO_STD_CM = 610;
@@ -5911,6 +5911,15 @@ export function formatLicenseCountdownBadge(
       const days = Math.floor(totalHours / 24);
       const hours = totalHours % 24;
       const code = String(licencia.planCode || '').trim().toUpperCase();
+      if (code === 'G') {
+        return {
+          text: 'PRO Prueba (3 días)',
+          isPro: true,
+          isTrial: true,
+          days,
+          hours,
+        };
+      }
       const shortPlan =
         code === 'A'
           ? '1 Año'
@@ -5918,15 +5927,13 @@ export function formatLicenseCountdownBadge(
             ? '90d'
             : code === 'M'
               ? '30d'
-              : code === 'G'
-                ? '3d'
-                : /^D\d+$/i.test(code)
-                  ? `${code.slice(1)}d`
-                  : '';
+              : /^D\d+$/i.test(code)
+                ? `${code.slice(1)}d`
+                : '';
       return {
         text: shortPlan ? `PRO · ${shortPlan} · ${days}d ${hours}h` : `PRO · ${days}d ${hours}h`,
         isPro: true,
-        isTrial: code === 'G' || code === 'D3',
+        isTrial: code === 'D3',
         days,
         hours,
       };
@@ -6799,3 +6806,150 @@ export function buildReferral3DaysGiftLicense(
     activatedKey: `AP-G-REF3-${normId}`,
   };
 }
+
+// ==================== ACTIVACIÓN DIRECTA 3 DÍAS PRO + BONO +5 DÍAS POR 3 COLEGAS ====================
+export const WELCOME_TRIAL_3D_DAYS = 3;
+export const REFERRAL_BONUS_5D_TARGET = 3;
+export const REFERRAL_BONUS_5D_DAYS = 5;
+
+export type HomePromoCardMode = 'welcome_3d' | 'referral_5d' | 'hidden';
+
+/**
+ * Determina el estado de la tarjeta promocional en el Inicio:
+ * - Paso 1 ('welcome_3d'): usuarios nuevos que aún no activan su prueba gratuita de 3 días.
+ * - Paso 2 ('referral_5d'): una vez activada o usada su prueba de bienvenida, se transforma en
+ *   "Invita a 3 colegas y gana +5 días PRO extra (X/3)" hasta reclamar el bono.
+ * - 'hidden': ya reclamó el bono de +5 días o tiene licencia vitalicia.
+ */
+export function resolveHomePromoCardMode(input: {
+  proActive: boolean;
+  welcomeTrialUsed: boolean;
+  referral5dBonusClaimed: boolean;
+  isLifetimePro?: boolean;
+}): HomePromoCardMode {
+  if (input.isLifetimePro) return 'hidden';
+  if (!input.welcomeTrialUsed && !input.proActive) {
+    return 'welcome_3d';
+  }
+  if (!input.referral5dBonusClaimed) {
+    return 'referral_5d';
+  }
+  return 'hidden';
+}
+
+export function isReferral5DaysBonusReady(
+  registeredCount: number,
+  welcomeTrialUsed: boolean,
+  referral5dBonusClaimed: boolean
+): boolean {
+  return (
+    Boolean(welcomeTrialUsed) &&
+    !referral5dBonusClaimed &&
+    registeredCount >= REFERRAL_BONUS_5D_TARGET
+  );
+}
+
+/**
+ * Construye la licencia inmediata de bienvenida "PRO Prueba (3 días)" (0 MXN, 1 toque).
+ */
+export function buildWelcome3DaysTrialLicense(
+  deviceId: string,
+  nowTs: number = Date.now()
+): {
+  active: boolean;
+  planCode: 'G';
+  planLabel: string;
+  days: number;
+  activatedAt: number;
+  expiresAt: number;
+  activatedKey: string;
+} {
+  const normId = String(deviceId || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(-6) || 'PRO3D';
+  return {
+    active: true,
+    planCode: 'G',
+    planLabel: 'PRO Prueba (3 días)',
+    days: WELCOME_TRIAL_3D_DAYS,
+    activatedAt: nowTs,
+    expiresAt: nowTs + WELCOME_TRIAL_3D_DAYS * 86_400_000,
+    activatedKey: `AP-G-TRIAL3-${normId}`,
+  };
+}
+
+/**
+ * Suma automáticamente +5 días PRO a la vigencia actual del usuario al completar 3 colegas registrados.
+ * - Si tiene licencia vigente con fecha de expiración: extiende expiresAt en +5 días exactos.
+ * - Si su prueba ya venció o está en gratuita: activa 5 días PRO nuevos desde nowTs.
+ * - Si tiene licencia vitalicia (expiresAt === null): la conserva intacta.
+ */
+export function applyReferral5DaysBonusToLicense<
+  T extends {
+    active: boolean;
+    planCode: string;
+    planLabel: string;
+    expiresAt: number | null;
+    activatedAt: number;
+    activatedKey?: string;
+    days?: number;
+  }
+>(
+  currentLicencia: T | null | undefined,
+  deviceId: string,
+  nowTs: number = Date.now()
+): {
+  active: boolean;
+  planCode: string;
+  planLabel: string;
+  days: number;
+  activatedAt: number;
+  expiresAt: number | null;
+  activatedKey: string;
+} {
+  const bonusMs = REFERRAL_BONUS_5D_DAYS * 86_400_000;
+  const normId = String(deviceId || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(-6) || 'REF5D';
+
+  if (currentLicencia?.active && currentLicencia.expiresAt === null) {
+    return {
+      ...currentLicencia,
+      days: currentLicencia.days ?? 9999,
+      activatedKey: currentLicencia.activatedKey || `AP-LIFE-${normId}`,
+    };
+  }
+
+  const hasActiveExpiry =
+    Boolean(currentLicencia?.active) &&
+    typeof currentLicencia?.expiresAt === 'number' &&
+    currentLicencia.expiresAt > nowTs;
+
+  if (hasActiveExpiry && currentLicencia && typeof currentLicencia.expiresAt === 'number') {
+    const baseCode = String(currentLicencia.planCode || '').trim().toUpperCase();
+    const totalDays = (currentLicencia.days || 3) + REFERRAL_BONUS_5D_DAYS;
+    const nextCode =
+      baseCode === 'A' || baseCode === 'Q' || baseCode === 'M'
+        ? baseCode
+        : `D${totalDays}`;
+    return {
+      ...currentLicencia,
+      active: true,
+      planCode: nextCode,
+      planLabel:
+        baseCode === 'A' || baseCode === 'Q' || baseCode === 'M'
+          ? `${currentLicencia.planLabel} (+5 días bono)`
+          : `PRO Prueba + Bono 3 Colegas (${totalDays} días)`,
+      days: totalDays,
+      expiresAt: currentLicencia.expiresAt + bonusMs,
+      activatedKey: currentLicencia.activatedKey || `AP-D5-REF3-${normId}`,
+    };
+  }
+
+  return {
+    active: true,
+    planCode: 'D5',
+    planLabel: 'Bono +5 Días PRO (3 Colegas)',
+    days: REFERRAL_BONUS_5D_DAYS,
+    activatedAt: nowTs,
+    expiresAt: nowTs + bonusMs,
+    activatedKey: `AP-D5-REF3-${normId}`,
+  };
+}
+

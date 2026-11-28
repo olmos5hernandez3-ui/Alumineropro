@@ -24,6 +24,7 @@ import {
 import { PerfilSectionSvg } from './PerfilSectionSvg';
 import { OfficialProfileSvg } from './OfficialProfileSvg';
 import { PhotoPickerButtons } from './PhotoPickerButtons';
+import { getCatalogProfilePlaceholder } from './catalogProfilePlaceholders';
 import {
   DEFAULT_CATALOG_VIGENCIA_LABEL,
   filterOfficialCatalog,
@@ -1247,6 +1248,7 @@ export const CatalogoView: React.FC<CatalogoProps> = ({
                   {filtrados.map((p) => {
                     const fotoUrl = getPerfilFotoUrl(perfilFotos, p.id);
                     const tieneFoto = Boolean(fotoUrl);
+                    const placeholderAsset = getCatalogProfilePlaceholder(p.familia);
                     const marcaLabel = p.marcaCatalogo || 'Panorama / Cuprum';
                     return (
                       <div
@@ -1260,9 +1262,34 @@ export const CatalogoView: React.FC<CatalogoProps> = ({
                         >
                           <div
                             data-preserve-light="true"
-                            className="w-full h-[132px] rounded-[11px] bg-white border border-slate-300 flex items-center justify-center mb-2.5 p-2 overflow-hidden"
+                            className="relative w-full h-[142px] rounded-[11px] bg-white border border-slate-300 flex items-center justify-center mb-2.5 overflow-hidden"
                           >
-                            <PerfilSectionSvg perfilId={p.id} fotoRealUrl={fotoUrl} size={112} />
+                            {tieneFoto ? (
+                              <div className="p-2 w-full h-full flex items-center justify-center">
+                                <PerfilSectionSvg perfilId={p.id} fotoRealUrl={fotoUrl} size={112} />
+                              </div>
+                            ) : (
+                              <>
+                                <img
+                                  src={placeholderAsset.src}
+                                  alt={placeholderAsset.alt}
+                                  referrerPolicy="no-referrer"
+                                  loading="lazy"
+                                  data-catalog-placeholder={p.familia}
+                                  className="w-full h-full object-cover"
+                                />
+                                <div
+                                  data-preserve-light="true"
+                                  title="Sección transversal técnica"
+                                  className="absolute bottom-1.5 right-1.5 w-[50px] h-[50px] rounded-lg bg-white/95 border border-slate-300 shadow-md p-1 flex items-center justify-center"
+                                >
+                                  <PerfilSectionSvg perfilId={p.id} size={40} />
+                                </div>
+                                <span className="absolute top-1.5 left-1.5 px-2 py-0.5 rounded-md bg-slate-900/75 text-white text-[9.5px] font-extrabold backdrop-blur-[2px]">
+                                  Referencia · Sube tu foto
+                                </span>
+                              </>
+                            )}
                           </div>
                           <div className="flex items-center gap-1.5 flex-wrap mb-1">
                             <span

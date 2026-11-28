@@ -27,6 +27,7 @@ import {
   AVATAR_VISIBLE_EVENT_NAME,
   loadAvatarVisible,
   loadSelectedAvatar,
+  saveSelectedAvatar,
 } from './AssistantCharacters';
 import {
   ASSISTANT_CELEBRATE_EVENT_NAME,
@@ -42,8 +43,17 @@ import {
   loadAvatarSoundEnabled,
   loadAvatarTipsEnabled,
   playAssistantSound,
+  saveAvatarSoundEnabled,
   shouldBlockGhostClickTarget,
+  unlockAssistantAudio,
 } from '../utils/assistantEffects';
+import {
+  answerAssistantQuestion,
+  ASSISTANT_QUICK_CHIPS,
+  AssistantGuideResponse,
+  AssistantGuideTarget,
+  resolveRobotPose,
+} from '../utils/assistantGuideLogic';
 
 const VISITED_VIEWS_KEY = 'aluminero_visited_views_v1';
 
@@ -66,9 +76,11 @@ interface FloatingAssistantProps {
   partidasCount?: number;
   historialCount?: number;
   onNavigateView?: (view: 'hoja' | 'videos') => void;
+  onNavigateGuideTarget?: (target: AssistantGuideTarget) => void;
   onOpenLevantamiento?: () => void;
   onOpenTutorial?: () => void;
   onOpenPro?: () => void;
+  suppressAutoBubble?: boolean;
   onShowToast: (msg: string, topSuccess?: boolean) => void;
 }
 
@@ -145,9 +157,11 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
   partidasCount = 0,
   historialCount = 0,
   onNavigateView,
+  onNavigateGuideTarget,
   onOpenLevantamiento,
   onOpenTutorial,
   onOpenPro,
+  suppressAutoBubble = false,
   onShowToast,
 }) => {
   const [open, setOpen] = useState(false);
@@ -156,6 +170,11 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
   const travelTimerRef = useRef<number | null>(null);
   const celebrateTimerRef = useRef<number | null>(null);
   const dropBounceTimerRef = useRef<number | null>(null);
+  const [modalTab, setModalTab] = useState<'guide' | 'admin'>('guide');
+  const [guideQuery, setGuideQuery] = useState('');
+  const [guideAnswer, setGuideAnswer] = useState<AssistantGuideResponse | null>(null);
+  const [activeStepGuide, setActiveStepGuide] = useState<AssistantGuideResponse | null>(null);
+  const [completedGuideSteps, setCompletedGuideSteps] = useState<Record<number, boolean>>({});
   const [activeOption, setActiveOption] = useState<'A' | 'B'>('A');
   const [quotaRec, setQuotaRec] = useState(() => loadAssistantDailyQuota());
 
@@ -317,9 +336,9 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
     }
   }, [currentView]);
 
-  // Calcular globo proactivo contextual discreto (respetando aluminero-avatar-tips)
+  // Calcular globo proactivo contextual discreto (respetando aluminero-avatar-tips y oculto en tutorial/bienvenida)
   const computedProactiveTip = useMemo<ProactiveTip | null>(() => {
-    if (open || !avatarVisible || !tipsEnabled) return null;
+    if (open || !avatarVisible || !tipsEnabled || suppressAutoBubble) return null;
     if (unvisitedSectionNow && !dismissedTipIds[`unvisited-${currentView}`]) {
       return {
         id: `unvisited-${currentView}`,
@@ -348,11 +367,19 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
       };
     }
     return null;
-  }, [open, avatarVisible, tipsEnabled, unvisitedSectionNow, currentView, hasPendingQuote, hasPendingLev, proActive, dismissedTipIds]);
+  }, [open, avatarVisible, tipsEnabled, suppressAutoBubble, unvisitedSectionNow, currentView, hasPendingQuote, hasPendingLev, proActive, dismissedTipIds]);
+
+  // Limpiar cualquier globo activo inmediatamente cuando se muestra el tutorial guiado o bienvenida
+  useEffect(() => {
+    if (suppressAutoBubble) {
+      setActiveTip(null);
+      setGestureBanner(null);
+    }
+  }, [suppressAutoBubble]);
 
   // Mostrar globo proactivo de forma discreta tras 4.5 s (nunca invasivo)
   useEffect(() => {
-    if (!tipsEnabled || !computedProactiveTip) {
+    if (!tipsEnabled || suppressAutoBubble || !computedProactiveTip) {
       setActiveTip(null);
       return;
     }
@@ -360,7 +387,7 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
       setActiveTip(computedProactiveTip);
     }, 4500);
     return () => window.clearTimeout(timer);
-  }, [computedProactiveTip, tipsEnabled]);
+  }, [computedProactiveTip, tipsEnabled, suppressAutoBubble]);
 
   // Mantener dimensiones de ventana sincronizadas y evitar que la posición arrastrada salga de pantalla
   useEffect(() => {
@@ -487,6 +514,7 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
   };
 
   const handleToggleAssistant = () => {
+    void unlockAssistantAudio();
     activateGhostClickShield();
     if (open || travelingToCenter) {
       handleCloseAssistant();
@@ -511,16 +539,18 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
   };
 
   const triggerLongPressGesture = () => {
+    void unlockAssistantAudio();
     setGestureActive(true);
     triggerLaserFlash();
     setGestureBanner(avatarMeta.gestureText);
-    playAssistantSound(avatarId, 'tap', soundEnabled);
+    playAssistantSound(avatarId, 'longpress', soundEnabled);
     window.setTimeout(() => setGestureActive(false), 950);
     window.setTimeout(() => setGestureBanner(null), 2800);
   };
 
   const handleAvatarPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
     e.stopPropagation();
+    void unlockAssistantAudio();
     if (open || e.button === 2) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const originX = dragPos ? dragPos.x : rect.left;
@@ -626,6 +656,7 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
 
   const handleAvatarTouchStart = (e: React.TouchEvent<HTMLButtonElement>) => {
     e.stopPropagation();
+    void unlockAssistantAudio();
     const t = e.touches[0];
     touchTapRef.current = t
       ? { startX: t.clientX, startY: t.clientY, moved: false }
@@ -667,6 +698,66 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
       else onNavigateView?.('videos');
     }
   };
+
+  const handleQuickSelectAvatar = (nextId: AssistantAvatarId) => {
+    void unlockAssistantAudio();
+    setAvatarId(nextId);
+    saveSelectedAvatar(nextId);
+    playAssistantSound(nextId, 'tap', soundEnabled);
+  };
+
+  const handleToggleModalSound = () => {
+    const next = !soundEnabled;
+    setSoundEnabled(next);
+    saveAvatarSoundEnabled(next);
+    if (next) {
+      void unlockAssistantAudio();
+      playAssistantSound(avatarId, 'tap', true);
+    }
+  };
+
+  const handleAskGuide = (rawText: string) => {
+    void unlockAssistantAudio();
+    const trimmed = rawText.trim();
+    const result = answerAssistantQuestion(trimmed || 'cotización');
+    setGuideQuery(trimmed);
+    setGuideAnswer(result);
+    playAssistantSound(avatarId, 'tap', soundEnabled);
+  };
+
+  const handleGuideSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    handleAskGuide(guideQuery);
+  };
+
+  const handleGoToGuideTarget = (guide: AssistantGuideResponse) => {
+    void unlockAssistantAudio();
+    setActiveStepGuide(guide);
+    setCompletedGuideSteps({});
+    handleCloseAssistant();
+    if (onNavigateGuideTarget) {
+      onNavigateGuideTarget(guide.target);
+      return;
+    }
+    if (guide.target === 'levantamiento') {
+      onOpenLevantamiento?.();
+    } else if (guide.target === 'hoja') {
+      onNavigateView?.('hoja');
+    }
+  };
+
+  const robotPose = useMemo(
+    () =>
+      resolveRobotPose({
+        currentView,
+        open,
+        hopActive,
+        celebrating,
+        gestureActive,
+      }),
+    [currentView, open, hopActive, celebrating, gestureActive]
+  );
 
   // Opción A — Sugerir línea o perfil
   const [sugerenciaTexto, setSugerenciaTexto] = useState('');
@@ -953,6 +1044,7 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
               skin={skin}
               skinVariant={skinVariant}
               santaHat={skin === 'navidena'}
+              robotPose="waving"
             />
           </div>
         </div>
@@ -993,12 +1085,12 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
           onTouchEnd={stopEventBubble}
           className={`${
             morphedAtCenter
-              ? 'assistant-card-morph-center z-[9999] w-[calc(100vw-2rem)] max-w-[404px] max-h-[calc(100vh-5rem)]'
-              : 'assistant-card-enter fixed bottom-[92px] right-4 sm:right-5 z-[9999] w-[calc(100vw-2rem)] max-w-[388px] max-h-[calc(100vh-7rem)]'
+              ? 'assistant-card-morph-center z-[9999] w-[calc(100vw-2rem)] max-w-[420px] max-h-[calc(100vh-4.5rem)]'
+              : 'assistant-card-enter fixed bottom-[92px] right-4 sm:right-5 z-[9999] w-[calc(100vw-2rem)] max-w-[400px] max-h-[calc(100vh-6.5rem)]'
           } overflow-y-auto rounded-[22px] border-[1.5px] shadow-2xl p-4`}
         >
           {/* Encabezado */}
-          <div className="flex items-center justify-between gap-2.5 pb-3 mb-3 border-b border-[#4A6072]/45 assistant-card-divider">
+          <div className="flex items-center justify-between gap-2.5 pb-2.5 mb-2.5 border-b border-[#4A6072]/45 assistant-card-divider">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="metal-icon-btn w-11 h-11 rounded-2xl flex items-center justify-center shrink-0">
                 <AssistantCharacterSvg
@@ -1008,6 +1100,7 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
                   skinVariant={skinVariant}
                   santaHat={skin === 'navidena'}
                   mood="happy"
+                  robotPose="waving"
                   withHalo={false}
                 />
               </div>
@@ -1020,129 +1113,390 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
                 </p>
               </div>
             </div>
-            <button
-              type="button"
-              id="btn-assistant-close"
-              onPointerDown={stopEventBubble}
-              onPointerUp={stopEventBubble}
-              onTouchStart={stopEventBubble}
-              onTouchEnd={(e) => {
-                e.stopPropagation();
-                if (e.cancelable) e.preventDefault();
-                handleCloseAssistant();
-              }}
-              onClick={(e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                handleCloseAssistant();
-              }}
-              aria-label="Cerrar Asistente Aluminero Pro"
-              className="min-w-[34px] min-h-[34px] rounded-xl assistant-close-btn font-extrabold text-[14px] cursor-pointer shrink-0 transition-colors"
-            >
-              ✕
-            </button>
-          </div>
-
-          {/* Indicador de consultas diarias (Plan Gratuito vs PRO ilimitado) */}
-          <div
-            id="assistant-quota-bar"
-            className={`mb-3 px-3 py-2 rounded-xl border text-[11.5px] font-bold flex items-center justify-between gap-2 ${
-              !quotaState.isLimited
-                ? 'border-emerald-400/40 bg-emerald-500/12 text-emerald-200'
-                : quotaState.canSend
-                  ? 'border-sky-400/40 bg-sky-500/12 text-sky-100'
-                  : 'border-amber-400/60 bg-amber-500/18 text-amber-100'
-            }`}
-          >
-            <span>
-              {!quotaState.isLimited
-                ? '⚡ Plan PRO · Consultas ilimitadas'
-                : quotaState.canSend
-                  ? `Plan Gratuito · ${quotaState.remaining} de ${quotaState.limit} consultas hoy`
-                  : `Límite diario alcanzado (${quotaState.usedToday}/${quotaState.limit})`}
-            </span>
-            {quotaState.isLimited && onOpenPro && (
+            <div className="flex items-center gap-1.5 shrink-0">
               <button
                 type="button"
-                id="btn-assistant-upgrade-pro"
-                onPointerDown={stopEventBubble}
+                id="btn-assistant-modal-sound-toggle"
+                aria-label={soundEnabled ? 'Silenciar voz del asistente' : 'Activar voz del asistente'}
+                title={soundEnabled ? 'Sonido activado' : 'Sonido en silencio'}
+                data-sound-enabled={soundEnabled ? 'true' : 'false'}
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  void unlockAssistantAudio();
+                }}
                 onPointerUp={stopEventBubble}
-                onTouchStart={stopEventBubble}
+                onTouchStart={(e) => {
+                  e.stopPropagation();
+                  void unlockAssistantAudio();
+                }}
                 onTouchEnd={stopEventBubble}
                 onClick={(e) => {
                   e.stopPropagation();
-                  handleCloseAssistant();
-                  onOpenPro();
+                  handleToggleModalSound();
                 }}
-                className="px-2.5 py-1 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold text-[11px] cursor-pointer shrink-0"
+                className={`min-w-[34px] min-h-[34px] rounded-xl border text-[15px] font-extrabold cursor-pointer flex items-center justify-center transition-colors ${
+                  soundEnabled
+                    ? 'border-sky-400/60 bg-sky-500/20 text-sky-200 hover:bg-sky-500/30'
+                    : 'border-slate-500/50 bg-slate-800/70 text-slate-400 hover:bg-slate-700/80'
+                }`}
               >
-                Ver PRO
+                {soundEnabled ? '🔊' : '🔇'}
               </button>
-            )}
+              <button
+                type="button"
+                id="btn-assistant-close"
+                onPointerDown={stopEventBubble}
+                onPointerUp={stopEventBubble}
+                onTouchStart={stopEventBubble}
+                onTouchEnd={(e) => {
+                  e.stopPropagation();
+                  if (e.cancelable) e.preventDefault();
+                  handleCloseAssistant();
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  handleCloseAssistant();
+                }}
+                aria-label="Cerrar Asistente Aluminero Pro"
+                className="min-w-[34px] min-h-[34px] rounded-xl assistant-close-btn font-extrabold text-[14px] cursor-pointer shrink-0 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
           </div>
 
-          {/* Selector de 2 opciones rápidas */}
-          <div className="grid grid-cols-2 gap-2 mb-3.5" role="tablist" aria-label="Opciones del asistente">
+          {/* Barra superior de Selector Rápido de Personajes (1 toque sin abrir menú ☰) */}
+          <div
+            id="assistant-quick-avatar-bar"
+            className="mb-3 p-2 rounded-2xl border border-[#4A6072]/45 bg-[#0b1520]/55"
+          >
+            <div className="flex items-center justify-between mb-1.5 px-0.5">
+              <span className="text-[10.5px] font-extrabold uppercase tracking-wide assistant-subtext">
+                Cambiar asistente (1 toque)
+              </span>
+              <span className="text-[10.5px] font-bold text-sky-300">
+                {avatarMeta.label}
+              </span>
+            </div>
+            <div className="grid grid-cols-7 gap-1">
+              {ASSISTANT_CHARACTERS.map((char) => {
+                const isSelected = char.id === avatarId;
+                const shortName = char.id === 'robot' ? 'Robot' : char.label.split(' ')[0];
+                return (
+                  <button
+                    key={char.id}
+                    type="button"
+                    id={`btn-quick-avatar-${char.id}`}
+                    data-quick-avatar={char.id}
+                    aria-pressed={isSelected}
+                    title={`Cambiar a ${char.label}`}
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      void unlockAssistantAudio();
+                    }}
+                    onPointerUp={stopEventBubble}
+                    onTouchStart={(e) => {
+                      e.stopPropagation();
+                      void unlockAssistantAudio();
+                    }}
+                    onTouchEnd={stopEventBubble}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleQuickSelectAvatar(char.id);
+                    }}
+                    className={`flex flex-col items-center justify-center min-w-0 px-0.5 py-1 rounded-xl border transition-all cursor-pointer ${
+                      isSelected
+                        ? 'border-sky-400 bg-sky-500/22 ring-1 ring-sky-400/70'
+                        : 'border-[#4A6072]/40 bg-slate-900/50 hover:border-sky-400/60'
+                    }`}
+                  >
+                    <span className="w-7 h-7 flex items-center justify-center overflow-hidden">
+                      <AssistantCharacterSvg
+                        avatarId={char.id}
+                        size={28}
+                        skin={skin}
+                        skinVariant={skinVariant}
+                        santaHat={skin === 'navidena'}
+                        robotPose={char.id === 'robot' ? 'classic' : undefined}
+                        withHalo={false}
+                      />
+                    </span>
+                    <span className="text-[9px] font-extrabold leading-tight mt-0.5 truncate max-w-full">
+                      {shortName}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Pestañas principales: Guía interactiva (default) vs Sugerir material al Admin */}
+          <div
+            className="grid grid-cols-2 gap-2 mb-3"
+            role="tablist"
+            aria-label="Modo del Asistente Aluminero Pro"
+          >
             <button
               type="button"
               role="tab"
-              aria-selected={activeOption === 'A'}
-              id="btn-assistant-opt-a"
+              id="tab-assistant-guide"
+              aria-selected={modalTab === 'guide'}
               onPointerDown={stopEventBubble}
               onPointerUp={stopEventBubble}
               onTouchStart={stopEventBubble}
               onTouchEnd={stopEventBubble}
               onClick={(e) => {
                 e.stopPropagation();
-                setActiveOption('A');
-                setErrorB('');
+                setModalTab('guide');
               }}
-              className={`p-2.5 rounded-xl border text-left cursor-pointer transition-all ${
-                activeOption === 'A'
-                  ? 'assistant-tab-active'
-                  : 'assistant-tab-idle'
+              className={`px-2.5 py-2.5 rounded-xl border text-center cursor-pointer transition-all text-[12px] font-extrabold leading-tight ${
+                modalTab === 'guide' ? 'assistant-tab-active' : 'assistant-tab-idle'
               }`}
             >
-              <span className="block text-[10px] font-black uppercase tracking-wider opacity-85">
-                Opción A
-              </span>
-              <span className="block text-[12px] font-extrabold leading-tight mt-0.5">
-                Sugerir línea o perfil
-              </span>
+              💬 Pregúntale al Asistente
             </button>
-
             <button
               type="button"
               role="tab"
-              aria-selected={activeOption === 'B'}
-              id="btn-assistant-opt-b"
+              id="tab-assistant-admin"
+              aria-selected={modalTab === 'admin'}
               onPointerDown={stopEventBubble}
               onPointerUp={stopEventBubble}
               onTouchStart={stopEventBubble}
               onTouchEnd={stopEventBubble}
               onClick={(e) => {
                 e.stopPropagation();
-                setActiveOption('B');
-                setErrorA('');
+                setModalTab('admin');
               }}
-              className={`p-2.5 rounded-xl border text-left cursor-pointer transition-all ${
-                activeOption === 'B'
-                  ? 'assistant-tab-active'
-                  : 'assistant-tab-idle'
+              className={`px-2.5 py-2.5 rounded-xl border text-center cursor-pointer transition-all text-[12px] font-extrabold leading-tight ${
+                modalTab === 'admin' ? 'assistant-tab-active' : 'assistant-tab-idle'
               }`}
             >
-              <span className="block text-[10px] font-black uppercase tracking-wider opacity-85">
-                Opción B
-              </span>
-              <span className="block text-[12px] font-extrabold leading-tight mt-0.5">
-                Subir foto aprobación
-              </span>
+              📩 Sugerir material al Admin
             </button>
           </div>
 
-          {/* Opción A: Sugerir línea o perfil */}
-          {activeOption === 'A' && (
-            <form id="form-assistant-opt-a" onSubmit={handleSendOptionA} className="flex flex-col gap-2.5">
+          {/* PESTAÑA PRINCIPAL: Chat Guía 100% offline */}
+          {modalTab === 'guide' && (
+            <div id="panel-assistant-guide" className="flex flex-col gap-2.5">
+              <form
+                id="form-assistant-guide"
+                onSubmit={handleGuideSubmit}
+                className="flex items-stretch gap-1.5"
+              >
+                <input
+                  id="inp-assistant-question"
+                  type="text"
+                  value={guideQuery}
+                  onClick={stopEventBubble}
+                  onPointerDown={stopEventBubble}
+                  onPointerMove={stopEventBubble}
+                  onPointerUp={stopEventBubble}
+                  onTouchStart={stopEventBubble}
+                  onTouchEnd={stopEventBubble}
+                  style={{ touchAction: 'auto' }}
+                  onChange={(e) => setGuideQuery(e.target.value)}
+                  placeholder="Ej. ¿Cómo hago una cotización o saco descuentos?"
+                  className="flex-1 min-w-0 min-h-[40px] rounded-xl border border-[#4A6072] px-3 text-[12.5px] font-semibold select-text"
+                />
+                <button
+                  type="submit"
+                  id="btn-assistant-ask"
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    void unlockAssistantAudio();
+                  }}
+                  onPointerUp={stopEventBubble}
+                  onTouchStart={stopEventBubble}
+                  onTouchEnd={stopEventBubble}
+                  onClick={stopEventBubble}
+                  className="px-3.5 min-h-[40px] rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-[12.5px] cursor-pointer shrink-0 transition-colors"
+                >
+                  Preguntar
+                </button>
+              </form>
+
+              {/* 4 chips rápidos de 1 toque */}
+              <div id="assistant-quick-chips" className="grid grid-cols-2 gap-1.5">
+                {ASSISTANT_QUICK_CHIPS.map((chip) => (
+                  <button
+                    key={chip.id}
+                    type="button"
+                    id={`btn-assistant-chip-${chip.id}`}
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      void unlockAssistantAudio();
+                    }}
+                    onPointerUp={stopEventBubble}
+                    onTouchStart={stopEventBubble}
+                    onTouchEnd={stopEventBubble}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleAskGuide(chip.query);
+                    }}
+                    className="px-2.5 py-2 rounded-xl border border-sky-400/35 bg-sky-500/10 hover:bg-sky-500/20 text-left text-[11.5px] font-extrabold leading-tight cursor-pointer transition-colors"
+                  >
+                    {chip.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Burbuja de respuesta offline + botón Ir al apartado y guiarme */}
+              {guideAnswer ? (
+                <div
+                  id="assistant-guide-answer"
+                  className="rounded-2xl border border-sky-400/50 bg-[#0d1c2b]/90 p-3 text-slate-100 flex flex-col gap-2"
+                >
+                  <div className="flex items-start gap-2">
+                    <span className="text-[16px] leading-none mt-0.5" aria-hidden="true">
+                      ✨
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="m-0 text-[13px] font-extrabold text-sky-200 leading-snug">
+                        {guideAnswer.title}
+                      </h3>
+                      <p className="m-0 mt-1 text-[12px] font-medium text-slate-200 leading-relaxed">
+                        {guideAnswer.answer}
+                      </p>
+                    </div>
+                  </div>
+
+                  <ol className="m-0 pl-4 list-decimal text-[11.5px] font-semibold text-slate-300 space-y-1">
+                    {guideAnswer.steps.map((stepText, idx) => (
+                      <li key={idx} className="leading-snug">
+                        {stepText}
+                      </li>
+                    ))}
+                  </ol>
+
+                  <button
+                    type="button"
+                    id="btn-assistant-go-guide"
+                    onPointerDown={stopEventBubble}
+                    onPointerUp={stopEventBubble}
+                    onTouchStart={stopEventBubble}
+                    onTouchEnd={stopEventBubble}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleGoToGuideTarget(guideAnswer);
+                    }}
+                    className="metal-emerald-pill w-full min-h-[42px] px-3.5 rounded-xl font-extrabold text-[13px] cursor-pointer flex items-center justify-center gap-1.5 mt-0.5"
+                  >
+                    <span>Ir al apartado y guiarme →</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-[#4A6072]/40 bg-[#0b1520]/45 px-3 py-2.5 text-[11.5px] font-semibold assistant-subtext leading-relaxed">
+                  Toca cualquiera de los 4 accesos rápidos o escribe tu duda arriba. Te explico paso a paso y te llevo directo al apartado sin gastar internet.
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* PESTAÑA SECUNDARIA: Sugerir material al Admin (Opción A y B intactas) */}
+          {modalTab === 'admin' && (
+            <>
+              {/* Indicador de consultas diarias (Plan Gratuito vs PRO ilimitado) */}
+              <div
+                id="assistant-quota-bar"
+                className={`mb-3 px-3 py-2 rounded-xl border text-[11.5px] font-bold flex items-center justify-between gap-2 ${
+                  !quotaState.isLimited
+                    ? 'border-emerald-400/40 bg-emerald-500/12 text-emerald-200'
+                    : quotaState.canSend
+                      ? 'border-sky-400/40 bg-sky-500/12 text-sky-100'
+                      : 'border-amber-400/60 bg-amber-500/18 text-amber-100'
+                }`}
+              >
+                <span>
+                  {!quotaState.isLimited
+                    ? '⚡ Plan PRO · Consultas ilimitadas'
+                    : quotaState.canSend
+                      ? `Plan Gratuito · ${quotaState.remaining} de ${quotaState.limit} consultas hoy`
+                      : `Límite diario alcanzado (${quotaState.usedToday}/${quotaState.limit})`}
+                </span>
+                {quotaState.isLimited && onOpenPro && (
+                  <button
+                    type="button"
+                    id="btn-assistant-upgrade-pro"
+                    onPointerDown={stopEventBubble}
+                    onPointerUp={stopEventBubble}
+                    onTouchStart={stopEventBubble}
+                    onTouchEnd={stopEventBubble}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleCloseAssistant();
+                      onOpenPro();
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold text-[11px] cursor-pointer shrink-0"
+                  >
+                    Ver PRO
+                  </button>
+                )}
+              </div>
+
+              {/* Selector de 2 opciones rápidas */}
+              <div className="grid grid-cols-2 gap-2 mb-3.5" role="tablist" aria-label="Opciones de envío al administrador">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeOption === 'A'}
+                  id="btn-assistant-opt-a"
+                  onPointerDown={stopEventBubble}
+                  onPointerUp={stopEventBubble}
+                  onTouchStart={stopEventBubble}
+                  onTouchEnd={stopEventBubble}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveOption('A');
+                    setErrorB('');
+                  }}
+                  className={`p-2.5 rounded-xl border text-left cursor-pointer transition-all ${
+                    activeOption === 'A'
+                      ? 'assistant-tab-active'
+                      : 'assistant-tab-idle'
+                  }`}
+                >
+                  <span className="block text-[10px] font-black uppercase tracking-wider opacity-85">
+                    Opción A
+                  </span>
+                  <span className="block text-[12px] font-extrabold leading-tight mt-0.5">
+                    Sugerir línea o perfil
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeOption === 'B'}
+                  id="btn-assistant-opt-b"
+                  onPointerDown={stopEventBubble}
+                  onPointerUp={stopEventBubble}
+                  onTouchStart={stopEventBubble}
+                  onTouchEnd={stopEventBubble}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveOption('B');
+                    setErrorA('');
+                  }}
+                  className={`p-2.5 rounded-xl border text-left cursor-pointer transition-all ${
+                    activeOption === 'B'
+                      ? 'assistant-tab-active'
+                      : 'assistant-tab-idle'
+                  }`}
+                >
+                  <span className="block text-[10px] font-black uppercase tracking-wider opacity-85">
+                    Opción B
+                  </span>
+                  <span className="block text-[12px] font-extrabold leading-tight mt-0.5">
+                    Subir foto aprobación
+                  </span>
+                </button>
+              </div>
+
+              {/* Opción A: Sugerir línea o perfil */}
+              {activeOption === 'A' && (
+                <form id="form-assistant-opt-a" onSubmit={handleSendOptionA} className="flex flex-col gap-2.5">
               <div>
                 <label
                   htmlFor="inp-asistente-sugerencia"
@@ -1349,11 +1703,96 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
               </button>
             </form>
           )}
+            </>
+          )}
         </section>
       )}
 
-      {/* Globo emergente inteligente (adaptado a las coordenadas x/y sin cortarse en esquinas) */}
-      {!open && !travelingToCenter && (gestureBanner || (tipsEnabled && activeTip)) && (() => {
+      {/* Tarjeta flotante de 3 pasos guiados tras pulsar "Ir al apartado y guiarme →" */}
+      {!open && !travelingToCenter && activeStepGuide && (
+        <aside
+          id="assistant-step-guide-card"
+          aria-label="Guía rápida de 3 pasos"
+          onClick={stopEventBubble}
+          onPointerDown={stopEventBubble}
+          onPointerMove={stopEventBubble}
+          onPointerUp={stopEventBubble}
+          onTouchStart={stopEventBubble}
+          onTouchEnd={stopEventBubble}
+          className="fixed bottom-3 left-3 sm:bottom-5 sm:left-5 z-[9990] w-[min(calc(100vw-7.5rem),320px)] rounded-2xl border-[1.5px] border-sky-400/75 bg-[#0f172a]/95 text-slate-100 shadow-2xl p-3 select-none"
+        >
+          <div className="flex items-start justify-between gap-2 pb-2 mb-2 border-b border-slate-700/80">
+            <div className="min-w-0">
+              <div className="text-[10px] font-black uppercase tracking-wider text-sky-300">
+                Guía de 3 pasos · {activeStepGuide.targetLabel}
+              </div>
+              <div className="text-[12.5px] font-extrabold text-white leading-tight truncate">
+                {activeStepGuide.title}
+              </div>
+            </div>
+            <button
+              type="button"
+              id="btn-step-guide-close"
+              aria-label="Cerrar guía de 3 pasos"
+              onPointerDown={stopEventBubble}
+              onPointerUp={stopEventBubble}
+              onTouchStart={stopEventBubble}
+              onTouchEnd={(e) => {
+                e.stopPropagation();
+                if (e.cancelable) e.preventDefault();
+                activateGhostClickShield();
+                setActiveStepGuide(null);
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                activateGhostClickShield();
+                setActiveStepGuide(null);
+              }}
+              className="w-6 h-6 rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 text-[11px] font-black cursor-pointer shrink-0 flex items-center justify-center"
+            >
+              ✕
+            </button>
+          </div>
+          <ol className="m-0 p-0 list-none flex flex-col gap-1.5">
+            {activeStepGuide.steps.map((stepText, idx) => {
+              const checked = Boolean(completedGuideSteps[idx]);
+              return (
+                <li key={idx}>
+                  <button
+                    type="button"
+                    onPointerDown={stopEventBubble}
+                    onPointerUp={stopEventBubble}
+                    onTouchStart={stopEventBubble}
+                    onTouchEnd={stopEventBubble}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCompletedGuideSteps((prev) => ({ ...prev, [idx]: !prev[idx] }));
+                    }}
+                    className={`w-full text-left flex items-start gap-2 px-2 py-1.5 rounded-xl border transition-colors cursor-pointer text-[11.5px] leading-snug ${
+                      checked
+                        ? 'border-emerald-400/50 bg-emerald-500/15 text-emerald-200 line-through'
+                        : 'border-slate-700/80 bg-slate-800/70 text-slate-100 hover:border-sky-400/60'
+                    }`}
+                  >
+                    <span
+                      className={`w-4 h-4 rounded-full text-[10px] font-black flex items-center justify-center shrink-0 mt-0.5 ${
+                        checked ? 'bg-emerald-500 text-slate-950' : 'bg-sky-500/30 text-sky-200'
+                      }`}
+                    >
+                      {checked ? '✓' : idx + 1}
+                    </span>
+                    <span>{stepText}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+        </aside>
+      )}
+
+      {/* Globo emergente inteligente (adaptado a las coordenadas x/y sin cortarse en esquinas, oculto durante tutorial guiado) */}
+      {!open && !travelingToCenter && !suppressAutoBubble && (gestureBanner || (tipsEnabled && activeTip)) && (() => {
         const defaultOffset = viewportSize.width >= 640 ? 20 : 10;
         const effectiveAvatarX = dragPos ? dragPos.x : Math.max(8, viewportSize.width - defaultOffset - 92);
         const effectiveAvatarY = dragPos ? dragPos.y : Math.max(66, viewportSize.height - defaultOffset - 92);
@@ -1599,6 +2038,7 @@ export const FloatingAssistant: React.FC<FloatingAssistantProps> = ({
                     gestureActive={gestureActive}
                     laserFlash={laserFlashActive || hopActive || gestureActive || celebrating}
                     mood={currentMood}
+                    robotPose={robotPose}
                     withHalo
                     animated
                   />

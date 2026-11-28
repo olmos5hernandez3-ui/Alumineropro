@@ -1624,6 +1624,8 @@ export const LevantamientoRapido: React.FC<Props> = ({
                 const hCmNow = cmFromUnit(form.alto, form.u);
                 const aHardOut = aCmNow > 0 && (aCmNow < LEV_MIN_CM || aCmNow > LEV_MAX_CM);
                 const hHardOut = hCmNow > 0 && (hCmNow < LEV_MIN_CM || hCmNow > LEV_MAX_CM);
+                const aOverMax = aCmNow > LEV_MAX_CM;
+                const hOverMax = hCmNow > LEV_MAX_CM;
                 const activeLinea =
                   form.lineaPerfil === 'Otra' && customLineaText.trim()
                     ? customLineaText.trim()
@@ -1634,16 +1636,22 @@ export const LevantamientoRapido: React.FC<Props> = ({
                   activeLinea,
                   form.tipo
                 );
-                const anchoWarnStyle: React.CSSProperties | undefined = aHardOut
+                const showOrangeLineWarning =
+                  !aOverMax && !hOverMax && lineWarn.hasWarning && Boolean(lineWarn.message);
+                const anchoWarnStyle: React.CSSProperties | undefined = aOverMax
                   ? { borderColor: 'rgba(248, 113, 113, 0.9)', boxShadow: '0 0 0 1px rgba(248, 113, 113, 0.35)' }
                   : lineWarn.anchoExceeded || lineWarn.anchoBelowMin
-                    ? { borderColor: 'rgba(251, 191, 36, 0.85)', boxShadow: '0 0 0 1px rgba(251, 191, 36, 0.28)' }
-                    : undefined;
-                const altoWarnStyle: React.CSSProperties | undefined = hHardOut
+                    ? { borderColor: 'rgba(251, 146, 60, 0.9)', boxShadow: '0 0 0 1px rgba(251, 146, 60, 0.32)' }
+                    : aHardOut
+                      ? { borderColor: 'rgba(248, 113, 113, 0.9)', boxShadow: '0 0 0 1px rgba(248, 113, 113, 0.35)' }
+                      : undefined;
+                const altoWarnStyle: React.CSSProperties | undefined = hOverMax
                   ? { borderColor: 'rgba(248, 113, 113, 0.9)', boxShadow: '0 0 0 1px rgba(248, 113, 113, 0.35)' }
                   : lineWarn.altoExceeded || lineWarn.altoBelowMin
-                    ? { borderColor: 'rgba(251, 191, 36, 0.85)', boxShadow: '0 0 0 1px rgba(251, 191, 36, 0.28)' }
-                    : undefined;
+                    ? { borderColor: 'rgba(251, 146, 60, 0.9)', boxShadow: '0 0 0 1px rgba(251, 146, 60, 0.32)' }
+                    : hHardOut
+                      ? { borderColor: 'rgba(248, 113, 113, 0.9)', boxShadow: '0 0 0 1px rgba(248, 113, 113, 0.35)' }
+                      : undefined;
 
                 return (
                   <>
@@ -1654,7 +1662,7 @@ export const LevantamientoRapido: React.FC<Props> = ({
                         type="text"
                         inputMode="decimal"
                         aria-invalid={aHardOut || lineWarn.anchoExceeded || lineWarn.anchoBelowMin}
-                        aria-describedby={lineWarn.hasWarning && !aHardOut && !hHardOut ? 'lv-line-limit-warning' : undefined}
+                        aria-describedby={showOrangeLineWarning ? 'lv-line-limit-warning' : undefined}
                         style={anchoWarnStyle}
                         value={form.ancho}
                         onChange={(e) => {
@@ -1669,7 +1677,7 @@ export const LevantamientoRapido: React.FC<Props> = ({
                         type="text"
                         inputMode="decimal"
                         aria-invalid={hHardOut || lineWarn.altoExceeded || lineWarn.altoBelowMin}
-                        aria-describedby={lineWarn.hasWarning && !aHardOut && !hHardOut ? 'lv-line-limit-warning' : undefined}
+                        aria-describedby={showOrangeLineWarning ? 'lv-line-limit-warning' : undefined}
                         style={altoWarnStyle}
                         value={form.alto}
                         onChange={(e) => {
@@ -1695,24 +1703,25 @@ export const LevantamientoRapido: React.FC<Props> = ({
                         </button>
                       </div>
                     </div>
-                    {!aHardOut && !hHardOut && lineWarn.hasWarning && lineWarn.message && (
+                    {showOrangeLineWarning && (
                       <div
                         id="lv-line-limit-warning"
+                        data-linea-id={lineWarn.lineaId}
                         role="status"
                         aria-live="polite"
                         style={{
                           marginTop: '6px',
                           padding: '8px 11px',
                           borderRadius: '10px',
-                          background: 'rgba(217, 119, 6, 0.14)',
-                          border: '1px solid rgba(251, 191, 36, 0.55)',
-                          color: '#fde68a',
+                          background: 'rgba(234, 88, 12, 0.14)',
+                          border: '1px solid rgba(251, 146, 60, 0.58)',
+                          color: '#fdba74',
                           fontSize: '11.5px',
                           fontWeight: 700,
                           lineHeight: 1.38,
                         }}
                       >
-                        ⚠️ Aviso de línea estándar · {lineWarn.message}
+                        ⚠️ Aviso de tolerancias ({lineWarn.limits.lineaLabel}) · {lineWarn.message}
                       </div>
                     )}
                   </>
