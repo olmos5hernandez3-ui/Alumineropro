@@ -140,7 +140,10 @@ export const HojaCotizacionView: React.FC<Props> = ({
   onShowToast,
 }) => {
   const [showDespieceObra, setShowDespieceObra] = useState(false);
-  const [accClienteOpen, setAccClienteOpen] = useState(true);
+  const [accClienteOpen, setAccClienteOpen] = useState(false);
+  const [accPartidasOpen, setAccPartidasOpen] = useState(true);
+  const [accResumenOpen, setAccResumenOpen] = useState(true);
+  const [accWasteOpen, setAccWasteOpen] = useState(false);
   const [accCondicionesOpen, setAccCondicionesOpen] = useState(false);
   const [contratoOpen, setContratoOpen] = useState(false);
   const [pdfHeaderModalOpen, setPdfHeaderModalOpen] = useState(false);
@@ -269,147 +272,6 @@ export const HojaCotizacionView: React.FC<Props> = ({
       // ignorar si portapapeles bloqueado
     }
     const waUrl = buildWhatsAppDirectUrl(hoja.clienteTel || contratoCliente.telefono || '', text);
-    const link = document.createElement('a');
-    link.href = waUrl;
-    link.target = '_blank';
-    link.rel = 'noopener noreferrer';
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    onShowToast('Resumen listo y abierto en WhatsApp', true);
-  };
-
-  const handleDescargarOrdenProduccion = async () => {
-    if (hoja.partidas.length === 0) {
-      onShowToast('Agrega al menos una pieza primero');
-      return;
-    }
-    const ok = await generarPdfOrdenProduccionTaller(hoja, taller, opt1D);
-    if (ok) {
-      onShowToast('PDF Orden de Producción (Para Taller) descargado sin precios', true);
-    }
-  };
-
-  const copiarFaltanteWhatsApp = async () => {
-    const faltantes = consolidado.filter((r) => r.tramosFaltantes > 0);
-    if (faltantes.length === 0) {
-      onShowToast('Tu bodega cubre todos los perfiles de esta obra', true);
-      return;
-    }
-    const lines = [
-      `*PEDIDO DE MATERIAL — ${hoja.proyecto || 'Obra'}*`,
-      ...faltantes.map(
-        (r) =>
-          `• ${r.tramosFaltantes} tramo(s) 6.10 m — ${r.perfilNombre} (${LINEAS_CONFIG[r.linea].nombre}, ${COLORES_CONFIG[r.color].corto})`
-      ),
-    ];
-    try {
-      await navigator.clipboard.writeText(lines.join('\n'));
-      onShowToast('Lista de faltantes copiada para WhatsApp', true);
-    } catch {
-      onShowToast('Error al copiar lista');
-    }
-  };
-
-  return (
-    <section id="view-hoja" className="screen-animate">
-      <div className="flex flex-wrap items-center justify-between gap-2.5 mb-4">
-        <div>
-          <h1 className="m-0 text-[21px] font-extrabold text-white">Hoja de Cotización</h1>
-          <p className="m-0 text-[12.5px] text-slate-300">
-            Partidas de la obra agrupadas por área, descuento y PDF limpio
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={onAgregarPieza}
-          className="min-h-[40px] px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-[12.5px] cursor-pointer"
-        >
-          + Agregar pieza
-        </button>
-      </div>
-
-      <CollapsibleAccordion
-        id="acc-hoja-cliente"
-        title="👤 Datos del Proyecto / Obra"
-        summary={hoja.proyecto?.trim() || 'Sin nombre de proyecto'}
-        headerLayout="stacked"
-        open={accClienteOpen}
-        onToggle={() => setAccClienteOpen((p) => !p)}
-        tone="light"
-        className="mb-4 shadow-xl"
-        rightAction={
-          <span
-            id="hoja-folio-badge"
-            className="px-2.5 py-1 rounded-lg bg-blue-50 border border-blue-200 text-blue-800 mono text-[11px] font-extrabold whitespace-nowrap"
-          >
-            No. {currentFolio} • {todayLabel}
-          </span>
-        }
-      >
-        <p className="m-0 text-[12px] text-slate-600 mb-3">
-          Se mostrará en el encabezado de la cotización, PDF para cliente y WhatsApp
-        </p>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="sm:col-span-2 relative">
-            <label htmlFor="inp-hoja-proyecto" className="block text-[12px] font-bold text-slate-600 mb-1.5">
-              Nombre del Cliente / Proyecto
-            </label>
-            <input
-              id="inp-hoja-proyecto"
-              type="text"
-              value={hoja.proyecto}
-              onFocus={() => setShowClientSuggestions(true)}
-              onBlur={() => window.setTimeout(() => setShowClientSuggestions(false), 180)}
-              onChange={(e) => {
-                onUpdateHoja({ proyecto: e.target.value });
-                setShowClientSuggestions(true);
-              }}
-              placeholder="Ejemplo Cliente"
-              className="w-full min-h-[44px] rounded-xl border border-slate-300 px-3 text-[14px] font-semibold"
-            />
-            {showClientSuggestions && clientesGuardados.length > 0 && (() => {
-              const q = (hoja.proyecto || '').trim().toLowerCase();
-              const matches = clientesGuardados
-                .filter((c) => !q || c.nombre.toLowerCase().includes(q))
-                .slice(0, 5);
-              if (matches.length === 0) return null;
-              return (
-                <div className="absolute left-0 right-0 top-full mt-1 z-30 rounded-xl border border-slate-300 bg-white shadow-xl overflow-hidden">
-                  {matches.map((cli) => (
-                    <button
-                      key={cli.id}
-                      type="button"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        onUpdateHoja({
-                          proyecto: cli.nombre,
-                          clienteTel: cli.telefono || hoja.clienteTel || '',
-                          clienteDir: cli.direccion || hoja.clienteDir || '',
-                        });
-                        if (cli.telefono || cli.direccion) {
-                          onUpdateContratoCliente({
-                            nombre: cli.nombre,
-                            telefono: cli.telefono || contratoCliente.telefono,
-                            direccion: cli.direccion || contratoCliente.direccion,
-                          });
-                        }
-                        setShowClientSuggestions(false);
-                      }}
-                      className="w-full px-3 py-2 text-left hover:bg-blue-50 border-b border-slate-100 last:border-b-0 flex items-center justify-between gap-2 cursor-pointer"
-                    >
-                      <span className="text-[13px] font-bold text-slate-900 truncate">{cli.nombre}</span>
-                      <span className="text-[11px] text-slate-500 mono shrink-0">
-                        {cli.telefono || cli.direccion || 'Cliente guardado'}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              );
-            })()}
-          </div>
-
           <div>
             <label htmlFor="inp-hoja-cliente-tel" className="block text-[12px] font-bold text-slate-600 mb-1.5">
               Teléfono del cliente
@@ -446,25 +308,37 @@ export const HojaCotizacionView: React.FC<Props> = ({
       </CollapsibleAccordion>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-5 items-start">
-        {/* Lista de partidas */}
-        <div className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] p-4 sm:p-5 shadow-xl">
-          <div className="flex items-center justify-between gap-2 mb-3">
-            <div>
-              <h2 className="m-0 text-[17px] font-extrabold">
-                Partidas Agregadas (<span className="mono">{hoja.partidas.length}</span>)
-              </h2>
-              <p className="m-0 text-[12px] text-slate-500">Edita o elimina cualquier ventana, mosquitero o puerta</p>
-            </div>
-            {hoja.partidas.length > 0 && (
+        {/* Lista de partidas en acordeón */}
+        <CollapsibleAccordion
+          id="acc-hoja-partidas"
+          title={`🪟 Partidas Agregadas (${hoja.partidas.length})`}
+          summary={
+            hoja.partidas.length === 0
+              ? 'Sin piezas agregadas todavía'
+              : `${hoja.partidas.length} partida(s) · Subtotal ${formatMXN(subtotal)}`
+          }
+          open={accPartidasOpen}
+          onToggle={() => setAccPartidasOpen((p) => !p)}
+          tone="light"
+          className="shadow-xl"
+          rightAction={
+            hoja.partidas.length > 0 ? (
               <button
                 type="button"
-                onClick={onVaciarHoja}
-                className="min-h-[34px] px-3 rounded-lg border border-slate-200 bg-white text-[12px] font-bold text-slate-500 hover:text-red-600 cursor-pointer"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onVaciarHoja();
+                }}
+                className="min-h-[30px] px-2.5 rounded-lg border border-slate-200 bg-white text-[11.5px] font-bold text-slate-500 hover:text-red-600 cursor-pointer"
               >
                 Vaciar
               </button>
-            )}
-          </div>
+            ) : undefined
+          }
+        >
+          <p className="m-0 text-[12px] text-slate-500 mb-3">
+            Edita o elimina cualquier ventana, mosquitero o puerta
+          </p>
 
           <div className="mb-3 flex flex-col gap-2">
             <PdfHeaderPreview
@@ -567,17 +441,24 @@ export const HojaCotizacionView: React.FC<Props> = ({
               ))}
             </div>
           )}
-        </div>
+        </CollapsibleAccordion>
 
         {/* Totales y Consolidado */}
         <div className="flex flex-col gap-4">
-          <div className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] p-4 sm:p-5 shadow-xl">
-            <div className="flex items-center justify-between gap-2 mb-1">
-              <h2 className="m-0 text-[17px] font-extrabold">Resumen Económico</h2>
-              <span className="mono text-[11px] font-extrabold text-blue-700">
-                {currentFolio} · {todayLabel}
+          <CollapsibleAccordion
+            id="acc-hoja-resumen"
+            title="💰 Resumen Económico y Exportación"
+            summary={`Total Final: ${formatMXN(grandTotal)} · Anticipo (${anticipoPctVal}%): ${formatMXN(anticipoMonto)}`}
+            open={accResumenOpen}
+            onToggle={() => setAccResumenOpen((p) => !p)}
+            tone="light"
+            className="shadow-xl"
+            rightAction={
+              <span className="mono text-[11px] font-extrabold text-blue-700 whitespace-nowrap">
+                {currentFolio}
               </span>
-            </div>
+            }
+          >
             <p className="m-0 text-[12px] text-slate-500">Ajuste por volumen de obra e impuestos</p>
 
             <div className="my-3.5">
@@ -604,7 +485,7 @@ export const HojaCotizacionView: React.FC<Props> = ({
               </label>
             </div>
 
-            <div className="border-y border-slate-100 py-2.5 my-2.5 flex flex-col gap-1.5 text-[13.5px] text-slate-600">
+                        <div className="border-y border-slate-100 py-2.5 my-2.5 flex flex-col gap-1.5 text-[13.5px] text-slate-600">
               <div className="flex justify-between">
                 <span>Subtotal partidas</span>
                 <strong className="mono text-slate-900">{formatMXN(subtotal)}</strong>
@@ -798,32 +679,32 @@ export const HojaCotizacionView: React.FC<Props> = ({
                 </button>
               )}
             </div>
-          </div>
+          </CollapsibleAccordion>
 
-          {hoja.partidas.length > 0 && wasteAnalysis.grupos.length > 0 && (
-            <div
+                    {hoja.partidas.length > 0 && wasteAnalysis.grupos.length > 0 && (
+            <CollapsibleAccordion
               id="hoja-waste-analysis-card"
-              className="bg-white text-[#1E293B] border-[1.5px] border-slate-300 rounded-[18px] p-4 sm:p-5 shadow-xl"
-            >
-              <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
-                <div>
-                  <h2 className="m-0 text-[16px] font-extrabold text-slate-900">
-                    Análisis de Perfiles y Desperdicio vs Inventario
-                  </h2>
-                  <p className="m-0 text-[12px] text-slate-500">
-                    Cruce real 1D por línea, perfil y acabado contra tus existencias en bodega (tramos 6.10 m)
-                  </p>
-                </div>
+              title="📊 Análisis de Perfiles y Desperdicio vs Inventario"
+              summary={`${wasteAnalysis.aprovechamientoGlobalPct}% uso · Merma ${wasteAnalysis.desperdicioTotalM.toFixed(2)} m · Por comprar: ${wasteAnalysis.tramosPorComprar} tr.`}
+              open={accWasteOpen}
+              onToggle={() => setAccWasteOpen((p) => !p)}
+              tone="light"
+              className="shadow-xl"
+              rightAction={
                 <span
-                  className={`px-2.5 py-1 rounded-lg border text-[11px] font-extrabold ${
+                  className={`px-2 py-0.5 rounded-lg border text-[10.5px] font-extrabold whitespace-nowrap ${
                     wasteAnalysis.puedeOptimizarse
                       ? 'bg-amber-50 border-amber-300 text-amber-900'
                       : 'bg-emerald-50 border-emerald-300 text-emerald-800'
                   }`}
                 >
-                  {wasteAnalysis.puedeOptimizarse ? 'Optimizable' : 'Buen aprovechamiento'}
+                  {wasteAnalysis.puedeOptimizarse ? 'Optimizable' : 'Buen uso'}
                 </span>
-              </div>
+              }
+            >
+              <p className="m-0 text-[12px] text-slate-500 mb-3">
+                Cruce real 1D por línea, perfil y acabado contra tus existencias en bodega (tramos 6.10 m)
+              </p>
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
                 <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
@@ -929,10 +810,10 @@ export const HojaCotizacionView: React.FC<Props> = ({
                   Ver diagrama barra por barra y tabla de inventario
                 </button>
               )}
-            </div>
+            </CollapsibleAccordion>
           )}
 
-          <CollapsibleAccordion
+                    <CollapsibleAccordion
             id="hoja-despiece-total-card"
             title={`✂️ Despiece Total de Material y Tramos 6.10 m (${opt1D.tramos610Totales} barras · ${Math.round(opt1D.aprovechamientoGlobalPct)}% uso)`}
             summary="Cruce en tiempo real contra tus existencias en Mi Inventario (tramos de 6.10 m)"
@@ -1112,115 +993,3 @@ export const HojaCotizacionView: React.FC<Props> = ({
               reminders={reminders}
               defaultProyecto={hoja.proyecto || ''}
               defaultTotal={grandTotal}
-              defaultPartidasCount={hoja.partidas.length}
-              defaultTelefono={hoja.clienteTel || contratoCliente.telefono || ''}
-              tallerNombre={taller.nombre}
-              highlightedReminderId={highlightedReminderId}
-              onAddReminder={onAddReminder}
-              onUpdateStatus={onUpdateReminderStatus}
-              onSnoozeReminder={onSnoozeReminder}
-              onDeleteReminder={onDeleteReminder}
-              onNotifyNow={onNotifyReminderNow}
-              onTestPushNotification={onTestPushNotification}
-              onRequestPermission={onRequestPushPermission}
-              onShowToast={onShowToast}
-            />
-          </div>
-        )}
-
-      {contratoOpen && (
-        <ErrorBoundary
-          resetKey={contratoOpen}
-          title="No se pudo abrir la pantalla de Contrato"
-          onGoHome={() => setContratoOpen(false)}
-        >
-          <ContratoModal
-            open={contratoOpen}
-            hoja={hoja}
-            taller={taller}
-            cliente={contratoCliente}
-            onUpdateCliente={onUpdateContratoCliente}
-            onUpdateProyecto={(proyecto) => onUpdateHoja({ proyecto })}
-            onToggleIva={(incluirIva) => onUpdateHoja({ incluirIva })}
-            onClose={() => {
-              setContratoOpen(false);
-              onRequestBack?.();
-            }}
-            onShowToast={onShowToast}
-          />
-        </ErrorBoundary>
-      )}
-
-      {pdfPreviewOpen && (
-        <Suspense fallback={null}>
-          <LazyPdfPreviewModal
-            open={pdfPreviewOpen}
-            hoja={hoja}
-            taller={taller}
-            contratoCliente={contratoCliente}
-            onClose={() => setPdfPreviewOpen(false)}
-            onFinalPdfDownloaded={(res) => {
-              const materialesResumen = consolidado.map((row) => ({
-                id: `${row.perfilId}__${row.linea}`,
-                nombre: row.perfilNombre,
-                codigo: row.perfilId,
-                linea: LINEAS_CONFIG[row.linea]?.nombre || row.linea,
-                cantidad: row.tramosRequeridos || 1,
-                unidad: 'tramos',
-              }));
-              const savedList = recordCotizacionGuardada({
-                folio: res.folio,
-                fecha: res.dateLabel,
-                cliente: res.clienteNombre,
-                telefono: hoja.clienteTel || contratoCliente.telefono,
-                direccion: hoja.clienteDir || contratoCliente.direccion,
-                total: res.total,
-                piezasCount: hoja.partidas.length,
-                materiales: materialesResumen,
-              });
-              const createdEntry = savedList.find((item) => item.folio === res.folio) || savedList[0];
-              if (typeof navigator !== 'undefined' && !navigator.onLine) {
-                enqueueOfflineCotizacion({
-                  key: `cotizacion:${res.folio}`,
-                  action: 'save_cotizacion',
-                  cotizacionId: createdEntry?.id,
-                  folio: res.folio,
-                  cliente: res.clienteNombre,
-                  total: res.total,
-                  estado: createdEntry?.estado || 'enviada',
-                });
-                onShowToast(
-                  `Cotización ${res.folio} guardada localmente (en cola para sincronizar al volver la conexión)`,
-                  true
-                );
-              }
-              window.dispatchEvent(new CustomEvent('aluminero:cotizaciones-updated'));
-              setCurrentFolio(peekNextCotizacionFolio());
-              onRecordFinalPdf?.(res);
-            }}
-            onShowToast={onShowToast}
-          />
-        </Suspense>
-      )}
-
-      {onUpdateTaller && (
-        <PdfHeaderCustomizerModal
-          open={pdfHeaderModalOpen}
-          taller={taller}
-          proyectoNombre={hoja.proyecto}
-          onUpdateTaller={onUpdateTaller}
-          onClose={() => setPdfHeaderModalOpen(false)}
-          onExportPdf={
-            hoja.partidas.length > 0
-              ? () => {
-                  setPdfHeaderModalOpen(false);
-                  handleOpenPdfPreview();
-                }
-              : undefined
-          }
-          onShowToast={onShowToast}
-        />
-      )}
-    </section>
-  );
-};
