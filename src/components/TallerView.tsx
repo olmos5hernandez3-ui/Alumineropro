@@ -1122,3 +1122,88 @@ export const TallerView: React.FC<Props> = ({
                 onClick={() => void generarPdfHistorialCotizaciones(cotizacionesList, taller)}
                 className="px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 text-blue-800 text-[11.5px] font-extrabold inline-flex items-center gap-1.5 cursor-pointer"
               >
+
+                              >
+                <FileDown className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Exportar Historial PDF</span>
+              </button>
+            </div>
+            {historial.slice(0, 15).map((item) => (
+              <div
+                key={item.id}
+                className="flex items-center justify-between gap-2 p-2.5 rounded-xl border border-slate-200 bg-slate-50/70 text-[12px]"
+              >
+                <div className="min-w-0">
+                  <strong className="block text-slate-900 truncate">{item.titulo}</strong>
+                  <span className="text-[11px] text-slate-500">{item.detalle}</span>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="mono font-extrabold text-blue-700">{formatMXN(item.total)}</span>
+                  <button
+                    type="button"
+                    onClick={() => onEliminarHistorial(item.id)}
+                    aria-label="Eliminar registro"
+                    className="p-1.5 rounded-lg border border-red-200 bg-red-50 text-red-700 cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" aria-hidden="true" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CollapsibleAccordion>
+
+      {/* Publicidad y Respaldo JSON */}
+      <PublicidadTallerCard
+        taller={taller}
+        proActive={proActive}
+        onOpenPro={onOpenPro}
+        onEntrarInventario={onEntrarInventario}
+        onShowToast={onShowToast}
+      />
+
+      {backupData && (
+        <CollapsibleAccordion
+          id="card-taller-respaldo"
+          title="💾 Respaldo y Restauración (JSON)"
+          summary="Exporta o importa toda la información de tu taller"
+          open={respaldoOpen}
+          onToggle={() => setRespaldoOpen((p) => !p)}
+          tone="light"
+          className="mt-4 shadow-xl"
+        >
+          <div className="flex flex-wrap gap-2.5">
+            <button
+              type="button"
+              onClick={handleExportTallerJson}
+              className="flex-1 min-h-[42px] px-3.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-[12.5px] inline-flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <Download className="w-4 h-4" aria-hidden="true" />
+              <span>Exportar Respaldo JSON</span>
+            </button>
+            {onImportBackup && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => importBackupRef.current?.click()}
+                  className="flex-1 min-h-[42px] px-3.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 font-extrabold text-[12.5px] inline-flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Upload className="w-4 h-4" aria-hidden="true" />
+                  <span>Importar Respaldo JSON</span>
+                </button>
+                <input
+                  ref={importBackupRef}
+                  type="file"
+                  accept="application/json,.json"
+                  onChange={(e) => void handleImportTallerJson(e)}
+                  className="hidden"
+                />
+              </>
+            )}
+          </div>
+        </CollapsibleAccordion>
+      )}
+    </section>
+  );
+};
