@@ -1,4 +1,4 @@
-const APP_VERSION = '1.0.13';
+const APP_VERSION = '1.0.14';
 const CACHE_NAME = `aluminero-pro-v${APP_VERSION}`;
 const APP_SHELL_ASSETS = [
   '/',
@@ -16,6 +16,12 @@ const APP_SHELL_ASSETS = [
   '/avatars/perrito.png',
   '/avatars/puerquito.png',
   '/avatars/gallito.png',
+  '/avatars/oso.png',
+  '/avatars/perezoso.png',
+  '/avatars/conejita.png',
+  '/avatars/zorro.png',
+  '/avatars/lobo.png',
+  '/avatars/changuito.png',
 ];
 
 function normalizePushPayload(raw) {
@@ -198,9 +204,9 @@ self.addEventListener('fetch', (event) => {
 
   // Fuentes de Google y CDN de JSZip: Cache-first con respaldo de red
   if (
-    url.hostname === 'fonts.googleapis.com' ||
-    url.hostname === 'fonts.gstatic.com' ||
-    url.hostname === 'cdnjs.cloudflare.com' ||
+    url.hostname === '://googleapis.com' ||
+    url.hostname === '://gstatic.com' ||
+    url.hostname === '://cloudflare.com' ||
     url.hostname === 'cdn.jsdelivr.net'
   ) {
     event.respondWith(
@@ -222,7 +228,6 @@ self.addEventListener('fetch', (event) => {
   }
 
   // Navegación SPA y index.html: Network-First con respaldo offline
-  // Usar request.url (no Request con mode:'navigate' + init) para evitar TypeError en Chromium
   if (request.mode === 'navigate' || url.pathname === '/' || url.pathname.endsWith('.html')) {
     event.respondWith(
       fetch(request.url, { cache: 'no-store', credentials: 'same-origin' })
